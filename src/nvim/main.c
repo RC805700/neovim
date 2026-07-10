@@ -189,7 +189,7 @@ static bool event_teardown(void)
 }
 
 /// Performs early initialization.
-static void early_init(mparm_T *paramp)
+void early_init(mparm_T *paramp)
 {
   os_hint_priority();
   estack_init();
@@ -968,8 +968,8 @@ static uint64_t server_connect(char *server_addr, const char **errmsg)
 }
 
 /// Handle remote subcommands
-static void remote_request(mparm_T *params, int remote_args, char *server_addr, int argc,
-                           char **argv, bool ui_only)
+void remote_request(mparm_T *params, int remote_args, char *server_addr, int argc,
+                    char **argv, bool ui_only)
 {
   bool is_ui = strequal(argv[remote_args], "--remote-ui");
   if (ui_only && !is_ui) {
@@ -1075,7 +1075,7 @@ static void remote_request(mparm_T *params, int remote_args, char *server_addr, 
 
 /// Decides whether text (as opposed to commands) will be read from stdin.
 /// @see EDIT_STDIN
-static bool edit_stdin(mparm_T *parmp)
+bool edit_stdin(mparm_T *parmp)
 {
   bool implicit = !headless_mode
                   && !(embedded_mode && stdin_fd <= 0)
@@ -1087,7 +1087,7 @@ static bool edit_stdin(mparm_T *parmp)
 }
 
 /// Scan the command line arguments.
-static void command_line_scan(mparm_T *parmp)
+void command_line_scan(mparm_T *parmp)
 {
   int argc = parmp->argc;
   char **argv = parmp->argv;
@@ -1543,7 +1543,7 @@ scripterror:
   TIME_MSG("parsing arguments");
 }
 
-static void set_argf_var(void)
+void set_argf_var(void)
 {
   list_T *list = tv_list_alloc(kListLenMayKnow);
 
@@ -1562,7 +1562,7 @@ static void set_argf_var(void)
 // Many variables are in "params" so that we can pass them to invoked
 // functions without a lot of arguments.  "argc" and "argv" are also
 // copied, so that they can be changed.
-static void init_params(mparm_T *paramp, int argc, char **argv)
+void init_params(mparm_T *paramp, int argc, char **argv)
 {
   CLEAR_POINTER(paramp);
   paramp->argc = argc;
@@ -1577,7 +1577,7 @@ static void init_params(mparm_T *paramp, int argc, char **argv)
 }
 
 /// Initialize global startuptime file if "--startuptime" passed as an argument.
-static void init_startuptime(mparm_T *paramp)
+void init_startuptime(mparm_T *paramp)
 {
   bool is_embed = false;
   for (int i = 1; i < paramp->argc - 1; i++) {
@@ -1595,7 +1595,7 @@ static void init_startuptime(mparm_T *paramp)
   }
 }
 
-static void check_and_set_isatty(mparm_T *paramp)
+void check_and_set_isatty(mparm_T *paramp)
 {
   stdin_isatty = os_isatty(STDIN_FILENO);
   stdout_isatty = os_isatty(STDOUT_FILENO);
@@ -1604,7 +1604,7 @@ static void check_and_set_isatty(mparm_T *paramp)
 }
 
 // Sets v:progname and v:progpath. Also modifies $PATH on Windows.
-static void init_path(const char *exename)
+void init_path(const char *exename)
   FUNC_ATTR_NONNULL_ALL
 {
   char exepath[MAXPATHL] = { 0 };
@@ -1625,13 +1625,13 @@ static void init_path(const char *exename)
 }
 
 /// Get filename from command line, if any.
-static char *get_fname(mparm_T *parmp)
+char *get_fname(mparm_T *parmp)
 {
   return alist_name(&GARGLIST[0]);
 }
 
 // Decide about window layout for diff mode after reading vimrc.
-static void set_window_layout(mparm_T *paramp)
+void set_window_layout(mparm_T *paramp)
 {
   if (paramp->diff_mode && paramp->window_layout == 0) {
     if (diffopt_horizontal()) {
@@ -1644,7 +1644,7 @@ static void set_window_layout(mparm_T *paramp)
 
 // "-q errorfile": Load the error file now.
 // If the error file can't be read, exit before doing anything else.
-static void handle_quickfix(mparm_T *paramp)
+void handle_quickfix(mparm_T *paramp)
 {
   if (paramp->edit_type == EDIT_QF) {
     if (paramp->use_ef != NULL) {
@@ -1661,7 +1661,7 @@ static void handle_quickfix(mparm_T *paramp)
 
 // Need to jump to the tag before executing the '-c command'.
 // Makes "vim -c '/return' -t main" work.
-static void handle_tag(char *tagname)
+void handle_tag(char *tagname)
 {
   if (tagname != NULL) {
     swap_exists_did_quit = false;
@@ -1679,7 +1679,7 @@ static void handle_tag(char *tagname)
 }
 
 /// Read text from stdin.
-static void read_stdin(void)
+void read_stdin(void)
 {
   // When getting the ATTENTION prompt here, use a dialog.
   swap_exists_action = SEA_DIALOG;
@@ -1736,7 +1736,7 @@ static void read_stdin(void)
 
 // Create the requested number of windows and edit buffers in them.
 // Also does recovery if "recoverymode" set.
-static void create_windows(mparm_T *parmp)
+void create_windows(mparm_T *parmp)
 {
   // Create the number of windows that was requested.
   if (parmp->window_count == -1) {      // was not set
@@ -1850,7 +1850,7 @@ static void create_windows(mparm_T *parmp)
 
 /// If opened more than one window, start editing files in the other
 /// windows. make_windows() has already opened the windows.
-static void edit_buffers(mparm_T *parmp)
+void edit_buffers(mparm_T *parmp)
 {
   int arg_idx;                          // index in argument list
   bool advance = true;
@@ -1965,7 +1965,7 @@ static void edit_buffers(mparm_T *parmp)
 }
 
 // Execute the commands from --cmd arguments "cmds[cnt]".
-static void exe_pre_commands(mparm_T *parmp)
+void exe_pre_commands(mparm_T *parmp)
 {
   char **cmds = parmp->pre_commands;
   int cnt = parmp->n_pre_commands;
@@ -1989,7 +1989,7 @@ static void exe_pre_commands(mparm_T *parmp)
 }
 
 // Execute "+", "-c" and "-S" arguments.
-static void exe_commands(mparm_T *parmp)
+void exe_commands(mparm_T *parmp)
 {
   ESTACK_CHECK_DECLARATION;
 
@@ -2209,7 +2209,7 @@ static void do_exrc_initialization(void)
 }
 
 /// Source startup scripts
-static void source_startup_scripts(const mparm_T *const parmp)
+void source_startup_scripts(const mparm_T *const parmp)
   FUNC_ATTR_NONNULL_ALL
 {
   // If -u given, use only the initializations from that file and nothing else.
@@ -2339,6 +2339,100 @@ static void usage(void)
   printf(_("  --server <address>    Connect to this Nvim server\n"));
   printf(_("  --startuptime <file>  Write startup timing messages to <file>\n"));
   printf(_("\nSee \":help startup-options\" for all options.\n"));
+}
+
+// ── Wrappers for Odin startup ──────────────────────────────────
+// Expose struct-heavy inline logic from main() as callable functions.
+
+int startup_gargcount(void)
+{
+  return GARGCOUNT;
+}
+
+void startup_set_cursor_last_line(void)
+{
+  curwin->w_cursor.lnum = curbuf->b_ml.ml_line_count;
+}
+
+void startup_save_firstwin_height(void)
+{
+  firstwin->w_prev_height = firstwin->w_height;
+}
+
+void startup_diff_win_options_all(void)
+{
+  FOR_ALL_WINDOWS_IN_TAB(wp, curtab) {
+    if (!wp->w_arg_idx_invalid) {
+      diff_win_options(wp, true);
+    }
+  }
+}
+
+bool startup_shada_nonempty(void)
+{
+  return *p_shada != NUL;
+}
+
+void startup_channel_from_stdio(void)
+{
+  const char *err;
+  if (!channel_from_stdio(true, CALLBACK_READER_INIT, &err)) {
+    abort();
+  }
+}
+
+void startup_recovery_list_swaps(void)
+{
+  typval_T items_tv;
+  tv_list_alloc_ret(&items_tv, 0);
+  recover_names(NULL, false, items_tv.vval.v_list);
+  typval_T lua_args[] = { items_tv, { .v_type = VAR_UNKNOWN } };
+  nlua_call_typval("vim._core.swapfile", "list_swaps", lua_args, NULL);
+  tv_clear(&items_tv);
+  os_exit(0);
+}
+
+void startup_setbuf_stdout_null(void)
+{
+  setbuf(stdout, NULL);
+}
+
+void startup_restart_edit_check(void)
+{
+  if (restart_edit != 0) {
+    stuffcharReadbuff(K_NOP);
+  }
+}
+
+void startup_cb_flags_check(void)
+{
+  if (cb_flags & (kOptCbFlagUnnamed | kOptCbFlagUnnamedplus)) {
+    eval_has_provider("clipboard", false);
+  }
+}
+
+void startup_diff_scrollbind_check(void)
+{
+  if (curwin->w_p_diff && curwin->w_p_scb) {
+    update_topline(curwin);
+    check_scrollbind(0, 0);
+  }
+}
+
+// Forward declaration (defined in lua/executor.c, not in any header).
+bool nlua_exec_file(const char *path);
+
+void startup_exec_luaf(const char *luaf)
+{
+  if (luaf != NULL) {
+    msg_scroll = true;
+    bool lua_ok = nlua_exec_file(luaf);
+    if (msg_didout) {
+      msg_putchar('\n');
+      msg_didout = false;
+    }
+    getout(lua_ok ? 0 : 1);
+  }
 }
 
 // Check the result of the ATTENTION dialog:
