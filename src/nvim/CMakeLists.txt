@@ -772,6 +772,7 @@ if(STATIC_BUILD)
   target_link_options(nvim_bin PRIVATE -static-libgcc -static-libstdc++ -static)
 endif()
 target_link_libraries(nvim_bin PRIVATE main_lib PUBLIC libuv)
+target_link_libraries(nvim_bin PRIVATE ${PROJECT_SOURCE_DIR}/build/lib/libklib_stripped.a)
 
 install_helper(TARGETS nvim_bin)
 if(MSVC)

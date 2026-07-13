@@ -613,6 +613,7 @@ int main(int argc, char **argv)
   // Execute any "+", "-c" and "-S" arguments.
   if (params.n_commands > 0) {
     exe_commands(&params);
+  } else {
   }
 
   starting = 0;
@@ -1324,12 +1325,13 @@ void command_line_scan(mparm_T *parmp)
         want_argument = true;
         break;
 
-      case 'c':    // "-c{command}" or "-c {command}" exec command
+        case 'c':    // "-c{command}" or "-c {command}" exec command
         if (argv[0][argv_idx] != NUL) {
           if (parmp->n_commands >= MAX_ARG_CMDS) {
             mainerr(err_extra_cmd, NULL, NULL);
           }
-          parmp->commands[parmp->n_commands++] = argv[0] + argv_idx;
+          parmp->commands[parmp->n_commands] = argv[0] + argv_idx;
+          parmp->n_commands++;
           argv_idx = -1;
           break;
         }
@@ -1388,7 +1390,8 @@ void command_line_scan(mparm_T *parmp)
             parmp->cmds_tofree[parmp->n_commands] = true;
             parmp->commands[parmp->n_commands++] = s;
           } else {
-            parmp->commands[parmp->n_commands++] = argv[0];
+            parmp->commands[parmp->n_commands] = argv[0];
+            parmp->n_commands++;
           }
           break;
 
@@ -1763,6 +1766,7 @@ void create_windows(mparm_T *parmp)
   } else {
     parmp->window_count = 1;
   }
+
 
   if (recoverymode) {                   // do recover
     msg_scroll = true;                  // scroll message up
@@ -2391,6 +2395,14 @@ void startup_recovery_list_swaps(void)
   tv_clear(&items_tv);
   os_exit(0);
 }
+
+void startup_alist_init(void)
+{
+  alist_init(&global_alist);
+  global_alist.id = 0;
+}
+
+
 
 void startup_setbuf_stdout_null(void)
 {

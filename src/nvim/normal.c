@@ -161,7 +161,7 @@ typedef void (*nv_func_T)(cmdarg_T *cap);
 /// This table contains one entry for every Normal or Visual mode command.
 /// The order doesn't matter, init_normal_cmds() will create a sorted index.
 /// It is faster when all keys from zero to '~' are present.
-static const struct nv_cmd {
+const struct nv_cmd {
   int cmd_char;                 ///< (first) command character
   nv_func_T cmd_func;           ///< function for this command
   uint16_t cmd_flags;           ///< NV_ flags
@@ -363,11 +363,11 @@ static const struct nv_cmd {
 #define NV_CMDS_SIZE ARRAY_SIZE(nv_cmds)
 
 // Sorted index of commands in nv_cmds[].
-static int16_t nv_cmd_idx[NV_CMDS_SIZE];
+int16_t nv_cmd_idx[NV_CMDS_SIZE];
 
 // The highest index for which
 // nv_cmds[idx].cmd_char == nv_cmd_idx[nv_cmds[idx].cmd_char]
-static int nv_max_linear;
+int nv_max_linear;
 
 /// Compare functions for qsort() below, that checks the command character
 /// through the index in nv_cmd_idx[].
@@ -406,6 +406,21 @@ void init_normal_cmds(void)
     }
   }
   nv_max_linear = i - 1;
+}
+
+int startup_nv_cmds_size(void)
+{
+  return NV_CMDS_SIZE;
+}
+
+void *startup_nv_cmds_ptr(void)
+{
+  return (void *)nv_cmds;
+}
+
+void *startup_nv_cmd_idx_ptr(void)
+{
+  return nv_cmd_idx;
 }
 
 /// Search for a command in the commands table.

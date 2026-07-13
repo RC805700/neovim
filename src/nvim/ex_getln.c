@@ -211,7 +211,7 @@ enum {
 /// The current cmdline_info.  It is initialized in getcmdline() and after that
 /// used by other functions.  When invoking getcmdline() recursively it needs
 /// to be saved with save_cmdline() and restored with restore_cmdline().
-static CmdlineInfo ccline;
+CmdlineInfo ccline;
 
 static int new_cmdpos;          // position set by set_cmdline_pos()
 

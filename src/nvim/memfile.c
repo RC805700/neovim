@@ -281,8 +281,6 @@ bhdr_T *mf_new(memfile_T *mfp, bool negative, unsigned page_count)
 // Get existing block "nr" with "page_count" pages.
 //
 // Caller should first check a negative nr with mf_trans_del().
-//
-// @return  NULL if not found
 bhdr_T *mf_get(memfile_T *mfp, blocknr_T nr, unsigned page_count)
 {
   // check block number exists

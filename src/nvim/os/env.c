@@ -1251,3 +1251,10 @@ void restore_env_var(const char *name, char *old_value, bool must_free)
   os_unsetenv(name);
 }
 #endif
+
+// Startup wrappers for Odin porting
+void startup_set_homedir(const char *path)
+{
+  xfree(homedir);
+  homedir = xstrdup(path);
+}
