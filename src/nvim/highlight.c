@@ -36,7 +36,7 @@
 
 static bool hlstate_active = false;
 
-static Set(HlEntry) attr_entries = SET_INIT;
+extern Set(HlEntry) attr_entries;
 static Map(uint64_t, int) combine_attr_entries = MAP_INIT;
 static Map(uint64_t, int) blend_attr_entries = MAP_INIT;
 static Map(uint64_t, int) blendthrough_attr_entries = MAP_INIT;
@@ -51,12 +51,6 @@ static Map(ColorKey, ColorItem) ns_hls;
 typedef int NSHlAttr[HLF_COUNT];
 static PMap(int) ns_hl_attr;
 
-void highlight_init(void)
-{
-  // index 0 is no attribute, add dummy entry:
-  set_put(HlEntry, &attr_entries, ((HlEntry){ .attr = HLATTRS_INIT, .kind = kHlInvalid,
-                                              .id1 = 0, .id2 = 0 }));
-}
 
 /// @return true if hl table was reset
 bool highlight_use_hlstate(void)

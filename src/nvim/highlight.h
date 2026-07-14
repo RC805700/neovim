@@ -11,6 +11,8 @@
 #include "nvim/types_defs.h"
 #include "nvim/ui_defs.h"  // IWYU pragma: keep
 
+void highlight_init(void);
+
 EXTERN const char *hlf_names[] INIT( = {
   [HLF_8] = "SpecialKey",
   [HLF_EOB] = "EndOfBuffer",

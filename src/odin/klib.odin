@@ -46,6 +46,10 @@ foreign _ {
   _xfree :: proc(ptr: rawptr) ---
   @(link_name = "path_fnamencmp")
   _path_fnamencmp :: proc(a, b: cstring, n: c.int) -> c.int ---
+  @(link_name = "str_foldcase")
+  _str_foldcase :: proc(str: cstring, orglen: c.int, buf: cstring, buflen: c.int) -> cstring ---
+  @(link_name = "mb_stricmp")
+  _mb_stricmp :: proc(s1, s2: cstring) -> c.int ---
 }
 
 
@@ -233,6 +237,67 @@ mh_clear :: proc "c" (h: ^MapHash) {
 }
 
 
+/// ─── generic map procedures ───
+/// S = Set<K> struct, V = value type, K = key type.
+/// Each wraps the core mh_* generics with values[] management.
+
+map_put_ref_generic :: proc "contextless" (
+  s: ^$S,
+  mp_values: ^[^]$V,
+  key: $K,
+  key_alloc: ^^K,
+  new_item: ^bool,
+  hash: proc "contextless" (_: K) -> u32,
+  equal: proc "contextless" (_: K, _: K) -> bool,
+) -> ^V {
+  st: MHPutStatus
+  k := mh_put(s, key, &st, hash, equal, size_of(K))
+  if st == .kMHNewKeyRealloc {
+    mp_values^ = cast([^]V)(_xrealloc(rawptr(mp_values^), c.size_t(s.h.keys_capacity) * size_of(V)))
+  }
+  if st != .kMHExisting {
+    if new_item != nil { new_item^ = true }
+    mp_values^[k] = {}
+  } else {
+    if new_item != nil { new_item^ = false }
+  }
+  if key_alloc != nil { key_alloc^ = &s.keys[k] }
+  return &mp_values^[k]
+}
+
+map_ref_generic :: proc "contextless" (
+  s: ^$S,
+  mp_values: ^[^]$V,
+  key: $K,
+  key_alloc: ^^K,
+  hash: proc "contextless" (_: K) -> u32,
+  equal: proc "contextless" (_: K, _: K) -> bool,
+) -> ^V {
+  k := mh_get(s, key, hash, equal)
+  if k == MH_TOMBSTONE { return nil }
+  if key_alloc != nil { key_alloc^ = &s.keys[k] }
+  return &mp_values^[k]
+}
+
+map_del_generic :: proc "contextless" (
+  s: ^$S,
+  mp_values: ^[^]$V,
+  key: $K,
+  key_alloc: ^K,
+  hash: proc "contextless" (_: K) -> u32,
+  equal: proc "contextless" (_: K, _: K) -> bool,
+) -> V {
+  k, old_key := mh_delete(s, key, hash, equal)
+  if k == MH_TOMBSTONE { return {} }
+  ret_val := mp_values^[k]
+  if k != s.h.n_keys {
+    mp_values^[k] = mp_values^[s.h.n_keys]
+  }
+  if key_alloc != nil { key_alloc^ = old_key }
+  return ret_val
+}
+
+
 /// ─── helpers ───
 
 mh_is_empty :: #force_inline proc "contextless" (h: ^MapHash, i: u32) -> bool {
@@ -249,27 +314,27 @@ mh_is_either :: #force_inline proc "contextless" (h: ^MapHash, i: u32) -> bool {
 
 /// ─── hash / equal per type ───
 
-hash_uint64_t :: proc "contextless" (key: u64) -> u32 {
+hash_uint64_t :: #force_inline proc "contextless" (key: u64) -> u32 {
   return u32((key >> 33) ~ key ~ (key << 11))
 }
 
-equal_uint64_t :: proc "contextless" (a, b: u64) -> bool {return a == b}
+equal_uint64_t :: #force_inline proc "contextless" (a, b: u64) -> bool {return a == b}
 
-hash_uint32_t :: proc "contextless" (key: u32) -> u32 {return key}
-equal_uint32_t :: proc "contextless" (a, b: u32) -> bool {return a == b}
+hash_uint32_t :: #force_inline proc "contextless" (key: u32) -> u32 {return key}
+equal_uint32_t :: #force_inline proc "contextless" (a, b: u32) -> bool {return a == b}
 
-hash_int :: proc "contextless" (key: c.int) -> u32 {return u32(key)}
-equal_int :: proc "contextless" (a, b: c.int) -> bool {return a == b}
+hash_int :: #force_inline proc "contextless" (key: c.int) -> u32 {return u32(key)}
+equal_int :: #force_inline proc "contextless" (a, b: c.int) -> bool {return a == b}
 
-hash_int64_t :: proc "contextless" (key: i64) -> u32 {return hash_uint64_t(u64(key))}
-equal_int64_t :: proc "contextless" (a, b: i64) -> bool {return a == b}
+hash_int64_t :: #force_inline proc "contextless" (key: i64) -> u32 {return hash_uint64_t(u64(key))}
+equal_int64_t :: #force_inline proc "contextless" (a, b: i64) -> bool {return a == b}
 
-hash_ptr_t :: proc "contextless" (key: rawptr) -> u32 {
+hash_ptr_t :: #force_inline proc "contextless" (key: rawptr) -> u32 {
   return hash_uint64_t(u64(uintptr(key)))
 }
-equal_ptr_t :: proc "contextless" (a, b: rawptr) -> bool {return a == b}
+equal_ptr_t :: #force_inline proc "contextless" (a, b: rawptr) -> bool {return a == b}
 
-hash_cstr_t :: proc "contextless" (s: cstring) -> u32 {
+hash_cstr_t :: #force_inline proc "contextless" (s: cstring) -> u32 {
   h: u32 = 0
   b := ([^]byte)(s)
   i: u32 = 0
@@ -280,24 +345,44 @@ hash_cstr_t :: proc "contextless" (s: cstring) -> u32 {
   return h
 }
 
-equal_cstr_t :: proc "contextless" (a, b: cstring) -> bool {
+equal_cstr_t :: #force_inline proc "contextless" (a, b: cstring) -> bool {
   return libc.strcmp(a, b) == 0
 }
 
-hash_path_t :: proc "contextless" (p: cstring) -> u32 {
-  return hash_cstr_t(p)
+hash_path_t :: #force_inline proc "contextless" (p: cstring) -> u32 {
+  when ODIN_OS == .Windows {
+    pp := p
+    if pp[0] != 0 && pp[1] == ':' && ((pp[0] >= 'A' && pp[0] <= 'Z') || (pp[0] >= 'a' && pp[0] <= 'z')) {
+      pp = pp + 2
+    }
+    buf: [4096]u8
+    folded := _str_foldcase(pp, c.int(libc.strlen(pp)), cstring(&buf[0]), c.int(len(buf)))
+    return hash_cstr_t(folded)
+  } else when ODIN_OS == .Darwin {
+    buf: [4096]u8
+    folded := _str_foldcase(p, c.int(libc.strlen(p)), cstring(&buf[0]), c.int(len(buf)))
+    return hash_cstr_t(folded)
+  } else {
+    return hash_cstr_t(p)
+  }
 }
 
-equal_path_t :: proc "contextless" (a, b: cstring) -> bool {
+equal_path_t :: #force_inline proc "contextless" (a, b: cstring) -> bool {
   if a == b {return true}
   if a == nil || b == nil {return false}
-  la := libc.strlen(a)
-  lb := libc.strlen(b)
-  n := la > lb ? la : lb
-  return _path_fnamencmp(a, b, c.int(n)) == 0
+  when ODIN_OS == .Windows {
+    la := libc.strlen(a)
+    lb := libc.strlen(b)
+    n := la > lb ? la : lb
+    return _path_fnamencmp(a, b, c.int(n)) == 0
+  } else when ODIN_OS == .Darwin {
+    return _mb_stricmp(a, b) == 0
+  } else {
+    return libc.strcmp(a, b) == 0
+  }
 }
 
-hash_String :: proc "contextless" (s: String) -> u32 {
+hash_String :: #force_inline proc "contextless" (s: String) -> u32 {
   h: u32 = 0
   b := ([^]byte)(s.data)
   for i in 0 ..< s.size {
@@ -306,13 +391,13 @@ hash_String :: proc "contextless" (s: String) -> u32 {
   return h
 }
 
-equal_String :: proc "contextless" (a, b: String) -> bool {
+equal_String :: #force_inline proc "contextless" (a, b: String) -> bool {
   if a.size != b.size {return false}
   if a.size == 0 {return true}
   return libc.memcmp(rawptr(a.data), rawptr(b.data), c.size_t(a.size)) == 0
 }
 
-hash_HlEntry :: proc "contextless" (ae: HlEntry) -> u32 {
+hash_HlEntry :: #force_inline proc "contextless" (ae: HlEntry) -> u32 {
   local := ae
   data := ([^]u8)(&local)
   h: u32 = 0
@@ -322,13 +407,13 @@ hash_HlEntry :: proc "contextless" (ae: HlEntry) -> u32 {
   return h
 }
 
-equal_HlEntry :: proc "contextless" (ae1, ae2: HlEntry) -> bool {
+equal_HlEntry :: #force_inline proc "contextless" (ae1, ae2: HlEntry) -> bool {
   a := ae1
   b := ae2
   return libc.memcmp(&a, &b, c.size_t(size_of(HlEntry))) == 0
 }
 
-hash_ColorKey :: proc "contextless" (key: ColorKey) -> u32 {
+hash_ColorKey :: #force_inline proc "contextless" (key: ColorKey) -> u32 {
   local := key
   data := ([^]u8)(&local)
   h: u32 = 0
@@ -338,7 +423,7 @@ hash_ColorKey :: proc "contextless" (key: ColorKey) -> u32 {
   return h
 }
 
-equal_ColorKey :: proc "contextless" (ak, bk: ColorKey) -> bool {
+equal_ColorKey :: #force_inline proc "contextless" (ak, bk: ColorKey) -> bool {
   a := ak; b := bk
   return libc.memcmp(&a, &b, c.size_t(size_of(ColorKey))) == 0
 }
@@ -508,8 +593,8 @@ mh_put_HlEntry :: proc "c" (set: ^Set_HlEntry, key: HlEntry, new: ^MHPutStatus) 
 }
 
 @(export)
-mh_delete_HlEntry :: proc "c" (set: ^Set_HlEntry, key: HlEntry) -> u32 {
-  k, _ := mh_delete(set, key, hash_HlEntry, equal_HlEntry); return k
+mh_delete_HlEntry :: proc "c" (set: ^Set_HlEntry, key: ^HlEntry) -> u32 {
+  k, _ := mh_delete(set, key^, hash_HlEntry, equal_HlEntry); return k
 }
 
 /// ─── uint64_t exports (set + maps) ───
@@ -535,166 +620,68 @@ mh_put_uint64_t :: proc "c" (set: ^Set_uint64_t, key: u64, new: ^MHPutStatus) ->
 }
 
 @(export)
-mh_delete_uint64_t :: proc "c" (set: ^Set_uint64_t, key: u64) -> u32 {
-  k, _ := mh_delete(set, key, hash_uint64_t, equal_uint64_t); return k
+mh_delete_uint64_t :: proc "c" (set: ^Set_uint64_t, key: ^u64) -> u32 {
+  k, _ := mh_delete(set, key^, hash_uint64_t, equal_uint64_t); return k
 }
 
 @(export)
 map_put_ref_uint64_t_int :: proc "c" (
-  mp: ^Map_uint64_t_int,
-  key: u64,
-  key_alloc: ^^u64,
-  new_item: ^bool,
+  mp: ^Map_uint64_t_int, key: u64, key_alloc: ^^u64, new_item: ^bool,
 ) -> ^c.int {
-  s := (^Set_uint64_t)(&mp.set)
-  st: MHPutStatus
-  k := mh_put(s, key, &st, hash_uint64_t, equal_uint64_t, size_of(u64))
-  if st == .kMHNewKeyRealloc {
-    mp.values = ([^]c.int)(_xrealloc(rawptr(mp.values), c.size_t(s.h.keys_capacity) * size_of(c.int)))
-  }
-  if st != .kMHExisting {
-    if new_item != nil {new_item^ = true}
-    mp.values[k] = {}
-  } else {
-    if new_item != nil {new_item^ = false}
-  }
-  if key_alloc != nil {
-    key_alloc^ = &s.keys[k]
-  }
-  return &mp.values[k]
+  vals := &mp.values
+  return map_put_ref_generic(&mp.set, vals, key, key_alloc, new_item, hash_uint64_t, equal_uint64_t)
 }
 
 @(export)
 map_ref_uint64_t_int :: proc "c" (mp: ^Map_uint64_t_int, key: u64, key_alloc: ^^u64) -> ^c.int {
-  k := mh_get((^Set_uint64_t)(&mp.set), key, hash_uint64_t, equal_uint64_t)
-  if k == MH_TOMBSTONE {return nil}
-  if key_alloc != nil {
-    key_alloc^ = &mp.set.keys[k]
-  }
-  return &mp.values[k]
+  vals := &mp.values
+  return map_ref_generic(&mp.set, vals, key, key_alloc, hash_uint64_t, equal_uint64_t)
 }
 
 @(export)
 map_del_uint64_t_int :: proc "c" (mp: ^Map_uint64_t_int, key: u64, key_alloc: ^u64) -> c.int {
-  set := (^Set_uint64_t)(&mp.set)
-  k, old_key := mh_delete(set, key, hash_uint64_t, equal_uint64_t)
-  if k == MH_TOMBSTONE {return 0}
-  ret_val := mp.values[k]
-  if k != (cast(^MapHash)set).n_keys {
-    mp.values[k] = mp.values[(cast(^MapHash)set).n_keys]
-  }
-  if key_alloc != nil {
-    key_alloc^ = old_key
-  }
-  return ret_val
+  vals := &mp.values
+  return map_del_generic(&mp.set, vals, key, key_alloc, hash_uint64_t, equal_uint64_t)
 }
 
 @(export)
 map_put_ref_uint64_t_ptr_t :: proc "c" (
-  mp: ^Map_uint64_t_ptr_t,
-  key: u64,
-  key_alloc: ^^u64,
-  new_item: ^bool,
+  mp: ^Map_uint64_t_ptr_t, key: u64, key_alloc: ^^u64, new_item: ^bool,
 ) -> ^rawptr {
-  s := (^Set_uint64_t)(&mp.set)
-  st: MHPutStatus
-  k := mh_put(s, key, &st, hash_uint64_t, equal_uint64_t, size_of(u64))
-  if st == .kMHNewKeyRealloc {
-    mp.values = ([^]rawptr)(_xrealloc(rawptr(mp.values), c.size_t(s.h.keys_capacity) * size_of(rawptr)))
-  }
-  if st != .kMHExisting {
-    if new_item != nil {new_item^ = true}
-    mp.values[k] = {}
-  } else {
-    if new_item != nil {new_item^ = false}
-  }
-  if key_alloc != nil {
-    key_alloc^ = &s.keys[k]
-  }
-  return &mp.values[k]
+  vals := &mp.values
+  return map_put_ref_generic(&mp.set, vals, key, key_alloc, new_item, hash_uint64_t, equal_uint64_t)
 }
 
 @(export)
 map_ref_uint64_t_ptr_t :: proc "c" (mp: ^Map_uint64_t_ptr_t, key: u64, key_alloc: ^^u64) -> ^rawptr {
-  k := mh_get((^Set_uint64_t)(&mp.set), key, hash_uint64_t, equal_uint64_t)
-  if k == MH_TOMBSTONE {return nil}
-  if key_alloc != nil {
-    key_alloc^ = &mp.set.keys[k]
-  }
-  return &mp.values[k]
+  vals := &mp.values
+  return map_ref_generic(&mp.set, vals, key, key_alloc, hash_uint64_t, equal_uint64_t)
 }
 
 @(export)
 map_del_uint64_t_ptr_t :: proc "c" (mp: ^Map_uint64_t_ptr_t, key: u64, key_alloc: ^u64) -> rawptr {
-  set := (^Set_uint64_t)(&mp.set)
-  k, old_key := mh_delete(set, key, hash_uint64_t, equal_uint64_t)
-  if k == MH_TOMBSTONE {return nil}
-  ret_val := mp.values[k]
-  if k != (cast(^MapHash)set).n_keys {
-    mp.values[k] = mp.values[(cast(^MapHash)set).n_keys]
-  }
-  if key_alloc != nil {
-    key_alloc^ = old_key
-  }
-  return ret_val
+  vals := &mp.values
+  return map_del_generic(&mp.set, vals, key, key_alloc, hash_uint64_t, equal_uint64_t)
 }
 
 @(export)
 map_put_ref_uint64_t_MTDamagePair :: proc "c" (
-  mp: ^Map_uint64_t_MTDamagePair,
-  key: u64,
-  key_alloc: ^^u64,
-  new_item: ^bool,
+  mp: ^Map_uint64_t_MTDamagePair, key: u64, key_alloc: ^^u64, new_item: ^bool,
 ) -> ^MTDamagePair {
-  s := (^Set_uint64_t)(&mp.set)
-  st: MHPutStatus
-  k := mh_put(s, key, &st, hash_uint64_t, equal_uint64_t, size_of(u64))
-  if st == .kMHNewKeyRealloc {
-    mp.values = ([^]MTDamagePair)(_xrealloc(rawptr(mp.values), c.size_t(s.h.keys_capacity) * size_of(MTDamagePair)))
-  }
-  if st != .kMHExisting {
-    if new_item != nil {new_item^ = true}
-    mp.values[k] = {}
-  } else {
-    if new_item != nil {new_item^ = false}
-  }
-  if key_alloc != nil {
-    key_alloc^ = &s.keys[k]
-  }
-  return &mp.values[k]
+  vals := &mp.values
+  return map_put_ref_generic(&mp.set, vals, key, key_alloc, new_item, hash_uint64_t, equal_uint64_t)
 }
 
 @(export)
-map_ref_uint64_t_MTDamagePair :: proc "c" (
-  mp: ^Map_uint64_t_MTDamagePair,
-  key: u64,
-  key_alloc: ^^u64,
-) -> ^MTDamagePair {
-  k := mh_get((^Set_uint64_t)(&mp.set), key, hash_uint64_t, equal_uint64_t)
-  if k == MH_TOMBSTONE {return nil}
-  if key_alloc != nil {
-    key_alloc^ = &mp.set.keys[k]
-  }
-  return &mp.values[k]
+map_ref_uint64_t_MTDamagePair :: proc "c" (mp: ^Map_uint64_t_MTDamagePair, key: u64, key_alloc: ^^u64) -> ^MTDamagePair {
+  vals := &mp.values
+  return map_ref_generic(&mp.set, vals, key, key_alloc, hash_uint64_t, equal_uint64_t)
 }
 
 @(export)
-map_del_uint64_t_MTDamagePair :: proc "c" (
-  mp: ^Map_uint64_t_MTDamagePair,
-  key: u64,
-  key_alloc: ^u64,
-) -> MTDamagePair {
-  set := (^Set_uint64_t)(&mp.set)
-  k, old_key := mh_delete(set, key, hash_uint64_t, equal_uint64_t)
-  if k == MH_TOMBSTONE {return {}}
-  ret_val := mp.values[k]
-  if k != (cast(^MapHash)set).n_keys {
-    mp.values[k] = mp.values[(cast(^MapHash)set).n_keys]
-  }
-  if key_alloc != nil {
-    key_alloc^ = old_key
-  }
-  return ret_val
+map_del_uint64_t_MTDamagePair :: proc "c" (mp: ^Map_uint64_t_MTDamagePair, key: u64, key_alloc: ^u64) -> MTDamagePair {
+  vals := &mp.values
+  return map_del_generic(&mp.set, vals, key, key_alloc, hash_uint64_t, equal_uint64_t)
 }
 
 /// ─── cstr_t exports (set + maps) ───
@@ -720,120 +707,48 @@ mh_put_cstr_t :: proc "c" (set: ^Set_cstr_t, key: cstring, new: ^MHPutStatus) ->
 }
 
 @(export)
-mh_delete_cstr_t :: proc "c" (set: ^Set_cstr_t, key: cstring) -> u32 {
-  k, _ := mh_delete(set, key, hash_cstr_t, equal_cstr_t); return k
+mh_delete_cstr_t :: proc "c" (set: ^Set_cstr_t, key: ^cstring) -> u32 {
+  k, _ := mh_delete(set, key^, hash_cstr_t, equal_cstr_t); return k
 }
 
 @(export)
 map_put_ref_cstr_t_ptr_t :: proc "c" (
-  mp: ^Map_cstr_t_ptr_t,
-  key: cstring,
-  key_alloc: ^^cstring,
-  new_item: ^bool,
+  mp: ^Map_cstr_t_ptr_t, key: cstring, key_alloc: ^^cstring, new_item: ^bool,
 ) -> ^rawptr {
-  s := (^Set_cstr_t)(&mp.set)
-  st: MHPutStatus
-  k := mh_put(s, key, &st, hash_cstr_t, equal_cstr_t, size_of(cstring))
-  if st == .kMHNewKeyRealloc {
-    mp.values = ([^]rawptr)(_xrealloc(rawptr(mp.values), c.size_t(s.h.keys_capacity) * size_of(rawptr)))
-  }
-  if st != .kMHExisting {
-    if new_item != nil {new_item^ = true}
-    mp.values[k] = {}
-  } else {
-    if new_item != nil {new_item^ = false}
-  }
-  if key_alloc != nil {
-    key_alloc^ = &s.keys[k]
-  }
-  return &mp.values[k]
+  vals := &mp.values
+  return map_put_ref_generic(&mp.set, vals, key, key_alloc, new_item, hash_cstr_t, equal_cstr_t)
 }
 
 @(export)
-map_ref_cstr_t_ptr_t :: proc "c" (
-  mp: ^Map_cstr_t_ptr_t,
-  key: cstring,
-  key_alloc: ^^cstring,
-) -> ^rawptr {
-  k := mh_get((^Set_cstr_t)(&mp.set), key, hash_cstr_t, equal_cstr_t)
-  if k == MH_TOMBSTONE {return nil}
-  if key_alloc != nil {
-    key_alloc^ = &mp.set.keys[k]
-  }
-  return &mp.values[k]
+map_ref_cstr_t_ptr_t :: proc "c" (mp: ^Map_cstr_t_ptr_t, key: cstring, key_alloc: ^^cstring) -> ^rawptr {
+  vals := &mp.values
+  return map_ref_generic(&mp.set, vals, key, key_alloc, hash_cstr_t, equal_cstr_t)
 }
 
 @(export)
-map_del_cstr_t_ptr_t :: proc "c" (
-  mp: ^Map_cstr_t_ptr_t,
-  key: cstring,
-  key_alloc: ^cstring,
-) -> rawptr {
-  set := (^Set_cstr_t)(&mp.set)
-  k, old_key := mh_delete(set, key, hash_cstr_t, equal_cstr_t)
-  if k == MH_TOMBSTONE {return nil}
-  ret_val := mp.values[k]
-  if k != (cast(^MapHash)set).n_keys {
-    mp.values[k] = mp.values[(cast(^MapHash)set).n_keys]
-  }
-  if key_alloc != nil {
-    key_alloc^ = old_key
-  }
-  return ret_val
+map_del_cstr_t_ptr_t :: proc "c" (mp: ^Map_cstr_t_ptr_t, key: cstring, key_alloc: ^cstring) -> rawptr {
+  vals := &mp.values
+  return map_del_generic(&mp.set, vals, key, key_alloc, hash_cstr_t, equal_cstr_t)
 }
 
 @(export)
 map_put_ref_cstr_t_int :: proc "c" (
-  mp: ^Map_cstr_t_int,
-  key: cstring,
-  key_alloc: ^^cstring,
-  new_item: ^bool,
+  mp: ^Map_cstr_t_int, key: cstring, key_alloc: ^^cstring, new_item: ^bool,
 ) -> ^c.int {
-  s := (^Set_cstr_t)(&mp.set)
-  st: MHPutStatus
-  k := mh_put(s, key, &st, hash_cstr_t, equal_cstr_t, size_of(cstring))
-  if st == .kMHNewKeyRealloc {
-    mp.values = ([^]c.int)(_xrealloc(rawptr(mp.values), c.size_t(s.h.keys_capacity) * size_of(c.int)))
-  }
-  if st != .kMHExisting {
-    if new_item != nil {new_item^ = true}
-    mp.values[k] = {}
-  } else {
-    if new_item != nil {new_item^ = false}
-  }
-  if key_alloc != nil {
-    key_alloc^ = &s.keys[k]
-  }
-  return &mp.values[k]
+  vals := &mp.values
+  return map_put_ref_generic(&mp.set, vals, key, key_alloc, new_item, hash_cstr_t, equal_cstr_t)
 }
 
 @(export)
-map_ref_cstr_t_int :: proc "c" (
-  mp: ^Map_cstr_t_int,
-  key: cstring,
-  key_alloc: ^^cstring,
-) -> ^c.int {
-  k := mh_get((^Set_cstr_t)(&mp.set), key, hash_cstr_t, equal_cstr_t)
-  if k == MH_TOMBSTONE {return nil}
-  if key_alloc != nil {
-    key_alloc^ = &mp.set.keys[k]
-  }
-  return &mp.values[k]
+map_ref_cstr_t_int :: proc "c" (mp: ^Map_cstr_t_int, key: cstring, key_alloc: ^^cstring) -> ^c.int {
+  vals := &mp.values
+  return map_ref_generic(&mp.set, vals, key, key_alloc, hash_cstr_t, equal_cstr_t)
 }
 
 @(export)
 map_del_cstr_t_int :: proc "c" (mp: ^Map_cstr_t_int, key: cstring, key_alloc: ^cstring) -> c.int {
-  set := (^Set_cstr_t)(&mp.set)
-  k, old_key := mh_delete(set, key, hash_cstr_t, equal_cstr_t)
-  if k == MH_TOMBSTONE {return 0}
-  ret_val := mp.values[k]
-  if k != (cast(^MapHash)set).n_keys {
-    mp.values[k] = mp.values[(cast(^MapHash)set).n_keys]
-  }
-  if key_alloc != nil {
-    key_alloc^ = old_key
-  }
-  return ret_val
+  vals := &mp.values
+  return map_del_generic(&mp.set, vals, key, key_alloc, hash_cstr_t, equal_cstr_t)
 }
 
 /// ─── int exports (set + maps) ───
@@ -859,58 +774,28 @@ mh_put_int :: proc "c" (set: ^Set_int, key: c.int, new: ^MHPutStatus) -> u32 {
 }
 
 @(export)
-mh_delete_int :: proc "c" (set: ^Set_int, key: c.int) -> u32 {
-  k, _ := mh_delete(set, key, hash_int, equal_int); return k
+mh_delete_int :: proc "c" (set: ^Set_int, key: ^c.int) -> u32 {
+  k, _ := mh_delete(set, key^, hash_int, equal_int); return k
 }
 
 @(export)
 map_put_ref_int_ptr_t :: proc "c" (
-  mp: ^Map_int_ptr_t,
-  key: c.int,
-  key_alloc: ^^c.int,
-  new_item: ^bool,
+  mp: ^Map_int_ptr_t, key: c.int, key_alloc: ^^c.int, new_item: ^bool,
 ) -> ^rawptr {
-  s := (^Set_int)(&mp.set)
-  st: MHPutStatus
-  k := mh_put(s, key, &st, hash_int, equal_int, size_of(c.int))
-  if st == .kMHNewKeyRealloc {
-    mp.values = ([^]rawptr)(_xrealloc(rawptr(mp.values), c.size_t(s.h.keys_capacity) * size_of(rawptr)))
-  }
-  if st != .kMHExisting {
-    if new_item != nil {new_item^ = true}
-    mp.values[k] = {}
-  } else {
-    if new_item != nil {new_item^ = false}
-  }
-  if key_alloc != nil {
-    key_alloc^ = &s.keys[k]
-  }
-  return &mp.values[k]
+  vals := &mp.values
+  return map_put_ref_generic(&mp.set, vals, key, key_alloc, new_item, hash_int, equal_int)
 }
 
 @(export)
 map_ref_int_ptr_t :: proc "c" (mp: ^Map_int_ptr_t, key: c.int, key_alloc: ^^c.int) -> ^rawptr {
-  k := mh_get((^Set_int)(&mp.set), key, hash_int, equal_int)
-  if k == MH_TOMBSTONE {return nil}
-  if key_alloc != nil {
-    key_alloc^ = &mp.set.keys[k]
-  }
-  return &mp.values[k]
+  vals := &mp.values
+  return map_ref_generic(&mp.set, vals, key, key_alloc, hash_int, equal_int)
 }
 
 @(export)
 map_del_int_ptr_t :: proc "c" (mp: ^Map_int_ptr_t, key: c.int, key_alloc: ^c.int) -> rawptr {
-  set := (^Set_int)(&mp.set)
-  k, old_key := mh_delete(set, key, hash_int, equal_int)
-  if k == MH_TOMBSTONE {return nil}
-  ret_val := mp.values[k]
-  if k != (cast(^MapHash)set).n_keys {
-    mp.values[k] = mp.values[(cast(^MapHash)set).n_keys]
-  }
-  if key_alloc != nil {
-    key_alloc^ = old_key
-  }
-  return ret_val
+  vals := &mp.values
+  return map_del_generic(&mp.set, vals, key, key_alloc, hash_int, equal_int)
 }
 
 /// ─── ptr_t exports (set + maps) ───
@@ -936,58 +821,28 @@ mh_put_ptr_t :: proc "c" (set: ^Set_ptr_t, key: rawptr, new: ^MHPutStatus) -> u3
 }
 
 @(export)
-mh_delete_ptr_t :: proc "c" (set: ^Set_ptr_t, key: rawptr) -> u32 {
-  k, _ := mh_delete(set, key, hash_ptr_t, equal_ptr_t); return k
+mh_delete_ptr_t :: proc "c" (set: ^Set_ptr_t, key: ^rawptr) -> u32 {
+  k, _ := mh_delete(set, key^, hash_ptr_t, equal_ptr_t); return k
 }
 
 @(export)
 map_put_ref_ptr_t_ptr_t :: proc "c" (
-  mp: ^Map_ptr_t_ptr_t,
-  key: rawptr,
-  key_alloc: ^^rawptr,
-  new_item: ^bool,
+  mp: ^Map_ptr_t_ptr_t, key: rawptr, key_alloc: ^^rawptr, new_item: ^bool,
 ) -> ^rawptr {
-  s := (^Set_ptr_t)(&mp.set)
-  st: MHPutStatus
-  k := mh_put(s, key, &st, hash_ptr_t, equal_ptr_t, size_of(rawptr))
-  if st == .kMHNewKeyRealloc {
-    mp.values = ([^]rawptr)(_xrealloc(rawptr(mp.values), c.size_t(s.h.keys_capacity) * size_of(rawptr)))
-  }
-  if st != .kMHExisting {
-    if new_item != nil {new_item^ = true}
-    mp.values[k] = {}
-  } else {
-    if new_item != nil {new_item^ = false}
-  }
-  if key_alloc != nil {
-    key_alloc^ = &s.keys[k]
-  }
-  return &mp.values[k]
+  vals := &mp.values
+  return map_put_ref_generic(&mp.set, vals, key, key_alloc, new_item, hash_ptr_t, equal_ptr_t)
 }
 
 @(export)
 map_ref_ptr_t_ptr_t :: proc "c" (mp: ^Map_ptr_t_ptr_t, key: rawptr, key_alloc: ^^rawptr) -> ^rawptr {
-  k := mh_get((^Set_ptr_t)(&mp.set), key, hash_ptr_t, equal_ptr_t)
-  if k == MH_TOMBSTONE {return nil}
-  if key_alloc != nil {
-    key_alloc^ = &mp.set.keys[k]
-  }
-  return &mp.values[k]
+  vals := &mp.values
+  return map_ref_generic(&mp.set, vals, key, key_alloc, hash_ptr_t, equal_ptr_t)
 }
 
 @(export)
 map_del_ptr_t_ptr_t :: proc "c" (mp: ^Map_ptr_t_ptr_t, key: rawptr, key_alloc: ^rawptr) -> rawptr {
-  set := (^Set_ptr_t)(&mp.set)
-  k, old_key := mh_delete(set, key, hash_ptr_t, equal_ptr_t)
-  if k == MH_TOMBSTONE {return nil}
-  ret_val := mp.values[k]
-  if k != (cast(^MapHash)set).n_keys {
-    mp.values[k] = mp.values[(cast(^MapHash)set).n_keys]
-  }
-  if key_alloc != nil {
-    key_alloc^ = old_key
-  }
-  return ret_val
+  vals := &mp.values
+  return map_del_generic(&mp.set, vals, key, key_alloc, hash_ptr_t, equal_ptr_t)
 }
 
 /// ─── ColorKey exports (set + map) ───
@@ -1013,66 +868,28 @@ mh_put_ColorKey :: proc "c" (set: ^Set_ColorKey, key: ColorKey, new: ^MHPutStatu
 }
 
 @(export)
-mh_delete_ColorKey :: proc "c" (set: ^Set_ColorKey, key: ColorKey) -> u32 {
-  k, _ := mh_delete(set, key, hash_ColorKey, equal_ColorKey); return k
+mh_delete_ColorKey :: proc "c" (set: ^Set_ColorKey, key: ^ColorKey) -> u32 {
+  k, _ := mh_delete(set, key^, hash_ColorKey, equal_ColorKey); return k
 }
 
 @(export)
 map_put_ref_ColorKey_ColorItem :: proc "c" (
-  mp: ^Map_ColorKey_ColorItem,
-  key: ColorKey,
-  key_alloc: ^^ColorKey,
-  new_item: ^bool,
+  mp: ^Map_ColorKey_ColorItem, key: ColorKey, key_alloc: ^^ColorKey, new_item: ^bool,
 ) -> ^ColorItem {
-  s := (^Set_ColorKey)(&mp.set)
-  st: MHPutStatus
-  k := mh_put(s, key, &st, hash_ColorKey, equal_ColorKey, size_of(ColorKey))
-  if st == .kMHNewKeyRealloc {
-    mp.values = ([^]ColorItem)(_xrealloc(rawptr(mp.values), c.size_t(s.h.keys_capacity) * size_of(ColorItem)))
-  }
-  if st != .kMHExisting {
-    if new_item != nil {new_item^ = true}
-    mp.values[k] = {}
-  } else {
-    if new_item != nil {new_item^ = false}
-  }
-  if key_alloc != nil {
-    key_alloc^ = &s.keys[k]
-  }
-  return &mp.values[k]
+  vals := &mp.values
+  return map_put_ref_generic(&mp.set, vals, key, key_alloc, new_item, hash_ColorKey, equal_ColorKey)
 }
 
 @(export)
-map_ref_ColorKey_ColorItem :: proc "c" (
-  mp: ^Map_ColorKey_ColorItem,
-  key: ColorKey,
-  key_alloc: ^^ColorKey,
-) -> ^ColorItem {
-  k := mh_get((^Set_ColorKey)(&mp.set), key, hash_ColorKey, equal_ColorKey)
-  if k == MH_TOMBSTONE {return nil}
-  if key_alloc != nil {
-    key_alloc^ = &mp.set.keys[k]
-  }
-  return &mp.values[k]
+map_ref_ColorKey_ColorItem :: proc "c" (mp: ^Map_ColorKey_ColorItem, key: ColorKey, key_alloc: ^^ColorKey) -> ^ColorItem {
+  vals := &mp.values
+  return map_ref_generic(&mp.set, vals, key, key_alloc, hash_ColorKey, equal_ColorKey)
 }
 
 @(export)
-map_del_ColorKey_ColorItem :: proc "c" (
-  mp: ^Map_ColorKey_ColorItem,
-  key: ColorKey,
-  key_alloc: ^ColorKey,
-) -> ColorItem {
-  set := (^Set_ColorKey)(&mp.set)
-  k, old_key := mh_delete(set, key, hash_ColorKey, equal_ColorKey)
-  if k == MH_TOMBSTONE {return {}}
-  ret_val := mp.values[k]
-  if k != (cast(^MapHash)set).n_keys {
-    mp.values[k] = mp.values[(cast(^MapHash)set).n_keys]
-  }
-  if key_alloc != nil {
-    key_alloc^ = old_key
-  }
-  return ret_val
+map_del_ColorKey_ColorItem :: proc "c" (mp: ^Map_ColorKey_ColorItem, key: ColorKey, key_alloc: ^ColorKey) -> ColorItem {
+  vals := &mp.values
+  return map_del_generic(&mp.set, vals, key, key_alloc, hash_ColorKey, equal_ColorKey)
 }
 
 /// ─── String exports (set + map) ───
@@ -1098,60 +915,30 @@ mh_put_String :: proc "c" (set: ^Set_String, key: String, new: ^MHPutStatus) -> 
 }
 
 @(export)
-mh_delete_String :: proc "c" (set: ^Set_String, key: String) -> u32 {
-  k, _ := mh_delete(set, key, hash_String, equal_String); return k
+mh_delete_String :: proc "c" (set: ^Set_String, key: ^String) -> u32 {
+  k, _ := mh_delete(set, key^, hash_String, equal_String); return k
 }
 
 /// ─── String maps ───
 
 @(export)
 map_put_ref_String_int :: proc "c" (
-  mp: ^Map_String_int,
-  key: String,
-  key_alloc: ^^String,
-  new_item: ^bool,
+  mp: ^Map_String_int, key: String, key_alloc: ^^String, new_item: ^bool,
 ) -> ^c.int {
-  s := (^Set_String)(&mp.set)
-  st: MHPutStatus
-  k := mh_put(s, key, &st, hash_String, equal_String, size_of(String))
-  if st == .kMHNewKeyRealloc {
-    mp.values = ([^]c.int)(_xrealloc(rawptr(mp.values), c.size_t(s.h.keys_capacity) * size_of(c.int)))
-  }
-  if st != .kMHExisting {
-    if new_item != nil {new_item^ = true}
-    mp.values[k] = {}
-  } else {
-    if new_item != nil {new_item^ = false}
-  }
-  if key_alloc != nil {
-    key_alloc^ = &s.keys[k]
-  }
-  return &mp.values[k]
+  vals := &mp.values
+  return map_put_ref_generic(&mp.set, vals, key, key_alloc, new_item, hash_String, equal_String)
 }
 
 @(export)
 map_ref_String_int :: proc "c" (mp: ^Map_String_int, key: String, key_alloc: ^^String) -> ^c.int {
-  k := mh_get((^Set_String)(&mp.set), key, hash_String, equal_String)
-  if k == MH_TOMBSTONE {return nil}
-  if key_alloc != nil {
-    key_alloc^ = &mp.set.keys[k]
-  }
-  return &mp.values[k]
+  vals := &mp.values
+  return map_ref_generic(&mp.set, vals, key, key_alloc, hash_String, equal_String)
 }
 
 @(export)
 map_del_String_int :: proc "c" (mp: ^Map_String_int, key: String, key_alloc: ^String) -> c.int {
-  set := (^Set_String)(&mp.set)
-  k, old_key := mh_delete(set, key, hash_String, equal_String)
-  if k == MH_TOMBSTONE {return 0}
-  ret_val := mp.values[k]
-  if k != (cast(^MapHash)set).n_keys {
-    mp.values[k] = mp.values[(cast(^MapHash)set).n_keys]
-  }
-  if key_alloc != nil {
-    key_alloc^ = old_key
-  }
-  return ret_val
+  vals := &mp.values
+  return map_del_generic(&mp.set, vals, key, key_alloc, hash_String, equal_String)
 }
 
 /// ─── pmap_del2 ───
@@ -1169,152 +956,62 @@ pmap_del2 :: proc "c" (mp: ^PMap_cstr_t, key: cstring) {
 
 @(export)
 map_put_ref_int_String :: proc "c" (
-  mp: ^Map_int_String,
-  key: c.int,
-  key_alloc: ^^c.int,
-  new_item: ^bool,
+  mp: ^Map_int_String, key: c.int, key_alloc: ^^c.int, new_item: ^bool,
 ) -> ^String {
-  s := (^Set_int)(&mp.set)
-  st: MHPutStatus
-  k := mh_put(s, key, &st, hash_int, equal_int, size_of(c.int))
-  if st == .kMHNewKeyRealloc {
-    mp.values = ([^]String)(_xrealloc(rawptr(mp.values), c.size_t(s.h.keys_capacity) * size_of(String)))
-  }
-  if st != .kMHExisting {
-    if new_item != nil {new_item^ = true}
-    mp.values[k] = {}
-  } else {
-    if new_item != nil {new_item^ = false}
-  }
-  if key_alloc != nil {
-    key_alloc^ = &s.keys[k]
-  }
-  return &mp.values[k]
+  vals := &mp.values
+  return map_put_ref_generic(&mp.set, vals, key, key_alloc, new_item, hash_int, equal_int)
 }
 
 @(export)
 map_ref_int_String :: proc "c" (mp: ^Map_int_String, key: c.int, key_alloc: ^^c.int) -> ^String {
-  k := mh_get((^Set_int)(&mp.set), key, hash_int, equal_int)
-  if k == MH_TOMBSTONE {return nil}
-  if key_alloc != nil {
-    key_alloc^ = &mp.set.keys[k]
-  }
-  return &mp.values[k]
+  vals := &mp.values
+  return map_ref_generic(&mp.set, vals, key, key_alloc, hash_int, equal_int)
 }
 
 @(export)
 map_del_int_String :: proc "c" (mp: ^Map_int_String, key: c.int, key_alloc: ^c.int) -> String {
-  set := (^Set_int)(&mp.set)
-  k, old_key := mh_delete(set, key, hash_int, equal_int)
-  if k == MH_TOMBSTONE {return {}}
-  ret_val := mp.values[k]
-  if k != (cast(^MapHash)set).n_keys {
-    mp.values[k] = mp.values[(cast(^MapHash)set).n_keys]
-  }
-  if key_alloc != nil {
-    key_alloc^ = old_key
-  }
-  return ret_val
+  vals := &mp.values
+  return map_del_generic(&mp.set, vals, key, key_alloc, hash_int, equal_int)
 }
 
 @(export)
 map_put_ref_int_StcClick :: proc "c" (
-  mp: ^Map_int_StcClick,
-  key: c.int,
-  key_alloc: ^^c.int,
-  new_item: ^bool,
+  mp: ^Map_int_StcClick, key: c.int, key_alloc: ^^c.int, new_item: ^bool,
 ) -> ^StcClick {
-  s := (^Set_int)(&mp.set)
-  st: MHPutStatus
-  k := mh_put(s, key, &st, hash_int, equal_int, size_of(c.int))
-  if st == .kMHNewKeyRealloc {
-    mp.values = ([^]StcClick)(_xrealloc(rawptr(mp.values), c.size_t(s.h.keys_capacity) * size_of(StcClick)))
-  }
-  if st != .kMHExisting {
-    if new_item != nil {new_item^ = true}
-    mp.values[k] = {}
-  } else {
-    if new_item != nil {new_item^ = false}
-  }
-  if key_alloc != nil {
-    key_alloc^ = &s.keys[k]
-  }
-  return &mp.values[k]
+  vals := &mp.values
+  return map_put_ref_generic(&mp.set, vals, key, key_alloc, new_item, hash_int, equal_int)
 }
 
 @(export)
 map_ref_int_StcClick :: proc "c" (mp: ^Map_int_StcClick, key: c.int, key_alloc: ^^c.int) -> ^StcClick {
-  k := mh_get((^Set_int)(&mp.set), key, hash_int, equal_int)
-  if k == MH_TOMBSTONE {return nil}
-  if key_alloc != nil {
-    key_alloc^ = &mp.set.keys[k]
-  }
-  return &mp.values[k]
+  vals := &mp.values
+  return map_ref_generic(&mp.set, vals, key, key_alloc, hash_int, equal_int)
 }
 
 @(export)
 map_del_int_StcClick :: proc "c" (mp: ^Map_int_StcClick, key: c.int, key_alloc: ^c.int) -> StcClick {
-  set := (^Set_int)(&mp.set)
-  k, old_key := mh_delete(set, key, hash_int, equal_int)
-  if k == MH_TOMBSTONE {return {}}
-  ret_val := mp.values[k]
-  if k != (cast(^MapHash)set).n_keys {
-    mp.values[k] = mp.values[(cast(^MapHash)set).n_keys]
-  }
-  if key_alloc != nil {
-    key_alloc^ = old_key
-  }
-  return ret_val
+  vals := &mp.values
+  return map_del_generic(&mp.set, vals, key, key_alloc, hash_int, equal_int)
 }
 
 @(export)
 map_put_ref_int_StcClicks :: proc "c" (
-  mp: ^Map_int_StcClicks,
-  key: c.int,
-  key_alloc: ^^c.int,
-  new_item: ^bool,
+  mp: ^Map_int_StcClicks, key: c.int, key_alloc: ^^c.int, new_item: ^bool,
 ) -> ^StcClicks {
-  s := (^Set_int)(&mp.set)
-  st: MHPutStatus
-  k := mh_put(s, key, &st, hash_int, equal_int, size_of(c.int))
-  if st == .kMHNewKeyRealloc {
-    mp.values = ([^]StcClicks)(_xrealloc(rawptr(mp.values), c.size_t(s.h.keys_capacity) * size_of(StcClicks)))
-  }
-  if st != .kMHExisting {
-    if new_item != nil {new_item^ = true}
-    mp.values[k] = {}
-  } else {
-    if new_item != nil {new_item^ = false}
-  }
-  if key_alloc != nil {
-    key_alloc^ = &s.keys[k]
-  }
-  return &mp.values[k]
+  vals := &mp.values
+  return map_put_ref_generic(&mp.set, vals, key, key_alloc, new_item, hash_int, equal_int)
 }
 
 @(export)
 map_ref_int_StcClicks :: proc "c" (mp: ^Map_int_StcClicks, key: c.int, key_alloc: ^^c.int) -> ^StcClicks {
-  k := mh_get((^Set_int)(&mp.set), key, hash_int, equal_int)
-  if k == MH_TOMBSTONE {return nil}
-  if key_alloc != nil {
-    key_alloc^ = &mp.set.keys[k]
-  }
-  return &mp.values[k]
+  vals := &mp.values
+  return map_ref_generic(&mp.set, vals, key, key_alloc, hash_int, equal_int)
 }
 
 @(export)
 map_del_int_StcClicks :: proc "c" (mp: ^Map_int_StcClicks, key: c.int, key_alloc: ^c.int) -> StcClicks {
-  set := (^Set_int)(&mp.set)
-  k, old_key := mh_delete(set, key, hash_int, equal_int)
-  if k == MH_TOMBSTONE {return {}}
-  ret_val := mp.values[k]
-  if k != (cast(^MapHash)set).n_keys {
-    mp.values[k] = mp.values[(cast(^MapHash)set).n_keys]
-  }
-  if key_alloc != nil {
-    key_alloc^ = old_key
-  }
-  return ret_val
+  vals := &mp.values
+  return map_del_generic(&mp.set, vals, key, key_alloc, hash_int, equal_int)
 }
 
 /// ─── int64_t exports (set + maps) ───
@@ -1340,108 +1037,48 @@ mh_put_int64_t :: proc "c" (set: ^Set_int64_t, key: i64, new: ^MHPutStatus) -> u
 }
 
 @(export)
-mh_delete_int64_t :: proc "c" (set: ^Set_int64_t, key: i64) -> u32 {
-  k, _ := mh_delete(set, key, hash_int64_t, equal_int64_t); return k
+mh_delete_int64_t :: proc "c" (set: ^Set_int64_t, key: ^i64) -> u32 {
+  k, _ := mh_delete(set, key^, hash_int64_t, equal_int64_t); return k
 }
 
 @(export)
 map_put_ref_int64_t_int64_t :: proc "c" (
-  mp: ^Map_int64_t_int64_t,
-  key: i64,
-  key_alloc: ^^i64,
-  new_item: ^bool,
+  mp: ^Map_int64_t_int64_t, key: i64, key_alloc: ^^i64, new_item: ^bool,
 ) -> ^i64 {
-  s := (^Set_int64_t)(&mp.set)
-  st: MHPutStatus
-  k := mh_put(s, key, &st, hash_int64_t, equal_int64_t, size_of(i64))
-  if st == .kMHNewKeyRealloc {
-    mp.values = ([^]i64)(_xrealloc(rawptr(mp.values), c.size_t(s.h.keys_capacity) * size_of(i64)))
-  }
-  if st != .kMHExisting {
-    if new_item != nil {new_item^ = true}
-    mp.values[k] = {}
-  } else {
-    if new_item != nil {new_item^ = false}
-  }
-  if key_alloc != nil {
-    key_alloc^ = &s.keys[k]
-  }
-  return &mp.values[k]
+  vals := &mp.values
+  return map_put_ref_generic(&mp.set, vals, key, key_alloc, new_item, hash_int64_t, equal_int64_t)
 }
 
 @(export)
 map_ref_int64_t_int64_t :: proc "c" (mp: ^Map_int64_t_int64_t, key: i64, key_alloc: ^^i64) -> ^i64 {
-  k := mh_get((^Set_int64_t)(&mp.set), key, hash_int64_t, equal_int64_t)
-  if k == MH_TOMBSTONE {return nil}
-  if key_alloc != nil {
-    key_alloc^ = &mp.set.keys[k]
-  }
-  return &mp.values[k]
+  vals := &mp.values
+  return map_ref_generic(&mp.set, vals, key, key_alloc, hash_int64_t, equal_int64_t)
 }
 
 @(export)
 map_del_int64_t_int64_t :: proc "c" (mp: ^Map_int64_t_int64_t, key: i64, key_alloc: ^i64) -> i64 {
-  set := (^Set_int64_t)(&mp.set)
-  k, old_key := mh_delete(set, key, hash_int64_t, equal_int64_t)
-  if k == MH_TOMBSTONE {return 0}
-  ret_val := mp.values[k]
-  if k != (cast(^MapHash)set).n_keys {
-    mp.values[k] = mp.values[(cast(^MapHash)set).n_keys]
-  }
-  if key_alloc != nil {
-    key_alloc^ = old_key
-  }
-  return ret_val
+  vals := &mp.values
+  return map_del_generic(&mp.set, vals, key, key_alloc, hash_int64_t, equal_int64_t)
 }
 
 @(export)
 map_put_ref_int64_t_ptr_t :: proc "c" (
-  mp: ^Map_int64_t_ptr_t,
-  key: i64,
-  key_alloc: ^^i64,
-  new_item: ^bool,
+  mp: ^Map_int64_t_ptr_t, key: i64, key_alloc: ^^i64, new_item: ^bool,
 ) -> ^rawptr {
-  s := (^Set_int64_t)(&mp.set)
-  st: MHPutStatus
-  k := mh_put(s, key, &st, hash_int64_t, equal_int64_t, size_of(i64))
-  if st == .kMHNewKeyRealloc {
-    mp.values = ([^]rawptr)(_xrealloc(rawptr(mp.values), c.size_t(s.h.keys_capacity) * size_of(rawptr)))
-  }
-  if st != .kMHExisting {
-    if new_item != nil {new_item^ = true}
-    mp.values[k] = {}
-  } else {
-    if new_item != nil {new_item^ = false}
-  }
-  if key_alloc != nil {
-    key_alloc^ = &s.keys[k]
-  }
-  return &mp.values[k]
+  vals := &mp.values
+  return map_put_ref_generic(&mp.set, vals, key, key_alloc, new_item, hash_int64_t, equal_int64_t)
 }
 
 @(export)
 map_ref_int64_t_ptr_t :: proc "c" (mp: ^Map_int64_t_ptr_t, key: i64, key_alloc: ^^i64) -> ^rawptr {
-  k := mh_get((^Set_int64_t)(&mp.set), key, hash_int64_t, equal_int64_t)
-  if k == MH_TOMBSTONE {return nil}
-  if key_alloc != nil {
-    key_alloc^ = &mp.set.keys[k]
-  }
-  return &mp.values[k]
+  vals := &mp.values
+  return map_ref_generic(&mp.set, vals, key, key_alloc, hash_int64_t, equal_int64_t)
 }
 
 @(export)
 map_del_int64_t_ptr_t :: proc "c" (mp: ^Map_int64_t_ptr_t, key: i64, key_alloc: ^i64) -> rawptr {
-  set := (^Set_int64_t)(&mp.set)
-  k, old_key := mh_delete(set, key, hash_int64_t, equal_int64_t)
-  if k == MH_TOMBSTONE {return nil}
-  ret_val := mp.values[k]
-  if k != (cast(^MapHash)set).n_keys {
-    mp.values[k] = mp.values[(cast(^MapHash)set).n_keys]
-  }
-  if key_alloc != nil {
-    key_alloc^ = old_key
-  }
-  return ret_val
+  vals := &mp.values
+  return map_del_generic(&mp.set, vals, key, key_alloc, hash_int64_t, equal_int64_t)
 }
 
 /// ─── uint32_t exports (set + maps) ───
@@ -1467,108 +1104,48 @@ mh_put_uint32_t :: proc "c" (set: ^Set_uint32_t, key: u32, new: ^MHPutStatus) ->
 }
 
 @(export)
-mh_delete_uint32_t :: proc "c" (set: ^Set_uint32_t, key: u32) -> u32 {
-  k, _ := mh_delete(set, key, hash_uint32_t, equal_uint32_t); return k
+mh_delete_uint32_t :: proc "c" (set: ^Set_uint32_t, key: ^u32) -> u32 {
+  k, _ := mh_delete(set, key^, hash_uint32_t, equal_uint32_t); return k
 }
 
 @(export)
 map_put_ref_uint32_t_ptr_t :: proc "c" (
-  mp: ^Map_uint32_t_ptr_t,
-  key: u32,
-  key_alloc: ^^u32,
-  new_item: ^bool,
+  mp: ^Map_uint32_t_ptr_t, key: u32, key_alloc: ^^u32, new_item: ^bool,
 ) -> ^rawptr {
-  s := (^Set_uint32_t)(&mp.set)
-  st: MHPutStatus
-  k := mh_put(s, key, &st, hash_uint32_t, equal_uint32_t, size_of(u32))
-  if st == .kMHNewKeyRealloc {
-    mp.values = ([^]rawptr)(_xrealloc(rawptr(mp.values), c.size_t(s.h.keys_capacity) * size_of(rawptr)))
-  }
-  if st != .kMHExisting {
-    if new_item != nil {new_item^ = true}
-    mp.values[k] = {}
-  } else {
-    if new_item != nil {new_item^ = false}
-  }
-  if key_alloc != nil {
-    key_alloc^ = &s.keys[k]
-  }
-  return &mp.values[k]
+  vals := &mp.values
+  return map_put_ref_generic(&mp.set, vals, key, key_alloc, new_item, hash_uint32_t, equal_uint32_t)
 }
 
 @(export)
 map_ref_uint32_t_ptr_t :: proc "c" (mp: ^Map_uint32_t_ptr_t, key: u32, key_alloc: ^^u32) -> ^rawptr {
-  k := mh_get((^Set_uint32_t)(&mp.set), key, hash_uint32_t, equal_uint32_t)
-  if k == MH_TOMBSTONE {return nil}
-  if key_alloc != nil {
-    key_alloc^ = &mp.set.keys[k]
-  }
-  return &mp.values[k]
+  vals := &mp.values
+  return map_ref_generic(&mp.set, vals, key, key_alloc, hash_uint32_t, equal_uint32_t)
 }
 
 @(export)
 map_del_uint32_t_ptr_t :: proc "c" (mp: ^Map_uint32_t_ptr_t, key: u32, key_alloc: ^u32) -> rawptr {
-  set := (^Set_uint32_t)(&mp.set)
-  k, old_key := mh_delete(set, key, hash_uint32_t, equal_uint32_t)
-  if k == MH_TOMBSTONE {return nil}
-  ret_val := mp.values[k]
-  if k != (cast(^MapHash)set).n_keys {
-    mp.values[k] = mp.values[(cast(^MapHash)set).n_keys]
-  }
-  if key_alloc != nil {
-    key_alloc^ = old_key
-  }
-  return ret_val
+  vals := &mp.values
+  return map_del_generic(&mp.set, vals, key, key_alloc, hash_uint32_t, equal_uint32_t)
 }
 
 @(export)
 map_put_ref_uint32_t_uint32_t :: proc "c" (
-  mp: ^Map_uint32_t_uint32_t,
-  key: u32,
-  key_alloc: ^^u32,
-  new_item: ^bool,
+  mp: ^Map_uint32_t_uint32_t, key: u32, key_alloc: ^^u32, new_item: ^bool,
 ) -> ^u32 {
-  s := (^Set_uint32_t)(&mp.set)
-  st: MHPutStatus
-  k := mh_put(s, key, &st, hash_uint32_t, equal_uint32_t, size_of(u32))
-  if st == .kMHNewKeyRealloc {
-    mp.values = ([^]u32)(_xrealloc(rawptr(mp.values), c.size_t(s.h.keys_capacity) * size_of(u32)))
-  }
-  if st != .kMHExisting {
-    if new_item != nil {new_item^ = true}
-    mp.values[k] = {}
-  } else {
-    if new_item != nil {new_item^ = false}
-  }
-  if key_alloc != nil {
-    key_alloc^ = &s.keys[k]
-  }
-  return &mp.values[k]
+  vals := &mp.values
+  return map_put_ref_generic(&mp.set, vals, key, key_alloc, new_item, hash_uint32_t, equal_uint32_t)
 }
 
 @(export)
 map_ref_uint32_t_uint32_t :: proc "c" (mp: ^Map_uint32_t_uint32_t, key: u32, key_alloc: ^^u32) -> ^u32 {
-  k := mh_get((^Set_uint32_t)(&mp.set), key, hash_uint32_t, equal_uint32_t)
-  if k == MH_TOMBSTONE {return nil}
-  if key_alloc != nil {
-    key_alloc^ = &mp.set.keys[k]
-  }
-  return &mp.values[k]
+  vals := &mp.values
+  return map_ref_generic(&mp.set, vals, key, key_alloc, hash_uint32_t, equal_uint32_t)
 }
 
 @(export)
 map_del_uint32_t_uint32_t :: proc "c" (mp: ^Map_uint32_t_uint32_t, key: u32, key_alloc: ^u32) -> u32 {
-  set := (^Set_uint32_t)(&mp.set)
-  k, old_key := mh_delete(set, key, hash_uint32_t, equal_uint32_t)
-  if k == MH_TOMBSTONE {return 0}
-  ret_val := mp.values[k]
-  if k != (cast(^MapHash)set).n_keys {
-    mp.values[k] = mp.values[(cast(^MapHash)set).n_keys]
-  }
-  if key_alloc != nil {
-    key_alloc^ = old_key
-  }
-  return ret_val
+  vals := &mp.values
+  return map_del_generic(&mp.set, vals, key, key_alloc, hash_uint32_t, equal_uint32_t)
 }
 
 /// ─── path_t exports (set only) ───
@@ -1594,6 +1171,6 @@ mh_put_path_t :: proc "c" (set: ^Set_path_t, key: cstring, new: ^MHPutStatus) ->
 }
 
 @(export)
-mh_delete_path_t :: proc "c" (set: ^Set_path_t, key: cstring) -> u32 {
-  k, _ := mh_delete(set, key, hash_path_t, equal_path_t); return k
+mh_delete_path_t :: proc "c" (set: ^Set_path_t, key: ^cstring) -> u32 {
+  k, _ := mh_delete(set, key^, hash_path_t, equal_path_t); return k
 }

@@ -32,9 +32,9 @@
 #include "nvim/ui_client.h"
 
 /// Cached location of the expanded log file path decided by log_path_init().
-static char log_file_path[MAXPATHL + 1] = { 0 };
+extern char log_file_path[MAXPATHL + 1];
 
-static bool did_log_init = false;
+extern bool did_log_init;
 static uv_mutex_t mutex;
 
 #include "log.c.generated.h"
@@ -43,79 +43,12 @@ static uv_mutex_t mutex;
 # include <execinfo.h>
 #endif
 
-static bool log_try_create(char *fname)
-{
-  if (fname == NULL || fname[0] == NUL) {
-    return false;
-  }
-  FILE *log_file = fopen(fname, "a");
-  if (log_file == NULL) {
-    return false;
-  }
-  fclose(log_file);
-  return true;
-}
-
-/// Initializes the log file path and sets $NVIM_LOG_FILE if empty.
-///
-/// Tries $NVIM_LOG_FILE, or falls back to $XDG_STATE_HOME/nvim/logs/nvim.log.
-/// Failed initialization indicates either a bug in expand_env() or both
-/// $NVIM_LOG_FILE and $HOME environment variables are undefined.
-static void log_path_init(void)
-{
-  size_t size = sizeof(log_file_path);
-  expand_env("$" ENV_LOGFILE, log_file_path, (int)size - 1);
-  bool user_set = !strequal("$" ENV_LOGFILE, log_file_path);
-
-  if (!user_set
-      || log_file_path[0] == NUL
-      || os_isdir(log_file_path)
-      || !log_try_create(log_file_path)) {
-    if (user_set) {  // User-provided $NVIM_LOG_FILE.
-      // Used by _core/log.lua:check_log_file to validate logfile on startup.
-      os_setenv(ENV_LOGFILE_WANT, log_file_path, true);
-    }
-    // Make $XDG_STATE_HOME/logs if it does not exist.
-    char *loghome = concat_fnames_realloc(get_xdg_home(kXDGStateHome), "logs", true);
-    char *failed_dir = NULL;
-    int log_dir_failure = 0;
-    if (!os_isdir(loghome)) {
-      log_dir_failure = os_mkdir_recurse(loghome, 0700, &failed_dir, NULL);
-    }
-    XFREE_CLEAR(loghome);
-    // Invalid $NVIM_LOG_FILE or failed to expand; fall back to default.
-    char *defaultpath = stdpaths_user_state_subpath("logs/nvim.log", 0, true);
-    size_t len = xstrlcpy(log_file_path, defaultpath, size);
-    xfree(defaultpath);
-    // Fall back to $CWD/nvim.log
-    if (len >= size || !log_try_create(log_file_path)) {
-      if (!user_set) {  // Default fallback path.
-        // Used by _core/log.lua:check_log_file to validate logfile on startup.
-        os_setenv(ENV_LOGFILE_WANT, log_file_path, true);
-      }
-      len = xstrlcpy(log_file_path, "nvim.log", size);
-    }
-    // Fall back to stderr
-    if (len >= size || !log_try_create(log_file_path)) {
-      log_file_path[0] = NUL;
-      return;
-    }
-    os_setenv(ENV_LOGFILE, log_file_path, true);
-    if (log_dir_failure) {
-      WLOG("Failed to create directory %s for writing logs: %s",
-           failed_dir, os_strerror(log_dir_failure));
-    }
-    XFREE_CLEAR(failed_dir);
-  }
-}
-
-void log_init(void)
+void log_mutex_init(void)
 {
   uv_mutex_init_recursive(&mutex);
-  // AFTER init_homedir ("~", XDG) and set_init_1 (env vars). 22b52dd462e5 #11501
-  log_path_init();
-  did_log_init = true;
 }
+
+// log_init, log_path_init, log_try_create — PORTED to Odin (src/odin/log.odin)
 
 void log_lock(void)
 {

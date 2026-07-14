@@ -22,6 +22,9 @@
 #endif
 // uncrustify:on
 
+void log_init(void);
+void log_mutex_init(void);
+
 #define LOGLVL_DBG 1
 #define LOGLVL_INF 2
 #define LOGLVL_WRN 3

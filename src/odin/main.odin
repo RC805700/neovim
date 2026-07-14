@@ -9,6 +9,7 @@ import "core:os"
 import "core:path/filepath"
 import "core:sort"
 import "core:strings"
+import "core:sys/posix"
 import "core:terminal"
 
 foreign import nvim "../../build/lib/libnvim.a"
@@ -50,6 +51,32 @@ HlEntry :: struct {
   id1:   c.int,
   id2:   c.int,
   winid: c.int,
+}
+
+@(export)
+attr_entries: Set_HlEntry
+
+HLATTRS_INIT :: HlAttrs {
+  rgb_ae_attr    = 0,
+  cterm_ae_attr  = 0,
+  rgb_fg_color   = -1,
+  rgb_bg_color   = -1,
+  rgb_sp_color   = -1,
+  cterm_fg_color = 0,
+  cterm_bg_color = 0,
+  hl_blend       = -1,
+  url            = -1,
+  font           = -1,
+}
+
+@(export)
+highlight_init :: proc "c" () {
+  dummy := HlEntry {
+    attr = HLATTRS_INIT,
+    kind = .kHlInvalid,
+  }
+  status: MHPutStatus
+  mh_put_HlEntry(&attr_entries, dummy, &status)
 }
 
 ColorKey :: struct {
@@ -167,9 +194,9 @@ foreign nvim {
   exestack: Garray
   ga_grow :: proc(gap: ^Garray, n: c.int) ---
   eval_init :: proc() ---
-  os_realtime :: proc() -> i64 ---
+  // os_realtime — PORTED to Odin (time.odin)
   runtime_init :: proc() ---
-  highlight_init :: proc() ---
+  // highlight_init — PORTED to Odin
   init_locale :: proc() ---
   set_init_tablocal :: proc() ---
   win_alloc_first :: proc() ---
@@ -177,7 +204,8 @@ foreign nvim {
   startup_set_homedir :: proc(path: cstring) ---
   // init_homedir           — PORTED to Odin (uses startup_set_homedir + os.getwd)
   set_init_1 :: proc(clean: bool) ---
-  log_init :: proc() ---
+  log_mutex_init :: proc() ---
+  // log_init — PORTED to Odin
   // set_lang_var      — PORTED to Odin
   qf_init_stack :: proc() ---
 
@@ -247,7 +275,6 @@ foreign nvim {
 @(default_calling_convention = "c")
 foreign _ {
   setlocale :: proc(category: c.int, locale: cstring) -> cstring ---
-  uv_os_homedir :: proc(buffer: [^]byte, size: ^c.size_t) -> c.int ---
   atexit :: proc(fn: proc "c" ()) -> c.int ---
 }
 
@@ -528,7 +555,7 @@ set_lang_var :: proc() {
   set_vim_var_string(VV_COLLATE, loc, -1)
 }
 
-/// Read $HOME and set the C `homedir` static. Falls back to libuv then CWD.
+/// Read $HOME and set the C `homedir` static. Falls back to getpwuid then CWD.
 init_homedir :: proc() {
   buf: [1024]u8
   home := os.get_env(buf[:], "HOME")
@@ -536,10 +563,10 @@ init_homedir :: proc() {
     startup_set_homedir(strings.clone_to_cstring(home, context.temp_allocator))
     return
   }
-  // Fallback: uv_os_homedir from libuv
-  size := c.size_t(len(buf))
-  if uv_os_homedir(&buf[0], &size) == 0 && size > 0 {
-    startup_set_homedir(cstring(&buf[0]))
+  // Fallback: getpwuid(geteuid()) via POSIX (replaces libuv's uv_os_homedir)
+  pw := posix.getpwuid(posix.geteuid())
+  if pw != nil && pw.pw_dir != nil {
+    startup_set_homedir(strings.clone_to_cstring(string(pw.pw_dir), context.temp_allocator))
     return
   }
   // Last resort: current working directory
