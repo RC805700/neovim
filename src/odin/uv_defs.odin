@@ -37,7 +37,10 @@ uv_async_t :: struct {
 uv_signal_t :: struct {
 	data: rawptr,
 	loop: ^uv_loop_t,
-	_pad: [136]u8,
+	_pad0: [80]u8,
+	self: rawptr,
+	signum: c.int,
+	_pad1: [44]u8,
 }
 
 uv_timer_t :: struct {
@@ -57,6 +60,27 @@ uv_stream_t :: struct {
 	_pad: [232]u8,
 }
 
+// uv_idle_t (120): base handle (data@0, loop@8) + idle-specific.
+uv_idle_t :: struct {
+	data: rawptr,
+	loop: ^uv_loop_t,
+	_pad: [104]u8,
+}
+
+// uv_pipe_t (264): base handle (data@0, loop@8) + pipe-specific.
+uv_pipe_t :: struct {
+	data: rawptr,
+	loop: ^uv_loop_t,
+	_pad: [248]u8,
+}
+
+// uv_tcp_t (248): base handle (data@0, loop@8) + tcp-specific.
+uv_tcp_t :: struct {
+	data: rawptr,
+	loop: ^uv_loop_t,
+	_pad: [232]u8,
+}
+
 // uv_buf_t (16): { char *base; size_t len } on 64-bit.
 uv_buf_t :: struct {
 	base: ^u8,
@@ -67,7 +91,12 @@ uv_file :: distinct c.int
 
 // Stream's `uv` union: max of uv_pipe_t(264)/uv_tcp_t(248)/
 // uv_idle_t(120) on Linux (uv_tty_t is MSWin-only in the union).
-uv_stream_union :: [264]u8
+// Struct with an 8-byte-leading field forces 8-byte alignment,
+// matching C's union (which contains uv_pipe_t, align 8).
+uv_stream_union :: struct {
+	_align: u64,
+	_pad: [256]u8,
+}
 
 uv_run_mode :: enum {
 	UV_RUN_DEFAULT = 0,
@@ -96,6 +125,15 @@ foreign _ {
 	@(link_name = "uv_signal_init")
 	uv_signal_init :: proc(loop: ^uv_loop_t, handle: ^uv_signal_t) -> c.int ---
 
+	@(link_name = "uv_signal_start")
+	uv_signal_start :: proc(handle: ^uv_signal_t, cb: rawptr, signum: c.int) -> c.int ---
+
+	@(link_name = "uv_signal_stop")
+	uv_signal_stop :: proc(handle: ^uv_signal_t) -> c.int ---
+
+	@(link_name = "uv_now")
+	uv_now :: proc(loop: ^uv_loop_t) -> u64 ---
+
 	@(link_name = "uv_timer_init")
 	uv_timer_init :: proc(loop: ^uv_loop_t, handle: ^uv_timer_t) -> c.int ---
 
@@ -116,6 +154,24 @@ foreign _ {
 
 	@(link_name = "uv_is_closing")
 	uv_is_closing :: proc(handle: ^uv_handle_t) -> c.int ---
+
+	@(link_name = "uv_idle_init")
+	uv_idle_init :: proc(loop: ^uv_loop_t, handle: ^uv_idle_t) -> c.int ---
+
+	@(link_name = "uv_pipe_init")
+	uv_pipe_init :: proc(loop: ^uv_loop_t, handle: ^uv_pipe_t, ipc: c.int) -> c.int ---
+
+	@(link_name = "uv_pipe_open")
+	uv_pipe_open :: proc(handle: ^uv_pipe_t, fd: uv_file) -> c.int ---
+
+	@(link_name = "uv_stream_set_blocking")
+	uv_stream_set_blocking :: proc(handle: ^uv_stream_t, blocking: c.int) -> c.int ---
+
+	@(link_name = "uv_guess_handle")
+	uv_guess_handle :: proc(fd: c.int) -> c.int ---
+
+	@(link_name = "uv_stream_get_write_queue_size")
+	uv_stream_get_write_queue_size :: proc(handle: ^uv_stream_t) -> c.size_t ---
 
 	@(link_name = "uv_walk")
 	uv_walk :: proc(loop: ^uv_loop_t, walk_cb: rawptr, arg: rawptr) ---

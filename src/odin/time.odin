@@ -10,6 +10,15 @@ import "core:time"
 
 Timestamp :: u64
 
+// C globals / procs still defined in C (os/input.c not yet ported).
+@(link_name = "got_int")
+got_int: bool
+
+foreign _ {
+	@(link_name = "os_input_ready")
+	os_input_ready :: proc(events: rawptr) -> bool ---
+}
+
 @(private)
 tz_cache: [64]u8
 
@@ -110,5 +119,46 @@ os_strptime :: proc "c" (str, format: cstring, tm: ^posix.tm) -> cstring {
 
 @(export)
 os_time :: proc "c" () -> Timestamp {
-  return Timestamp(libc.time(nil))
+	return Timestamp(libc.time(nil))
+}
+
+@(export)
+os_now :: proc "c" () -> u64 {
+	return uv_now(&main_loop.uv)
+}
+
+@(export)
+os_delay :: proc "c" (ms: u64, ignoreinput: bool) {
+	m := ms
+	if m > u64(max(c.int)) {
+		m = u64(max(c.int))
+	}
+	remaining := i64(m)
+	before := u64(0)
+	if remaining > 0 {
+		before = os_hrtime()
+	}
+	for {
+		condition := false
+		if ignoreinput {
+			condition = got_int
+		} else {
+			condition = os_input_ready(nil)
+		}
+		if condition {
+			break
+		}
+		if remaining == 0 {
+			break
+		}
+		loop_poll_events(&main_loop, remaining)
+		if remaining > 0 {
+			now := os_hrtime()
+			remaining -= i64((now - before) / 1_000_000)
+			before = now
+			if remaining <= 0 {
+				break
+			}
+		}
+	}
 }

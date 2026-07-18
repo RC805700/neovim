@@ -34,7 +34,7 @@ loop_init :: proc "c" (loop: ^Loop, data: rawptr) {
 	loop.recursive = 0
 	loop.closing = false
 	(^rawptr)(&loop.uv)^ = loop  // uv.data = loop
-	loop.children = nil  // kvec zero-init
+	loop.children = Kvec_Proc_ptr{}  // kvec zero-init
 	loop.events = multiqueue_new(loop_on_put, loop)
 	loop.fast_events = multiqueue_new_child(loop.events)
 	loop.thread_events = multiqueue_new(nil, nil)
@@ -154,7 +154,7 @@ loop_close :: proc "c" (loop: ^Loop, wait: bool) -> bool {
 	multiqueue_free(loop.fast_events)
 	multiqueue_free(loop.thread_events)
 	multiqueue_free(loop.events)
-	delete(loop.children)
+	// loop.children.items is freed by C (kvec_destroy / free_all_mem).
 	return rv
 }
 

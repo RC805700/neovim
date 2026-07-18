@@ -154,7 +154,10 @@ Loop :: struct {
 	events: ^MultiQueue,
 	thread_events: ^MultiQueue,
 	fast_events: ^MultiQueue,
-	children: [dynamic]^Proc,  // ABI-compatible with kvec_t(Proc *)
+  // ABI-compatible mirror of C `kvec_t(Proc *)` = { size_t n; size_t a;
+  // Proc **items; } (24 bytes). Odin's `[dynamic]^Proc` is 40 bytes and
+  // would clobber following fields, so we mirror the C struct exactly.
+  children: Kvec_Proc_ptr,
 	children_watcher: uv_signal_t,
 	children_kill_timer: uv_timer_t,
 	poll_timer: uv_timer_t,
@@ -229,4 +232,12 @@ Proc :: struct {
 	fwd_err: bool,
 	stdio_noinherit: bool,
 	events: ^MultiQueue,
+}
+
+// Mirror of C `kvec_t(Proc *)` = { size_t n; size_t a; Proc **items; } (24 bytes).
+// Must stay exactly 24 bytes so the Loop layout matches C (see Loop.children).
+Kvec_Proc_ptr :: struct {
+	n:     c.size_t,
+	a:     c.size_t,
+	items: ^Proc,
 }
