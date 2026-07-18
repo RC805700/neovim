@@ -140,7 +140,7 @@ enum {
 
 #include "main.c.generated.h"
 
-Loop main_loop;
+// `main_loop` is defined in the Odin port (loop.odin, @export).
 
 static char *argv0 = NULL;
 

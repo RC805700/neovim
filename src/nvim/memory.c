@@ -60,6 +60,14 @@ MemRealloc mem_realloc = &realloc;
 bool entered_free_all_mem = false;
 #endif
 
+// Weak symbols for Odin override (via linker's preference for strong symbols)
+#pragma weak try_malloc
+#pragma weak verbose_try_malloc
+#pragma weak xmalloc
+#pragma weak xfree
+#pragma weak xcalloc
+#pragma weak xrealloc
+
 /// Try to free memory. Used when trying to recover from out of memory errors.
 /// @see {xmalloc}
 static void try_to_free_memory(void)
@@ -836,6 +844,7 @@ char *arena_strdup(Arena *arena, const char *str)
 # include "nvim/ex_cmds.h"
 # include "nvim/ex_docmd.h"
 # include "nvim/file_search.h"
+# include "nvim/garray.h"
 # include "nvim/getchar.h"
 # include "nvim/grid.h"
 # include "nvim/mark.h"
@@ -845,6 +854,7 @@ char *arena_strdup(Arena *arena, const char *str)
 # include "nvim/quickfix.h"
 # include "nvim/regexp.h"
 # include "nvim/register.h"
+# include "nvim/runtime.h"
 # include "nvim/search.h"
 # include "nvim/spell.h"
 # include "nvim/tag.h"
@@ -929,6 +939,7 @@ void free_all_mem(void)
   init_history();
 
   free_quickfix();
+  ga_clear(&exestack);
 
   // Close all script inputs.
   close_all_scripts();

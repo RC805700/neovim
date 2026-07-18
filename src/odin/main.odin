@@ -190,19 +190,18 @@ foreign nvim {
   normal_enter :: proc(noexmode: bool) ---
 
   // early_init helpers (formerly called inside C's early_init)
-  os_hint_priority :: proc() ---
   exestack: Garray
   ga_grow :: proc(gap: ^Garray, n: c.int) ---
   eval_init :: proc() ---
   // os_realtime — PORTED to Odin (time.odin)
   runtime_init :: proc() ---
   // highlight_init — PORTED to Odin
-  init_locale :: proc() ---
+  // init_locale — PORTED to Odin (os_lang.odin)
   set_init_tablocal :: proc() ---
   win_alloc_first :: proc() ---
   startup_alist_init :: proc() ---
-  startup_set_homedir :: proc(path: cstring) ---
   // init_homedir           — PORTED to Odin (uses startup_set_homedir + os.getwd)
+  // startup_set_homedir    — PORTED to Odin (os_env.odin; sets `homedir` global)
   set_init_1 :: proc(clean: bool) ---
   log_mutex_init :: proc() ---
   // log_init — PORTED to Odin
@@ -217,7 +216,7 @@ foreign nvim {
   input_start :: proc() ---
   edit_stdin :: proc(parmp: ^Mparm) -> bool ---
   open_scriptin :: proc(fname: cstring) -> bool ---
-  os_fopen :: proc(path: cstring, mode: cstring) -> rawptr ---
+  // os_fopen now provided by os_fs.odin (Odin implementation)
   get_fname :: proc(parmp: ^Mparm) -> cstring ---
   set_window_layout :: proc(paramp: ^Mparm) ---
   handle_quickfix :: proc(paramp: ^Mparm) ---
@@ -272,10 +271,18 @@ foreign nvim {
 }
 
 // ── Foreign libc / libuv functions ──
+Dl_info :: struct {
+  dli_fname:  cstring,
+  dli_fbase:  rawptr,
+  dli_sname:  cstring,
+  dli_saddr:  rawptr,
+}
+
 @(default_calling_convention = "c")
 foreign _ {
   setlocale :: proc(category: c.int, locale: cstring) -> cstring ---
   atexit :: proc(fn: proc "c" ()) -> c.int ---
+  dladdr :: proc(addr: rawptr, info: ^Dl_info) -> c.int ---
 }
 
 // ── Constants (mirroring C enums/defines) ──
@@ -465,31 +472,8 @@ _memory: Memory
 
 // ── Ported startup functions ──
 
-/// Reads $NVIM_APPNAME (defaults to "nvim") and validates it.
-/// Must be a relative name or path — not absolute, not ".", "..", "/", "\\",
-/// and must not contain parent-directory traversal segments.
-appname_is_valid :: proc() -> bool {
-  buf: [256]u8
-  appname := os.get_env(buf[:], "NVIM_APPNAME")
-  if appname == "" {
-    appname = "nvim"
-  }
-
-  if strings.has_prefix(appname, "/") {
-    return false
-  }
-  if appname == "/" || appname == "\\" {
-    return false
-  }
-  if appname == "." || appname == ".." {
-    return false
-  }
-  if strings.contains(appname, "/..") || strings.contains(appname, "../") {
-    return false
-  }
-
-  return true
-}
+// appname_is_valid() is defined (exported, C-callable) in os_stdpaths.odin.
+// It is called both from Odin startup below and from C code that links the symbol.
 
 /// Initialize global startuptime file if "--startuptime" passed as an argument.
 init_startuptime :: proc(paramp: ^Mparm) {
@@ -540,41 +524,7 @@ init_path :: proc(exename: cstring) {
   free_all(context.temp_allocator)
 }
 
-/// Set v:ctype, v:lang, v:lc_time, v:collate from the C locale.
-set_lang_var :: proc() {
-  loc := setlocale(LC_CTYPE, nil)
-  set_vim_var_string(VV_CTYPE, loc, -1)
-
-  loc = setlocale(LC_MESSAGES, nil)
-  set_vim_var_string(VV_LANG, loc, -1)
-
-  loc = setlocale(LC_TIME, nil)
-  set_vim_var_string(VV_LC_TIME, loc, -1)
-
-  loc = setlocale(LC_COLLATE, nil)
-  set_vim_var_string(VV_COLLATE, loc, -1)
-}
-
 /// Read $HOME and set the C `homedir` static. Falls back to getpwuid then CWD.
-init_homedir :: proc() {
-  buf: [1024]u8
-  home := os.get_env(buf[:], "HOME")
-  if home != "" {
-    startup_set_homedir(strings.clone_to_cstring(home, context.temp_allocator))
-    return
-  }
-  // Fallback: getpwuid(geteuid()) via POSIX (replaces libuv's uv_os_homedir)
-  pw := posix.getpwuid(posix.geteuid())
-  if pw != nil && pw.pw_dir != nil {
-    startup_set_homedir(strings.clone_to_cstring(string(pw.pw_dir), context.temp_allocator))
-    return
-  }
-  // Last resort: current working directory
-  if wd, err := os.getwd(context.temp_allocator); err == nil && wd != "" {
-    startup_set_homedir(strings.clone_to_cstring(wd, context.temp_allocator))
-  }
-  free_all(context.temp_allocator)
-}
 
 /// Initialize the execution stack with a sentinel ETYPE_TOP entry.
 estack_init :: proc() {
@@ -636,12 +586,31 @@ main :: proc() {
   alloc_err := virtual.arena_init_growing(&_memory.arena)
   assert(alloc_err == .None)
 
+  // Capture tracking allocator for C-side xmalloc/xfree overrides
+  init_memory()
+
   atexit(proc "c" () {
     context = runtime.default_context()
-    if len(_memory.track.allocation_map) > 0 {
-      fmt.eprintf("=== %v allocations not freed: ===\n", len(_memory.track.allocation_map))
-      for _, entry in _memory.track.allocation_map {
-        fmt.eprintf("- %v bytes @ %v\n", entry.size, entry.location)
+    if len(alloc_sizes) > 0 {
+      fmt.eprintf("=== %v C allocations not freed: ===\n", len(alloc_sizes))
+      for ptr, info in alloc_sizes {
+        dlinfo: Dl_info
+        if dladdr(info.caller, &dlinfo) != 0 && dlinfo.dli_sname != nil {
+          offset := uintptr(info.caller) - uintptr(dlinfo.dli_saddr)
+          fmt.eprintf("- %v bytes @ %p (caller %s+%#x in %s)\n", info.size, ptr, dlinfo.dli_sname, offset, dlinfo.dli_fname)
+        } else if dladdr(info.caller, &dlinfo) != 0 && dlinfo.dli_fname != nil {
+          base_offset := uintptr(info.caller) - uintptr(dlinfo.dli_fbase)
+          fmt.eprintf("- %v bytes @ %p (caller %p, offset +%#x in %s)\n", info.size, ptr, info.caller, base_offset, dlinfo.dli_fname)
+        } else {
+          fmt.eprintf("- %v bytes @ %p (caller %p)\n", info.size, ptr, info.caller)
+        }
+      }
+    }
+    n_odin_leaks := len(_memory.track.allocation_map)
+    if n_odin_leaks > 0 {
+      fmt.eprintf("=== %v Odin allocations not freed: ===\n", n_odin_leaks)
+      for ptr, entry in _memory.track.allocation_map {
+        fmt.eprintf("- %v bytes @ %p (%v:%v)\n", entry.size, ptr, entry.location.file_path, entry.location.line)
       }
     }
     if len(_memory.track.bad_free_array) > 0 {

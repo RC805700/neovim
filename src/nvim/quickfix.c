@@ -7710,6 +7710,7 @@ void free_quickfix(void)
   }
 
   ga_clear(&qfga);
+  xfree(ql_info->qf_lists);
 }
 #endif
 

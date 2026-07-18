@@ -23,7 +23,7 @@ else
 fi
 
 echo "=== Phase 0: Building libnvim.a (C static library) ==="
-cmake -S "$ROOT" -B "$ROOT/build" -G Ninja -D CMAKE_BUILD_TYPE="$CMAKE_BUILD_TYPE"
+cmake -S "$ROOT" -B "$ROOT/build" -G Ninja -D CMAKE_BUILD_TYPE="$CMAKE_BUILD_TYPE" -D CMAKE_C_FLAGS="-DEXITFREE"
 cmake --build "$ROOT/build" --target libnvim
 
 echo ""
