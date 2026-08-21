@@ -259,7 +259,6 @@ foreign nvim {
   do_autochdir :: proc() ---
   do_autocmd_uienter_all :: proc() ---
   set_reg_var :: proc(c: c.int) ---
-  get_default_register_name :: proc() -> c.int ---
   redraw_all_later :: proc(type_: c.int) ---
 
   os_exit :: proc(r: c.int) ---
