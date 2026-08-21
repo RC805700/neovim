@@ -244,7 +244,6 @@ foreign nvim {
   shorten_fnames :: proc(force: bool) ---
   setmouse :: proc() ---
   redraw_later :: proc(win: rawptr, type_: c.int) ---
-  setpcmark :: proc() ---
   qf_jump :: proc(eap: rawptr, forceit: c.int, errornr: c.int, FILE_IT: bool) ---
   apply_autocmds :: proc(event: c.int, fname: cstring, fname2: cstring, group: bool, buf: rawptr) ---
 
@@ -254,7 +253,7 @@ foreign nvim {
   get_vim_var_str :: proc(idx: c.int) -> cstring ---
   get_vim_var_list :: proc(idx: c.int) -> rawptr ---
   set_vim_var_list :: proc(idx: c.int, val: rawptr) ---
-  tv_list_alloc :: proc(n: c.int) -> rawptr ---
+  tv_list_alloc :: proc(n: c.ssize_t) -> rawptr ---
 
   // Startup helpers
   do_autochdir :: proc() ---
