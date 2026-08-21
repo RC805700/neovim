@@ -19,10 +19,9 @@ import "core:c/libc"
 @(export)
 main_loop := Loop{}
 
-// C-side helpers still linked (proc.c, log.c).
+// C-side helpers still linked (log.c). proc_teardown is provided by
+// proc.odin (Odin port of event/proc.c).
 foreign _ {
-	@(link_name = "proc_teardown")
-	proc_teardown :: proc(loop: ^Loop) ---
 	@(link_name = "log_uv_handles")
 	log_uv_handles :: proc(loop: rawptr) ---
 }
@@ -75,6 +74,11 @@ loop_uv_run :: proc(loop: ^Loop, ms: i64) -> bool {
 loop_poll_events :: proc "c" (loop: ^Loop, ms: i64) -> bool {
 	context = runtime.default_context()
 	timeout_expired := loop_uv_run(loop, ms)
+	// NOTE: the main event queue (loop.events) carries every child queue
+	// (proc->events, stream->s.events, etc.) via parent links, so draining
+	// it here is what lets pending events (proc_close_handles, read_event, ...)
+	// fire and unblock callers like proc_wait(). fast_events is drained too.
+	multiqueue_process_events(loop.events)
 	multiqueue_process_events(loop.fast_events)
 	return timeout_expired
 }

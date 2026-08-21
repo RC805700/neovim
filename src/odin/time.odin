@@ -10,14 +10,9 @@ import "core:time"
 
 Timestamp :: u64
 
-// C globals / procs still defined in C (os/input.c not yet ported).
+// C globals / procs still defined in C.
 @(link_name = "got_int")
 got_int: bool
-
-foreign _ {
-	@(link_name = "os_input_ready")
-	os_input_ready :: proc(events: rawptr) -> bool ---
-}
 
 @(private)
 tz_cache: [64]u8

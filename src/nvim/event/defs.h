@@ -99,6 +99,10 @@ struct stream {
   stream_write_cb write_cb;
   size_t curmem;
   size_t maxmem;
+  // Keep the object referenced by cb_data alive while an event referencing
+  // this stream is queued (set by rpc_start for RPC streams). #OdinPort
+  void (*data_incref)(void *data);
+  void (*data_decref)(void *data);
 };
 
 struct rstream {

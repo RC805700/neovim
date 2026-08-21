@@ -695,6 +695,11 @@ void os_exit(int r)
 {
   exiting = true;
 
+  // Ignore deadly signals while we are already exiting. #9274
+  // (A SIGHUP may be queued during teardown, e.g. when the TUI terminal
+  // closes; processing it would re-enter os_exit()/free_all_mem().)
+  signal_reject_deadly();
+
   if (ui_client_channel_id) {
     ui_client_stop();
     if (r == 0) {

@@ -267,7 +267,6 @@ if(ENABLE_IWYU)
   string(APPEND iwyu_flags "-Xiwyu;--mapping_file=${PROJECT_SOURCE_DIR}/cmake.config/iwyu/mapping.imp")
 
   set_target_properties(nvim_bin PROPERTIES C_INCLUDE_WHAT_YOU_USE "${iwyu_flags}")
-  target_compile_definitions(main_lib INTERFACE EXITFREE)
 endif()
 
 option(ENABLE_COMPILER_SUGGESTIONS "Enable -Wsuggest compiler warnings" OFF)
@@ -491,7 +490,6 @@ else()
 endif()
 
 if(ENABLE_ASAN_UBSAN OR ENABLE_MSAN OR ENABLE_TSAN)
-  target_compile_definitions(main_lib INTERFACE EXITFREE)
 endif()
 
 #-------------------------------------------------------------------------------
@@ -772,7 +770,7 @@ if(STATIC_BUILD)
   target_link_options(nvim_bin PRIVATE -static-libgcc -static-libstdc++ -static)
 endif()
 target_link_libraries(nvim_bin PRIVATE main_lib PUBLIC libuv)
-target_link_libraries(nvim_bin PRIVATE ${PROJECT_SOURCE_DIR}/build/lib/libklib_stripped.a)
+target_link_libraries(nvim_bin PRIVATE -Wl,--whole-archive ${PROJECT_SOURCE_DIR}/build/lib/libklib_stripped.a -Wl,--no-whole-archive)
 
 install_helper(TARGETS nvim_bin)
 if(MSVC)

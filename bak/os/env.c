@@ -58,6 +58,38 @@
 
 #include "os/env.c.generated.h"
 
+// Odin override: weak symbols so Odin implementations take precedence
+#pragma weak env_init
+#pragma weak os_getenv
+#pragma weak os_getenv_buf
+#pragma weak os_getenv_noalloc
+#pragma weak os_env_exists
+#pragma weak os_setenv
+#pragma weak os_unsetenv
+#pragma weak os_free_fullenv
+#pragma weak os_getenvname_at_index
+#pragma weak os_get_pid
+#pragma weak os_hint_priority
+#pragma weak os_get_hostname
+#pragma weak os_homedir
+#pragma weak free_homedir
+#pragma weak expand_env_save
+#pragma weak expand_env_save_opt
+#pragma weak expand_env
+#pragma weak expand_env_esc
+#pragma weak vim_getenv
+#pragma weak vim_get_prefix_from_exepath
+#pragma weak home_replace
+#pragma weak home_replace_save
+#pragma weak get_env_name
+#pragma weak os_setenv_append_path
+#pragma weak os_shell_is_cmdexe
+#pragma weak vim_unsetenv_ext
+#pragma weak vim_setenv_ext
+#pragma weak startup_set_homedir
+#pragma weak vim_env_iter
+#pragma weak vim_env_iter_rev
+
 void env_init(void)
 {
   nvim_testing = os_env_exists("NVIM_TEST", false);

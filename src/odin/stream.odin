@@ -40,8 +40,8 @@ stream_init :: proc "c" (loop: ^Loop, stream: ^Stream, fd: c.int, uvstream: ^uv_
 			idle.data = stream
 		} else {
 			assert(typ == UV_NAMED_PIPE || typ == UV_TTY)
-			uv_pipe_init(&loop.uv, (^uv_pipe_t)(transmute(^u8)(&stream.uv)), 0)
-			uv_pipe_open((^uv_pipe_t)(transmute(^u8)(&stream.uv)), uv_file(fd))
+			r := uv_pipe_init(&loop.uv, (^uv_pipe_t)(transmute(^u8)(&stream.uv)), 0)
+			ro := uv_pipe_open((^uv_pipe_t)(transmute(^u8)(&stream.uv)), uv_file(fd))
 			stream.uvstream = (^uv_stream_t)(transmute(^u8)(&stream.uv))
 		}
 	}
@@ -59,7 +59,13 @@ stream_init :: proc "c" (loop: ^Loop, stream: ^Stream, fd: c.int, uvstream: ^uv_
 	stream.close_cb = nil
 	stream.internal_close_cb = nil
 	stream.closed = false
+	// When created with a loop, read events are delivered to the loop's
+	// main event queue. Job/pipe streams are created with loop==NULL and
+	// their `events` is wired later (libuv_proc_spawn -> proc->events).
 	stream.events = nil
+	if loop != nil {
+		stream.events = loop.events
+	}
 }
 
 @(export)
@@ -67,7 +73,6 @@ stream_may_close :: proc "c" (stream: ^Stream) {
 	if stream.closed {
 		return
 	}
-	libc.fprintf(libc.stderr, cstring("closing Stream: %p\n"), stream)
 	stream.closed = true
 
 	if stream.pending_reqs == 0 {

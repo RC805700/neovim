@@ -26,6 +26,19 @@
 
 #include "os/fileio.c.generated.h"  // IWYU pragma: keep
 
+// Odin overrides — strong Odin symbols replace these at link time
+#pragma weak file_open
+#pragma weak file_open_fd
+#pragma weak file_open_stdin
+#pragma weak file_open_buffer
+#pragma weak file_close
+#pragma weak file_fsync
+#pragma weak file_flush
+#pragma weak file_read
+#pragma weak file_try_read_buffered
+#pragma weak file_write
+#pragma weak file_skip
+
 /// Open file
 ///
 /// @param[out]  ret_fp  Address where information needed for reading from or

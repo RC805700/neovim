@@ -317,6 +317,13 @@ static void channel_destroy(Channel *chan)
 static void free_channel_event(void **argv)
 {
   Channel *chan = argv[0];
+  // A queued read_event (rstream_invoke_read_cb→data_incref) may have bumped
+  // the refcount after this free was scheduled. If so, skip and reschedule:
+  // the read_event's data_decref will drop the refcount back to 0 and queue
+  // another free. Otherwise freeing here would race the still-pending event.
+  if (chan->refcount > 0) {
+    return;
+  }
   pmap_del(uint64_t)(&channels, chan->id, NULL);
   channel_destroy(chan);
 }

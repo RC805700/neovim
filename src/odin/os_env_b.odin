@@ -103,7 +103,7 @@ WILD_EXPAND_FREE : c.int = 2
 EXPAND_FILES    : c.int = 2
 ENV_SEPSTR      : cstring = ":"
 
-_uptr :: proc(p: cstring) -> uintptr { return uintptr(rawptr(p)) }
+_uptr :: proc "c" (p: cstring) -> uintptr { return uintptr(rawptr(p)) }
 
 // ── expand_T struct mirror ──
 xp_prefix_T :: enum c.int {

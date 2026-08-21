@@ -91,6 +91,19 @@ multiqueue_get :: proc "c" (self: ^MultiQueue) -> Event {
 	return multiqueue_remove(self)
 }
 
+// Mirrors C's CREATE_EVENT macro: if the queue is NULL, invoke the event
+// handler directly (synchronously) instead of enqueuing. This is how nvim
+// handles watchers whose `events` queue was never set (e.g. server sockets).
+create_event :: proc "c" (queue: ^MultiQueue, event: Event) {
+	context = runtime.default_context()
+	if queue != nil {
+		multiqueue_put_event(queue, event)
+	} else {
+		argv := event.argv
+		event.handler(&argv[0])
+	}
+}
+
 @(export)
 multiqueue_put_event :: proc "c" (self: ^MultiQueue, event: Event) {
 	context = runtime.default_context()
@@ -111,7 +124,7 @@ multiqueue_move_events :: proc "c" (dest, src: ^MultiQueue) {
 }
 
 @(export)
-multiqueue_process_events :: proc "c" (self: ^MultiQueue) {
+	multiqueue_process_events :: proc "c" (self: ^MultiQueue) {
 	context = runtime.default_context()
 	assert(self != nil)
 	for !multiqueue_empty(self) {

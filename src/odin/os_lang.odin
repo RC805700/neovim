@@ -49,9 +49,6 @@ foreign _ {
 	@(link_name = "strdup")
 	strdup :: proc(s: cstring) -> cstring ---
 
-	@(link_name = "get_cmd_output")
-	get_cmd_output :: proc(cmd: cstring, infile: cstring, flags: c.int, ret_len: ^c.size_t) -> cstring ---
-
 	@(link_name = "set_helplang_default")
 	set_helplang_default :: proc(lang: cstring) ---
 
@@ -116,20 +113,17 @@ ASCII_ISALPHA :: proc(c: u8) -> bool {
 }
 
 @(private)
-ascii_isdigit :: proc(c: u8) -> bool {
-	context = runtime.default_context()
+ascii_isdigit :: proc "c" (c: u8) -> bool {
 	return c >= '0' && c <= '9'
 }
 
 @(private)
-ascii_iswhite :: proc(c: u8) -> bool {
-	context = runtime.default_context()
+ascii_iswhite :: proc "c" (c: u8) -> bool {
 	return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == 0x0b || c == 0x0c
 }
 
 @(private)
-skipwhite :: proc(p: cstring) -> cstring {
-	context = runtime.default_context()
+skipwhite :: proc "c" (p: cstring) -> cstring {
 	cur := p
 	b := ([^]u8)(_uptr(cur))
 	for b[0] != 0 && ascii_iswhite(b[0]) {

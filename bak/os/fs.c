@@ -63,6 +63,57 @@
 
 #include "os/fs.c.generated.h"
 
+#pragma weak os_open
+#pragma weak os_close
+#pragma weak os_open_stdin_fd
+#pragma weak os_read
+#pragma weak os_readv
+#pragma weak os_write
+#pragma weak os_fsync
+#pragma weak os_chdir
+#pragma weak os_dirname
+#pragma weak os_getperm
+#pragma weak os_setperm
+#pragma weak os_path_exists
+#pragma weak os_file_is_readable
+#pragma weak os_file_is_writable
+#pragma weak os_isdir
+#pragma weak os_isrealdir
+#pragma weak os_nodetype
+#pragma weak os_exepath
+#pragma weak os_can_exe
+#pragma weak os_realpath
+#pragma weak os_file_owned
+#pragma weak os_chown
+#pragma weak os_fchown
+#pragma weak os_file_settime
+#pragma weak os_mkdir
+#pragma weak os_mkdir_recurse
+#pragma weak os_mkdtemp
+#pragma weak os_rmdir
+#pragma weak os_remove
+#pragma weak os_rename
+#pragma weak os_copy
+#pragma weak os_scandir
+#pragma weak os_scandir_next
+#pragma weak os_closedir
+#pragma weak os_dup
+#pragma weak os_dup_cloexec
+#pragma weak os_set_cloexec
+#pragma weak os_fopen
+#pragma weak os_file_mkdir
+#pragma weak os_fileinfo
+#pragma weak os_fileinfo_link
+#pragma weak os_fileinfo_fd
+#pragma weak os_fileinfo_id_equal
+#pragma weak os_fileinfo_id
+#pragma weak os_fileinfo_inode
+#pragma weak os_fileinfo_size
+#pragma weak os_fileinfo_hardlinks
+#pragma weak os_fileinfo_blocksize
+#pragma weak os_fileid
+#pragma weak os_fileid_equal
+
 #ifdef HAVE_XATTR
 static const char e_xattr_erange[]
   = N_("E1506: Buffer too small to copy xattr value or key");

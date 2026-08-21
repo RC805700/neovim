@@ -110,6 +110,8 @@ int proc_spawn(Proc *proc, bool in, bool out, bool err)
     stream_init(NULL, &proc->out.s, -1, (uv_stream_t *)&proc->out.s.uv.pipe);
     proc->out.s.internal_data = proc;
     proc->out.s.internal_close_cb = on_proc_stream_close;
+    // Wire read events to the job's event queue (set by channel.c).
+    proc->out.s.events = proc->events;
     proc->refcount++;
   }
 
@@ -117,6 +119,7 @@ int proc_spawn(Proc *proc, bool in, bool out, bool err)
     stream_init(NULL, &proc->err.s, -1, (uv_stream_t *)&proc->err.s.uv.pipe);
     proc->err.s.internal_data = proc;
     proc->err.s.internal_close_cb = on_proc_stream_close;
+    proc->err.s.events = proc->events;
     proc->refcount++;
   }
 

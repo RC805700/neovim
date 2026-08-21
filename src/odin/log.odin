@@ -35,8 +35,19 @@ log_try_create :: proc(fname: string) -> bool {
 }
 
 get_env_value :: proc(key: string) -> string {
-  buf: [4096]u8
-  return os.get_env_buf(buf[:], key)
+	context = runtime.default_context()
+	cv := os_getenv(cstring(raw_data(key)))
+	if cv == nil {
+		return ""
+	}
+	n: int = 0
+	for ([^]u8)(cv)[n] != 0 {
+		n += 1
+	}
+	res := make([]u8, n)
+	cbytes := transmute([]u8)(([^]u8)(cv))[0:n]
+	copy(res, cbytes)
+	return string(res)
 }
 
 xdg_state_home_dir :: proc() -> string {

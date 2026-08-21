@@ -36,7 +36,7 @@ signal_event :: proc(argv: ^rawptr) {
 
 signal_watcher_cb :: proc(handle: ^uv_signal_t, signum: c.int) {
 	watcher := (^SignalWatcher)(handle.data)
-	multiqueue_put_event(watcher.events, event_create(signal_event, watcher))
+	create_event(watcher.events, event_create(signal_event, watcher))
 }
 
 close_cb :: proc(handle: ^uv_handle_t) {

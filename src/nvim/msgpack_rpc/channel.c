@@ -94,6 +94,10 @@ void rpc_start(Channel *channel)
 #endif
 
     rstream_start(out, receive_msgpack, channel);
+    // Keep the channel alive while a read_event referencing it is queued,
+    // so teardown (which may free the channel) cannot race the event.
+    out->s.data_incref = (void (*)(void *))channel_incref;
+    out->s.data_decref = (void (*)(void *))channel_decref;
   }
 }
 
@@ -206,6 +210,14 @@ static size_t receive_msgpack(RStream *stream, const char *rbuf, size_t c, void 
   Channel *channel = data;
   channel_incref(channel);
   size_t consumed = 0;
+
+  // A read_event may be processed after the channel was marked closed (the
+  // event was queued before rpc_close ran). Bail before touching the unpacker,
+  // which is freed once the channel is destroyed.
+  if (channel->rpc.closed) {
+    channel_decref(channel);
+    return 0;
+  }
 
   DLOG("ch %" PRIu64 ": parsing %zu bytes from msgpack Stream: %p",
        channel->id, c, (void *)stream);

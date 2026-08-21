@@ -82,8 +82,7 @@ WBuffer :: struct {
 
 SocketWatcher :: struct {
 	addr: [256]u8,
-	uv: [264]u8,        // max(uv_tcp_t 248, uv_pipe_t 264)
-	addrinfo: rawptr,    // struct addrinfo *
+	uv: [264]u8,        // max(uv_tcp_t 248 + addrinfo*, uv_pipe_t 264)
 	stream: ^uv_stream_t,
 	data: rawptr,
 	cb: socket_cb,
@@ -173,6 +172,11 @@ ProcType :: enum {
 	Pty,
 }
 
+// Field order MUST match C's `struct stream` in src/nvim/event/defs.h exactly,
+// because C code (channel.c term_delayed_free, msgpack_rpc, etc.) reads these
+// fields through the shared Channel union. data_incref/data_decref are at the
+// END (after maxmem), NOT after cb_data — mismatch shifts pending_reqs and
+// causes term_delayed_free to spin on garbage. #OdinPort ABI
 Stream :: struct {
 	closed: bool,
 	uv: uv_stream_union,
@@ -190,6 +194,8 @@ Stream :: struct {
 	write_cb: stream_write_cb,
 	curmem: c.size_t,
 	maxmem: c.size_t,
+	data_incref: proc(data: rawptr),
+	data_decref: proc(data: rawptr),
 }
 
 RStream :: struct {
@@ -198,9 +204,9 @@ RStream :: struct {
 	want_read: bool,
 	pending_read: bool,
 	paused_full: bool,
-	buffer: ^u8,
-	read_pos: ^u8,
-	write_pos: ^u8,
+	buffer: uintptr,
+	read_pos: uintptr,
+	write_pos: uintptr,
 	uvbuf: uv_buf_t,
 	read_cb: stream_read_cb,
 	num_bytes: c.size_t,
@@ -219,9 +225,9 @@ Proc :: struct {
 	argv: ^^u8,
 	exepath: ^u8,
 	env: rawptr,
-	in_: Stream,
-	out_: RStream,
-	err_: RStream,
+	in_s: Stream,
+	out_s: RStream,
+	err_s: RStream,
 	cb: proc_exit_cb,
 	state_cb: proc_state_cb,
 	internal_exit_cb: internal_proc_cb,
@@ -235,9 +241,103 @@ Proc :: struct {
 }
 
 // Mirror of C `kvec_t(Proc *)` = { size_t n; size_t a; Proc **items; } (24 bytes).
-// Must stay exactly 24 bytes so the Loop layout matches C (see Loop.children).
+// NOTE: it stores POINTERS to Proc (matching C's `kvec_t(Proc *)`), NOT Proc
+// values. `items` is an array of pointers (modeled as ^rawptr for Odin's
+// lack of `^^T` syntax); element [i] is a `^Proc`. 24 bytes so the
+// Loop layout matches C (see loop.h).
 Kvec_Proc_ptr :: struct {
 	n:     c.size_t,
 	a:     c.size_t,
-	items: ^Proc,
+	items: ^rawptr,
 }
+
+// LibuvProc (Proc + uv_process_t(136) + uv_process_options_t(64)
+// + 4*uv_stdio_container_t(64) = matches C `LibuvProc`). Field order MUST
+// match C's `typedef struct { Proc proc; uv_process_t uv;
+// uv_process_options_t uvopts; uv_stdio_container_t uvstdio[4]; } LibuvProc;`.
+// NOTE: Proc fields are `in_s/out_s/err_s` in C; here they are `in_s/out_s/err_s`.
+LibuvProc :: struct {
+	base:     Proc,
+	uv:       uv_process_t,
+	uvopts:   uv_process_options_t,
+	uvstdio:  [4]uv_stdio_container_t,
+}
+
+// Inline init mirroring nvim's `proc_init` (proc.h). Sets sensible defaults
+// so the caller can override argv/exepath/cb/events/etc. afterward.
+proc_init :: proc(loop: ^Loop, kind: ProcType, data: rawptr) -> Proc {
+	p: Proc
+	p.kind = kind
+	p.data = data
+	p.loop = loop
+	p.events = nil
+	p.pid = 0
+	p.status = -1
+	p.refcount = 0
+	p.stopped_time = 0
+	p.cwd = nil
+	p.argv = nil
+	p.exepath = nil
+	p.env = nil
+	p.in_s.closed = false
+	p.out_s.s.closed = false
+	p.out_s.s.fd = 1  // STDOUT_FILENO
+	p.err_s.s.closed = false
+	p.err_s.s.fd = 2  // STDERR_FILENO
+	p.cb = nil
+	p.state_cb = nil
+	p.internal_close_cb = nil
+	p.internal_exit_cb = nil
+	p.closed = false
+	p.detach = false
+	p.overlapped = false
+	p.fwd_err = false
+	p.stdio_noinherit = false
+	return p
+}
+
+// --- PTY (os/pty_proc_unix.c) structs ---
+
+// `struct winsize` — 8 bytes, 4× uint16.
+Winsize :: struct {
+	ws_row:    c.ushort,
+	ws_col:    c.ushort,
+	ws_xpixel: c.ushort,
+	ws_ypixel: c.ushort,
+}
+
+// `struct termios` (glibc Linux) — 60 bytes. NOTE: `core:sys/posix.termios` is NOT
+// ABI-compatible (it is a `#sparse [Control_Char]cc_t` keyed map, not a flat cc_t[]
+// array). This raw mirror matches the C layout byte-for-byte (verified via offsetof probe).
+// Order: c_iflag@0 c_oflag@4 c_cflag@8 c_lflag@12 c_line@16 c_cc[32]@17, pad to 60.
+Termios :: struct {
+	c_iflag: c.uint,
+	c_oflag: c.uint,
+	c_cflag: c.uint,
+	c_lflag: c.uint,
+	c_line:  c.uchar,
+	c_cc:    [32]c.uchar,
+	_pad:    [11]c.uchar,
+}
+
+// `PtyProc` (pty_proc_unix.h) — must match C layout exactly. NOTE: `proc` is a
+// reserved keyword in Odin, so the embedded `Proc` field is named `proc_base`.
+PtyProc :: struct {
+	proc_base: Proc,
+	width:     c.ushort,
+	height:    c.ushort,
+	winsize:   Winsize,
+	tty_fd:    c.int,
+}
+
+// Linux signal numbers not already defined in os_signal.odin.
+// NOTE: `posix.signal_libc` maps SIGCHLD/SIGCONT to -1 (broken in this Odin version),
+// so use literal Linux x86_64 values where needed.
+SIGALRM : c.int = 14
+SIGCHLD : c.int = 17
+SIGCONT : c.int = 18
+
+// ioctl request numbers (Linux x86_64, from <sys/ioctl.h> / <asm/ioctls.h>).
+TIOCSWINSZ : c.uint = 0x5414
+TIOCSCTTY  : c.uint = 0x540e
+TCSETS     : c.uint = 0x5402

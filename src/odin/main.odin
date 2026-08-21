@@ -11,8 +11,25 @@ import "core:sort"
 import "core:strings"
 import "core:sys/posix"
 import "core:terminal"
+import "core:c/libc"
 
 foreign import nvim "../../build/lib/libnvim.a"
+
+@(default_calling_convention = "c")
+foreign _ {
+	backtrace_symbols :: proc(buffer: [^]rawptr, size: c.int) -> ^^cstring ---
+	signal            :: proc(signum: c.int, handler: proc "c" (c.int)) -> rawptr ---
+}
+
+bt_handler :: proc "c" (signum: c.int) {
+	buffer: [128]rawptr
+	n := backtrace(raw_data(buffer[:]), 128)
+	syms := backtrace_symbols(raw_data(buffer[:]), n)
+	libc.fprintf(libc.stderr, "=== BACKTRACE (n=%d) ===\n", n)
+	for i in 0 ..< int(n) {
+		libc.fprintf(libc.stderr, "#%d %s\n", i, ([^]cstring)(syms)[i])
+	}
+}
 
 // ── Type mirrors for klib map/set infrastructure ──
 
@@ -135,7 +152,9 @@ foreign nvim {
   recoverymode: bool
   exmode_active: bool
   ui_client_channel_id: u64
+  ui_client_exit_status: c.int
   ui_client_forward_stdin: bool
+  exiting: bool
   RedrawingDisabled: c.int
   full_screen: bool
   cmdline_row: c.int
@@ -213,7 +232,6 @@ foreign nvim {
   ui_client_start_server :: proc(progpath: cstring, argc: c.size_t, argv: [^]cstring) -> u64 ---
   ui_client_run :: proc() ---
   remote_ui_wait_for_attach :: proc() ---
-  input_start :: proc() ---
   edit_stdin :: proc(parmp: ^Mparm) -> bool ---
   open_scriptin :: proc(fname: cstring) -> bool ---
   // os_fopen now provided by os_fs.odin (Odin implementation)
@@ -580,6 +598,7 @@ init_params :: proc(paramp: ^Mparm, argc: c.int, argv: [^]cstring) {
 
 // ── Main ──
 main :: proc() {
+  libc.signal(10, bt_handler)  // SIGUSR1 -> backtrace to stderr
   mem.tracking_allocator_init(&_memory.track, context.allocator)
   context.allocator = mem.tracking_allocator(&_memory.track)
 
