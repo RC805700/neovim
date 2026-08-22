@@ -291,7 +291,7 @@ foreign _ {
 	@(link_name = "adjust_cursor_eol")
 	adjust_cursor_eol_r :: proc "c" () ---
 	@(link_name = "decl")
-	decl_pos :: proc "c" (p: ^Pos_T) ---
+	decl_pos :: proc "c" (p: ^Pos_T) -> C.int ---
 
 	// u_save / u_save_cursor are now defined in undo.odin — reuse directly.
 	@(link_name = "del_chars")
@@ -1497,7 +1497,7 @@ op_yank_reg :: proc "c" (oap: rawptr, message: bool, reg_arg: ^Yankreg_T, append
 		}
 		if yank_type != kMTLineWise && !oap_get_bool(oap, OAP_INCLUSIVE) {
 			// Exclude the end position.
-			decl_pos(get_pos_r2(curbuf, B_OP_END))
+			_ = decl_pos(get_pos_r2(curbuf, B_OP_END))
 		}
 	}
 }
