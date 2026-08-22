@@ -180,9 +180,9 @@ on_signal :: proc(watcher: ^SignalWatcher, signum: c.int, data: rawptr) {
 			deadly_signal(signum)
 		}
 	case SIGUSR1:
-		apply_autocmds(EVENT_SIGNAL, cstring("SIGUSR1"), nil, true, curbuf)
+		_ = apply_autocmds(EVENT_SIGNAL, cstring("SIGUSR1"), nil, true, curbuf)
 	case SIGWINCH:
-		apply_autocmds(EVENT_SIGNAL, cstring("SIGWINCH"), nil, true, curbuf)
+		_ = apply_autocmds(EVENT_SIGNAL, cstring("SIGWINCH"), nil, true, curbuf)
 	default: {
 		libc.fprintf(libc.stderr, cstring("invalid signal: %d\n"), signum)
 	}

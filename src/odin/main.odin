@@ -245,7 +245,7 @@ foreign nvim {
   setmouse :: proc() ---
   redraw_later :: proc(win: rawptr, type_: c.int) ---
   qf_jump :: proc(eap: rawptr, forceit: c.int, errornr: c.int, FILE_IT: bool) ---
-  apply_autocmds :: proc(event: c.int, fname: cstring, fname2: cstring, group: bool, buf: rawptr) ---
+  apply_autocmds :: proc "c" (event: c.int, fname: cstring, fname2: cstring, group: bool, buf: rawptr) -> bool ---
 
   // Vim variable access
   set_vim_var_nr :: proc(idx: c.int, val: i64) ---
@@ -902,7 +902,7 @@ main :: proc() {
     startup_set_cursor_last_line()
   }
 
-  apply_autocmds(EVENT_BUFENTER, nil, nil, false, curbuf)
+  _ = apply_autocmds(EVENT_BUFENTER, nil, nil, false, curbuf)
   setpcmark()
 
   if params.edit_type == c.int(EditType.EDIT_QF) {
@@ -930,7 +930,7 @@ main :: proc() {
   no_wait_return = false
   do_autochdir()
   set_vim_var_nr(VV_VIM_DID_ENTER, 1)
-  apply_autocmds(EVENT_VIMENTER, nil, nil, false, curbuf)
+  _ = apply_autocmds(EVENT_VIMENTER, nil, nil, false, curbuf)
   if use_remote_ui {
     do_autocmd_uienter_all()
   }

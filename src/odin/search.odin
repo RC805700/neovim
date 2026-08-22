@@ -1610,8 +1610,7 @@ foreign _ {
 	may_start_select :: proc "c" (c: C.int) ---
 	@(link_name = "setmouse")
 	setmouse_r :: proc "c" () ---
-	@(link_name = "apply_autocmds")
-	apply_autocmds_c :: proc "c" (event: C.int, fname: cstring, fname2: cstring, group: bool, buf: rawptr) ---
+	// apply_autocmds declared in main.odin (proc "c") — reuse directly.
 }
 
 // p_sel already declared in register.odin — use directly.
@@ -2102,7 +2101,7 @@ do_search :: proc "c"(
 		retval = 1
 
 		if sia != nil && sia.sa_wrapped != 0 {
-			apply_autocmds_c(EVENT_SEARCHWRAPPED_S, nil, nil, false, nil)
+			_ = apply_autocmds(EVENT_SEARCHWRAPPED_S, nil, nil, false, nil)
 		}
 
 		if !(options & SEARCH_NOOF != 0) || (pat != nil && b_at(pat, 0) == ';') {

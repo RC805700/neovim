@@ -836,7 +836,7 @@ do_record :: proc "c" (c: C.int) -> C.int {
 			do_record_regname = c
 			retval = OK_R
 
-			apply_autocmds(EVENT_RECORDINGENTER, nil, nil, false, curbuf)
+			_ = apply_autocmds(EVENT_RECORDINGENTER, nil, nil, false, curbuf)
 		}
 	} else { // stop recording
 		sve: Save_V_Event_T
@@ -855,7 +855,7 @@ do_record :: proc "c" (c: C.int) -> C.int {
 		tv_dict_add_str_m(dict, cstring("regname"), 7, transmute(cstring)(&buf[0]))
 		tv_dict_set_keys_readonly_r(dict)
 
-		apply_autocmds(EVENT_RECORDINGLEAVE, nil, nil, false, curbuf)
+		_ = apply_autocmds(EVENT_RECORDINGLEAVE, nil, nil, false, curbuf)
 		restore_v_event_r(dict, &sve)
 		reg_recorded = reg_recording
 		reg_recording = 0
@@ -1570,7 +1570,7 @@ do_autocmd_textyankpost :: proc "c" (oap: rawptr, reg: ^Yankreg_T) {
 
 	tv_dict_set_keys_readonly_r(dict)
 	textlock += 1
-	apply_autocmds(EVENT_TEXTYANKPOST, nil, nil, false, curbuf)
+	_ = apply_autocmds(EVENT_TEXTYANKPOST, nil, nil, false, curbuf)
 	textlock -= 1
 	restore_v_event_r(dict, &sve)
 
@@ -1634,9 +1634,9 @@ put_do_autocmd :: proc "c"(regname: C.int, reg: ^Yankreg_T, insert: ^Str16, post
 	put_recursive = true
 	textlock += 1
 	if post {
-		apply_autocmds(EVENT_TEXTPUTPOST, nil, nil, false, curbuf)
+		_ = apply_autocmds(EVENT_TEXTPUTPOST, nil, nil, false, curbuf)
 	} else {
-		apply_autocmds(EVENT_TEXTPUTPRE, nil, nil, false, curbuf)
+		_ = apply_autocmds(EVENT_TEXTPUTPRE, nil, nil, false, curbuf)
 	}
 	textlock -= 1
 	put_recursive = false

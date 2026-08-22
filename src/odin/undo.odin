@@ -215,8 +215,6 @@ foreign _ {
 	buf_updates_unload_r :: proc "c" (buf: rawptr, can_reload: bool) ---
 	@(link_name = "buf_updates_changedtick")
 	buf_updates_changedtick_r :: proc "c" (buf: rawptr) ---
-	@(link_name = "spell_check_window")
-	spell_check_window_r :: proc "c" (wp: rawptr) -> bool ---
 	@(link_name = "redrawWinline")
 	redrawWinline_r :: proc "c" (wp: rawptr, lnum: C.int) ---
 	// foldOpenCursor now defined in fold.odin — reuse directly.
@@ -2211,7 +2209,7 @@ u_undoredo :: proc "c" (undo: bool, do_buf_event: bool) {
 
 		if oldsize > 0 || newsize > 0 {
 			changed_lines_r(curbuf, top + 1, 0, bot, newsize - oldsize, do_buf_event)
-			if spell_check_window_r(curwin) && bot <= ml_line_count_b(curbuf) {
+			if spell_check_window(curwin) && bot <= ml_line_count_b(curbuf) {
 				redrawWinline_r(curwin, bot)
 			}
 		}

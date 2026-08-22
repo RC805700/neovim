@@ -17,7 +17,22 @@ foreign _ {
 
 // Direct libc wrappers using raw linux syscalls (no name conflicts with posix package)
 _c_open :: proc(path: cstring, flags: c.int, mode: c.int) -> c.int {
-	fd, err := linux.open(path, transmute(linux.Open_Flags)flags, transmute(linux.Mode)mode)
+	// Build bit_sets from the raw int values. Open_Flags_Bits/Mode_Bits
+	// ordinals are identity-mapped to their octal bit values (verified in
+	// Odin core bits.odin), so set each bit whose value is present.
+	ofl := linux.Open_Flags{}
+	for i := 0; i < 32; i += 1 {
+		if flags & (1 << u32(i)) != 0 {
+			ofl |= linux.Open_Flags{transmute(linux.Open_Flags_Bits)u64(i)}
+		}
+	}
+	mfl := linux.Mode{}
+	for i := 0; i < 12; i += 1 {
+		if mode & (1 << u32(i)) != 0 {
+			mfl |= linux.Mode{transmute(linux.Mode_Bits)u64(i)}
+		}
+	}
+	fd, err := linux.open(path, ofl, mfl)
 	if err != .NONE {
 		posix.set_errno(posix.Errno(err))
 		return -1
@@ -236,7 +251,7 @@ os_open :: proc "c" (path: cstring, flags: c.int, mode: c.int) -> c.int {
 	if path == nil {
 		return -1 // UV_EINVAL (same as C: uv_fs_open asserts on NULL)
 	}
-		fd := _c_open(path, flags, mode)
+	fd := _c_open(path, flags, mode)
 	if fd < 0 {
 		return uv_translate_sys_error(c.int(posix.errno()))
 	}
@@ -670,7 +685,7 @@ os_fopen :: proc "c" (path: cstring, flags: cstring) -> rawptr {
 	case:
 		return nil
 	}
-	fd := os_open(path, iflags, 0666)
+	fd := os_open(path, iflags, 0o666)
 	if fd < 0 {
 		return nil
 	}

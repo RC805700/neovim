@@ -215,7 +215,7 @@ input_stop :: proc "c" () {
 cursorhold_event :: proc(argv: ^rawptr) {
 	context = runtime.default_context()
 	event: c.int = (State & MODE_INSERT != 0) ? EVENT_CURSORHOLDI : EVENT_CURSORHOLD
-	apply_autocmds(event, nil, nil, false, curbuf)
+	_ = apply_autocmds(event, nil, nil, false, curbuf)
 	did_cursorhold = true
 }
 
