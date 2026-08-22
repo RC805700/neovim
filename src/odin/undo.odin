@@ -219,8 +219,7 @@ foreign _ {
 	spell_check_window_r :: proc "c" (wp: rawptr) -> bool ---
 	@(link_name = "redrawWinline")
 	redrawWinline_r :: proc "c" (wp: rawptr, lnum: C.int) ---
-	@(link_name = "foldOpenCursor")
-	foldOpenCursor_r :: proc "c" () ---
+	// foldOpenCursor now defined in fold.odin — reuse directly.
 	@(link_name = "messaging")
 	messaging_r :: proc "c" () -> bool ---
 	@(link_name = "shortmess")
@@ -2356,7 +2355,7 @@ ml_append_flags_c :: #force_inline proc "c"(lnum: C.int, line: ^u8, len: C.int, 
 u_undo_end :: proc "c" (did_undo_arg: bool, absolute: bool, quiet: bool) {
 	did_undo := did_undo_arg
 	if (fdo_flags & kOptFdoFlagUndo_U) != 0 && KeyTyped {
-		foldOpenCursor_r()
+		foldOpenCursor()
 	}
 
 	if quiet || global_busy != 0 || !messaging_r() || shortmess_r(SHM_UNDO_CH) {
@@ -2967,7 +2966,7 @@ f_undofile :: proc "c" (argvars: ^Typval, rettv: ^Typval, fptr: rawptr) {
 	xfree(ffname)
 }
 
-VAR_STRING_U :: 0 // typval_T VAR_STRING
+VAR_STRING_U :: 2 // typval_T VAR_STRING
 
 /// "undotree()" function
 @(export)

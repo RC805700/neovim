@@ -292,7 +292,7 @@ foreign _ {
 
 	qf_mark_adjust :: proc "c" (buf, wp: rawptr, line1, line2, amount, amount_after: C.int) -> bool ---
 	extmark_adjust :: proc "c" (buf: rawptr, line1, line2, amount, amount_after, op: C.int) ---
-	foldMarkAdjust :: proc "c" (wp: rawptr, line1, line2, amount, amount_after: C.int) ---
+	// foldMarkAdjust now defined in fold.odin — reuse directly.
 	diff_mark_adjust :: proc "c" (buf: rawptr, line1, line2, amount, amount_after: C.int) ---
 
 	ml_get :: proc "c" (lnum: C.int) -> ^u8 ---
@@ -310,7 +310,7 @@ foreign _ {
 	check_cursor :: proc "c" (wp: rawptr) ---
 	beginline :: proc "c" (flags: C.int) ---
 	set_topline :: proc "c" (wp: rawptr, lnum: C.int) ---
-	hasFolding :: proc "c" (win: rawptr, lnum: C.int, firstp, lastp: ^C.int) -> bool ---
+	// hasFolding now defined in fold.odin — reuse directly.
 	linetabsize_eol :: proc "c" (wp: rawptr, lnum: C.int) -> C.int ---
 
 	findpar :: proc "c" (pincl: ^bool, dir, count, what: C.int, both: bool) -> bool ---
