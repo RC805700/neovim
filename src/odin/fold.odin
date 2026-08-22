@@ -197,8 +197,7 @@ foreign _ {
 	skip_comment_r :: proc "c" (line: ^u8, process: bool, include_space: bool, is_comment: ^bool) -> ^u8 ---
 	@(link_name = "transstr")
 	transstr_r :: proc "c" (s: cstring, untab: bool) -> ^u8 ---
-	@(link_name = "linewhite")
-	linewhite_r :: proc "c" (lnum: C.int) -> bool ---
+	// linewhite now defined in search.odin — reuse directly.
 	@(link_name = "ml_replace_buf")
 	ml_replace_buf_r :: proc "c" (buf: rawptr, lnum: C.int, line: ^u8, copy: bool, noalloc: bool) -> C.int ---
 	@(link_name = "put_line")
@@ -2766,7 +2765,7 @@ f_foldtext :: proc "c" (argvars: ^Typval, rettv: ^Typval, fptr: rawptr) {
 	if foldstart > 0 && foldend <= ml_line_count_b(curbuf) {
 		lnum: C.int
 		for lnum = foldstart; lnum < foldend; lnum += 1 {
-			if !linewhite_r(lnum) {
+			if !linewhite(lnum) {
 				break
 			}
 		}

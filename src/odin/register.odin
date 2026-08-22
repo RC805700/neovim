@@ -378,10 +378,7 @@ foreign _ {
 	getaltfname_r :: proc "c" (errmsg: bool) -> ^u8 ---
 	@(link_name = "check_fname")
 	check_fname_r :: proc "c" () -> C.int ---
-	@(link_name = "last_search_pat")
-	last_search_pat_r :: proc "c" () -> ^u8 ---
-	@(link_name = "set_last_search_pat")
-	set_last_search_pat_r :: proc "c" (s: cstring, idx: C.int, magic: C.int, setlast: bool) ---
+	// last_search_pat / set_last_search_pat now defined in search.odin — reuse directly.
 	@(link_name = "buflist_findpat")
 	buflist_findpat_r :: proc "c" (pattern: cstring, pattern_end: cstring, unlisted: bool, diffmode: bool, curtab_only: bool) -> C.int ---
 	@(link_name = "buflist_name_nr")
@@ -1189,10 +1186,10 @@ get_spec_reg :: proc "c" (regname: C.int, argp: ^^u8, allocated: ^bool, errmsg: 
 		return true
 
 	case '/': // last search-pattern
-		if last_search_pat_r() == nil && errmsg {
+		if last_search_pat() == nil && errmsg {
 			emsg(_t(e_noprevre))
 		}
-		argp^ = last_search_pat_r()
+		argp^ = last_search_pat()
 		return true
 
 	case '.': // last inserted text
@@ -2703,11 +2700,11 @@ ex_display :: proc "c" (eap: rawptr) {
 	}
 
 	// display last search pattern
-	if last_search_pat_r() != nil &&
+	if last_search_pat() != nil &&
 		(arg == nil || _vim_strchr(transmute(cstring)((^u8)(arg)), '/') != nil) &&
-		!got_int && !message_filtered(transmute(cstring)(last_search_pat_r())) {
+		!got_int && !message_filtered(transmute(cstring)(last_search_pat())) {
 		msg_puts(cstring("\n  c  \"/   "))
-		dis_msg(last_search_pat_r(), false)
+		dis_msg(last_search_pat(), false)
 	}
 
 	// display last used expression
@@ -3056,7 +3053,7 @@ write_reg_contents_ex :: proc "c" (name: C.int, str: cstring, len_arg: i64, must
 
 	// Special case: '/' search pattern
 	if name == '/' {
-		set_last_search_pat_r(str, RE_SEARCH, 1, true)
+		set_last_search_pat(str, RE_SEARCH, 1, true)
 		return
 	}
 

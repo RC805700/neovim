@@ -62,8 +62,7 @@ foreign _ {
 	reverse_text_r :: proc "c" (s: cstring) -> ^u8 ---
 	@(link_name = "redraw_all_later")
 	redraw_all_later_s :: proc "c" (typ: C.int) ---
-	@(link_name = "buf_get_changedtick")
-	buf_get_changedtick_r :: proc "c" (buf: rawptr) -> C.longlong ---
+	// buf_get_changedtick is a C static inline — see buf_changedtick_inline below.
 
 	@(link_name = "mb_isupper")
 	mb_isupper_r :: proc "c" (a: C.int) -> bool ---
@@ -79,10 +78,7 @@ foreign _ {
 	check_linecomment_r :: proc "c" (line: ^u8) -> C.int ---
 	@(link_name = "char_avail")
 	char_avail_r :: proc "c" () -> bool ---
-	@(link_name = "line_breakcheck_s")
-	line_breakcheck_s :: proc "c" () ---
-	@(link_name = "fast_breakcheck_s")
-	fast_breakcheck_s :: proc "c" () ---
+	// line_breakcheck/fast_breakcheck are Odin exports in input.odin — call directly.
 
 	@(link_name = "inc")
 	incl_pos :: proc "c" (lp: ^Pos_T) -> C.int ---
@@ -91,11 +87,11 @@ foreign _ {
 	@(link_name = "dec_cursor")
 	dec_cursor_r :: proc "c" () -> C.int ---
 
-	@(link_name = "give_warning2")
+	@(link_name = "give_warning")
 	give_warning_s :: proc "c" (message: cstring, hl: bool, hist: bool) ---
-	@(link_name = "shortmess2")
+	@(link_name = "shortmess")
 	shortmess_s :: proc "c" (x: C.int) -> bool ---
-	@(link_name = "messaging2")
+	@(link_name = "messaging")
 	messaging_s :: proc "c" () -> bool ---
 	@(link_name = "gotocmdline")
 	gotocmdline_r :: proc "c" (clr: bool) ---
@@ -107,7 +103,7 @@ foreign _ {
 	msg_strtrunc_r :: proc "c" (s: ^u8, force: bool) -> ^u8 ---
 	@(link_name = "msg_puts")
 	msg_puts_s :: proc "c" (s: cstring) ---
-	@(link_name = "msg_puts_title2")
+	@(link_name = "msg_puts_title")
 	msg_puts_title_s :: proc "c" (s: cstring) ---
 	@(link_name = "msg_puts_hl")
 	msg_puts_hl_s :: proc "c" (s: cstring, hl: C.int, hist: bool) ---
@@ -117,9 +113,9 @@ foreign _ {
 	msg_trunc_s :: proc "c" (s: cstring, check: bool, hl_id: C.int) ---
 	@(link_name = "msg_home_replace")
 	msg_home_replace_r :: proc "c" (fname: ^u8) ---
-	@(link_name = "msg_outtrans2")
+	@(link_name = "msg_outtrans")
 	msg_outtrans_s :: proc "c" (str: cstring, hl_id: C.int, hist: bool) -> C.int ---
-	@(link_name = "ui_flush_s")
+	@(link_name = "ui_flush")
 	ui_flush_s :: proc "c" () ---
 	@(link_name = "show_cursor_info_later")
 	show_cursor_info_later_r :: proc "c" (must_show: bool) ---
@@ -137,7 +133,7 @@ foreign _ {
 	@(link_name = "profile_passed_limit")
 	profile_passed_limit_r :: proc "c" (tm: proftime_T) -> bool ---
 
-	@(link_name = "xstrnsave_c")
+	@(link_name = "xstrnsave")
 	xstrnsave_c :: proc "c" (s: cstring, len: C.size_t) -> ^u8 ---
 }
 
@@ -192,16 +188,17 @@ RE_MAGIC :: 1
 
 HIST_SEARCH :: 1
 
-kOptBoFlagShowmatch :: 0x200 // best-effort bit; beep is cosmetic
+kOptBoFlagShowmatch_S :: 0x2000 // option_vars.generated.h kOptBoFlagShowmatch
 
-SHM_SEARCH :: 0x100 // best-effort bits for shortmess()
-SHM_SEARCHCOUNT :: 0x200
-SHM_COMPLETIONSCAN :: 0x400
+// shortmess() takes a CHAR (option.c: vim_strchr(p_shm, x))
+SHM_SEARCH :: 's'
+SHM_SEARCHCOUNT :: 'S'
+SHM_COMPLETIONSCAN :: 'C'
 
 UPD_SOME_VALID_S :: 2
-HLF_D_S :: 34 // HLF_D count; cosmetic
-HLF_N_S :: 17
-HLF_R_S :: 20
+HLF_D_S :: 5 // highlight_defs.h hlf_T enum order
+HLF_N_S :: 12
+HLF_R_S :: 18
 
 EVENT_SEARCHWRAPPED_S :: 96 // auevents_enum.generated.h
 
@@ -933,6 +930,7 @@ searchit :: proc "c"(
 
 		for loop = 0; loop <= 1; loop += 1 { // loop twice if 'wrapscan'
 			for ; lnum > 0 && lnum <= buf_ml_line_count_r(buf); lnum += C.int(dir) {
+				defer at_first_line = false
 				// Stop after checking "stop_lnum", if it's set.
 				if stop_lnum != 0 && (dir == .FORWARD ? lnum > stop_lnum : lnum < stop_lnum) {
 					break
@@ -1095,7 +1093,7 @@ searchit :: proc "c"(
 					search_match_endcol_g = endpos.col
 					break
 				}
-				line_breakcheck_s()
+				line_breakcheck()
 				if got_int {
 					break
 				}
@@ -1203,7 +1201,7 @@ foreign _ {
 	vim_iswordp_r :: proc "c" (p: ^u8) -> bool ---
 	@(link_name = "get_leader_len")
 	get_leader_len :: proc "c" (line: ^u8, flags: ^C.int, backward: bool, incomment: bool) -> C.int ---
-	@(link_name = "vim_isfilec2")
+	@(link_name = "vim_isfilec")
 	vim_isfilec_2 :: proc "c" (c: C.int) -> bool ---
 
 	@(link_name = "vim_fgets")
@@ -1228,7 +1226,7 @@ foreign _ {
 	@(link_name = "validate_cursor")
 	validate_cursor_r :: proc "c" () ---
 
-	@(link_name = "msg_trunc_attr")
+	@(link_name = "msg_trunc")
 	msg_trunc_r :: proc "c" (s: ^u8, check: bool, hl_id: C.int) ---
 }
 
@@ -1237,7 +1235,7 @@ FNAME_REL_S :: 16
 kEqualFiles_S :: 1
 kOptFdoFlagSearch_S :: 0x40
 MODE_SHOWMATCH_VAL :: 0x6010 // MODE_SHOWMATCH | MODE_INSERT
-HLF_R_S2 :: 20
+HLF_R_S2 :: 18
 LSIZE_C :: 512
 
 // ── trivial pattern get/set family ──────────────────────────────────────────
@@ -1495,21 +1493,18 @@ is_zero_width :: proc "c"(pattern_in: ^u8, patternlen_in: C.size_t, move: bool, 
 	return result
 }
 
-foreign _ {
-	@(link_name = "VIsual")
-	VIsual_c: Pos_T
-}
+// VIsual foreign var already declared in undo.odin (VIsual_g) — reuse directly.
 
 @(export)
 current_search :: proc "c"(count: C.int, forward: bool) -> C.int {
 	old_p_ws := p_ws_g
-	save_VIsual := VIsual_c
+	save_VIsual := VIsual_g
 
-	if VIsual_active && b_at(p_sel_ptr(), 0) == 'e' && lt_pos_s(VIsual_c, win_cursor_r(curwin)^) {
+	if VIsual_active && b_at(p_sel_ptr(), 0) == 'e' && lt_pos_s(VIsual_g, win_cursor_r(curwin)^) {
 		dec_cursor_r()
 	}
 
-	skip_first_backward := forward && VIsual_active && lt_pos_s(win_cursor_r(curwin)^, VIsual_c)
+	skip_first_backward := forward && VIsual_active && lt_pos_s(win_cursor_r(curwin)^, VIsual_g)
 
 	pos := win_cursor_r(curwin)^
 	orig_pos := pos
@@ -1558,7 +1553,7 @@ current_search :: proc "c"(count: C.int, forward: bool) -> C.int {
 		if i == 1 && result == 0 {
 			win_cursor_r(curwin)^ = orig_pos
 			if VIsual_active {
-				VIsual_c = save_VIsual
+				VIsual_g = save_VIsual
 			}
 			return 0
 		} else if i == 0 && result == 0 {
@@ -1574,27 +1569,27 @@ current_search :: proc "c"(count: C.int, forward: bool) -> C.int {
 	start_pos := pos
 
 	if !VIsual_active {
-		VIsual_c = start_pos
+		VIsual_g = start_pos
 	}
 
 	win_cursor_r(curwin)^ = end_pos
-	if lt_pos_s(VIsual_c, end_pos) && forward {
+	if lt_pos_s(VIsual_g, end_pos) && forward {
 		if skip_first_backward {
 			win_cursor_r(curwin)^ = pos
 		} else {
 			dec_cursor_r()
 		}
-	} else if VIsual_active && lt_pos_s(win_cursor_r(curwin)^, VIsual_c) && forward {
+	} else if VIsual_active && lt_pos_s(win_cursor_r(curwin)^, VIsual_g) && forward {
 		win_cursor_r(curwin)^ = pos
 	}
 	VIsual_active = true
 	VIsual_mode = 'v'
 
 	if b_at(p_sel_ptr(), 0) == 'e' {
-		if forward && ltoreq_pos(VIsual_c, win_cursor_r(curwin)^) {
+		if forward && ltoreq_pos(VIsual_g, win_cursor_r(curwin)^) {
 			inc_cursor_r()
-		} else if !forward && ltoreq_pos(win_cursor_r(curwin)^, VIsual_c) {
-			_ = incl_pos(&VIsual_c)
+		} else if !forward && ltoreq_pos(win_cursor_r(curwin)^, VIsual_g) {
+			_ = incl_pos(&VIsual_g)
 		}
 	}
 
@@ -1604,7 +1599,7 @@ current_search :: proc "c"(count: C.int, forward: bool) -> C.int {
 
 	may_start_select('c')
 	setmouse_r()
-	redraw_curbuf_later_r(UPD_INVERTED_S)
+	redraw_curbuf_later_r(UPD_INVERTED_S2)
 	_ = showmode_r()
 
 	return 1
@@ -1615,20 +1610,33 @@ foreign _ {
 	may_start_select :: proc "c" (c: C.int) ---
 	@(link_name = "setmouse")
 	setmouse_r :: proc "c" () ---
-	@(link_name = "p_sel")
-	p_sel_g: ^u8
 	@(link_name = "apply_autocmds")
 	apply_autocmds_c :: proc "c" (event: C.int, fname: cstring, fname2: cstring, group: bool, buf: rawptr) ---
 }
 
-UPD_INVERTED_S :: 14
+// p_sel already declared in register.odin — use directly.
+p_sel_ptr :: proc "c"() -> ^u8 {
+	return p_sel
+}
+
+// buf_get_changedtick is a C static inline (buffer.h): changedtick_di.di_tv.vval.v_number
+// changedtick_di@216, di_tv@+0, vval@+8
+buf_changedtick_inline :: proc "c"(buf: rawptr) -> C.longlong {
+	return (^C.longlong)(uintptr(buf) + 216 + 8)^
+}
+
+tv_list_len_i :: proc "c"(l: rawptr) -> C.int {
+	if l == nil {
+		return 0
+	}
+	// list_T.lv_len @60
+	return (^C.int)(uintptr(l) + 60)^
+}
+
+UPD_INVERTED_S2 :: 20
 
 buf_of_curwin :: proc "c"() -> rawptr {
 	return (^^rawptr)(uintptr(curwin) + 8)^
-}
-
-p_sel_ptr :: proc "c"() -> ^u8 {
-	return p_sel_g
 }
 
 lt_pos_s :: proc "c"(a, b: Pos_T) -> bool {
@@ -1708,7 +1716,7 @@ update_search_stat :: proc "c"(
 	(libc.memcmp(us_lastpat, spats[last_idx].pat, us_lastpatlen) == 0) &&
 	us_lastpatlen == spats[last_idx].patlen
 
-	spat_cond := us_chgtick == C.int(buf_get_changedtick_r(curbuf)) &&
+	spat_cond := us_chgtick == C.int(buf_changedtick_inline(curbuf)) &&
 	spat_ok &&
 	equalpos_s(us_lastpos, cursor_pos^) && us_lbuf == curbuf
 
@@ -1748,7 +1756,7 @@ update_search_stat :: proc "c"(
 					us_exact_match = true
 				}
 			}
-			fast_breakcheck_s()
+			fast_breakcheck()
 			if maxcount > 0 && us_cnt > maxcount {
 				us_incomplete = 2
 				break
@@ -1761,7 +1769,7 @@ update_search_stat :: proc "c"(
 			xfree(us_lastpat)
 			us_lastpat = xstrnsave_c(transmute(cstring)(spats[last_idx].pat), spats[last_idx].patlen)
 			us_lastpatlen = spats[last_idx].patlen
-			us_chgtick = C.int(buf_get_changedtick_r(curbuf))
+			us_chgtick = C.int(buf_changedtick_inline(curbuf))
 			us_lbuf = curbuf
 			us_lastpos = p
 		}
@@ -1918,7 +1926,7 @@ do_search :: proc "c"(
 		if pat == nil || b_at(pat, 0) == 0 || b_at(pat, 0) == u8(search_delim) {
 			if spats[RE_SEARCH].pat == nil {
 				if spats[RE_SUBST].pat == nil {
-					emsg(cstring("E33: No previous substitute regular expression"))
+					emsg(cstring("E35: No previous regular expression"))
 					retval = 0
 					break
 				}
@@ -2182,7 +2190,8 @@ foreign _ {
 	ui_has_s :: proc "c" (cap: C.int) -> bool ---
 }
 
-kUIMessages_S :: 8 // kUIMessages UI cap bit
+kUIMessages_S :: 4 // ui_defs.h kUICmdline=0..kUIMessages=4
+UPD_INVERTED_S :: 20 // drawscreen.h
 w_set_curswant_true :: proc "c"(wp: rawptr) {
 	(^bool)(uintptr(wp) + 152)^ = true
 }
@@ -2435,7 +2444,7 @@ pos := &fml_pos
 				}
 				pos.lnum += hash_dir
 				linep = ml_get(pos.lnum)
-				line_breakcheck_s()
+				line_breakcheck()
 				ptr4 := skipwhite(transmute(cstring)(linep))
 				if b_at(transmute(^u8)(ptr4), 0) != '#' {
 					continue
@@ -2515,7 +2524,7 @@ pos := &fml_pos
 				linep = ml_get(pos.lnum)
 				pos.col = ml_get_len_r2(pos.lnum)
 				do_quotes = -1
-				line_breakcheck_s()
+				line_breakcheck()
 
 				if comment_dir != 0 || lisp || skip_comments {
 					comment_col = check_linecomment_r(linep)
@@ -2548,7 +2557,7 @@ pos := &fml_pos
 				linep = ml_get(pos.lnum)
 				pos.col = 0
 				do_quotes = -1
-				line_breakcheck_s()
+				line_breakcheck()
 				if lisp || skip_comments {
 					comment_col = check_linecomment_r(linep)
 				}
@@ -2870,8 +2879,6 @@ showmatch :: proc "c"(c: C.int) {
 	ui_cursor_shape_r()
 }
 
-kOptBoFlagShowmatch_S :: 1 << 12 // kOptBoFlagShowmatch bit (cosmetic: beep only)
-
 w_virtcol_add :: proc "c"(wp: rawptr, n: C.int) {
 	(^C.int)(uintptr(wp) + 596)^ += n
 }
@@ -2886,16 +2893,15 @@ w_p_siso_set :: proc "c"(wp: rawptr, v: C.longlong) {
 
 foreign _ {
 	@(link_name = "tv_dict_find")
-	tv_dict_find_r :: proc "c" (d: rawptr, key: cstring, len: C.int) -> rawptr ---
+	tv_dict_find_r :: proc "c" (d: rawptr, key: cstring, len: C.ssize_t) -> rawptr ---
 	@(link_name = "tv_get_number_chk")
 	tv_get_number_chk_r :: proc "c" (arg: ^Typval, err: ^bool) -> C.longlong ---
-	@(link_name = "tv_list_len")
-	tv_list_len :: proc "c" (l: rawptr) -> C.int ---
+	// tv_list_len is a C static inline — see tv_list_len_i below.
 }
 
-// dictitem_T.di_tv is at offset 16 (key char[24] + hash + padding)
+// dictitem_T in this tree: di_tv is FIRST (typval_defs.h TV_DICTITEM_STRUCT)
 di_tv_of :: proc "c"(di: rawptr) -> ^Typval {
-	return (^Typval)(uintptr(di) + 16)
+	return (^Typval)(di)
 }
 li_tv_of :: proc "c"(li: rawptr) -> ^Typval {
 	return (^Typval)(uintptr(li) + 16)
@@ -2935,35 +2941,35 @@ f_searchcount :: proc "c"(argvars: ^Typval, rettv: ^Typval, fptr: rawptr) {
 			return
 		}
 		dict := tv_vval_dict(&([^]Typval)(argvars)[0])
-		di := tv_dict_find_r(dict, "timeout", -1)
+		di := tv_dict_find_r(dict, "timeout", -C.ssize_t(1))
 		if di != nil {
 			timeout = C.int(tv_get_number_chk_r(di_tv_of(di), &err))
 			if err {
 				return
 			}
 		}
-		di = tv_dict_find_r(dict, "maxcount", -1)
+		di = tv_dict_find_r(dict, "maxcount", -C.ssize_t(1))
 		if di != nil {
 			maxcount = C.int(tv_get_number_chk_r(di_tv_of(di), &err))
 			if err {
 				return
 			}
 		}
-		di = tv_dict_find_r(dict, "recompute", -1)
+		di = tv_dict_find_r(dict, "recompute", -C.ssize_t(1))
 		if di != nil {
 			recompute = tv_get_number_chk_r(di_tv_of(di), &err) != 0
 			if err {
 				return
 			}
 		}
-		di = tv_dict_find_r(dict, "pattern", -1)
+		di = tv_dict_find_r(dict, "pattern", -C.ssize_t(1))
 		if di != nil {
 			pattern = tv_get_string_chk_r(di_tv_of(di))
 			if pattern == nil {
 				return
 			}
 		}
-		di = tv_dict_find_r(dict, "pos", -1)
+		di = tv_dict_find_r(dict, "pos", -C.ssize_t(1))
 		if di != nil {
 			di_tv := di_tv_of(di)
 			if di_tv.v_type != VAR_LIST_S {
@@ -2971,7 +2977,7 @@ f_searchcount :: proc "c"(argvars: ^Typval, rettv: ^Typval, fptr: rawptr) {
 				return
 			}
 			l := tv_v_list_ptr(di_tv)
-			if tv_list_len(l) != 3 {
+			if tv_list_len_i(l) != 3 {
 				semsg(cstring("E1210: Number required for argument 1"), "List format should be [lnum, col, off]")
 				return
 			}
@@ -3117,30 +3123,9 @@ find_pattern_in_path :: proc "c"(
 	}
 	if !fpip_end {
 		inc_opt := b_at(buf_p_inc_r(curbuf), 0) == 0 ? p_inc : buf_p_inc_r(curbuf)
-		if b_at(inc_opt, 0) != 0 {
-			incl_regmatch.regprog = vim_regcomp(transmute(cstring)(inc_opt), magic_isset_r() != 0 ? RE_MAGIC : 0)
-			if incl_regmatch.regprog == nil {
-				fpip_end = true
-			}
-			incl_regmatch.rm_ic = 0
-		}
-		def_opt_ok := false
-		if type_ == FIND_DEFINE_S {
-			bd := buf_p_def_r(curbuf)
-			if b_at(bd, 0) != 0 || b_at(p_def, 0) != 0 {
-				def_opt_ok = true
-				def_regmatch.regprog = vim_regcomp(transmute(cstring)(b_at(bd, 0) == 0 ? p_def : bd),
-					magic_isset_r() != 0 ? RE_MAGIC : 0)
-				if def_regmatch.regprog == nil {
-					fpip_end = true
-				}
-				def_regmatch.rm_ic = 0
-			}
-		}
-		_ = def_opt_ok
-	}
-
-	if !fpip_end {
+		curr_fname := buf_fname_r(curbuf)
+		dir_cur := dir
+		count_left := count
 		files_arr := xcalloc_c(C.size_t(max_path_depth), size_of(SearchedFile))
 		files = ([^]SearchedFile)(files_arr)
 		old_files := max_path_depth
@@ -3152,28 +3137,481 @@ find_pattern_in_path :: proc "c"(
 		line := get_line_and_copy(lnum, file_line)
 
 		for true {
-			if false {
+			p: ^u8 = nil
+			define_matched := false
+			outer_break := false
+
+			if incl_regmatch.regprog != nil && vim_regexec_r(&incl_regmatch, line, 0) != 0 {
+				p_fname := curr_fname == buf_fname_r(curbuf) ? buf_ffname_r(curbuf) : curr_fname
+
+				if strstr_c(transmute(cstring)(inc_opt), cstring("\\zs")) != nil {
+					new_fname = find_file_name_in_path(transmute(cstring)(incl_regmatch.startp[0]),
+						C.size_t(uintptr(incl_regmatch.endp[0]) - uintptr(incl_regmatch.startp[0])),
+						FNAME_EXP | FNAME_INCL_S | FNAME_REL_S, 1, p_fname)
+				} else {
+					new_fname = file_name_in_line(incl_regmatch.endp[0], 0,
+						FNAME_EXP | FNAME_INCL_S | FNAME_REL_S, 1, p_fname, nil)
+				}
+				already_searched := false
+				if new_fname != nil {
+					i := C.int(0)
+					for ;; i += 1 {
+						if i == depth + 1 {
+							i = old_files
+						}
+						if i == max_path_depth {
+							break
+						}
+						if path_full_compare_r(transmute(cstring)(new_fname), transmute(cstring)(files[i].name), true, true) & kEqualFiles_S != 0 {
+							if type_ != CHECK_PATH_S && action == ACTION_SHOW_ALL_S && files[i].matched {
+								msg_putchar('\n')
+								if !got_int {
+									msg_home_replace_r(new_fname)
+									msg_puts_s(cstring(" (includes previously listed match)"))
+									prev_fname = nil
+								}
+							}
+							xfree(new_fname)
+							new_fname = nil
+							already_searched = true
+							break
+						}
+					}
+				}
+
+				if type_ == CHECK_PATH_S && (action == ACTION_SHOW_ALL_S || (new_fname == nil && !already_searched)) {
+					if did_show {
+						msg_putchar('\n')
+					} else {
+						gotocmdline_r(true)
+						msg_puts_title_s(cstring("--- Included files "))
+						if action != ACTION_SHOW_ALL_S {
+							msg_puts_title_s(cstring("not found "))
+						}
+						msg_puts_title_s(cstring("in path ---\n"))
+					}
+					did_show = true
+					for depth_displayed < depth && !got_int {
+						depth_displayed += 1
+						for i := C.int(0); i < depth_displayed; i += 1 {
+							msg_puts_s(cstring("  "))
+						}
+						msg_home_replace_r(files[depth_displayed].name)
+						msg_puts_s(cstring(" -->\n"))
+					}
+					if !got_int {
+						for i := C.int(0); i <= depth_displayed; i += 1 {
+							msg_puts_s(cstring("  "))
+						}
+						if new_fname != nil {
+							_ = msg_outtrans_s(transmute(cstring)(new_fname), HLF_D_S, false)
+						} else {
+							qp: ^u8 = nil
+							qi := C.int(0)
+							if strstr_c(transmute(cstring)(inc_opt), cstring("\\zs")) != nil {
+								qp = incl_regmatch.startp[0]
+								qi = C.int(uintptr(incl_regmatch.endp[0]) - uintptr(incl_regmatch.startp[0]))
+							} else {
+								qp = incl_regmatch.endp[0]
+								for b_at(qp, 0) != 0 && !vim_isfilec_2(C.int(b_at(qp, 0))) {
+									qp = (^u8)(uintptr(qp) + 1)
+								}
+								for vim_isfilec_2(C.int(b_at(qp, qi))) {
+									qi += 1
+								}
+							}
+							if qi == 0 {
+								qp = incl_regmatch.endp[0]
+								qi = C.int(libc.strlen(transmute(cstring)(qp)))
+							} else if uintptr(qp) > uintptr(line) {
+								if b_at(qp, -1) == '"' || b_at(qp, -1) == '<' {
+									qp = (^u8)(uintptr(qp) - 1)
+									qi += 1
+								}
+								if b_at(qp, qi) == '"' || b_at(qp, qi) == '>' {
+									qi += 1
+								}
+							}
+							save_char := b_at(qp, qi)
+							b_set(qp, qi, 0)
+							_ = msg_outtrans_s(transmute(cstring)(qp), HLF_D_S, false)
+							b_set(qp, qi, save_char)
+						}
+
+						if new_fname == nil && action == ACTION_SHOW_ALL_S {
+							if already_searched {
+								msg_puts_s(cstring("  (Already listed)"))
+							} else {
+								msg_puts_s(cstring("  NOT FOUND"))
+							}
+						}
+					}
+				}
+
+				if new_fname != nil {
+					// Push the new file onto the file stack
+					if depth + 1 == old_files {
+						bigger = ([^]SearchedFile)(xmalloc(size_of(SearchedFile) * C.size_t(max_path_depth) * 2))
+						for i := C.int(0); i <= depth; i += 1 {
+							bigger[i] = files[i]
+						}
+						for i := depth + 1; i < old_files + max_path_depth; i += 1 {
+							bigger[i].fp = nil
+							bigger[i].name = nil
+							bigger[i].lnum = 0
+							bigger[i].matched = false
+						}
+						for i := old_files; i < max_path_depth; i += 1 {
+							bigger[i + max_path_depth] = files[i]
+						}
+						old_files += max_path_depth
+						max_path_depth *= 2
+						xfree(files_arr)
+						files_arr = ([^]SearchedFile)(bigger)
+						files = bigger
+					}
+					if os_fopen(transmute(cstring)(new_fname), cstring("r")) == nil {
+						xfree(new_fname)
+						new_fname = nil
+					} else {
+						files[depth + 1].fp = os_fopen(transmute(cstring)(new_fname), cstring("r"))
+						depth += 1
+						if depth == old_files {
+							xfree(files[old_files].name)
+							old_files += 1
+						}
+						files[depth].name = new_fname
+						curr_fname = new_fname
+						files[depth].lnum = 0
+						files[depth].matched = false
+						if action == ACTION_EXPAND_S && !shortmess_s(SHM_COMPLETIONSCAN) && !silent {
+							msg_hist_off = 1
+							libc.snprintf(&IObuff[0], IOSIZE_S, "Scanning included file: %s", transmute(cstring)(new_fname))
+							msg_trunc_r(&IObuff[0], true, HLF_R_S)
+							msg_hist_off = 0
+						} else if p_verbose >= 5 {
+							verbose_enter_r()
+							vmsg_buf(cstring("Searching included file %s"), new_fname)
+							verbose_leave_r()
+						}
+					}
+				}
+			} else {
+				p = line
+				for true { // search_line: emulation (backward goto target)
+					define_matched = false
+					if def_regmatch.regprog != nil && vim_regexec_r(&def_regmatch, line, 0) != 0 {
+						p = def_regmatch.endp[0]
+						for b_at(p, 0) != 0 && !vim_iswordc_r(C.int(b_at(p, 0))) {
+							p = (^u8)(uintptr(p) + 1)
+						}
+						define_matched = true
+					}
+
+					if def_regmatch.regprog == nil || define_matched {
+						matched = false
+						if define_matched || compl_status_sol() {
+							startp = transmute(^u8)(skipwhite(transmute(cstring)(p)))
+							matched = (p_ic != 0 ?
+								mb_strnicmp_r(transmute(cstring)(startp), transmute(cstring)(ptr), len) :
+								C.int(libc.strncmp(transmute(cstring)(startp), transmute(cstring)(ptr), len))) == 0
+							if matched && define_matched && whole && vim_iswordc_r(C.int(b_at(startp, C.int(len)))) {
+								matched = false
+							}
+						} else if regmatch.regprog != nil &&
+						vim_regexec_r(&regmatch, line, C.int(uintptr(p) - uintptr(line))) != 0 {
+							matched = true
+							startp = regmatch.startp[0]
+							if skip_comments_in {
+								if (b_at(line, 0) != '#' ||
+								libc.strncmp(skipwhite(transmute(cstring)(^u8)(uintptr(line)+1)), "define", 6) != 0) &&
+								get_leader_len(line, nil, false, true) != 0 {
+									matched = false
+								}
+
+								sp := line
+								if matched || (b_at(sp, 0) == '/' && b_at(sp, 1) == '*') || b_at(sp, 0) == '*' {
+									for b_at(sp, 0) != 0 && uintptr(sp) < uintptr(startp) {
+										if matched && b_at(sp, 0) == '/' &&
+										(b_at(sp, 1) == '*' || b_at(sp, 1) == '/') {
+											matched = false
+											if b_at(sp, 1) == '/' {
+												break
+											}
+											sp = (^u8)(uintptr(sp) + 1)
+										} else if !matched && b_at(sp, 0) == '*' && b_at(sp, 1) == '/' {
+											matched = true
+											sp = (^u8)(uintptr(sp) + 1)
+										}
+										sp = (^u8)(uintptr(sp) + 1)
+									}
+								}
+							}
+						}
+					}
+
+					if !matched {
+						break // leave search_line loop → continue outer
+					}
+
+					if action == ACTION_EXPAND_S {
+						cont_s_ipos := false
+						if depth == -1 && lnum == win_cursor_r(curwin)^.lnum {
+							outer_break = true
+							break
+						}
+						found = true
+						aux := startp
+						p = startp
+						exm: { // exit_matched goto emulation
+							if compl_status_adding() && libc.strlen(transmute(cstring)(p)) >= C.size_t(ins_compl_len_r()) {
+								p = (^u8)(uintptr(p) + uintptr(ins_compl_len_r()))
+								if vim_iswordp_r(p) {
+									break exm // goto exit_matched
+								}
+								p = find_word_start(p)
+							}
+							p = find_word_end(p)
+							i := C.int(uintptr(p) - uintptr(aux))
+
+							if compl_status_adding() && i == ins_compl_len_r() {
+								// IObuff > compl_length, so the strncpy works
+								libc.memcpy(&IObuff[0], aux, C.size_t(i))
+
+								// Get the next line.
+								if depth < 0 {
+									if lnum >= end_lnum {
+										break exm // goto exit_matched
+									}
+									lnum += 1
+									line = get_line_and_copy(lnum, file_line)
+								} else if vim_fgets(file_line, LSIZE_C, files[depth].fp) != 0 {
+									break exm // goto exit_matched
+								}
+
+								already = transmute(^u8)(skipwhite(transmute(cstring)(file_line)))
+								aux = already
+								p = find_word_start(already)
+								p = find_word_end(p)
+								if uintptr(p) > uintptr(aux) {
+									if b_at(aux, 0) != ')' && b_at(&IObuff[0], i - 1) != '\t' {
+										if b_at(&IObuff[0], i-1) != ' ' {
+											b_set(&IObuff[0], i, ' ')
+											i += 1
+										}
+										// IObuff =~ "\(\k\|\i\).* ", thus i >= 2
+										if p_js != 0 &&
+										(b_at(&IObuff[0], i-2) == '.' ||
+										b_at(&IObuff[0], i-2) == '?' ||
+										b_at(&IObuff[0], i-2) == '!') {
+											b_set(&IObuff[0], i, ' ')
+											i += 1
+										}
+									}
+									// copy as much as possible of the new word
+									if C.int(uintptr(p)-uintptr(aux)) >= IOSIZE_S - i {
+										p = (^u8)(uintptr(aux) + uintptr(IOSIZE_S - i - 1))
+									}
+									libc.memcpy((^u8)(uintptr(&IObuff[0]) + uintptr(i)), aux, C.size_t(uintptr(p) - uintptr(aux)))
+									i += C.int(uintptr(p) - uintptr(aux))
+									cont_s_ipos = true
+								}
+								b_set(&IObuff[0], i, 0)
+								aux = &IObuff[0]
+
+								if i == ins_compl_len_r() {
+									break exm // goto exit_matched
+								}
+							}
+
+							add_r := ins_compl_add_infercase(aux, i, p_ic != 0,
+								curr_fname == buf_fname_r(curbuf) ? nil : curr_fname,
+								C.int(dir_cur), cont_s_ipos, 0)
+							if add_r == 1 { // OK: dir was BACKWARD, honor it just once
+								dir_cur = .FORWARD
+							} else if add_r == 0 { // FAIL
+								outer_break = true
+								break exm
+							}
+						}
+					} else if action == ACTION_SHOW_ALL_S {
+						found = true
+						if !did_show {
+							gotocmdline_r(true)
+						}
+						if curr_fname != prev_fname {
+							if did_show {
+								msg_putchar('\n')
+							}
+							if !got_int {
+								msg_home_replace_r(curr_fname)
+							}
+							prev_fname = curr_fname
+						}
+						did_show = true
+						if !got_int {
+							show_pat_in_path(line, type_, true, action,
+								depth == -1 ? nil : files[depth].fp,
+								depth == -1 ? &lnum : &files[depth].lnum,
+								match_count)
+							match_count += 1
+						}
+
+						for i := C.int(0); i <= depth; i += 1 {
+							files[i].matched = true
+						}
+					} else {
+						count_left -= 1
+						if count_left > 0 {
+							break // leave search_line loop; not the target match yet
+						}
+						found = true
+						if depth == -1 && lnum == win_cursor_r(curwin)^.lnum && l_g_do_tagpreview == 0 {
+							emsg(cstring("E387: Match is on current line"))
+						} else if action == ACTION_SHOW_S {
+							show_pat_in_path(line, type_, did_show, action,
+								depth == -1 ? nil : files[depth].fp,
+								depth == -1 ? &lnum : &files[depth].lnum, 1)
+							did_show = true
+						} else {
+							if l_g_do_tagpreview != 0 {
+								curwin_save = curwin
+								prepare_tagpreview(true)
+							}
+							if action == ACTION_SPLIT_S {
+								if win_split_r(0, 0) == 0 {
+									outer_break = true
+									break
+								}
+								reset_binding_w(curwin)
+							}
+							if depth == -1 {
+								if l_g_do_tagpreview != 0 {
+									if !win_valid_r(curwin_save) {
+										outer_break = true
+										break
+									}
+									if getfile_r(buf_fnum_of(buf_of_curwin()), nil, nil, true, lnum, forceit) > 0 {
+										outer_break = true
+										break
+									}
+								} else {
+									setpcmark()
+								}
+								win_cursor_r(curwin)^.lnum = lnum
+								check_cursor_r(curwin)
+							} else {
+								if getfile_r(0, files[depth].name, nil, true, files[depth].lnum, forceit) > 0 {
+									outer_break = true
+									break
+								}
+								win_cursor_r(curwin)^.lnum = files[depth].lnum
+							}
+						}
+						if action != ACTION_SHOW_S {
+							win_cursor_r(curwin)^.col = C.int(uintptr(startp) - uintptr(line))
+							w_set_curswant_true(curwin)
+						}
+
+						if l_g_do_tagpreview != 0 &&
+						curwin != curwin_save && win_valid_r(curwin_save) {
+							validate_cursor_r()
+							redraw_later_r(curwin, UPD_VALID_S)
+							win_enter_r(curwin_save, true)
+						}
+						outer_break = true
+					}
+
+					// exit_matched:
+					matched = false
+					if def_regmatch.regprog == nil &&
+					action == ACTION_EXPAND_S &&
+					!compl_status_sol() &&
+					b_at(startp, 0) != 0 &&
+					b_at(startp, utfc_ptr2len(transmute(cstring)(startp))) != 0 {
+						continue // goto search_line
+					}
+				} // search_line loop
+			}
+			if outer_break {
 				break
 			}
-			// (loop body translated below with labeled continue emulation)
-			break
+
+			line_breakcheck()
+			if action == ACTION_EXPAND_S {
+				ins_compl_check_keys(30, false)
+			}
+			if got_int || ins_compl_interrupted() {
+				break
+			}
+
+			// Read the next line. When reading an included file and hitting
+			// EOF, close the file and continue in the including file.
+			for depth >= 0 && already == nil &&
+			vim_fgets(file_line, LSIZE_C, files[depth].fp) != 0 {
+				libc.fclose(transmute(^libc.FILE)(files[depth].fp))
+				old_files -= 1
+				files[old_files].name = files[depth].name
+				files[old_files].matched = files[depth].matched
+				depth -= 1
+				curr_fname = depth == -1 ? buf_fname_r(curbuf) : files[depth].name
+				if depth_displayed > depth {
+					depth_displayed = depth
+				}
+			}
+			if depth >= 0 {
+				files[depth].lnum += 1
+				line = file_line
+				// Remove any CR and LF from the line.
+				ii := libc.strlen(transmute(cstring)(line))
+				if ii > 0 && b_at(line, C.int(ii)-1) == '\n' {
+					ii -= 1
+					b_set(line, C.int(ii), 0)
+				}
+				if ii > 0 && b_at(line, C.int(ii)-1) == '\r' {
+					ii -= 1
+					b_set(line, C.int(ii), 0)
+				}
+			} else if already == nil {
+				lnum += 1
+				if lnum > end_lnum {
+					break
+				}
+				line = get_line_and_copy(lnum, file_line)
+			}
+			already = nil
 		}
-		_ = bigger
-		_ = new_fname
-		_ = prev_fname
-		_ = matched
-		_ = did_show
-		_ = found
-		_ = already
-		_ = startp
-		_ = curwin_save
-		_ = l_g_do_tagpreview
-		_ = line
-		_ = depth
-		_ = old_files
-		_ = match_count
-		_ = dir
+
+		// Close any files that are still open.
+		for i := C.int(0); i <= depth; i += 1 {
+			libc.fclose(transmute(^libc.FILE)(files[i].fp))
+			xfree(files[i].name)
+		}
+		for i := old_files; i < max_path_depth; i += 1 {
+			xfree(files[i].name)
+		}
 		xfree(files_arr)
+
+		if type_ == CHECK_PATH_S {
+			if !did_show {
+				if action != ACTION_SHOW_ALL_S {
+					msg_msg(cstring("All included files were found"), 0)
+				} else {
+					msg_msg(cstring("No included files"), 0)
+				}
+			}
+		} else if !found && action != ACTION_EXPAND_S && !silent {
+			if got_int || ins_compl_interrupted() {
+				emsg(cstring("Interrupted"))
+			} else if type_ == FIND_DEFINE_S {
+				emsg(cstring("E388: Couldn't find definition"))
+			} else {
+				emsg(cstring("E389: Couldn't find pattern"))
+			}
+		}
+		if action == ACTION_SHOW_S || action == ACTION_SHOW_ALL_S {
+			msg_end_r()
+		}
 	}
 
 	vim_regfree(regmatch.regprog)
@@ -3184,4 +3622,96 @@ find_pattern_in_path :: proc "c"(
 foreign _ {
 	@(link_name = "xcalloc")
 	xcalloc_c :: proc "c" (n: C.size_t, sz: C.size_t) -> rawptr ---
+	@(link_name = "strstr")
+	strstr_c :: proc "c" (haystack: cstring, needle: cstring) -> cstring ---
+	@(link_name = "p_js")
+	p_js: C.longlong
+}
+
+IOSIZE_S :: 1025 // globals.h IOSIZE
+
+vmsg_buf :: proc "c"(fmt: cstring, s: ^u8) {
+	tmp: [1025]u8
+	libc.snprintf(&tmp[0], 1025, transmute(cstring)(fmt), transmute(cstring)(s))
+	msg_trunc_r(&tmp[0], true, HLF_R_S)
+}
+
+// RESET_BINDING(wp): w_p_scb@1112 and w_p_crb@1152 = false
+reset_binding_w :: proc "c"(wp: rawptr) {
+	(^bool)(uintptr(wp) + 1112)^ = false
+	(^bool)(uintptr(wp) + 1152)^ = false
+}
+
+buf_fnum_of :: proc "c"(buf: rawptr) -> C.int {
+	return (^C.int)(buf)^ // buf_T.handle is at offset 0
+}
+
+foreign _ {
+	@(link_name = "check_cursor")
+	check_cursor_r :: proc "c" (wp: rawptr) ---
+}
+
+UPD_VALID_S :: 10 // drawscreen.h
+
+// Show pattern in path (used by [i, [d, :isearch, :ilist, :psearch).
+show_pat_in_path :: proc "c"(
+	line_in: ^u8,
+	type_: C.int,
+	did_show: bool,
+	action: C.int,
+	fp: rawptr,
+	lnum: ^C.int,
+	count: C.int,
+) {
+	if did_show {
+		msg_putchar('\n')
+	} else if msg_silent == 0 {
+		gotocmdline_r(true)
+	}
+	if got_int {
+		return
+	}
+	line := line_in
+	linelen := libc.strlen(transmute(cstring)(line))
+	for true {
+		p := (^u8)(uintptr(line) + uintptr(linelen) - 1)
+		if fp != nil {
+			if uintptr(p) >= uintptr(line) && b_at(p, 0) == '\n' {
+				p = (^u8)(uintptr(p) - 1)
+			}
+			if uintptr(p) >= uintptr(line) && b_at(p, 0) == '\r' {
+				p = (^u8)(uintptr(p) - 1)
+			}
+			b_set(p, 1, 0)
+		}
+		if action == ACTION_SHOW_ALL_S {
+			tmpn: [32]u8
+			libc.snprintf(&tmpn[0], 32, "%3d: ", count)
+			msg_puts_s(transmute(cstring)(&tmpn[0]))
+			libc.snprintf(&tmpn[0], 32, "%4d", lnum^)
+			msg_puts_hl_s(transmute(cstring)(&tmpn[0]), HLF_N_S, false)
+			msg_puts_s(cstring(" "))
+		}
+		msg_prt_line_r(line, false)
+
+		if got_int || type_ != FIND_DEFINE_S || uintptr(p) < uintptr(line) || b_at(p, 0) != '\\' {
+			break
+		}
+
+		if fp != nil {
+			if vim_fgets(line, LSIZE_C, fp) != 0 {
+				break
+			}
+			linelen = libc.strlen(transmute(cstring)(line))
+			lnum^ += 1
+		} else {
+			lnum^ += 1
+			if lnum^ > buf_ml_line_count_r(curbuf) {
+				break
+			}
+			line = ml_get(lnum^)
+			linelen = C.size_t(ml_get_len_r2(lnum^))
+		}
+		msg_putchar('\n')
+	}
 }
