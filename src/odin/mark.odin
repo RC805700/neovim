@@ -102,10 +102,10 @@ Xfmark_T :: struct {
 #assert(size_of(Xfmark_T) == 48)
 
 Visualinfo_T :: struct {
-	vi_start: Pos_T,
-	vi_end:   Pos_T,
-	vi_mode:  C.int,
-	_pad:     [4]u8,
+	vi_start:    Pos_T,
+	vi_end:      Pos_T,
+	vi_mode:     C.int,
+	vi_curswant: C.int,
 }
 
 #assert(size_of(Visualinfo_T) == 32)
