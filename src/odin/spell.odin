@@ -13,13 +13,13 @@ foreign _ {
 	@(link_name = "hash_init")
 	hash_init_r :: proc "c" (ht: rawptr) ---
 	@(link_name = "hash_lookup")
-	hash_lookup_r :: proc "c" (ht: rawptr, key: cstring, len: C.size_t, hash: C.uint) -> rawptr ---
+	hash_lookup_r :: proc "c" (ht: rawptr, key: cstring, len: C.size_t, hash: C.size_t) -> rawptr ---
 	@(link_name = "hash_add_item")
-	hash_add_item_r :: proc "c" (ht: rawptr, hi: rawptr, key: ^u8, hash: C.uint) ---
+	hash_add_item_r :: proc "c" (ht: rawptr, hi: rawptr, key: ^u8, hash: C.size_t) ---
 	@(link_name = "hash_clear_all")
 	hash_clear_all_r :: proc "c" (ht: rawptr, off: C.size_t) ---
 	@(link_name = "hash_hash")
-	hash_hash_r :: proc "c" (key: cstring) -> C.uint ---
+	hash_hash_r :: proc "c" (key: cstring) -> C.size_t ---
 
 	// ga_init_r/ga_clear_r already declared in register.odin — reuse directly.
 	@(link_name = "ga_clear_strings")
