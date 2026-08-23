@@ -6927,3 +6927,21 @@ static Dict vimoption2dict(vimoption_T *opt, int opt_flags, buf_T *buf, win_T *w
 
   return dict;
 }
+
+// ── Odin-port accessors (src/odin/option.odin) ─────────────────────────────
+
+vimoption_T *nvim_odin_opt_table(void)
+{
+  return &options[0];
+}
+
+int nvim_odin_opt_count(void)
+{
+  return (int)kOptCount;
+}
+
+// Variable pointer for an option index (global var or scope table entry).
+void *nvim_odin_opt_varp(int opt_idx)
+{
+  return get_varp_scope(&options[opt_idx], OPT_GLOBAL);
+}
