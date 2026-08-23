@@ -6945,3 +6945,50 @@ void *nvim_odin_opt_varp(int opt_idx)
 {
   return get_varp_scope(&options[opt_idx], OPT_GLOBAL);
 }
+
+// Scope-aware varp: wraps get_varp_scope_from (the big switch stays in C).
+void *nvim_odin_get_varp_scope_from(int opt_idx, int opt_flags, buf_T *buf, win_T *win)
+{
+  return get_varp_scope_from(&options[opt_idx], opt_flags, buf, win);
+}
+
+void *nvim_odin_get_varp_scope(int opt_idx, int opt_flags)
+{
+  return get_varp_scope(&options[opt_idx], opt_flags);
+}
+
+void *nvim_odin_get_varp_from(int opt_idx, buf_T *buf, win_T *win)
+{
+  return get_varp_from(&options[opt_idx], buf, win);
+}
+
+bool nvim_odin_option_is_global_local(int opt_idx)
+{
+  return option_is_global_local(opt_idx);
+}
+
+OptVal nvim_odin_get_option_unset_value(int opt_idx)
+{
+  return get_option_unset_value(opt_idx);
+}
+
+uint32_t *nvim_odin_insecure_flag(win_T *wp, int opt_idx, int opt_flags)
+{
+  return insecure_flag(wp, opt_idx, opt_flags);
+}
+
+// Static helpers exposed for the Odin port (src/odin/option.odin).
+void nvim_odin_do_syntax_autocmd(buf_T *buf, bool value_changed)
+{
+  do_syntax_autocmd(buf, value_changed);
+}
+
+void nvim_odin_do_spelllang_source(win_T *win)
+{
+  do_spelllang_source(win);
+}
+
+OptIndex nvim_odin_find_option_len(const char *name, size_t len)
+{
+  return find_option_len(name, len);
+}

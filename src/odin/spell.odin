@@ -58,8 +58,6 @@ foreign _ {
 	// ── option.c / eval ──
 	@(link_name = "did_set_spell_option")
 	did_set_spell_option_r :: proc "c" () -> cstring ---
-	@(link_name = "get_option_value")
-	get_option_value_r :: proc "c" (name: cstring, numval: ^i64, stringval: ^^u8, scope: C.int) -> C.int ---
 
 	// ── syntax/decor/ui (draw.c, decor.c, syntax.c) ──
 	@(link_name = "syn_get_id")
