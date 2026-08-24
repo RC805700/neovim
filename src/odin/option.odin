@@ -2843,3 +2843,310 @@ option_set_callback_func :: proc "c"(optval: ^u8, optcb: rawptr) -> C.int {
 	tv_free_r(tv_ptr)
 	return 1 // OK
 }
+
+foreign _ {
+}
+
+foreign _ {
+	@(link_name = "put_escstr")
+	put_escstr_r :: proc "c" (fd: ^libc.FILE, s: cstring, nul_from: C.int) -> C.int ---
+}
+
+OPT_SKIPRTP_S :: 0x80
+
+kOptSyntax_IDX :: 254 // probe below
+kOptFiletype_IDX :: 103
+kOptRtp_IDX :: 236
+kOptPp_IDX :: 222
+
+// put_set (static, option.c 4795-4870)
+put_set_o :: proc "c"(fd: ^libc.FILE, cmd: cstring, opt_idx: C.int, varp: rawptr) -> C.int {
+	value := optval_from_varp(opt_idx, varp)
+	opt := opt_at(opt_idx)
+	name := transmute(cstring)(opt.fullname)
+	flags := opt.flags
+
+	if option_is_global_local_i(opt_idx) && varp != opt.varp &&
+	optval_equal(value, get_option_unset_value_o(opt_idx)) {
+		return 1 // OK
+	}
+
+	switch value.typ {
+	case kOptValTypeBoolean:
+		vb := ov_boolean(&value)^
+		value_bool := vb != 0 // TRISTATE_TO_BOOL(v,false): true if v!=0? actually kTrue=1→true; kFalse=0→false
+		if libc.fprintf(transmute(^libc.FILE)(fd), "%s %s%s\n", cmd,
+			value_bool ? "" : "no", name) < 0 {
+			return 0
+		}
+	case kOptValTypeNumber:
+		if libc.fprintf(transmute(^libc.FILE)(fd), "%s %s=", cmd, name) < 0 {
+			return 0
+		}
+		value_num := ov_number(&value)^
+		if wc_use_keyname_o(varp, &value_num) {
+			keyname := get_special_key_name_r(C.int(value_num), 0)
+			fputs_o(transmute(cstring)(keyname), transmute(^libc.FILE)(fd))
+		} else {
+			libc.fprintf(transmute(^libc.FILE)(fd), "%lld", value_num)
+		}
+	case kOptValTypeString:
+		if libc.fprintf(transmute(^libc.FILE)(fd), "%s %s=", cmd, name) < 0 {
+			return 0
+		}
+		value_str := ov_str_data(&value)
+		buf: ^u8 = nil
+		part: ^u8 = nil
+		if value_str != nil {
+			if (flags & kOptFlagExpand) != 0 {
+				size := libc.strlen(transmute(cstring)(value_str)) + 1
+				buf = (^u8)(xmalloc_sp(size))
+				home_replace(nil, transmute(cstring)(value_str), transmute(cstring)(buf), size, false)
+				if size >= 4096 && (flags & kOptFlagComma) != 0 &&
+				_vim_strchr(transmute(cstring)(value_str), ',') != nil {
+					part = (^u8)(xmalloc_sp(size))
+					if put_eol_r(transmute(^libc.FILE)(fd)) == 0 {
+						xfree(buf); xfree(part); return 0
+					}
+					p := buf
+					for b_at(p, 0) != 0 {
+						if libc.fprintf(transmute(^libc.FILE)(fd), "%s %s+=", cmd, name) < 0 {
+							xfree(buf); xfree(part); return 0
+						}
+						p2 := skip_to_option_part(p)
+						part_len := uintptr(p2) - uintptr(p)
+						part_len_bytes := C.size_t(uintptr(p2) - uintptr(p))
+						libc.memcpy(part, p, min(part_len_bytes, size))
+						b_set(part, C.int(part_len), 0)
+						if put_escstr_r(transmute(^libc.FILE)(fd), transmute(cstring)(part), 2) == 0 || put_eol_r(transmute(^libc.FILE)(fd)) == 0 {
+							xfree(buf); xfree(part); return 0
+						}
+						p = p2
+					}
+					xfree(buf); xfree(part)
+					return 1
+				}
+				if put_escstr_r(transmute(^libc.FILE)(fd), transmute(cstring)(buf), 2) == 0 {
+					xfree(buf)
+					return 0
+				}
+				xfree(buf)
+			} else {
+				if put_escstr_r(transmute(^libc.FILE)(fd), transmute(cstring)(value_str), 2) == 0 {
+					return 0
+				}
+			}
+		}
+	case:
+		libc.abort()
+	}
+	return put_eol_r(transmute(^libc.FILE)(fd))
+}
+
+@(export)
+makefoldset :: proc "c"(fd: ^libc.FILE) -> C.int {
+	if put_set_o(fd, "setlocal", 109, (^rawptr)(uintptr(curwin) + 896)) == 0 { return 0 } // foldmethod
+	if put_set_o(fd, "setlocal", 104, (^rawptr)(uintptr(curwin) + 928)) == 0 { return 0 } // foldexpr
+	if put_set_o(fd, "setlocal", 108, (^rawptr)(uintptr(curwin) + 944)) == 0 { return 0 } // foldmarker
+	if put_set_o(fd, "setlocal", 105, (^rawptr)(uintptr(curwin) + 872)) == 0 { return 0 } // foldignore
+	if put_set_o(fd, "setlocal", 106, (^rawptr)(uintptr(curwin) + 880)) == 0 { return 0 } // foldlevel
+	if put_set_o(fd, "setlocal", 110, (^rawptr)(uintptr(curwin) + 912)) == 0 { return 0 } // foldminlines
+	if put_set_o(fd, "setlocal", 111, (^rawptr)(uintptr(curwin) + 920)) == 0 { return 0 } // foldnestmax
+	if put_set_o(fd, "setlocal", 103, (^rawptr)(uintptr(curwin) + 864)) == 0 { return 0 } // foldenable
+	return 1
+}
+
+@(export)
+makeset :: proc "c"(fd: ^libc.FILE, opt_flags: C.int, local_only: bool) -> C.int {
+	for pri := C.int(1); pri >= 0; pri -= 1 {
+		for opt_idx := C.int(0); opt_idx < nvim_odin_opt_count(); opt_idx += 1 {
+			opt := opt_at(opt_idx)
+
+			if (opt.flags & kOptFlagNoMkrc) == 0 &&
+			((pri == 1) == ((opt.flags & kOptFlagPriMkrc) != 0)) {
+				if option_is_global_only(opt_idx) && (opt_flags & OPT_GLOBAL_S) == 0 {
+					continue
+				}
+				if (opt_flags & OPT_GLOBAL_S) != 0 && (opt.flags & kOptFlagNoGlob) != 0 {
+					continue
+				}
+
+				varp := nvim_odin_get_varp_scope(opt_idx, opt_flags)
+				if varp == nil {
+					continue
+				}
+				if (opt_flags & OPT_GLOBAL_S) != 0 && optval_default_o(opt_idx, varp) {
+					continue
+				}
+				if (opt_flags & OPT_SKIPRTP_S) != 0 &&
+				(opt.varp == transmute(rawptr)(&p_rtp_g) || opt.varp == transmute(rawptr)(&p_pp_g)) {
+					continue
+				}
+
+				round := C.int(2)
+				varp_local: rawptr = nil
+				if option_is_window_local(opt_idx) {
+					if (opt_flags & OPT_LOCAL_S) == 0 {
+						continue
+					}
+					if (opt_flags & OPT_GLOBAL_S) == 0 && !local_only {
+						varp_fresh := nvim_odin_get_varp_scope(opt_idx, OPT_GLOBAL_S)
+						if !optval_default_o(opt_idx, varp_fresh) {
+							round = 1
+							varp_local = varp
+							varp = varp_fresh
+						}
+					}
+				}
+
+				for ; round <= 2; round += 1 {
+					if round == 2 { varp = varp_local }
+					cmd: cstring = "set"
+					if round == 1 || (opt_flags & OPT_GLOBAL_S) != 0 {
+						cmd = "setlocal"
+					}
+					// Round 1 = fresh value → use "setlocal"? No — C uses:
+					// round==1 || OPT_GLOBAL → "set"; else "setlocal". Fix below.
+					if round == 1 || (opt_flags & OPT_GLOBAL_S) != 0 {
+						cmd = "set"
+					} else {
+						cmd = "setlocal"
+					}
+
+					do_endif := false
+					if opt_idx == 302 || opt_idx == 97 { // syntax / filetype
+						vs := (^^u8)(varp)^
+						if libc.fprintf(transmute(^libc.FILE)(fd), "if &%s != '%s'\n",
+							transmute(cstring)(opt.fullname),
+							transmute(cstring)(vs)) < 0 {
+							return 0
+						}
+						do_endif = true
+					}
+					if put_set_o(fd, cmd, opt_idx, varp) == 0 {
+						return 0
+					}
+					if do_endif {
+						if put_line_r(transmute(^libc.FILE)(fd), "endif") == 0 {
+							return 0
+						}
+					}
+				}
+			}
+		}
+	}
+	return 1
+}
+
+foreign _ {
+	@(link_name = "p_rtp")
+	p_rtp_g: ^u8
+	@(link_name = "p_pp")
+	p_pp_g: ^u8
+}
+
+foreign _ {
+	@(link_name = "p_ma")
+	p_ma_g: C.int
+	@(link_name = "p_iminsert")
+	p_iminsert_g: C.longlong
+	@(link_name = "p_imsearch")
+	p_imsearch_g: C.longlong
+	@(link_name = "nvim_odin_change_option_default")
+	change_option_default_r :: proc "c" (opt_idx: C.int, val: OptVal) ---
+}
+
+W_GRID_ALLOC_OFF :: 10456
+W_GRID_BLENDING_OFF :: 58 // within ScreenGrid
+W_P_WINBL_OFF :: 1216
+W_FLOATING_OFF :: 10553
+W_CONFIG_OFF :: 10560
+W_CONFIG_SHADOW_OFF :: 65 // within WinConfig
+
+@(export)
+check_blending :: proc "c"(wp: rawptr) {
+	grid := uintptr(wp) + W_GRID_ALLOC_OFF
+	winbl := (^C.longlong)(uintptr(wp) + W_P_WINBL_OFF)^
+	floating := (^bool)(uintptr(wp) + W_FLOATING_OFF)^
+	shadow := (^bool)(uintptr(wp) + W_CONFIG_OFF + W_CONFIG_SHADOW_OFF)^
+	(^bool)(grid + W_GRID_BLENDING_OFF)^ = winbl > 0 || (floating && shadow)
+}
+
+// reset_modifiable / set_iminsert_global / set_imsearch_global:
+@(export)
+reset_modifiable :: proc "c"() {
+	(^C.int)(uintptr(curbuf) + 10584)^ = 0 // b_p_ma @10584
+	p_ma_g = 0
+	change_option_default_r(194, bool_optval(0)) // kOptModifiable
+}
+
+@(export)
+set_iminsert_global :: proc "c"(buf: rawptr) {
+	p_iminsert_g = (^C.longlong)(uintptr(buf) + 7840)^ // b_p_iminsert
+}
+
+@(export)
+set_imsearch_global :: proc "c"(buf: rawptr) {
+	p_imsearch_g = (^C.longlong)(uintptr(buf) + 7848)^ // b_p_imsearch
+}
+
+MODE_TERMINAL_S :: 0x80
+
+foreign _ {
+	@(link_name = "p_so")
+	p_so_g: C.longlong
+	@(link_name = "p_sop")
+	p_sop_g: C.longlong
+	@(link_name = "p_siso")
+	p_siso_g: C.longlong
+	// vim_getenv/FullName_save/os_setenv already declared in other files — reuse directly.
+}
+
+W_P_SO_ABS :: 1176 // w_onebuf_opt(816) + wo_so(360)
+W_P_SISO_ABS :: 1168
+W_P_SOP_ABS :: 1184
+
+@(export)
+get_scrolloff_value :: proc "c"(wp: rawptr) -> C.longlong {
+	// Disallow scrolloff in terminal-mode.
+	if (State & MODE_TERMINAL_S) != 0 &&
+	(^bool)(uintptr(buf_of_win(wp)) + 12488)^ { // buf_T.terminal @12488
+		return 0
+	}
+	so := (^C.longlong)(uintptr(wp) + W_P_SO_ABS)^
+	return so < 0 ? p_so_g : so
+}
+
+@(export)
+get_scrolloffpad_value :: proc "c"(wp: rawptr) -> C.longlong {
+	sop := (^C.longlong)(uintptr(wp) + W_P_SOP_ABS)^
+	return sop == -1 ? p_sop_g : (^C.longlong)(uintptr(curwin) + W_P_SOP_ABS)^
+}
+
+@(export)
+get_sidescrolloff_value :: proc "c"(wp: rawptr) -> C.longlong {
+	siso := (^C.longlong)(uintptr(wp) + W_P_SISO_ABS)^
+	return siso < 0 ? p_siso_g : siso
+}
+
+@(export)
+vimrc_found :: proc "c"(fname: ^u8, envname: ^u8) {
+	if fname != nil && envname != nil {
+		p := vim_getenv(transmute(cstring)(envname))
+		if p == nil {
+			// Set $MYVIMRC to the first vimrc file found.
+			p2 := FullName_save_r(transmute(cstring)(fname), false)
+			if p2 != nil {
+				os_setenv(transmute(cstring)(envname), transmute(cstring)(p2), 1)
+				xfree(p2)
+			}
+		} else {
+			xfree(transmute(rawptr)(p))
+		}
+	}
+}
+
+foreign _ {
+	@(link_name = "fputs")
+	fputs_o :: proc "c" (s: cstring, fd: ^libc.FILE) -> C.int ---
+}

@@ -7024,3 +7024,8 @@ char *nvim_odin_get_p_ttytype(void)
 {
   return p_ttytype;
 }
+
+void nvim_odin_change_option_default(int opt_idx, OptVal val)
+{
+  change_option_default(opt_idx, val);
+}
