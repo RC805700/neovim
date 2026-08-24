@@ -2606,6 +2606,8 @@ char *get_scriptname(sctx_T script_ctx, bool *should_free)
     return IObuff;
   case SID_STR:
     return _("anonymous :source");
+  case 0:  // SID_NONE / unset: option never set from a script
+    return "";
   default: {
     char *const sname = SCRIPT_ITEM(script_ctx.sc_sid)->sn_name;
     if (sname == NULL) {

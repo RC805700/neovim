@@ -1610,7 +1610,7 @@ get_foldtext :: proc "c" (wp: rawptr, lnum: C.int, lnume: C.int, foldinfo: Foldi
 		level := min(foldinfo.fi_level, C.int(size_of(dashes)) - 1)
 		libc.memset(&dashes[0], '-', C.size_t(level))
 		dashes[level] = 0
-		set_vim_var_string(VV_FOLDDASHES, transmute(cstring)(&dashes[0]), level)
+		set_vim_var_string(VV_FOLDDASHES, transmute(cstring)(&dashes[0]), C.ssize_t(level))
 		set_vim_var_nr(VV_FOLDLEVEL, i64(level))
 
 		if !got_fdt_error {

@@ -57,6 +57,8 @@
 #include "nvim/option.h"
 #include "nvim/option_defs.h"
 #include "nvim/option_vars.h"
+
+void nvim_odin_init_winopt(win_T *win);
 #include "nvim/os/fs.h"
 #include "nvim/os/os_defs.h"
 #include "nvim/path.h"
@@ -5455,6 +5457,10 @@ win_T *win_alloc(win_T *after, bool hidden)
 {
   // allocate window structure and linesizes arrays
   win_T *new_wp = xcalloc(1, sizeof(win_T));
+
+  // Initialize window string options to empty_string_option so that they
+  // are never NULL before the option defaults have been applied.
+  nvim_odin_init_winopt(new_wp);
 
   new_wp->handle = ++last_win_id;
   pmap_put(int)(&window_handles, new_wp->handle, new_wp);

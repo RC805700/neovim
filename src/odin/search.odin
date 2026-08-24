@@ -44,8 +44,7 @@ foreign _ {
 	@(link_name = "KeyStuffed")
 	KeyStuffed: bool
 
-	@(link_name = "magic_isset")
-	magic_isset_r :: proc "c" () -> C.int ---
+	// magic_isset — PORTED to Odin (option.odin, returns bool)
 	@(link_name = "skip_regexp_ex")
 	skip_regexp_ex_r :: proc "c" (start: cstring, delim: C.int, magic: C.int, newstartp: ^^u8, did_escape: ^bool, magic_val: ^C.int) -> ^u8 ---
 	@(link_name = "vim_regcomp")
@@ -381,7 +380,7 @@ search_regcomp :: proc "c"(
 	regmatch: ^Regmmatch_T,
 ) -> C.int {
 	rc_did_emsg = false
-	magic := magic_isset_r()
+	magic := magic_isset() ? C.int(1) : C.int(0)
 	pat := pat_init
 	patlen := patlen_init
 
@@ -599,7 +598,7 @@ pat_has_uppercase :: proc "c"(pat: ^u8) -> bool {
 	p := pat
 	magic_val: C.int = MAGIC_ON_S
 
-	skip_regexp_ex_r(transmute(cstring)(pat), 0, magic_isset_r(), nil, nil, &magic_val)
+	skip_regexp_ex_r(transmute(cstring)(pat), 0, magic_isset() ? C.int(1) : C.int(0), nil, nil, &magic_val)
 
 	for b_at(p, 0) != 0 {
 		l := utfc_ptr2len(transmute(cstring)(p))
@@ -787,7 +786,7 @@ parse_search_pattern_offset :: proc "c"(
 	dircp^ = nil
 
 	// Find end of regular expression; toss a matching '/' or '?'.
-	p := skip_regexp_ex_r(transmute(cstring)(pat^), search_delim, magic_isset_r(), strcopy, nil, nil)
+	p := skip_regexp_ex_r(transmute(cstring)(pat^), search_delim, magic_isset() ? C.int(1) : C.int(0), strcopy, nil, nil)
 	if strcopy^ != ps {
 		len := libc.strlen(transmute(cstring)(strcopy^))
 		cmdlen += C.int(patlen^ - len)
@@ -3114,7 +3113,7 @@ find_pattern_in_path :: proc "c"(
 			libc.snprintf(patbuf, patsize, "%.*s", C.int(len), transmute(cstring)(ptr))
 		}
 		regmatch.rm_ic = ignorecase(patbuf)
-		regmatch.regprog = vim_regcomp(transmute(cstring)(patbuf), magic_isset_r() != 0 ? RE_MAGIC : 0)
+		regmatch.regprog = vim_regcomp(transmute(cstring)(patbuf), magic_isset() ? C.int(1) : C.int(0) != 0 ? RE_MAGIC : 0)
 		xfree(patbuf)
 		if regmatch.regprog == nil {
 			fpip_end = true

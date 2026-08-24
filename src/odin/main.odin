@@ -216,7 +216,7 @@ foreign nvim {
   runtime_init :: proc() ---
   // highlight_init — PORTED to Odin
   // init_locale — PORTED to Odin (os_lang.odin)
-  set_init_tablocal :: proc() ---
+  // set_init_tablocal — PORTED to Odin (option.odin)
   win_alloc_first :: proc() ---
   startup_alist_init :: proc() ---
   // init_homedir           — PORTED to Odin (uses startup_set_homedir + os.getwd)
@@ -249,7 +249,7 @@ foreign nvim {
 
   // Vim variable access
   set_vim_var_nr :: proc(idx: c.int, val: i64) ---
-  set_vim_var_string :: proc(idx: c.int, val: cstring, len: c.int) ---
+  set_vim_var_string :: proc(idx: c.int, val: cstring, len: c.ssize_t) ---
   get_vim_var_str :: proc(idx: c.int) -> cstring ---
   get_vim_var_list :: proc(idx: c.int) -> rawptr ---
   set_vim_var_list :: proc(idx: c.int, val: rawptr) ---

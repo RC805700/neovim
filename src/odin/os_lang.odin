@@ -49,8 +49,7 @@ foreign _ {
 	@(link_name = "strdup")
 	strdup :: proc(s: cstring) -> cstring ---
 
-	@(link_name = "set_helplang_default")
-	set_helplang_default :: proc(lang: cstring) ---
+	// set_helplang_default — PORTED to Odin (option.odin)
 
 	@(link_name = "maketitle")
 	maketitle :: proc() ---
@@ -242,7 +241,7 @@ ex_language :: proc "c" (eap: ^exarg_T) {
 				}
 				if what != LC_CTYPE {
 					os_setenv(cstring("LC_MESSAGES"), name, 1)
-					set_helplang_default(name)
+					set_helplang_default(transmute(^u8)(name))
 				}
 			}
 			set_lang_var()

@@ -160,6 +160,99 @@ static char *p_vsts_nopaste;
 #include "options.generated.h"
 #include "options_map.generated.h"
 
+// Odin port: these functions are now defined in src/odin/option.odin.
+// The C definitions below remain as weak fallbacks; the strong Odin
+// definitions win at link time. See AGENTS.md option.c entry.
+#pragma weak apply_optionset_autocmd_now
+#pragma weak buf_copy_options
+#pragma weak can_bs
+#pragma weak check_blending
+#pragma weak check_options
+#pragma weak check_redraw
+#pragma weak check_redraw_for
+#pragma weak clear_winopt
+#pragma weak copy_winopt
+#pragma weak csh_like_shell
+#pragma weak default_fileformat
+#pragma weak did_set_buflocal_undolevels
+#pragma weak did_set_global_undolevels
+#pragma weak did_set_title
+#pragma weak do_set
+#pragma weak escape_option_str_cmdline
+#pragma weak ExpandOldSetting
+#pragma weak ExpandSettings
+#pragma weak ExpandSettingSubtract
+#pragma weak ExpandStringSetting
+#pragma weak ex_set
+#pragma weak fill_culopt_flags
+#pragma weak find_option
+#pragma weak find_option_end
+#pragma weak find_option_len
+#pragma weak fish_like_shell
+#pragma weak get_all_vimoptions
+#pragma weak get_bkc_flags
+#pragma weak get_equalprg
+#pragma weak get_fileformat
+#pragma weak get_fileformat_force
+#pragma weak get_findfunc
+#pragma weak get_flp_value
+#pragma weak get_option
+#pragma weak get_option_default
+#pragma weak get_option_flags
+#pragma weak get_option_newval
+#pragma weak get_option_sctx
+#pragma weak get_option_value
+#pragma weak get_option_value_for
+#pragma weak get_scrolloffpad_value
+#pragma weak get_scrolloff_value
+#pragma weak get_showbreak_value
+#pragma weak get_sidescrolloff_value
+#pragma weak get_tty_option
+#pragma weak get_vimoption
+#pragma weak get_winbuf_options
+#pragma weak insecure_flag
+#pragma weak is_option_hidden
+#pragma weak magic_isset
+#pragma weak makefoldset
+#pragma weak makeset
+#pragma weak object_as_optval
+#pragma weak object_as_optval_for
+#pragma weak option_has_scope
+#pragma weak option_has_type
+#pragma weak option_scope_idx
+#pragma weak option_set_callback_func
+#pragma weak option_was_set
+#pragma weak optval_as_object
+#pragma weak optval_copy
+#pragma weak optval_equal
+#pragma weak optval_free
+#pragma weak optval_from_varp
+#pragma weak redraw_titles
+#pragma weak reset_modifiable
+#pragma weak reset_option_was_set
+#pragma weak set_context_in_set_cmd
+#pragma weak set_fileformat
+#pragma weak set_helplang_default
+#pragma weak set_iminsert_global
+#pragma weak set_imsearch_global
+#pragma weak set_init_tablocal
+#pragma weak set_option_direct
+#pragma weak set_option_direct_for
+#pragma weak set_options_bin
+#pragma weak set_option_value
+#pragma weak set_option_value_for
+#pragma weak set_option_value_give_err
+#pragma weak set_option_value_handle_tty
+#pragma weak set_title_defaults
+#pragma weak set_tty_option
+#pragma weak skip_to_option_part
+#pragma weak string_to_key
+#pragma weak ui_refresh_options
+#pragma weak valid_name
+#pragma weak vimrc_found
+#pragma weak was_set_insecurely
+#pragma weak win_copy_options
+
 static int p_bin_dep_opts[] = {
   kOptTextwidth, kOptWrapmargin, kOptModeline, kOptExpandtab, kOptInvalid
 };
@@ -5448,6 +5541,15 @@ static void check_win_options(win_T *win)
   check_winopt(&win->w_allbuf_opt);
 }
 
+/// Odin port helper: initialize window string options so that they are
+/// never NULL before the option defaults have been applied. Called from
+/// win_alloc().
+void nvim_odin_init_winopt(win_T *win)
+{
+  check_winopt(&win->w_onebuf_opt);
+  check_winopt(&win->w_allbuf_opt);
+}
+
 /// Check for NULL pointers in a winopt_T and replace them with empty_string_option.
 static void check_winopt(winopt_T *wop)
 {
@@ -7029,3 +7131,53 @@ void nvim_odin_change_option_default(int opt_idx, OptVal val)
 {
   change_option_default(opt_idx, val);
 }
+
+void nvim_odin_clear_p_term_ttytype(void)
+{
+  XFREE_CLEAR(p_term);
+  XFREE_CLEAR(p_ttytype);
+}
+
+bool nvim_odin_switch_option_context(void *ctx, int scope, void *from, Error *err)
+{
+  return switch_option_context(ctx, (OptScope)scope, from, err);
+}
+
+void nvim_odin_restore_option_context(void *ctx, int scope)
+{
+  restore_option_context(ctx, (OptScope)scope);
+}
+
+void nvim_odin_apply_optionset_autocmd(int opt_idx, int opt_flags, OptVal oldval, OptVal oldval_g,
+                                       OptVal oldval_l, OptVal newval, const char *errmsg)
+{
+  apply_optionset_autocmd(opt_idx, opt_flags, oldval, oldval_g, oldval_l, newval, errmsg);
+}
+
+OptInt nvim_odin_get_p_tw_nobin(void) { return p_tw_nobin; }
+OptInt nvim_odin_get_p_wm_nobin(void) { return p_wm_nobin; }
+int nvim_odin_get_p_ml_nobin(void) { return p_ml_nobin; }
+int nvim_odin_get_p_et_nobin(void) { return p_et_nobin; }
+void nvim_odin_set_p_tw_nobin(OptInt v) { p_tw_nobin = v; }
+void nvim_odin_set_p_wm_nobin(OptInt v) { p_wm_nobin = v; }
+void nvim_odin_set_p_ml_nobin(int v) { p_ml_nobin = v; }
+void nvim_odin_set_p_et_nobin(int v) { p_et_nobin = v; }
+
+char *nvim_odin_option_expand(int opt_idx, const char *val) { return option_expand(opt_idx, val); }
+
+Dict nvim_odin_vimoption2dict(vimoption_T *opt, int opt_flags, buf_T *buf, win_T *win, Arena *arena)
+{
+  return vimoption2dict(opt, opt_flags, buf, win, arena);
+}
+
+void nvim_odin_put_c(Dict *d, const char *key, Object value)
+{
+  PUT_C(*d, key, value);
+}
+
+int nvim_odin_get_p_ai_nopaste(void) { return p_ai_nopaste; }
+OptInt nvim_odin_get_p_tw_nopaste(void) { return p_tw_nopaste; }
+OptInt nvim_odin_get_p_wm_nopaste(void) { return p_wm_nopaste; }
+int nvim_odin_get_p_et_nopaste(void) { return p_et_nopaste; }
+OptInt nvim_odin_get_p_sts_nopaste(void) { return p_sts_nopaste; }
+char *nvim_odin_get_p_vsts_nopaste(void) { return p_vsts_nopaste; }

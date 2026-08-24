@@ -465,7 +465,7 @@ expand_env_esc :: proc "c" (srcp: cstring, dst: cstring, dstlenp: c.int, esc_cha
 						tail += 1
 					}
 					([^]u8)(var)[0] = 0
-					var = uintptr(rawptr(vim_getenv(cstring(rawptr(var)))))
+					var = uintptr(rawptr(vim_getenv(dst)))
 					mustfree = true
 				}
 			} else if ([^]u8)(s)[1] == 0 || _vim_ispathsep(c.int(([^]u8)(s)[1])) || _vim_strchr(", \t\n", c.int(([^]u8)(s)[1])) != nil {

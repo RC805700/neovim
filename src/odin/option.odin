@@ -51,9 +51,9 @@ OP_PREPENDING_S :: 2
 OP_REMOVING_S :: 3
 
 // OPT_* flags for get/set (option.h)
-OPT_GLOBAL_S :: 4
+OPT_GLOBAL_S :: 1
 OPT_LOCAL_S :: 2
-OPT_MODELINE_S :: 0x04
+OPT_MODELINE_S :: 4
 
 // ── Struct mirrors (offset-verified) ────────────────────────────────────────
 
@@ -394,7 +394,7 @@ optval_free :: proc "c"(o_in: OptVal) {
 	switch o.typ {
 	case kOptValTypeString:
 		s := NvimString{transmute(cstring)(ov_str_data(&o)), ov_str_size(&o)}
-		if ov_str_data(&o) != empty_string_option_c {
+		if ov_str_data(&o) != empty_string_option_c && s.size > 0 {
 			api_free_string_r(s)
 		}
 	case:
@@ -471,7 +471,11 @@ optval_from_varp :: proc "c"(opt_idx: C.int, varp: rawptr) -> OptVal {
 	case kOptValTypeNumber:
 		return num_optval((^C.longlong)(varp)^)
 	case kOptValTypeString:
-		return str_optval((^^u8)(varp)^, libc.strlen(transmute(cstring)((^^u8)(varp)^)))
+		sd := (^^u8)(varp)^
+		if sd == nil {
+			return str_optval(empty_string_option_c, 0)
+		}
+		return str_optval(sd, libc.strlen(transmute(cstring)(sd)))
 	}
 	return nil_optval()
 }
@@ -527,7 +531,7 @@ TABSTOP_MAX_S :: 9999
 NO_LOCAL_UNDOLEVEL_S :: -123456
 
 e_positive_s :: "E487: Argument must be positive"
-e_invarg_s :: "E513: Invalid argument" // generic; C uses e_invarg which is parameterized — callers pass through untranslated
+e_invarg_s :: "E474: Invalid argument" // generic; C uses e_invarg which is parameterized — callers pass through untranslated
 e_winheight_s :: "E591: 'winheight' cannot be smaller than 'winminheight'"
 e_winwidth_s :: "E592: 'winwidth' cannot be smaller than 'winminwidth'"
 e_scroll_s :: "E49: Invalid scroll size"
@@ -581,13 +585,8 @@ check_num_option_bounds :: proc "c"(opt_idx: C.int, newval: ^C.longlong, errbuf:
 	return errmsg
 }
 
-foreign _ {
-	@(link_name = "Rows")
-	Rows_g2: C.int
-}
-
 Rows_opt :: proc "c"() -> C.int {
-	return Rows_g2
+	return Rows
 }
 
 @(export)
@@ -596,7 +595,7 @@ validate_num_option :: proc "c"(opt_idx: C.int, newval: ^C.longlong, errbuf: ^u8
 
 	// Many number options assume their value is in the signed int range.
 	if value < C.longlong(-0x80000000) || value > C.longlong(0x7FFFFFFF) {
-		return cstring("E513: Invalid argument") // e_invarg
+		return cstring("E474: Invalid argument") // e_invarg
 	}
 
 	switch opt_idx {
@@ -640,17 +639,17 @@ validate_num_option :: proc "c"(opt_idx: C.int, newval: ^C.longlong, errbuf: ^u8
 		if value < 0 {
 			return e_positive_s
 		} else if value > 10000 {
-			return cstring("E513: Invalid argument")
+			return cstring("E474: Invalid argument")
 		}
 	case kOptPyxversion_E:
 		if value == 0 {
 			newval^ = 3
 		} else if value != 3 {
-			return cstring("E513: Invalid argument")
+			return cstring("E474: Invalid argument")
 		}
 	case kOptRegexpengine_E:
 		if value < 0 || value > 2 {
-			return cstring("E513: Invalid argument")
+			return cstring("E474: Invalid argument")
 		}
 	case kOptScrolloff_E:
 		if value < 0 && full_screen {
@@ -658,7 +657,7 @@ validate_num_option :: proc "c"(opt_idx: C.int, newval: ^C.longlong, errbuf: ^u8
 		}
 	case kOptScrolloffpad_E:
 		if value < 0 {
-			return cstring("E513: Invalid argument")
+			return cstring("E474: Invalid argument")
 		}
 	case kOptSidescrolloff_E:
 		if value < 0 && full_screen {
@@ -672,33 +671,33 @@ validate_num_option :: proc "c"(opt_idx: C.int, newval: ^C.longlong, errbuf: ^u8
 		if value < 0 {
 			return e_positive_s
 		} else if value > 3 {
-			return cstring("E513: Invalid argument")
+			return cstring("E474: Invalid argument")
 		}
 	case kOptNumberwidth_E:
 		if value < 1 {
 			return e_positive_s
 		} else if value > MAX_NUMBERWIDTH_S {
-			return cstring("E513: Invalid argument")
+			return cstring("E474: Invalid argument")
 		}
 	case kOptIminsert_E:
 		if value < 0 || value > B_IMODE_LAST_S {
-			return cstring("E513: Invalid argument")
+			return cstring("E474: Invalid argument")
 		}
 	case kOptImsearch_E:
 		if value < -1 || value > B_IMODE_LAST_S {
-			return cstring("E513: Invalid argument")
+			return cstring("E474: Invalid argument")
 		}
 	case kOptChannel_E:
-		return cstring("E513: Invalid argument")
+		return cstring("E474: Invalid argument")
 	case kOptScrollback_E:
 		if value < -1 || value > SB_MAX_S {
-			return cstring("E513: Invalid argument")
+			return cstring("E474: Invalid argument")
 		}
 	case kOptTabstop_E:
 		if value < 1 {
 			return e_positive_s
 		} else if value > TABSTOP_MAX_S {
-			return cstring("E513: Invalid argument")
+			return cstring("E474: Invalid argument")
 		}
 	case kOptChistory_E, kOptLhistory_E:
 		if value < 1 {
@@ -710,7 +709,7 @@ validate_num_option :: proc "c"(opt_idx: C.int, newval: ^C.longlong, errbuf: ^u8
 		if value <= 0 {
 			return e_positive_s
 		} else if value > 9999 {
-			return cstring("E513: Invalid argument")
+			return cstring("E474: Invalid argument")
 		}
 	case:
 	}
@@ -724,8 +723,8 @@ foreign _ {
 	@(link_name = "buf_init_chartab")
 	buf_init_chartab_r :: proc "c" (buf: rawptr, send_error: bool) -> bool ---
 	@(link_name = "set_option_sctx")
-	set_option_sctx_r :: proc "c" (opt_idx: C.int, opt_flags: C.int, sctx: rawptr) ---
-	@(link_name = "apply_optionset_autocmd_now")
+	set_option_sctx_r :: proc "c" (opt_idx: C.int, opt_flags: C.int, sctx: sctx_T) ---
+	@(link_name = "nvim_odin_apply_optionset_autocmd")
 	apply_optionset_autocmd_r :: proc "c" (opt_idx: C.int, opt_flags: C.int, v1: OptValData, v2: OptValData, v3: OptValData, v4: OptValData, err: cstring) ---
 	@(link_name = "nvim_odin_do_syntax_autocmd")
 	do_syntax_autocmd_r :: proc "c" (buf: rawptr, value_changed: bool) ---
@@ -932,7 +931,7 @@ did_set_option_o :: proc "c"(
 		errmsg = e_secure_s
 	} else if new_value.typ == kOptValTypeString &&
 	check_illegal_path_names_r((^^u8)(varp)^, opt.flags) {
-		errmsg = cstring("E513: Invalid argument") // e_invarg
+		errmsg = cstring("E474: Invalid argument") // e_invarg
 	} else if opt.opt_did_set_cb != nil {
 		cb := transmute(proc "c" (^optset_T) -> cstring)(opt.opt_did_set_cb)
 		errmsg = cb(&did_set_cb_args)
@@ -958,7 +957,8 @@ did_set_option_o :: proc "c"(
 			// override sc_sid
 			(^C.int)(uintptr(&sc[0]))^ = set_sid // sctx_T.sc_sid @0
 		}
-		set_option_sctx_r(opt_idx, opt_flags, &sc[0])
+		sc_val := (^sctx_T)(uintptr(&sc[0]))^
+		set_option_sctx_r(opt_idx, opt_flags, sc_val)
 	}
 
 	optval_free(old_value)
@@ -1367,15 +1367,9 @@ foreign _ {
 
 kOptInvalid_OPT :: -1
 
-@(export)
-find_option_len :: proc "c"(name: cstring, len: C.size_t) -> C.int {
-	return nvim_odin_find_option_len(name, len)
-}
-
-@(export)
-find_option :: proc "c"(name: cstring) -> C.int {
-	return nvim_odin_find_option_len(name, libc.strlen(name))
-}
+// find_option_len / find_option: C implementations kept (weak in option.c,
+// strong there when Odin doesn't define them). Odin code calls the
+// nvim_odin_find_option_len shim directly.
 
 sourcing_lnum_o :: proc "c"() -> C.int {
 	// SOURCING_LNUM: ((estack_T*)exestack.ga_data)[exestack.ga_len-1].es_lnum, es_lnum@0
@@ -1405,43 +1399,6 @@ get_option_sctx :: proc "c"(opt_idx: C.int) -> rawptr {
 	return transmute(rawptr)(&opt_at(opt_idx).script_ctx_buf[0])
 }
 
-@(export)
-set_option_sctx :: proc "c"(opt_idx: C.int, opt_flags: C.int, script_ctx_in: rawptr) {
-	script_ctx_buf: [SCCTX_STRIDE]u8
-	libc.memcpy(&script_ctx_buf[0], script_ctx_in, SCCTX_STRIDE)
-
-	both := (opt_flags & (OPT_LOCAL_S | OPT_GLOBAL_S)) == 0
-
-	// Modeline already has the line number set.
-	if (opt_flags & OPT_MODELINE_S) == 0 {
-		sc_lnum := (^C.int)(uintptr(&script_ctx_buf[0]) + 8) // sc_lnum @8
-		sc_lnum^ += sourcing_lnum_o()
-	}
-	nlua_set_sctx_r(&script_ctx_buf[0])
-
-	if both || (opt_flags & OPT_GLOBAL_S) != 0 || option_is_global_only(opt_idx) {
-		libc.memcpy(&opt_at(opt_idx).script_ctx_buf[0], &script_ctx_buf[0], SCCTX_STRIDE)
-	}
-	if both || (opt_flags & OPT_LOCAL_S) != 0 {
-		if option_has_scope(opt_idx, kOptScopeBuf_S) {
-			// curbuf->b_p_script_ctx[scope_idx] — need b_p_script_ctx offset:
-			dst := (^u8)(uintptr(curbuf) + B_P_SCRIPT_CTX_OFF +
-			uintptr(option_scope_idx(opt_idx, kOptScopeBuf_S)) * SCCTX_STRIDE)
-			libc.memcpy(dst, &script_ctx_buf[0], SCCTX_STRIDE)
-		} else if option_has_scope(opt_idx, kOptScopeWin_S) {
-			dst := (^u8)(uintptr(curwin) + W_P_SCRIPT_CTX_OFF +
-			uintptr(option_scope_idx(opt_idx, kOptScopeWin_S)) * SCCTX_STRIDE)
-			libc.memcpy(dst, &script_ctx_buf[0], SCCTX_STRIDE)
-			if both {
-				// also setting the "all buffers" value: w_allbuf_opt.wo_script_ctx[]
-				// w_allbuf_opt@? and wo_script_ctx offset within — probe needed; approximate via known layout:
-				dst2 := (^u8)(uintptr(curwin) + W_ALLBUF_WO_SCRIPT_CTX_OFF +
-				uintptr(option_scope_idx(opt_idx, kOptScopeWin_S)) * SCCTX_STRIDE)
-				libc.memcpy(dst2, &script_ctx_buf[0], SCCTX_STRIDE)
-			}
-		}
-	}
-}
 
 B_P_SCRIPT_CTX_OFF :: 7896
 W_P_SCRIPT_CTX_OFF :: 1248
@@ -1465,8 +1422,6 @@ reset_option_was_set :: proc "c"(opt_idx: C.int) {
 // ── do_set cluster (option.c 850-1960) ──────────────────────────────────────
 
 foreign _ {
-	@(link_name = "NameBuff")
-	NameBuff_g: [4096]u8
 	@(link_name = "p_tags")
 	p_tags_g: ^u8
 	@(link_name = "p_path")
@@ -1478,7 +1433,7 @@ foreign _ {
 	@(link_name = "skiptowhite_esc")
 	skiptowhite_esc_r :: proc "c" (p: cstring) -> cstring ---
 	@(link_name = "last_set_msg")
-	last_set_msg_r :: proc "c" (sctx: rawptr) ---
+	last_set_msg_r :: proc "c" (sctx: sctx_T) ---
 	@(link_name = "msg_advance")
 	msg_advance_r :: proc "c" (col: C.int) ---
 	@(link_name = "message_filtered")
@@ -1520,7 +1475,7 @@ foreign _ {
 	trans_characters_o :: proc "c" (s: ^u8, len: C.int) ---
 }
 
-STR2NR_ALL_S :: 0x07 // STR2NR_OCT|STR2NR_HEX|STR2NR_FORCE? verify: STR2NR_ALL = all formats
+STR2NR_ALL_S :: 0x0f // BIN|OCT|HEX|OOCT (STR2NR_ALL)
 
 // option_expand is static — reimplement via shim FFI option_expand_o? No — it needs NameBuff.
 // Reimplement faithfully here using expand_env_esc_o:
@@ -1539,16 +1494,16 @@ option_expand_odin :: proc "c"(opt_idx: C.int, val_in: cstring) -> ^u8 {
 	var := (^^u8)(o.varp)^
 	esc := var == p_tags_g || var == p_path_g
 	startesc := var == p_sps_g ? cstring("file:") : nil
-	expand_env_esc(val, transmute(cstring)(&NameBuff_g[0]), 4096,
+	expand_env_esc(val, transmute(cstring)(&name_buff[0]), 4096,
 		esc ? cstring(" \t") : nil, false, startesc)
-	if libc.strcmp(transmute(cstring)(&NameBuff_g[0]), val) == 0 {
+	if libc.strcmp(transmute(cstring)(&name_buff[0]), val) == 0 {
 		return nil
 	}
-	return &NameBuff_g[0]
+	return &name_buff[0]
 }
 
 foreign _ {
-	@(link_name = "option_expand3")
+	@(link_name = "nvim_odin_option_expand")
 	option_expand_c :: proc "c" (opt_idx: C.int, val: cstring) -> ^u8 ---
 }
 
@@ -2012,7 +1967,7 @@ find_option_end :: proc "c"(arg: ^u8, opt_idxp: ^C.int) -> ^u8 {
 validate_opt_idx_o :: proc "c"(win: rawptr, opt_idx: C.int, opt_flags: C.int, flags: C.uint32_t,
                                prefix: C.int, errmsg: ^cstring) -> bool {
 	if !option_has_type(opt_idx, kOptValTypeBoolean) && prefix != 1 { // PREFIX_NONE
-		errmsg^ = cstring("E513: Invalid argument") // e_invarg
+		errmsg^ = cstring("E474: Invalid argument") // e_invarg
 		return false
 	}
 	if (opt_flags & OPT_WINONLY_S) != 0 && !option_is_window_local(opt_idx) {
@@ -2117,7 +2072,7 @@ get_option_newval_o :: proc "c"(
 		(c0 != 0 && (b_at(arg, 1) == 0 || ascii_iswhite_sp(b_at(arg, 1))) && !ascii_isdigit_sp(c0))) {
 			newval_num = C.longlong(string_to_key(arg))
 			if newval_num == 0 {
-				errmsg^ = cstring("E513: Invalid argument")
+				errmsg^ = cstring("E474: Invalid argument")
 				return newval
 			}
 		} else if c0 == '-' || ascii_isdigit_sp(c0) {
@@ -2207,22 +2162,26 @@ option_value2string_o :: proc "c"(opt: ^vimoption_T, opt_flags: C.int) {
 	varp := nvim_odin_get_varp_scope(get_opt_idx_o(opt), opt_flags)
 
 	if option_has_type(get_opt_idx_o(opt), kOptValTypeNumber) {
-		wc := ov_number_from_varp(varp)
+		wc: C.longlong = 0
 		if wc_use_keyname_o(varp, &wc) {
-			libc.strcpy(&NameBuff_g[0],
+			libc.strcpy(&name_buff[0],
 				transmute(cstring)(get_special_key_name_r(C.int(wc), 0)))
 		} else if wc != 0 {
-			libc.strcpy(&NameBuff_g[0],
+			libc.strcpy(&name_buff[0],
 				transmute(cstring)(transchar_o(C.int(wc))))
 		} else {
-			libc.snprintf(&NameBuff_g[0], 4096, "%lld", wc)
+			libc.snprintf(&name_buff[0], 4096, "%lld", ov_number_from_varp(varp))
 		}
 	} else {
 		strv := (^^u8)(varp)^
 		if (opt.flags & kOptFlagExpand) != 0 {
-			home_replace(nil, transmute(cstring)(strv), transmute(cstring)(&NameBuff_g[0]), 4096, false)
+			if strv != nil {
+				home_replace(nil, transmute(cstring)(strv), transmute(cstring)(&name_buff[0]), 4096, false)
+			}
+		} else if strv != nil {
+			xstrlcpy_o(transmute(cstring)(&name_buff[0]), transmute(cstring)(strv), 4096)
 		} else {
-			libc.strcpy(&NameBuff_g[0], transmute(cstring)(strv))
+			b_set(&name_buff[0], 0, 0)
 		}
 	}
 }
@@ -2244,7 +2203,7 @@ wc_use_keyname_o :: proc "c"(varp: rawptr, wcp: ^C.longlong) -> bool {
 }
 
 IS_SPECIAL_S :: proc "c"(c: C.longlong) -> bool {
-	return c < 32 // Keys with special modifier (<0x100 range in vim); simplified check
+	return c < 0 // IS_SPECIAL: special keys are negative (K_ macros)
 }
 
 @(export)
@@ -2356,8 +2315,8 @@ showoneopt_o :: proc "c"(opt: ^vimoption_T, opt_flags: C.int) {
 	if !option_has_type(opt_idx, kOptValTypeBoolean) {
 		msg_putchar('=')
 		option_value2string_o(opt, opt_flags)
-		if b_at(&NameBuff_g[0], 0) != 0 {
-			_ = msg_outtrans_s(transmute(cstring)(&NameBuff_g[0]), 0, false)
+		if b_at(&name_buff[0], 0) != 0 {
+			_ = msg_outtrans_s(transmute(cstring)(&name_buff[0]), 0, false)
 		}
 	}
 
@@ -2404,7 +2363,7 @@ showoptions_o :: proc "c"(all: bool, opt_flags: C.int) {
 				} else {
 					option_value2string_o(opt, opt_flags)
 					l = C.int(libc.strlen(transmute(cstring)(opt.fullname))) +
-					vim_strsize_r(transmute(cstring)(&NameBuff_g[0])) + 1
+					vim_strsize_r(transmute(cstring)(&name_buff[0])) + 1
 				}
 				if (l <= INC - GAP && run == 1) || (l > INC - GAP && run == 2) {
 					(^rawptr)(uintptr(items) + uintptr(item_count) * size_of(rawptr))^ = opt
@@ -2538,15 +2497,17 @@ do_one_set_option_o :: proc "c"(
 
 		if p_verbose > 0 {
 			if varp == opt_at(opt_idx).varp {
-				last_set_msg_r(&opt_at(opt_idx).script_ctx_buf[0])
+				sctx_tmp := (^sctx_T)(&opt_at(opt_idx).script_ctx_buf[0])^; last_set_msg_r(sctx_tmp)
 			} else if option_has_scope(opt_idx, kOptScopeWin_S) {
 				addr := uintptr(curwin) + W_P_SCRIPT_CTX_OFF +
 				uintptr(option_scope_idx(opt_idx, kOptScopeWin_S)) * SCCTX_STRIDE
-				last_set_msg_r(transmute(rawptr)(addr))
+				sctx_win := (^sctx_T)(addr)^
+				last_set_msg_r(sctx_win)
 			} else if option_has_scope(opt_idx, kOptScopeBuf_S) {
 				addr := uintptr(curbuf) + B_P_SCRIPT_CTX_OFF +
 				uintptr(option_scope_idx(opt_idx, kOptScopeBuf_S)) * SCCTX_STRIDE
-				last_set_msg_r(transmute(rawptr)(addr))
+				sctx_buf2 := (^sctx_T)(addr)^
+				last_set_msg_r(sctx_buf2)
 			}
 		}
 
@@ -2558,7 +2519,7 @@ do_one_set_option_o :: proc "c"(
 
 	if option_has_type(opt_idx, kOptValTypeBoolean) {
 		if _vim_strchr(cstring("=:"), C.int(nextchar)) != nil {
-			errmsg^ = cstring("E513: Invalid argument")
+			errmsg^ = cstring("E474: Invalid argument")
 			return
 		}
 		if _vim_strchr(cstring("?!&<"), C.int(nextchar)) == nil && nextchar != 0 &&
@@ -2568,7 +2529,7 @@ do_one_set_option_o :: proc "c"(
 		}
 	} else {
 		if _vim_strchr(cstring("=:&<"), C.int(nextchar)) == nil {
-			errmsg^ = cstring("E513: Invalid argument")
+			errmsg^ = cstring("E474: Invalid argument")
 			return
 		}
 	}
@@ -2766,7 +2727,7 @@ do_set :: proc "c"(arg_in: ^u8, opt_flags: C.int) -> C.int {
 @(export)
 ex_set :: proc "c"(eap: rawptr) {
 	flags := C.int(0)
-	cmdidx := (^C.int)(eap)^ // exarg_T.cmdidx @0
+	cmdidx := (^C.int)(uintptr(eap) + 64)^ // exarg_T.cmdidx @64
 
 	if cmdidx == 405 { // CMD_setlocal
 		flags = OPT_LOCAL_S
@@ -2788,8 +2749,6 @@ foreign _ {
 	nvim_odin_set_init_2 :: proc "c" (headless: bool) ---
 	@(link_name = "nvim_odin_set_init_3")
 	nvim_odin_set_init_3 :: proc "c" () ---
-	@(link_name = "nvim_odin_set_init_tablocal")
-	nvim_odin_set_init_tablocal :: proc "c" () ---
 }
 
 foreign _ {
@@ -3160,8 +3119,6 @@ foreign _ {
 	bkc_flags_g: C.uint
 	@(link_name = "ve_flags")
 	ve_flags_g: C.uint
-	@(link_name = "p_flp")
-	p_flp_g2: ^u8
 	@(link_name = "p_sbr")
 	p_sbr_g: ^u8
 	@(link_name = "p_ffs")
@@ -3325,11 +3282,6 @@ get_fileformat :: proc "c"(buf: rawptr) -> C.int {
 foreign _ {
 }
 
-foreign _ {
-	@(link_name = "copy_winopt")
-	copy_winopt :: proc "c" (from: rawptr, to: rawptr) ---
-}
-
 EOL_UNKNOWN_S :: 0
 EOL_UNIX_S :: 1
 EOL_DOS_S :: 2
@@ -3401,4 +3353,2331 @@ set_fileformat :: proc "c"(eol_style: C.int, opt_flags: C.int) {
 	redraw_buf_status_later_opt(curbuf)
 	redraw_tabline_opt = true
 	need_maketitle_opt = true
+}
+
+// ── winopt_T copy/clear/didset ───────────────────────────────────────────────
+
+foreign _ {
+	@(link_name = "check_colorcolumn")
+	check_colorcolumn_r :: proc "c" (cc: ^u8, wp: rawptr) -> cstring ---
+	@(link_name = "briopt_check")
+	briopt_check_r :: proc "c" (briopt: ^u8, wp: rawptr) -> bool ---
+	@(link_name = "parse_winhl_opt")
+	parse_winhl_opt_r :: proc "c" (winhl: ^u8, wp: rawptr) -> bool ---
+	@(link_name = "set_winbar_win")
+	set_winbar_win_r :: proc "c" (wp: rawptr, make_room: bool, valid_cursor: bool) -> cstring ---
+	@(link_name = "check_signcolumn")
+	check_signcolumn_r :: proc "c" (scl: ^u8, wp: rawptr) -> C.int ---
+	@(link_name = "clear_string_option")
+	clear_string_option_r :: proc "c" (pp: ^u8) ---
+	@(link_name = "free_operatorfunc_option")
+	free_operatorfunc_option :: proc "c" () ---
+	@(link_name = "free_tagfunc_option")
+	free_tagfunc_option :: proc "c" () ---
+	@(link_name = "free_findfunc_option")
+	free_findfunc_option :: proc "c" () ---
+	@(link_name = "nvim_odin_clear_p_term_ttytype")
+	nvim_odin_clear_p_term_ttytype :: proc "c" () ---
+	@(link_name = "fenc_default")
+	fenc_default_g: ^u8
+}
+
+kFillchars_S :: 0
+kListchars_S :: 1
+
+W_P_WRAP_OFF :: 1124
+W_LEFTCOL_OFF :: 384
+W_SKIPCOL_OFF :: 388
+
+wo_copy_str :: proc "c"(to: rawptr, from: rawptr, off: uintptr, dup: bool) {
+	src := (^^u8)(uintptr(from) + off)^
+	if dup {
+		(^^u8)(uintptr(to) + off)^ = xstrdup_r2(transmute(cstring)(src))
+	} else {
+		if src == empty_string_option_c {
+			(^^u8)(uintptr(to) + off)^ = empty_string_option_c
+		} else {
+			(^^u8)(uintptr(to) + off)^ = xstrdup_r2(transmute(cstring)(src))
+		}
+	}
+}
+
+@(export)
+copy_winopt :: proc "c"(from: rawptr, to: rawptr) {
+	// int/bool scalars (wo_* int/bool/flag fields):
+	scalar_offs := [38]uintptr{
+		0, 140, 144, 148, 160, 168, 208, 308, 312, 136, 4, 296, 304, 232,
+		336, 340, 352, 360, 368, 236, 240, 244, 16, 300, 328, 48, 52, 96,
+		64, 72, 104, 200, 400, 408, 412, 416, 420, 424,
+	}
+	for off in scalar_offs {
+		(^C.int)(uintptr(to) + off)^ = (^C.int)(uintptr(from) + off)^
+	}
+	// strings:
+	str_offs := [22]uintptr{384, 392, 152, 216, 264, 280, 288, 8, 248, 256,
+		32, 320, 24, 56, 80, 88, 112, 120, 128, 344, 376, 272}
+	for off in str_offs {
+		wo_copy_str(to, from, off, false)
+	}
+
+	// fdc_save/fdm_save are dup'd ONLY when diff_saved (@300):
+	diff_saved := (^C.int)(uintptr(from) + 300)^ != 0
+	if diff_saved {
+		(^^u8)(uintptr(to) + 40)^ = xstrdup_r2(transmute(cstring)((^^u8)(uintptr(from) + 40)^))
+		(^^u8)(uintptr(to) + 88)^ = xstrdup_r2(transmute(cstring)((^^u8)(uintptr(from) + 88)^))
+	} else {
+		(^^u8)(uintptr(to) + 40)^ = empty_string_option_c
+		(^^u8)(uintptr(to) + 88)^ = empty_string_option_c
+	}
+	libc.memmove(
+		transmute(rawptr)(uintptr(to) + 432), transmute(rawptr)(uintptr(from) + 432),
+		24 * 53) // wo_script_ctx[kWinOptCount=53]
+	// check_winopt: replace any NULL with empty_string_option
+	for off in str_offs {
+		check_string_option_r(transmute(^u8)((^^u8)(uintptr(to) + off)))
+	}
+	check_string_option_r(transmute(^u8)((^^u8)(uintptr(to) + 40)))
+	check_string_option_r(transmute(^u8)((^^u8)(uintptr(to) + 88)))
+}
+
+@(export)
+clear_winopt :: proc "c"(wop: rawptr) {
+	str_offs := [23]uintptr{24, 40, 56, 80, 88, 112, 120, 128, 32, 344, 216,
+		264, 280, 248, 256, 320, 8, 376, 384, 392, 152, 288, 272}
+	for off in str_offs {
+		clear_string_option_r(transmute(^u8)((^^u8)(uintptr(wop) + off)))
+	}
+}
+
+@(export)
+didset_window_options :: proc "c"(wp: rawptr, valid_cursor: bool) {
+	if (^C.int)(uintptr(wp) + W_P_WRAP_OFF)^ != 0 {
+		(^C.int)(uintptr(wp) + W_LEFTCOL_OFF)^ = 0
+	} else {
+		(^C.int)(uintptr(wp) + W_SKIPCOL_OFF)^ = 0
+	}
+	check_colorcolumn_r(nil, wp)
+	briopt_check_r(nil, wp)
+	fill_culopt_flags(nil, wp)
+	set_chars_option_o(wp, (^^u8)(uintptr(wp) + 1208)^, kFillchars_S, true, nil, 0)
+	set_chars_option_o(wp, (^^u8)(uintptr(wp) + 1200)^, kListchars_S, true, nil, 0)
+	parse_winhl_opt_r(nil, wp)
+	check_blending(wp)
+	set_winbar_win_r(wp, false, valid_cursor)
+	check_signcolumn_r(nil, wp)
+	(^C.int)(uintptr(wp) + 10514)^ =
+		(^C.longlong)(uintptr(wp) + W_P_WINBL_OFF)^ > 0 ? 1 : 0
+}
+
+@(export)
+free_all_options :: proc "c"() {
+	opt_idx: C.int = 0
+	for opt_idx < 377 {
+		hidden := is_option_hidden(opt_idx)
+
+		if option_is_global_only(opt_idx) || hidden {
+			if !hidden {
+				optval_free(optval_from_varp(opt_idx, opt_at(opt_idx).varp))
+			}
+		} else if !option_is_window_local(opt_idx) {
+			optval_free(optval_from_varp(opt_idx, opt_at(opt_idx).varp))
+		}
+		optval_free(opt_at(opt_idx).def_val)
+		opt_idx += 1
+	}
+	// NOTE: C gates these 3 callback frees + fenc_default/p_term/p_ttytype frees
+	// behind #ifdef EXITFREE. This build does NOT define EXITFREE (CMakeCache
+	// CMAKE_C_FLAGS is empty), so free_all_mem() never runs and never calls us.
+	// Mirror the C config: skip the EXITFREE-only callback frees.
+	if false {
+		free_operatorfunc_option()
+		free_tagfunc_option()
+		free_findfunc_option()
+	}
+	nvim_odin_clear_p_term_ttytype()
+}
+
+// ── misc exports: set_init_tablocal, get_option_default, helplang/title defaults ──
+
+foreign _ {
+	@(link_name = "p_hlg")
+	p_hlg_g: ^u8
+	@(link_name = "p_title")
+	p_title_g: C.int
+	@(link_name = "p_icon")
+	p_icon_g: C.int
+	@(link_name = "getuid")
+	getuid_c :: proc "c" () -> C.int ---
+	@(link_name = "xmemdupz")
+	xmemdupz_o2 :: proc "c" (s: ^u8, len: C.size_t) -> ^u8 ---
+	@(link_name = "free_string_option")
+	free_string_option_o :: proc "c" (p: ^u8) ---
+	@(link_name = "nvim_odin_switch_option_context")
+	nvim_odin_switch_option_context :: proc "c" (ctx: rawptr, scope: C.int, from: rawptr, err: rawptr) -> bool ---
+	@(link_name = "nvim_odin_restore_option_context")
+	nvim_odin_restore_option_context :: proc "c" (ctx: rawptr, scope: C.int) ---
+	@(link_name = "api_set_error")
+	api_set_error_r :: proc "c" (err: rawptr, typ: C.int, fmt: cstring, arg: rawptr) ---
+	@(link_name = "redraw_later")
+	redraw_later_o :: proc "c" (wp: rawptr, typ: C.int) ---
+	@(link_name = "set_option_value_handle_tty")
+	set_option_value_handle_tty_c :: proc "c" (name: ^u8, opt_idx: C.int, value: OptVal, opt_flags: C.int) -> cstring ---
+	@(link_name = "p_tw")
+	p_tw_g: C.longlong
+	@(link_name = "p_wm")
+	p_wm_g: C.longlong
+	@(link_name = "p_ml")
+	p_ml_g: C.int
+	@(link_name = "p_et")
+	p_et_g: C.int
+	@(link_name = "nvim_odin_get_p_tw_nobin")
+	get_p_tw_nobin_c :: proc "c" () -> C.longlong ---
+	@(link_name = "nvim_odin_get_p_wm_nobin")
+	get_p_wm_nobin_c :: proc "c" () -> C.longlong ---
+	@(link_name = "nvim_odin_get_p_ml_nobin")
+	get_p_ml_nobin_c :: proc "c" () -> C.int ---
+	@(link_name = "nvim_odin_get_p_et_nobin")
+	get_p_et_nobin_c :: proc "c" () -> C.int ---
+	@(link_name = "nvim_odin_set_p_tw_nobin")
+	set_p_tw_nobin_c :: proc "c" (v: C.longlong) ---
+	@(link_name = "nvim_odin_set_p_wm_nobin")
+	set_p_wm_nobin_c :: proc "c" (v: C.longlong) ---
+	@(link_name = "nvim_odin_set_p_ml_nobin")
+	set_p_ml_nobin_c :: proc "c" (v: C.int) ---
+	@(link_name = "nvim_odin_set_p_et_nobin")
+	set_p_et_nobin_c :: proc "c" (v: C.int) ---
+	@(link_name = "p_bin")
+	p_bin_g: C.int
+	@(link_name = "strncasecmp")
+	strncasecmp_o :: proc "c" (s1: cstring, s2: cstring, n: C.size_t) -> C.int ---
+	@(link_name = "p_magic")
+	p_magic_g: C.int
+}
+
+kOptFlagWasSet_S :: 1 << 3
+kOptFlagNoDefExp_S :: 1 << 1
+kOptFlagInsecure_S :: 1 << 18
+
+UPD_NOT_VALID_S :: 40
+
+ROOT_UID_S :: 0
+
+@(export)
+set_init_tablocal :: proc "c"() {
+	// susy baka: cmdheight calls itself OPT_GLOBAL but is really tablocal!
+	p_ch = ov_number(&opt_at(44).def_val)^ // kOptCmdheight=44
+}
+
+@(export)
+get_option_default :: proc "c"(opt_idx: C.int, opt_flags: C.int) -> OptVal {
+	opt := opt_at(opt_idx)
+	is_gl := option_is_global_local_shim(opt_idx)
+
+	if opt_idx == 191 && getuid_c() == ROOT_UID_S { // kOptModeline=191
+		return bool_optval(0)
+	}
+
+	if (opt_flags & OPT_LOCAL_S) != 0 && is_gl {
+		return get_option_unset_value_c(opt_idx)
+	} else if option_has_type(opt_idx, 2) &&
+	(opt.flags & kOptFlagNoDefExp_S) == 0 {
+		s := option_expand_c(opt_idx, transmute(cstring)(ov_str_data(&opt.def_val)))
+		if s == nil {
+			return opt.def_val
+		}
+		sv := (^u8)(s)
+		return str_optval(sv, libc.strlen(transmute(cstring)(sv)))
+	}
+	return opt.def_val
+}
+
+@(export)
+set_helplang_default :: proc "c"(lang: ^u8) {
+	if lang == nil {
+		return
+	}
+	lang_len := libc.strlen(transmute(cstring)(lang))
+	if lang_len < 2 {
+		return
+	}
+	if (opt_at(130).flags & kOptFlagWasSet_S) != 0 { // kOptHelplang=130
+		return
+	}
+	free_string_option_o(p_hlg_g)
+	p_hlg_g = xmemdupz_o2(lang, lang_len)
+	// zh_CN becomes "cn", zh_TW becomes "tw".
+	if strncasecmp_o(transmute(cstring)(p_hlg_g), cstring("zh_"), 3) == 0 && lang_len >= 5 {
+		b_set(p_hlg_g, 0, byte(libc.tolower(C.int(b_at(p_hlg_g, 3)))))
+		b_set(p_hlg_g, 1, byte(libc.tolower(C.int(b_at(p_hlg_g, 4)))))
+	} else if lang_len != 0 && b_at(p_hlg_g, 0) == 'C' {
+		b_set(p_hlg_g, 0, 'e')
+		b_set(p_hlg_g, 1, 'n')
+	}
+	b_set(p_hlg_g, 2, 0)
+}
+
+@(export)
+set_title_defaults :: proc "c"() {
+	if (opt_at(326).flags & kOptFlagWasSet_S) == 0 { // kOptTitle=326
+		change_option_default_r(326, bool_optval(0))
+		p_title_g = 0
+	}
+	if (opt_at(137).flags & kOptFlagWasSet_S) == 0 { // kOptIcon=137
+		change_option_default_r(137, bool_optval(0))
+		p_icon_g = 0
+	}
+}
+
+foreign _ {
+	@(link_name = "optval_as_tv")
+	optval_as_tv_c :: proc "c" (value: OptVal, numbool: bool) -> Typval_T ---
+	@(link_name = "set_vim_var_tv")
+	set_vim_var_tv_c :: proc "c" (idx: C.int, tv: ^Typval_T) ---
+	@(link_name = "reset_v_option_vars")
+	reset_v_option_vars_c :: proc "c" () ---
+}
+
+Typval_T :: struct { // 16 bytes
+	v_type: C.int,
+	v_lock: C.int,
+	vval:   rawptr,
+}
+#assert(size_of(Typval_T) == 16)
+
+VV_OPTION_NEW_S :: 62
+VV_OPTION_OLD_S :: 63
+VV_OPTION_OLDLOCAL_S :: 64
+VV_OPTION_OLDGLOBAL_S :: 65
+VV_OPTION_COMMAND_S :: 66
+VV_OPTION_TYPE_S :: 67
+
+EVENT_OPTIONSET_S :: 38
+
+kOptFlagRedrTabl_S :: 1 << 6
+kOptFlagRedrStat_S :: 1 << 7
+kOptFlagRedrWin_S :: 1 << 8
+kOptFlagRedrBuf_S :: 1 << 9
+kOptFlagRedrAll_S :: kOptFlagRedrBuf_S | kOptFlagRedrWin_S
+kOptFlagHLOnly_S :: 1 << 22
+
+OPTION_MAGIC_NOT_SET_S :: 0
+OPTION_MAGIC_ON_S :: 1
+OPTION_MAGIC_OFF_S :: 2
+
+W_P_WRAP_FLAGS_OFF :: 1224
+W_P_STL_FLAGS_OFF :: 1228
+W_P_WBR_FLAGS_OFF :: 1232
+W_P_FDE_FLAGS_OFF :: 1236
+W_P_FDT_FLAGS_OFF :: 1240
+B_P_INDE_FLAGS_OFF :: 10496
+B_P_FEX_FLAGS_OFF :: 10528
+B_P_INEX_FLAGS_OFF :: 10480
+W_ONEBUF_OPT_OFF2 :: 816
+W_ALLBUF_OPT_OFF2 :: 2520
+WO_WRAP_FLAGS_OFF2 :: 408
+WO_FDE_FLAGS_OFF2 :: 420
+WO_FDT_FLAGS_OFF2 :: 424
+
+B_P_TW_NOBIN_OFF :: 10712
+B_P_WM_NOBIN_OFF :: 10736
+B_P_ML_NOBIN_OFF :: 10580
+B_P_ET_NOBIN_OFF :: 10392
+B_P_TW_OFF2 :: 10704
+B_P_WM_OFF2 :: 10728
+B_P_ML_OFF2 :: 10576
+B_P_ET_OFF2 :: 10388
+
+@(export)
+insecure_flag :: proc "c"(wp: rawptr, opt_idx: C.int, opt_flags: C.int) -> ^C.uint32_t {
+	if (opt_flags & OPT_LOCAL_S) != 0 {
+		switch opt_idx {
+		case 370: // kOptWrap
+			return (^C.uint32_t)(uintptr(wp) + W_P_WRAP_FLAGS_OFF)
+		case 296: // kOptStatusline
+			return (^C.uint32_t)(uintptr(wp) + W_P_STL_FLAGS_OFF)
+		case 357: // kOptWinbar
+			return (^C.uint32_t)(uintptr(wp) + W_P_WBR_FLAGS_OFF)
+		case 104: // kOptFoldexpr
+			return (^C.uint32_t)(uintptr(wp) + W_P_FDE_FLAGS_OFF)
+		case 113: // kOptFoldtext
+			return (^C.uint32_t)(uintptr(wp) + W_P_FDT_FLAGS_OFF)
+		case 148: // kOptIndentexpr
+			return (^C.uint32_t)(uintptr((^^rawptr)(uintptr(wp) + 8)^) + B_P_INDE_FLAGS_OFF)
+		case 114: // kOptFormatexpr
+			return (^C.uint32_t)(uintptr((^^rawptr)(uintptr(wp) + 8)^) + B_P_FEX_FLAGS_OFF)
+		case 146: // kOptIncludeexpr
+			return (^C.uint32_t)(uintptr((^^rawptr)(uintptr(wp) + 8)^) + B_P_INEX_FLAGS_OFF)
+		case:
+		}
+	} else {
+		// global value of window-local options → w_allbuf_opt flags
+		switch opt_idx {
+		case 370:
+			return (^C.uint32_t)(uintptr(wp) + W_ALLBUF_OPT_OFF2 + WO_WRAP_FLAGS_OFF2)
+		case 104:
+			return (^C.uint32_t)(uintptr(wp) + W_ALLBUF_OPT_OFF2 + WO_FDE_FLAGS_OFF2)
+		case 113:
+			return (^C.uint32_t)(uintptr(wp) + W_ALLBUF_OPT_OFF2 + WO_FDT_FLAGS_OFF2)
+		case:
+		}
+	}
+	return &opt_at(opt_idx).flags
+}
+
+@(export)
+was_set_insecurely :: proc "c"(wp: rawptr, opt_idx: C.int, opt_flags: C.int) -> C.int {
+	flagp := insecure_flag(wp, opt_idx, opt_flags)
+	return (flagp^ & kOptFlagInsecure_S) != 0 ? 1 : 0
+}
+
+@(export)
+redraw_titles :: proc "c"() {
+	need_maketitle_opt = true
+	redraw_tabline_opt = true
+}
+
+@(export)
+check_redraw_for :: proc "c"(buf: rawptr, win: rawptr, flags: C.uint32_t) {
+	all := (flags & kOptFlagRedrAll_S) == kOptFlagRedrAll_S
+
+	if (flags & kOptFlagRedrStat_S) != 0 || all {
+		status_redraw_all_r()
+	}
+	if (flags & kOptFlagRedrTabl_S) != 0 || all {
+		redraw_tabline_opt = true
+	}
+	if (flags & kOptFlagRedrBuf_S) != 0 || (flags & kOptFlagRedrWin_S) != 0 || all {
+		if (flags & kOptFlagHLOnly_S) != 0 {
+			redraw_later_o(win, UPD_NOT_VALID_S)
+		} else {
+			changed_window_setting_opt(win)
+		}
+	}
+	if (flags & kOptFlagRedrBuf_S) != 0 {
+		redraw_buf_later_o(buf, UPD_NOT_VALID_S)
+	}
+	if all {
+		redraw_all_later_o(UPD_NOT_VALID_S)
+	}
+}
+
+@(export)
+check_redraw :: proc "c"(flags: C.uint32_t) {
+	check_redraw_for(curbuf, curwin, flags)
+}
+
+@(export)
+magic_isset :: proc "c"() -> bool {
+	switch magic_overruled_g {
+	case OPTION_MAGIC_ON_S:
+		return true
+	case OPTION_MAGIC_OFF_S:
+		return false
+	case:
+	}
+	return p_magic_g != 0
+}
+
+@(export)
+set_options_bin :: proc "c"(oldval: C.int, newval: C.int, opt_flags: C.int) {
+	if newval != 0 {
+		if oldval == 0 {
+			if (opt_flags & OPT_GLOBAL_S) == 0 {
+				(^C.longlong)(uintptr(curbuf) + B_P_TW_NOBIN_OFF)^ =
+					(^C.longlong)(uintptr(curbuf) + B_P_TW_OFF2)^
+				(^C.longlong)(uintptr(curbuf) + B_P_WM_NOBIN_OFF)^ =
+					(^C.longlong)(uintptr(curbuf) + B_P_WM_OFF2)^
+				(^C.int)(uintptr(curbuf) + B_P_ML_NOBIN_OFF)^ =
+					(^C.int)(uintptr(curbuf) + B_P_ML_OFF2)^
+				(^C.int)(uintptr(curbuf) + B_P_ET_NOBIN_OFF)^ =
+					(^C.int)(uintptr(curbuf) + B_P_ET_OFF2)^
+			}
+			if (opt_flags & OPT_LOCAL_S) == 0 {
+				set_p_tw_nobin_c(p_tw_g)
+				set_p_wm_nobin_c(p_wm_g)
+				set_p_ml_nobin_c(p_ml_g)
+				set_p_et_nobin_c(p_et_g)
+			}
+		}
+		if (opt_flags & OPT_GLOBAL_S) == 0 {
+			(^C.longlong)(uintptr(curbuf) + B_P_TW_OFF2)^ = 0
+			(^C.longlong)(uintptr(curbuf) + B_P_WM_OFF2)^ = 0
+			(^C.int)(uintptr(curbuf) + B_P_ML_OFF2)^ = 0
+			(^C.int)(uintptr(curbuf) + B_P_ET_OFF2)^ = 0
+		}
+		if (opt_flags & OPT_LOCAL_S) == 0 {
+			p_tw_g = 0
+			p_wm_g = 0
+			p_ml_g = 0
+			p_et_g = 0
+			p_bin_g = 1
+		}
+	} else if oldval != 0 {
+		if (opt_flags & OPT_GLOBAL_S) == 0 {
+			(^C.longlong)(uintptr(curbuf) + B_P_TW_OFF2)^ =
+				(^C.longlong)(uintptr(curbuf) + B_P_TW_NOBIN_OFF)^
+			(^C.longlong)(uintptr(curbuf) + B_P_WM_OFF2)^ =
+				(^C.longlong)(uintptr(curbuf) + B_P_WM_NOBIN_OFF)^
+			(^C.int)(uintptr(curbuf) + B_P_ML_OFF2)^ =
+				(^C.int)(uintptr(curbuf) + B_P_ML_NOBIN_OFF)^
+			(^C.int)(uintptr(curbuf) + B_P_ET_OFF2)^ =
+				(^C.int)(uintptr(curbuf) + B_P_ET_NOBIN_OFF)^
+		}
+		if (opt_flags & OPT_LOCAL_S) == 0 {
+			p_tw_g = get_p_tw_nobin_c()
+			p_wm_g = get_p_wm_nobin_c()
+			p_ml_g = C.int(get_p_ml_nobin_c())
+			p_et_g = C.int(get_p_et_nobin_c())
+		}
+	}
+}
+
+@(export)
+apply_optionset_autocmd_now :: proc "c"(opt_idx: C.int, opt_flags: C.int, oldval: OptVal,
+	oldval_g: OptVal, oldval_l: OptVal, newval: OptVal, errmsg: cstring) {
+	// Don't do this while starting up, failure or recursively.
+	if starting != 0 || errmsg != nil || b_at((^u8)(get_vim_var_str_f(VV_OPTION_TYPE_S)), 0) != 0 {
+		return
+	}
+
+	buf_type: [7]u8
+	oldval_tv := optval_as_tv_c(oldval, false)
+	oldval_g_tv := optval_as_tv_c(oldval_g, false)
+	oldval_l_tv := optval_as_tv_c(oldval_l, false)
+	newval_tv := optval_as_tv_c(newval, false)
+
+	set_vim_var_tv_c(VV_OPTION_OLD_S, &oldval_tv)
+	set_vim_var_tv_c(VV_OPTION_NEW_S, &newval_tv)
+	typelen := C.size_t(libc.snprintf(&buf_type[0], 7, "%s",
+		(opt_flags & OPT_LOCAL_S) != 0 ? cstring("local") : cstring("global")))
+	set_vim_var_string(VV_OPTION_TYPE_S, transmute(cstring)(&buf_type[0]), C.ssize_t(typelen))
+	if (opt_flags & OPT_LOCAL_S) != 0 {
+		set_vim_var_string(VV_OPTION_COMMAND_S, cstring("setlocal"), 8)
+		set_vim_var_tv_c(VV_OPTION_OLDLOCAL_S, &oldval_tv)
+	}
+	if (opt_flags & OPT_GLOBAL_S) != 0 {
+		set_vim_var_string(VV_OPTION_COMMAND_S, cstring("setglobal"), 9)
+		set_vim_var_tv_c(VV_OPTION_OLDGLOBAL_S, &oldval_tv)
+	}
+	if (opt_flags & (OPT_LOCAL_S | OPT_GLOBAL_S)) == 0 {
+		set_vim_var_string(VV_OPTION_COMMAND_S, cstring("set"), 3)
+		set_vim_var_tv_c(VV_OPTION_OLDLOCAL_S, &oldval_l_tv)
+		set_vim_var_tv_c(VV_OPTION_OLDGLOBAL_S, &oldval_g_tv)
+	}
+	if (opt_flags & OPT_MODELINE_S) != 0 {
+		set_vim_var_string(VV_OPTION_COMMAND_S, cstring("modeline"), 8)
+		set_vim_var_tv_c(VV_OPTION_OLDLOCAL_S, &oldval_tv)
+	}
+	apply_autocmds(EVENT_OPTIONSET_S, transmute(cstring)(opt_at(opt_idx).fullname), nil, false, nil)
+	reset_v_option_vars_c()
+}
+
+// ── get/set_option_value_for (switch context) ────────────────────────────────
+
+
+ERROR_SET :: proc "c"(err: rawptr) -> bool {
+	e := (^Api_Error)(err)
+	return e.msg != nil
+}
+
+SWITCHWIN_SIZE :: 24
+ACO_SAVE_SIZE :: 56
+
+@(export)
+get_option_value_for :: proc "c"(opt_idx: C.int, opt_flags: C.int, scope: C.int, from: rawptr,
+	err: rawptr) -> OptVal {
+	switchwin: [SWITCHWIN_SIZE]u8
+	aco: [ACO_SAVE_SIZE]u8
+	swtab: rawptr = nil
+	ctx: rawptr = nil
+	if scope == kOptScopeWin_S {
+		ctx = &switchwin[0]
+	} else if scope == kOptScopeBuf_S {
+		ctx = &aco[0]
+	} else if scope == kOptScopeTab_S {
+		ctx = &swtab
+	}
+
+	switched := nvim_odin_switch_option_context(ctx, scope, from, err)
+	if ERROR_SET(err) {
+		return nil_optval()
+	}
+
+	retv := get_option_value(opt_idx, opt_flags)
+
+	if switched {
+		nvim_odin_restore_option_context(ctx, scope)
+	}
+
+	return retv
+}
+
+@(export)
+set_option_value_for :: proc "c"(name: ^u8, opt_idx: C.int, value: OptVal, opt_flags: C.int,
+	scope: C.int, from: rawptr, err: rawptr) {
+	// Special case: Tab scope for NON-CURRENT tab: set tp_ch_used directly.
+	if scope == kOptScopeTab_S && from != curtab {
+		if value.typ != 2 { // kOptValTypeNumber == 2
+			api_set_error_r(err, 1, "'cmdheight' requires a Number", nil)
+			return
+		}
+		v := value
+		(^C.longlong)(uintptr(from) + 72)^ = ov_number(&v)^ // tp_ch_used @72
+		return
+	}
+
+	switchwin: [SWITCHWIN_SIZE]u8
+	aco: [ACO_SAVE_SIZE]u8
+	swtab: rawptr = nil
+	ctx: rawptr = nil
+	if scope == kOptScopeWin_S {
+		ctx = &switchwin[0]
+	} else if scope == kOptScopeBuf_S {
+		ctx = &aco[0]
+	} else if scope == kOptScopeTab_S {
+		ctx = &swtab
+	}
+
+	switched := nvim_odin_switch_option_context(ctx, scope, from, err)
+	if ERROR_SET(err) {
+		return
+	}
+
+	errmsg := set_option_value_handle_tty_c(name, opt_idx, value, opt_flags)
+	if errmsg != nil {
+		api_set_error_r(err, 2 /* kErrorTypeException */, "%s", transmute(rawptr)(errmsg))
+	}
+
+	if switched {
+		nvim_odin_restore_option_context(ctx, scope)
+	}
+}
+
+// ── cmdline completion family ────────────────────────────────────────────────
+
+foreign _ {
+	@(link_name = "get_special_key_code")
+	get_special_key_code_c :: proc "c" (name: cstring) -> C.int ---
+	@(link_name = "escape_chars")
+	escape_chars_g: ^u8
+	@(link_name = "p_syn")
+	p_syn_opt: ^u8
+	@(link_name = "p_ft")
+	p_ft_opt: ^u8
+	@(link_name = "p_keymap")
+	p_keymap_opt: ^u8
+	@(link_name = "p_bdir")
+	p_bdir_opt: ^u8
+	@(link_name = "p_dir")
+	p_dir_opt: ^u8
+	@(link_name = "p_cdpath")
+	p_cdpath_opt: ^u8
+	@(link_name = "p_vdir")
+	p_vdir_opt: ^u8
+	@(link_name = "vim_strsave_escaped")
+	vim_strsave_escaped_c :: proc "c" (s: ^u8, esc: ^u8) -> ^u8 ---
+	@(link_name = "vim_regexec")
+	vim_regexec_o2 :: proc "c" (rmp: rawptr, line: ^u8, col: C.int) -> C.int ---
+	@(link_name = "cmdline_fuzzy_complete")
+	cmdline_fuzzy_complete_c :: proc "c" (fuzzystr: ^u8) -> bool ---
+	@(link_name = "fuzzy_match_str")
+	fuzzy_match_str_c :: proc "c" (str: ^u8, pat: ^u8) -> C.int ---
+	@(link_name = "fuzzymatches_to_strmatches")
+	fuzzymatches_to_strmatches_c :: proc "c" (fuzmatch: rawptr, matches: rawptr, numMatches: C.int, ignorecase: bool) ---
+}
+
+XP_BS_NONE_S :: 0
+XP_BS_ONE_S :: 1
+XP_BS_THREE_S :: 2
+XP_BS_COMMA_S :: 4
+
+XP_PREFIX_NONE_S :: 0
+XP_PREFIX_NO_S :: 1
+XP_PREFIX_INV_S :: 2
+
+EXPAND_UNSUCCESSFUL_S :: -2
+EXPAND_NOTHING_S :: 0
+EXPAND_FILES_S :: 2
+EXPAND_DIRECTORIES_S :: 3
+EXPAND_SETTINGS_S :: 4
+EXPAND_BOOL_SETTINGS_S :: 5
+EXPAND_OLD_SETTING_S :: 7
+EXPAND_OWNSYNTAX_S :: 38
+EXPAND_FILETYPE_S :: 36
+EXPAND_STRING_SETTING_S :: 52
+EXPAND_SETTING_SUBTRACT_S :: 53
+EXPAND_KEYMAP_S :: 55
+
+XPP_OFF :: 0 // expand_T offsets
+XPP_PATTERN :: 0
+XPP_CONTEXT :: 8
+XPP_PREFIX :: 24
+XPP_BACKSLASH :: 72
+XPP_LINE :: 144
+
+kOptFlagExpand_S :: 1 << 0
+kOptFlagComma_S :: 1 << 6
+kOptFlagColon_S :: 1 << 25
+kOptFlagFlagList_S :: 1 << 7
+
+// statics from option.c
+expand_option_idx_g: C.int = -1 // kOptInvalid == -1
+expand_option_start_col_g: C.int = 0
+expand_option_name_g: [5]u8 = {'t', '_', 0, 0, 0}
+expand_option_flags_g: C.int = 0
+expand_option_append_g: bool = false
+expand_option_subtract_g: bool = false
+
+ascii_isalnum :: #force_inline proc "c"(b: u8) -> bool {
+	return (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || (b >= '0' && b <= '9')
+}
+
+p_minus_1 :: #force_inline proc "c"(p: ^u8) -> ^u8 {
+	return (^u8)(uintptr(p) - 1)
+}
+
+@(export)
+set_context_in_set_cmd :: proc "c"(xp: rawptr, arg_in: ^u8, opt_flags: C.int) {
+	arg := arg_in
+	expand_option_flags_g = opt_flags
+
+	(^C.int)(uintptr(xp) + XPP_CONTEXT)^ = EXPAND_SETTINGS_S
+	if b_at(arg, 0) == 0 {
+		(^rawptr)(uintptr(xp) + XPP_PATTERN)^ = arg
+		return
+	}
+	argend := (^u8)(uintptr(arg) + uintptr(libc.strlen(transmute(cstring)(arg))))
+	p := p_minus_1(argend)
+	if b_at(p, 0) == ' ' && b_at(p_minus_1(p), 0) != '\\' {
+		(^rawptr)(uintptr(xp) + XPP_PATTERN)^ = (^u8)(uintptr(p) + 1)
+		return
+	}
+	for uintptr(p) > uintptr(arg) {
+		s := p
+		if b_at(p, 0) == ' ' || b_at(p, 0) == ',' {
+			for uintptr(s) > uintptr(arg) && b_at(p_minus_1(s), 0) == '\\' {
+				s = p_minus_1(s)
+			}
+		}
+		if b_at(p, 0) == ' ' && ((uintptr(p) - uintptr(s)) & 1) == 0 {
+			p = (^u8)(uintptr(p) + 1)
+			break
+		}
+		p = p_minus_1(p)
+	}
+	if libc.strncmp(transmute(cstring)(p), "no", 2) == 0 {
+		(^C.int)(uintptr(xp) + XPP_CONTEXT)^ = EXPAND_BOOL_SETTINGS_S
+		(^C.int)(uintptr(xp) + XPP_PREFIX)^ = XP_PREFIX_NO_S
+		p = (^u8)(uintptr(p) + 2)
+	} else if libc.strncmp(transmute(cstring)(p), "inv", 3) == 0 {
+		(^C.int)(uintptr(xp) + XPP_CONTEXT)^ = EXPAND_BOOL_SETTINGS_S
+		(^C.int)(uintptr(xp) + XPP_PREFIX)^ = XP_PREFIX_INV_S
+		p = (^u8)(uintptr(p) + 3)
+	}
+	(^rawptr)(uintptr(xp) + XPP_PATTERN)^ = p
+
+	nextchar: u8
+	flags: C.uint32_t = 0
+	opt_idx: C.int = 0
+	is_term_option := false
+
+	if b_at(arg, 0) == '<' {
+		for b_at(p, 0) != '>' {
+			c0 := b_at(p, 0)
+			p = (^u8)(uintptr(p) + 1)
+			if c0 == 0 { // expand terminal option name
+				return
+			}
+		}
+		key := get_special_key_code_c(transmute(cstring)((^u8)(uintptr(arg) + 1)))
+		if key == 0 {
+			(^C.int)(uintptr(xp) + XPP_CONTEXT)^ = EXPAND_NOTHING_S
+			return
+		}
+		nextchar = b_at(p, 1)
+		is_term_option = true
+		b_set(&expand_option_name_g[0], 2, u8(KEY2TERMCAP0(key)))
+		b_set(&expand_option_name_g[0], 3, u8(KEY2TERMCAP1(key)))
+	} else {
+		if b_at(p, 0) == 't' && b_at(p, 1) == '_' {
+			p = (^u8)(uintptr(p) + 2)
+			if b_at(p, 0) != 0 {
+				p = (^u8)(uintptr(p) + 1)
+			}
+			if b_at(p, 0) == 0 {
+				return // expand option name
+			}
+			nextchar = b_at(p, 1)
+			is_term_option = true
+			b_set(&expand_option_name_g[0], 2, b_at(p_minus_1(p_minus_1(p)), 0))
+			b_set(&expand_option_name_g[0], 3, b_at(p_minus_1(p), 0))
+		} else {
+			// Allow * wildcard.
+			for ascii_isalnum(b_at(p, 0)) || b_at(p, 0) == '_' || b_at(p, 0) == '*' {
+				p = (^u8)(uintptr(p) + 1)
+			}
+			if b_at(p, 0) == 0 {
+				return
+			}
+			nextchar = b_at(p, 0)
+			opt_idx = nvim_odin_find_option_len(transmute(cstring)(arg), C.size_t(uintptr(p) - uintptr(arg)))
+			if opt_idx == -1 /* kOptInvalid */ || is_option_hidden(opt_idx) {
+				(^C.int)(uintptr(xp) + XPP_CONTEXT)^ = EXPAND_NOTHING_S
+				return
+			}
+			flags = opt_at(opt_idx).flags
+			if option_has_type(opt_idx, kOptValTypeBoolean) {
+				(^C.int)(uintptr(xp) + XPP_CONTEXT)^ = EXPAND_NOTHING_S
+				return
+			}
+		}
+	}
+	// handle "-=" and "+="
+	expand_option_append_g = false
+	expand_option_subtract_g = false
+	if (nextchar == '-' || nextchar == '+' || nextchar == '^') && b_at(p, 1) == '=' {
+		if nextchar == '-' {
+			expand_option_subtract_g = true
+		}
+		if nextchar == '+' || nextchar == '^' {
+			expand_option_append_g = true
+		}
+		p = (^u8)(uintptr(p) + 1)
+		nextchar = '='
+	}
+	if (nextchar != '=' && nextchar != ':') ||
+	(^C.int)(uintptr(xp) + XPP_CONTEXT)^ == EXPAND_BOOL_SETTINGS_S {
+		(^C.int)(uintptr(xp) + XPP_CONTEXT)^ = EXPAND_UNSUCCESSFUL_S
+		return
+	}
+
+	// Below are for handling expanding a specific option's value after the '=' or ':'
+	if is_term_option {
+		expand_option_idx_g = -1
+	} else {
+		expand_option_idx_g = opt_idx
+	}
+
+	(^rawptr)(uintptr(xp) + XPP_PATTERN)^ = (^u8)(uintptr(p) + 1)
+	expand_option_start_col_g = C.int(uintptr(p) + 1 - uintptr((^rawptr)(uintptr(xp) + XPP_LINE)^))
+
+	// Certain options have special case handling to reuse the expansion logic.
+	if opt_at(opt_idx).varp == transmute(rawptr)(&p_syn_opt) {
+		(^C.int)(uintptr(xp) + XPP_CONTEXT)^ = EXPAND_OWNSYNTAX_S
+		return
+	}
+	if opt_at(opt_idx).varp == transmute(rawptr)(&p_ft_opt) {
+		(^C.int)(uintptr(xp) + XPP_CONTEXT)^ = EXPAND_FILETYPE_S
+		return
+	}
+	if opt_at(opt_idx).varp == transmute(rawptr)(&p_keymap_opt) {
+		(^C.int)(uintptr(xp) + XPP_CONTEXT)^ = EXPAND_KEYMAP_S
+		return
+	}
+
+	// If the option has a custom expander, use that. Otherwise fill with existing value.
+	if expand_option_subtract_g {
+		(^C.int)(uintptr(xp) + XPP_CONTEXT)^ = EXPAND_SETTING_SUBTRACT_S
+		return
+	} else if expand_option_idx_g != -1 && opt_at(expand_option_idx_g).opt_expand_cb != nil {
+		(^C.int)(uintptr(xp) + XPP_CONTEXT)^ = EXPAND_STRING_SETTING_S
+	} else if b_at((^u8)((^rawptr)(uintptr(xp) + XPP_PATTERN)^), 0) == 0 {
+		(^C.int)(uintptr(xp) + XPP_CONTEXT)^ = EXPAND_OLD_SETTING_S
+		return
+	} else {
+		(^C.int)(uintptr(xp) + XPP_CONTEXT)^ = EXPAND_NOTHING_S
+	}
+
+	if is_term_option || option_has_type(opt_idx, 1) { // Number
+		return
+	}
+
+	// Only string options below
+	if (flags & kOptFlagExpand_S) != 0 {
+		p = (^u8)(opt_at(opt_idx).varp)
+		if p == (^u8)(&p_bdir_opt) || p == (^u8)(&p_dir_opt) || p == (^u8)(&p_path_g) ||
+		p == (^u8)(&p_pp_g) || p == (^u8)(&p_rtp_g) || p == (^u8)(&p_cdpath_opt) ||
+		p == (^u8)(&p_vdir_opt) {
+			(^C.int)(uintptr(xp) + XPP_CONTEXT)^ = EXPAND_DIRECTORIES_S
+			if p == (^u8)(&p_path_g) || p == (^u8)(&p_cdpath_opt) {
+				(^C.int)(uintptr(xp) + XPP_BACKSLASH)^ = XP_BS_THREE_S
+			} else {
+				(^C.int)(uintptr(xp) + XPP_BACKSLASH)^ = XP_BS_ONE_S
+			}
+		} else {
+			(^C.int)(uintptr(xp) + XPP_CONTEXT)^ = EXPAND_FILES_S
+			if p == (^u8)(&p_tags_g) {
+				(^C.int)(uintptr(xp) + XPP_BACKSLASH)^ = XP_BS_THREE_S
+			} else {
+				(^C.int)(uintptr(xp) + XPP_BACKSLASH)^ = XP_BS_ONE_S
+			}
+		}
+		if (flags & kOptFlagComma_S) != 0 {
+			(^C.int)(uintptr(xp) + XPP_BACKSLASH)^ |= XP_BS_COMMA_S
+		}
+	}
+
+	if (flags & kOptFlagExpand_S) != 0 || (flags & kOptFlagComma_S) != 0 || (flags & kOptFlagColon_S) != 0 {
+		xp_pattern := (^rawptr)(uintptr(xp) + XPP_PATTERN)^
+		q := p_minus_1(argend)
+		for uintptr(q) > uintptr(xp_pattern) {
+			if b_at(q, 0) == ' ' || b_at(q, 0) == ',' || (b_at(q, 0) == ':' && (flags & kOptFlagColon_S) != 0) {
+				s := q
+				for uintptr(s) > uintptr(xp_pattern) && b_at(p_minus_1(s), 0) == '\\' {
+					s = p_minus_1(s)
+				}
+				if (b_at(q, 0) == ' ' && ((^C.int)(uintptr(xp) + XPP_BACKSLASH)^ & XP_BS_THREE_S) != 0 &&
+				(uintptr(q) - uintptr(s)) < 3) ||
+				(b_at(q, 0) == ',' && (flags & kOptFlagComma_S) != 0 && (uintptr(q) - uintptr(s)) < 2) ||
+				(b_at(q, 0) == ':' && (flags & kOptFlagColon_S) != 0) {
+					(^rawptr)(uintptr(xp) + XPP_PATTERN)^ = (^u8)(uintptr(q) + 1)
+					break
+				}
+			}
+			q = p_minus_1(q)
+		}
+	}
+
+	if (flags & kOptFlagFlagList_S) != 0 {
+		(^rawptr)(uintptr(xp) + XPP_PATTERN)^ = argend
+	}
+
+	// 'spellsuggest': custom or file:
+	if opt_at(opt_idx).varp == transmute(rawptr)(&p_sps_g) {
+		pat := (^rawptr)(uintptr(xp) + XPP_PATTERN)^
+		if libc.strncmp(transmute(cstring)(pat), "file:", 5) == 0 {
+			(^rawptr)(uintptr(xp) + XPP_PATTERN)^ = (^u8)(uintptr(pat) + 5)
+			return
+		} else if expand_option_idx_g != -1 && opt_at(expand_option_idx_g).opt_expand_cb != nil {
+			(^C.int)(uintptr(xp) + XPP_CONTEXT)^ = EXPAND_STRING_SETTING_S
+		}
+	}
+}
+
+KEY2TERMCAP0 :: #force_inline proc "c"(x: C.int) -> C.int {
+	return (-x) & 0xff
+}
+KEY2TERMCAP1 :: #force_inline proc "c"(x: C.int) -> C.int {
+	return C.int((C.uint32_t(-x) >> 8) & 0xff)
+}
+
+@(export)
+escape_option_str_cmdline :: proc "c"(var_str: ^u8) -> ^u8 {
+	// A backslash is required before some characters; reverse of do_set().
+	return vim_strsave_escaped_c(var_str, escape_chars_g)
+}
+
+match_str_c :: #force_inline proc "c"(str: ^u8, regmatch: rawptr, matches: rawptr,
+	idx: C.int, test_only: bool, fuzzy: bool, fuzzystr: ^u8, fuzmatch: rawptr) -> bool {
+	if !fuzzy {
+		if vim_regexec_o2(regmatch, str, 0) != 0 {
+			if !test_only {
+				(^rawptr)(uintptr(matches) + uintptr(idx) * 8)^ = xstrdup_r2(transmute(cstring)(str))
+			}
+			return true
+		}
+	} else {
+		score := fuzzy_match_str_c(str, fuzzystr)
+		if score != C.int(-2147483648) { // FUZZY_SCORE_NONE == INT_MIN
+			if !test_only {
+				fm := (^Fuzmatch_Str)(uintptr(fuzmatch) + uintptr(idx) * 24)
+				fm.idx = idx
+				fm.str = xstrdup_r2(transmute(cstring)(str))
+				fm.score = score
+			}
+			return true
+		}
+	}
+	return false
+}
+
+Fuzmatch_Str :: struct {
+	idx:   C.int,
+	str:   ^u8,
+	score: C.int,
+}
+#assert(size_of(Fuzmatch_Str) == 24)
+
+@(export)
+ExpandSettings :: proc "c"(xp: rawptr, regmatch: rawptr, fuzzystr: ^u8, numMatches: ^C.int,
+	matches: ^[^]^u8, can_fuzzy: bool) -> C.int {
+	num_normal: C.int = 0
+	count: C.int = 0
+	names := [1]^u8{(^u8)(&all_name_g[0])}
+	rm_ic_off :: 172
+
+	ic_val := (^C.int)(uintptr(regmatch) + rm_ic_off)^
+	fuzmatch: rawptr = nil
+	fuzzy := can_fuzzy && cmdline_fuzzy_complete_c(fuzzystr)
+
+	loop: C.int = 0
+	for loop <= 1 {
+		(^C.int)(uintptr(regmatch) + rm_ic_off)^ = ic_val
+		if (^C.int)(uintptr(xp) + XPP_CONTEXT)^ != EXPAND_BOOL_SETTINGS_S {
+			for match: C.int = 0; match < 1; match += 1 {
+				if match_str_c(names[match], regmatch, transmute(rawptr)(matches^), count, loop == 0, fuzzy, fuzzystr, fuzmatch) {
+					if loop == 0 {
+						num_normal += 1
+					} else {
+						count += 1
+					}
+				}
+			}
+		}
+		opt_idx: C.int = 0
+		for opt_idx < 377 {
+			str := opt_at(opt_idx).fullname
+			if is_option_hidden(opt_idx) {
+				opt_idx += 1
+				continue
+			}
+			if (^C.int)(uintptr(xp) + XPP_CONTEXT)^ == EXPAND_BOOL_SETTINGS_S &&
+			!option_has_type(opt_idx, 0) { // Boolean
+				opt_idx += 1
+				continue
+			}
+			if match_str_c(str, regmatch, transmute(rawptr)(matches^), count, loop == 0, fuzzy, fuzzystr, fuzmatch) {
+				if loop == 0 {
+					num_normal += 1
+				} else {
+					count += 1
+				}
+			} else if !fuzzy && opt_at(opt_idx).shortname != nil &&
+			vim_regexec_o2(regmatch, opt_at(opt_idx).shortname, 0) != 0 {
+				if loop == 0 {
+					num_normal += 1
+				} else {
+					(matches^)[count] = xstrdup_r2(transmute(cstring)(str))
+					count += 1
+				}
+			}
+			opt_idx += 1
+		}
+
+		if loop == 0 {
+			if num_normal > 0 {
+				numMatches^ = num_normal
+			} else {
+				return 1 // OK
+			}
+			if !fuzzy {
+				matches^ = ([^]^u8)(xmalloc_o(C.size_t(numMatches^) * 8))
+			} else {
+				fuzmatch = xmalloc_o(C.size_t(numMatches^) * 24)
+			}
+		}
+		loop += 1
+	}
+
+	if fuzzy {
+		fuzzymatches_to_strmatches_c(fuzmatch, transmute(rawptr)(matches), count, false)
+	}
+
+	return 1 // OK
+}
+
+all_name_g: [4]u8 = {'a', 'l', 'l', 0}
+
+@(export)
+ExpandOldSetting :: proc "c"(numMatches: ^C.int, matches: ^[^]^u8) -> C.int {
+	var_str: ^u8 = nil
+
+	numMatches^ = 0
+	matches^ = ([^]^u8)(xmalloc_o(8))
+
+	// For a terminal key code expand_option_idx is kOptInvalid.
+	if expand_option_idx_g == -1 {
+		expand_option_idx_g = nvim_odin_find_option_len(transmute(cstring)(&expand_option_name_g[0]), libc.strlen(transmute(cstring)(&expand_option_name_g[0])))
+	}
+
+	if expand_option_idx_g != -1 {
+		// Put string of option value in NameBuff.
+		option_value2string_o(opt_at(expand_option_idx_g), expand_option_flags_g)
+		var_str = (^u8)(&name_buff[0])
+	} else {
+		var_str = (^u8)(&empty_name_g[0])
+	}
+
+	buf := escape_option_str_cmdline(var_str)
+
+	(matches^)[0] = buf
+	numMatches^ = 1
+	return 1 // OK
+}
+
+empty_name_g: [1]u8 = {0}
+
+OE_VARP :: 0
+OE_OPT_VALUE :: 16
+OE_IDX :: 8
+OE_APPEND :: 24
+OE_INCLUDE_ORIG_VAL :: 25
+OE_REGMATCH :: 32
+OE_XP :: 40
+OE_SET_ARG :: 48
+OPTEXPAND_SIZE :: 56
+
+@(export)
+ExpandStringSetting :: proc "c"(xp: rawptr, regmatch: rawptr, numMatches: ^C.int,
+	matches: ^[^]^u8) -> C.int {
+	if expand_option_idx_g == -1 || opt_at(expand_option_idx_g).opt_expand_cb == nil {
+		// Not supposed to reach this; only for options with custom expansion callbacks.
+		return 0 // FAIL
+	}
+
+	args: [OPTEXPAND_SIZE]u8
+	libc.memset(&args[0], 0, OPTEXPAND_SIZE)
+	(^rawptr)(uintptr(&args[0]) + OE_VARP)^ =
+		nvim_odin_get_varp_scope(expand_option_idx_g, expand_option_flags_g)
+	(^C.int)(uintptr(&args[0]) + OE_IDX)^ = expand_option_idx_g
+	(^bool)(uintptr(&args[0]) + OE_APPEND)^ = expand_option_append_g
+	(^rawptr)(uintptr(&args[0]) + OE_REGMATCH)^ = regmatch
+	(^rawptr)(uintptr(&args[0]) + OE_XP)^ = xp
+	(^rawptr)(uintptr(&args[0]) + OE_SET_ARG)^ =
+		(^u8)(uintptr((^rawptr)(uintptr(xp) + XPP_LINE)^) + uintptr(expand_option_start_col_g))
+	set_arg := (^u8)(uintptr(&args[0]) + OE_SET_ARG)
+	(^bool)(uintptr(&args[0]) + OE_INCLUDE_ORIG_VAL)^ =
+		!expand_option_append_g && b_at((^^u8)(set_arg)^, 0) == 0
+
+	// Retrieve the existing value, but escape it as a reverse of setting it.
+	option_value2string_o(opt_at(expand_option_idx_g), expand_option_flags_g)
+	var_str := (^u8)(&name_buff[0])
+	buf := escape_option_str_cmdline(var_str)
+	(^rawptr)(uintptr(&args[0]) + OE_OPT_VALUE)^ = buf
+
+	cb := cast_opt_expand_cb(opt_at(expand_option_idx_g).opt_expand_cb)
+	num_ret := cb(&args[0], numMatches, matches)
+
+	xfree(buf)
+	return num_ret
+}
+
+opt_expand_cb_T :: #type proc "c"(rawptr, ^C.int, ^[^]^u8) -> C.int
+
+cast_opt_expand_cb :: #force_inline proc "c"(p: rawptr) -> opt_expand_cb_T {
+	return transmute(opt_expand_cb_T)(p)
+}
+
+@(export)
+ExpandSettingSubtract :: proc "c"(xp: rawptr, regmatch: rawptr, numMatches: ^C.int,
+	matches: ^[^]^u8) -> C.int {
+	if expand_option_idx_g == -1 {
+		// term option
+		return ExpandOldSetting(numMatches, matches)
+	}
+
+	option_val := (^^u8)(nvim_odin_get_varp_scope_from(expand_option_idx_g,
+		expand_option_flags_g, curbuf, curwin))^
+
+	option_flags := opt_at(expand_option_idx_g).flags
+
+	if option_has_type(expand_option_idx_g, 1) { // Number
+		return ExpandOldSetting(numMatches, matches)
+	} else if (option_flags & kOptFlagComma_S) != 0 {
+		// Split by comma, present each item to the user.
+		if b_at(option_val, 0) == 0 {
+			return 0 // FAIL
+		}
+
+		option_copy := xstrdup_r2(transmute(cstring)(option_val))
+		next_val := option_copy
+		ga: Garray
+		ga_init_o(&ga, 8, 10)
+
+		for {
+			item := next_val
+			comma_c := _vim_strchr(transmute(cstring)(next_val), ',')
+			comma: ^u8 = nil
+			if comma_c != nil {
+				comma = transmute(^u8)(comma_c)
+			}
+			for comma != nil && comma != next_val && b_at(p_minus_1(comma), 0) == '\\' {
+				next_c := _vim_strchr(transmute(cstring)((^u8)(uintptr(comma) + 1)), ',')
+				if next_c == nil {
+					comma = nil
+				} else {
+					comma = transmute(^u8)(next_c)
+				}
+			}
+			if comma != nil {
+				b_set(comma, 0, 0) // null-terminate this value
+				next_val = (^u8)(uintptr(comma) + 1)
+			} else {
+				next_val = nil
+			}
+			if b_at(item, 0) == 0 {
+				if next_val == nil {
+					break
+				}
+				continue
+			}
+			if vim_regexec_o2(regmatch, item, 0) == 0 {
+				if next_val == nil {
+					break
+				}
+				continue
+			}
+			buf := escape_option_str_cmdline(item)
+			ga_append_ptr(&ga, buf)
+			if next_val == nil {
+				break
+			}
+		}
+
+		xfree(option_copy)
+
+		matches^ = ([^]^u8)(ga.ga_data)
+		numMatches^ = ga.ga_len
+		return 1 // OK
+	} else if (option_flags & kOptFlagFlagList_S) != 0 {
+		// Only present flags that are set on the option.
+		pat := (^rawptr)(uintptr(xp) + XPP_PATTERN)^
+		if b_at((^u8)(pat), 0) != 0 {
+			return 0 // FAIL
+		}
+
+		num_flags := libc.strlen(transmute(cstring)(option_val))
+		if num_flags == 0 {
+			return 0 // FAIL
+		}
+
+		matches^ = ([^]^u8)(xmalloc_o((num_flags + 1) * 8))
+
+		count: C.int = 0
+		(matches^)[count] = xmemdupz_o2(option_val, C.size_t(num_flags))
+		count += 1
+
+		if num_flags > 1 {
+			// Split into individual chars.
+			i: uintptr = 0
+			for i < uintptr(num_flags) {
+				flag := (^u8)(uintptr(option_val) + i)
+				(matches^)[count] = xmemdupz_o2(flag, 1)
+				count += 1
+				i += 1
+			}
+		}
+
+		numMatches^ = count
+		return 1 // OK
+	}
+
+	// Otherwise just offer the existing value.
+	return ExpandOldSetting(numMatches, matches)
+}
+
+foreign _ {
+	@(link_name = "ga_init")
+	ga_init_o :: proc "c" (gap: ^Garray, itemsize: C.int, growsize: C.int) ---
+	@(link_name = "ga_grow")
+	ga_grow_o :: proc "c" (gap: ^Garray, n: C.int) ---
+}
+
+ga_append_ptr :: proc "c"(gap: ^Garray, item: rawptr) {
+	ga_grow_o(gap, 1)
+	if gap.ga_data == nil {
+		return
+	}
+	(^rawptr)(uintptr(gap.ga_data) + uintptr(gap.ga_len) * 8)^ = item
+	gap.ga_len += 1
+}
+
+foreign _ {
+	@(link_name = "tv_dict_add_tv")
+	tv_dict_add_tv_c :: proc "c" (d: rawptr, key: cstring, key_len: C.size_t, tv: ^Typval_T) -> C.int ---
+}
+
+@(export)
+did_set_global_undolevels :: proc "c"(value: C.longlong, old_value: C.longlong) -> cstring {
+	// sync undo before 'undolevels' changes
+	// use the old value, otherwise u_sync() may not work properly
+	p_ul = old_value
+	u_sync(true)
+	p_ul = value
+	return nil
+}
+
+@(export)
+did_set_buflocal_undolevels :: proc "c"(buf: rawptr, value: C.longlong, old_value: C.longlong) -> cstring {
+	// use the old value, otherwise u_sync() may not work properly
+	(^C.longlong)(uintptr(buf) + B_P_UL_OFF2)^ = old_value
+	u_sync(true)
+	(^C.longlong)(uintptr(buf) + B_P_UL_OFF2)^ = value
+	return nil
+}
+
+B_P_UL_OFF2 :: 10928
+
+@(export)
+get_winbuf_options :: proc "c"(bufopt: C.int) -> rawptr {
+	d := tv_dict_alloc_m()
+
+	opt_idx: C.int = 0
+	for opt_idx < 377 {
+		opt := opt_at(opt_idx)
+
+		if (bufopt != 0 && option_has_scope_o(opt_idx, 2)) ||
+		(bufopt == 0 && option_has_scope_o(opt_idx, 1)) {
+			varp := nvim_odin_get_varp_from(opt_idx, curbuf, curwin)
+
+			if varp != nil {
+				opt_tv := optval_as_tv_c(optval_from_varp(opt_idx, varp), true)
+				tv_dict_add_tv_c(d, transmute(cstring)(opt.fullname),
+					C.size_t(libc.strlen(transmute(cstring)(opt.fullname))), &opt_tv)
+			}
+		}
+		opt_idx += 1
+	}
+
+	return d
+}
+
+// option_has_scope helper (kOptScopeBuf=2, kOptScopeWin=1)
+option_has_scope_o :: #force_inline proc "c"(opt_idx: C.int, scope: C.int) -> bool {
+	return (opt_at(opt_idx).scope_flags & u8(1 << u32(scope))) != 0
+}
+
+
+E_NUMBER_REQUIRED :: cstring("E521: Number required after =")
+E_INVARG_474 :: cstring("E474: Invalid argument")
+
+@(export)
+get_option_newval :: proc "c"(opt_idx: C.int, opt_flags: C.int, prefix: C.int, argp: ^^u8,
+	nextchar: C.int, op: C.int, flags: C.uint32_t, varp: rawptr,
+	oldval_override: rawptr, errbuf: ^u8, errbuflen: C.size_t,
+	errmsg: ^cstring) -> OptVal {
+	_ = flags
+	_ = errbuf
+	_ = errbuflen
+
+	assert_ok := varp != nil
+	if !assert_ok {
+		return nil_optval()
+	}
+
+	newval := nil_optval()
+
+	if nextchar == '&' {
+		// ":set opt&": Reset to default value.
+		return optval_copy(get_option_default(opt_idx, OPT_GLOBAL_S))
+	} else if nextchar == '<' {
+		// ":set opt<": Reset to global value.
+		if option_is_global_local_shim(opt_idx) && (opt_flags & OPT_LOCAL_S) == 0 {
+			unset_option_local_value_o(opt_idx)
+		}
+		return get_option_value(opt_idx, OPT_GLOBAL_S)
+	}
+
+	oldval: OptVal
+	if oldval_override != nil {
+		oldval = (^OptVal)(oldval_override)^
+	} else {
+		oldval_is_global := option_is_global_local_shim(opt_idx) && (opt_flags & OPT_LOCAL_S) != 0
+		if oldval_is_global {
+			oldval = optval_from_varp(opt_idx, nvim_odin_opt_varp(opt_idx))
+		} else {
+			oldval = optval_from_varp(opt_idx, varp)
+		}
+	}
+
+	switch oldval.typ {
+	case kOptValTypeNil:
+		libc.abort()
+	case kOptValTypeBoolean:
+		newval_bool: C.int
+
+		if nextchar == '!' { // ":set opt!": invert
+			cur := ov_boolean(&oldval)^
+			switch cur {
+			case -1: // kNone
+				newval_bool = -1
+			case 1: // kTrue
+				newval_bool = 0
+			case 0: // kFalse
+				newval_bool = 1
+			case:
+				newval_bool = -1
+			}
+		} else {
+			// ":set invopt" / ":set opt" / ":set noopt"
+			if prefix == 2 { // PREFIX_INV
+				cur_b := (^C.int)(varp)^
+				xor_val := xor_cint(cur_b, 1)
+				newval_bool = xor_val != 0 ? 1 : 0
+			} else {
+				newval_bool = prefix == 0 ? 0 : 1
+			}
+		}
+		newval = bool_optval(newval_bool)
+	case kOptValTypeNumber:
+		oldval_num := ov_number(&oldval)^
+		newval_num: C.longlong
+
+		arg := argp^
+		arg = (^u8)(uintptr(arg) + 1)
+		argp^ = arg
+		arg = p_minus_1(arg)
+		// NOTE: C does arg++ then reads *arg. We advanced argp by 1 already.
+
+		if (^C.longlong)(varp) == &p_wc_g || (^C.longlong)(varp) == &p_wcm_g {
+			a0 := b_at(argp^, 0)
+			a1 := b_at(argp^, 1)
+			if a0 == '<' || a0 == '^' ||
+			(a0 != 0 && (a1 == 0 || is_ascii_white(a1)) && !is_ascii_digit(a0)) {
+				newval_num = C.longlong(string_to_key(argp^))
+				if newval_num == 0 {
+					errmsg^ = E_INVARG_474
+					return newval
+				}
+			} else if a0 == '-' || is_ascii_digit(a0) {
+				i: C.int = 0
+				vim_str2nr_r(transmute(cstring)(argp^), nil, &i, STR2NR_ALL_S, &newval_num, nil, 0, true, nil)
+				if i == 0 || (b_at(argp^, i) != 0 && !is_ascii_white(b_at(argp^, i))) {
+					errmsg^ = E_NUMBER_REQUIRED
+					return newval
+				}
+			} else {
+				errmsg^ = E_NUMBER_REQUIRED
+				return newval
+			}
+		} else {
+			a0 := b_at(argp^, 0)
+			if a0 == '-' || is_ascii_digit(a0) {
+				i: C.int = 0
+				vim_str2nr_r(transmute(cstring)(argp^), nil, &i, STR2NR_ALL_S, &newval_num, nil, 0, true, nil)
+				if i == 0 || (b_at(argp^, i) != 0 && !is_ascii_white(b_at(argp^, i))) {
+					errmsg^ = E_NUMBER_REQUIRED
+					return newval
+				}
+			} else {
+				errmsg^ = E_NUMBER_REQUIRED
+				return newval
+			}
+		}
+
+		if op == OP_ADDING_S {
+			newval_num = oldval_num + newval_num
+		}
+		if op == OP_PREPENDING_S {
+			newval_num = oldval_num * newval_num
+		}
+		if op == OP_REMOVING_S {
+			newval_num = oldval_num - newval_num
+		}
+
+		newval = num_optval(newval_num)
+	case kOptValTypeString:
+		oldval_str := ov_str_data(&oldval)
+		op_local := op
+		newval_str := stropt_get_newval(opt_idx, argp, varp, transmute(cstring)(oldval_str), &op_local)
+		newval = str_optval(newval_str, libc.strlen(transmute(cstring)(newval_str)))
+	case:
+	}
+
+	return newval
+}
+
+xor_cint :: #force_inline proc "c"(a: C.int, b: C.int) -> C.int {
+	return a ~ b
+}
+
+is_ascii_white :: #force_inline proc "c"(b: u8) -> bool {
+	return b == ' ' || b == '\t'
+}
+is_ascii_digit :: #force_inline proc "c"(b: u8) -> bool {
+	return b >= '0' && b <= '9'
+}
+
+foreign _ {
+	@(link_name = "ga_concat_strings")
+	ga_concat_strings_c :: proc "c" (gap: ^Garray, sep: cstring) -> ^u8 ---
+	@(link_name = "sort_strings")
+	sort_strings_c :: proc "c" (files: rawptr, count: C.int) ---
+	@(link_name = "concat_str")
+	concat_str_c :: proc "c" (str1: cstring, str2: cstring) -> ^u8 ---
+}
+
+kObjectTypeNil_S :: 0
+kObjectTypeBoolean_S :: 1
+kObjectTypeInteger_S :: 2
+kObjectTypeString_S :: 4
+kObjectTypeArray_S :: 5
+kObjectTypeDict_S :: 6
+
+OBJ_DATA_OFF :: 8
+
+@(export)
+optval_as_object :: proc "c"(o_in: OptVal) -> Api_Object {
+	o := o_in
+	switch o.typ {
+	case kOptValTypeNil:
+		return Api_Object{t = kObjectTypeNil_S}
+	case kOptValTypeBoolean:
+		b := ov_boolean(&o)^
+		if b == 0 || b == 1 {
+			obj := Api_Object{t = kObjectTypeBoolean_S}
+			(^C.int)(uintptr(&obj) + OBJ_DATA_OFF)^ = b
+			return obj
+		}
+		return Api_Object{t = kObjectTypeNil_S}
+	case kOptValTypeNumber:
+		obj := Api_Object{t = kObjectTypeInteger_S}
+		(^C.longlong)(uintptr(&obj) + OBJ_DATA_OFF)^ = ov_number(&o)^
+		return obj
+	case kOptValTypeString:
+		obj := Api_Object{t = kObjectTypeString_S}
+		(^NvimString)(uintptr(&obj) + OBJ_DATA_OFF)^ = (^NvimString)(uintptr(&o) + 8)^
+		return obj
+	case:
+	}
+	return Api_Object{t = kObjectTypeNil_S}
+}
+
+@(export)
+object_as_optval :: proc "c"(o: Api_Object, error: ^bool) -> OptVal {
+	oc := o
+	switch oc.t {
+	case kObjectTypeNil_S:
+		return nil_optval()
+	case kObjectTypeBoolean_S:
+		return bool_optval((^C.int)(uintptr(&oc) + OBJ_DATA_OFF)^)
+	case kObjectTypeInteger_S:
+		return num_optval((^C.longlong)(uintptr(&oc) + OBJ_DATA_OFF)^)
+	case kObjectTypeString_S:
+		s := (^NvimString)(uintptr(&oc) + OBJ_DATA_OFF)^
+		return str_optval((^u8)(s.data), s.size)
+	case:
+		error^ = true
+	}
+	return nil_optval()
+}
+
+foreign _ {
+	@(link_name = "nvim_create_namespace")
+	nvim_create_namespace_c :: proc "c" (name: NvimString) -> C.int ---
+	@(link_name = "get_decor_provider")
+	get_decor_provider_c :: proc "c" (ns: C.int, force: bool) -> rawptr ---
+	@(link_name = "ns_hl_def")
+	ns_hl_def_c :: proc "c" (ns: C.int, hl_id: C.int, attrs: HlAttrs, attr_id: C.int, info: rawptr) ---
+	@(link_name = "syn_check_group")
+	syn_check_group_c :: proc "c" (name: ^u8, len: C.size_t) -> C.int ---
+	@(link_name = "xstrchrnul")
+	xstrchrnul_c :: proc "c" (str: ^u8, c: C.int) -> ^u8 ---
+}
+
+
+HL_GLOBAL_S :: 0x4000
+
+W_NS_HL_OFF :: 24
+W_NS_HL_WINHL_OFF :: 28
+W_P_WINHL_OFF :: 1192
+W_HL_NEEDS_UPDATE_OFF :: 100
+
+@(export)
+parse_winhl_opt :: proc "c"(winhl: ^u8, wp: rawptr) -> bool {
+	p: ^u8 = empty_string_option_c
+	if winhl != nil {
+		p = winhl
+	} else if wp != nil {
+		p2 := (^^u8)(uintptr(wp) + W_P_WINHL_OFF)^ // w_p_winhl
+		if p2 == nil {
+			p2 = empty_string_option_c
+		}
+		p = p2
+	}
+
+	if b_at(p, 0) == 0 {
+		if wp != nil && (^C.int)(uintptr(wp) + W_NS_HL_WINHL_OFF)^ > 0 &&
+		(^C.int)(uintptr(wp) + W_NS_HL_OFF)^ == (^C.int)(uintptr(wp) + W_NS_HL_WINHL_OFF)^ {
+			(^C.int)(uintptr(wp) + W_NS_HL_OFF)^ = 0
+			(^C.int)(uintptr(wp) + W_HL_NEEDS_UPDATE_OFF)^ = 1
+		}
+		return true
+	}
+
+	ns_hl: C.int = 0
+	if wp != nil {
+		if (^C.int)(uintptr(wp) + W_NS_HL_WINHL_OFF)^ == 0 {
+			(^C.int)(uintptr(wp) + W_NS_HL_WINHL_OFF)^ =
+				nvim_create_namespace_c(NvimString{data = nil, size = 0})
+		} else {
+			// Namespace already exists. Invalidate existing items.
+			dp := get_decor_provider_c((^C.int)(uintptr(wp) + W_NS_HL_WINHL_OFF)^, true)
+			(^C.int)(uintptr(dp) + 52)^ += 1 // DecorProvider.hl_valid @52
+		}
+		ns_hl = (^C.int)(uintptr(wp) + W_NS_HL_WINHL_OFF)^
+		if (^C.int)(uintptr(wp) + W_NS_HL_OFF)^ <= 0 {
+			(^C.int)(uintptr(wp) + W_NS_HL_OFF)^ = ns_hl
+		}
+	}
+
+	for b_at(p, 0) != 0 {
+		colon := libc.strchr(transmute(cstring)(p), ':')
+		if colon == nil {
+			return false
+		}
+		nlen := uintptr(transmute(rawptr)(colon)) - uintptr(p)
+		hi := (^u8)(uintptr(colon) + 1)
+		commap := xstrchrnul_c(hi, ',')
+		len := uintptr(commap) - uintptr(hi)
+		hl_id: C.int = -1
+		if len != 0 {
+			hl_id = syn_check_group_c(hi, C.size_t(len))
+		}
+		if hl_id == 0 {
+			return false
+		}
+		hl_id_link: C.int = 0
+		if nlen != 0 {
+			hl_id_link = syn_check_group_c(p, C.size_t(nlen))
+		}
+		if hl_id_link == 0 {
+			return false
+		}
+
+		if wp != nil {
+			attrs: HlAttrs
+			attrs.rgb_ae_attr |= HL_GLOBAL_S
+			ns_hl_def_c(ns_hl, hl_id_link, attrs, hl_id, nil)
+		}
+
+		if b_at(commap, 0) != 0 {
+			p = (^u8)(uintptr(commap) + 1)
+		} else {
+			p = empty_string_option_c
+		}
+	}
+
+	if wp != nil {
+		(^C.int)(uintptr(wp) + W_HL_NEEDS_UPDATE_OFF)^ = 1
+	}
+	return true
+}
+
+Api_Array :: struct {
+	size:     C.size_t,
+	capacity: C.size_t,
+	items:    ^Api_Object,
+}
+#assert(size_of(Api_Array) == 24)
+
+kOptFlagNoDup_S :: 1 << 12
+kOptWildchar_S :: 349
+kOptWildcharm_S :: 350
+
+OP_REMOVING_FOR :: 3 // OP_REMOVING
+OP_NONE_FOR :: 0
+
+ga_append_str :: proc "c"(gap: ^Garray, item: ^u8) {
+	ga_grow_o(gap, 1)
+	if gap.ga_data == nil {
+		return
+	}
+	(^rawptr)(uintptr(gap.ga_data) + uintptr(gap.ga_len) * 8)^ = item
+	gap.ga_len += 1
+}
+
+@(export)
+object_as_optval_for :: proc "c"(opt_idx: C.int, o: Api_Object, op: C.int, error: ^bool) -> OptVal {
+	oc := o
+	if oc.t == kObjectTypeNil_S {
+		return nil_optval()
+	}
+
+	flags := opt_at(opt_idx).flags
+	is_list := (flags & (kOptFlagComma_S | kOptFlagFlagList_S)) != 0
+	is_map := (flags & kOptFlagColon_S) != 0
+	is_flaglist := (flags & kOptFlagFlagList_S) != 0
+	is_comma := (flags & kOptFlagComma_S) != 0
+	allow_dup := (flags & kOptFlagNoDup_S) == 0
+
+	type_ok := false
+	switch oc.t {
+	case kObjectTypeBoolean_S:
+		type_ok = option_has_type(opt_idx, kOptValTypeBoolean)
+	case kObjectTypeInteger_S:
+		type_ok = option_has_type(opt_idx, kOptValTypeNumber)
+	case kObjectTypeString_S:
+		type_ok = option_has_type(opt_idx, kOptValTypeString) ||
+		opt_idx == kOptWildchar_S || opt_idx == kOptWildcharm_S
+	case kObjectTypeArray_S:
+		type_ok = is_list
+	case kObjectTypeDict_S:
+		type_ok = is_map || is_flaglist
+	case:
+	}
+	if !type_ok {
+		error^ = true
+		return nil_optval()
+	}
+
+	switch oc.t {
+	case kObjectTypeBoolean_S, kObjectTypeInteger_S:
+		return object_as_optval(oc, error)
+	case:
+	}
+
+	str: ^u8 = nil
+	if oc.t == kObjectTypeString_S {
+		s := (^NvimString)(uintptr(&oc) + OBJ_DATA_OFF)^
+		str = xstrdup_r2(transmute(cstring)(s.data))
+	} else if oc.t == kObjectTypeArray_S {
+		arr := (^Api_Array)(uintptr(&oc) + OBJ_DATA_OFF)^
+		ga: Garray
+		ga_init_o(&ga, 8, 4)
+		ai: C.size_t = 0
+		for ai < arr.size {
+			item_ptr := (^Api_Object)(uintptr(arr.items) + uintptr(ai) * size_of(Api_Object))
+			item := item_ptr^
+			if item.t != kObjectTypeString_S {
+				error^ = true
+				ga_deep_clear_ptr(&ga)
+				return nil_optval()
+			}
+			dup := false
+			j: C.int = 0
+			for !allow_dup && j < ga.ga_len {
+				ga_item := (^rawptr)(uintptr(ga.ga_data) + uintptr(j) * 8)^
+				if libc.strcmp(transmute(cstring)(ga_item), transmute(cstring)(item_string_data(item_ptr))) == 0 {
+					dup = true
+					break
+				}
+				j += 1
+			}
+			if !dup {
+				ga_append_str(&ga, xstrdup_r2(transmute(cstring)(item_string_data(item_ptr))))
+			}
+			ai += 1
+		}
+		str = ga_concat_strings_c(&ga, ",")
+		ga_deep_clear_ptr(&ga)
+	} else {
+		// kObjectTypeDict
+		dict := (^Api_Dict)(uintptr(&oc) + OBJ_DATA_OFF)^
+		ga: Garray
+		ga_init_o(&ga, 8, 4)
+		di: C.size_t = 0
+		for di < dict.size {
+			kv_ptr := (^Key_Value_Pair)(uintptr(dict.items) + uintptr(di) * size_of(Key_Value_Pair))
+			kv := kv_ptr^
+			v := kv.value
+			if is_flaglist {
+				truthy := true
+				if v.t == kObjectTypeNil_S {
+					truthy = false
+				} else if v.t == kObjectTypeBoolean_S && (^C.int)(uintptr(&kv.value) + OBJ_DATA_OFF)^ == 0 {
+					truthy = false
+				}
+				if truthy {
+					ga_append_str(&ga, xstrdup_r2(transmute(cstring)(kv.key.data)))
+				}
+			} else if v.t == kObjectTypeString_S {
+				vs := (^NvimString)(uintptr(&kv.value) + OBJ_DATA_OFF)^
+				kv_str := concat_str_c(transmute(cstring)(kv.key.data), ":")
+				ga_append_str(&ga, concat_str_c(transmute(cstring)(kv_str), transmute(cstring)(vs.data)))
+				xfree(kv_str)
+			} else {
+				error^ = true
+				ga_deep_clear_ptr(&ga)
+				return nil_optval()
+			}
+			di += 1
+		}
+		if ga.ga_len > 0 && (is_map || is_comma) {
+			sort_strings_c(ga.ga_data, ga.ga_len)
+		}
+		{
+		sep := cstring(",")
+		if is_flaglist && !is_comma {
+			sep = cstring("")
+		}
+		str = ga_concat_strings_c(&ga, sep)
+	}
+		ga_deep_clear_ptr(&ga)
+	}
+
+	// `:set-=` on a "key:value" list matches by "key:".
+	if op == OP_REMOVING_FOR && is_map && libc.strchr(transmute(cstring)(str), ':') == nil {
+		with_colon := concat_str_c(transmute(cstring)(str), ":")
+		xfree(str)
+		str = with_colon
+	}
+
+	return str_optval(str, libc.strlen(transmute(cstring)(str)))
+}
+
+item_string_data :: #force_inline proc "c"(item: rawptr) -> ^u8 {
+	s := (^NvimString)(uintptr(item) + OBJ_DATA_OFF)^
+	return (^u8)(s.data)
+}
+
+ga_deep_clear_ptr :: proc "c"(gap: ^Garray) {
+	if gap.ga_data != nil {
+		i: C.int = 0
+		for i < gap.ga_len {
+			p := (^rawptr)(uintptr(gap.ga_data) + uintptr(i) * 8)^
+			if p != nil {
+				xfree(p)
+			}
+			i += 1
+		}
+		xfree(gap.ga_data)
+		gap.ga_data = nil
+	}
+	gap.ga_len = 0
+	gap.ga_maxlen = 0
+}
+
+foreign _ {
+	@(link_name = "nvim_odin_vimoption2dict")
+	vimoption2dict_c :: proc "c" (opt: ^vimoption_T, opt_flags: C.int, buf: rawptr, win: rawptr, arena: rawptr) -> Api_Dict ---
+	@(link_name = "arena_dict")
+	arena_dict_c :: proc "c" (arena: rawptr, size: C.size_t) -> Api_Dict ---
+	@(link_name = "nvim_odin_put_c")
+	put_c_dict_c :: proc "c" (d: rawptr, key: cstring, value: Api_Object) ---
+	@(link_name = "xstrlcpy")
+	xstrlcpy_o :: proc "c" (dst: cstring, src: cstring, dsize: C.size_t) -> C.size_t ---
+}
+
+CSTR_AS_OBJ :: #force_inline proc "c"(s: ^u8) -> Api_Object {
+	obj := Api_Object{t = kObjectTypeString_S}
+	ns := NvimString{data = transmute(cstring)(s), size = libc.strlen(transmute(cstring)(s))}
+	(^NvimString)(uintptr(&obj) + OBJ_DATA_OFF)^ = ns
+	return obj
+}
+
+DICT_OBJ :: #force_inline proc "c"(d: Api_Dict) -> Api_Object {
+	obj := Api_Object{t = kObjectTypeDict_S}
+	(^Api_Dict)(uintptr(&obj) + OBJ_DATA_OFF)^ = d
+	return obj
+}
+
+BOOL_OBJ :: #force_inline proc "c"(b: C.int) -> Api_Object {
+	obj := Api_Object{t = kObjectTypeBoolean_S}
+	(^C.int)(uintptr(&obj) + OBJ_DATA_OFF)^ = b
+	return obj
+}
+
+INT_OBJ :: #force_inline proc "c"(n: i64) -> Api_Object {
+	obj := Api_Object{t = kObjectTypeInteger_S}
+	(^i64)(uintptr(&obj) + OBJ_DATA_OFF)^ = n
+	return obj
+}
+
+@(export)
+get_vimoption :: proc "c"(name: NvimString, opt_flags: C.int, buf: rawptr, win: rawptr,
+	arena: rawptr, err: rawptr) -> Api_Dict {
+	opt_idx := nvim_odin_find_option_len(transmute(cstring)(name.data), name.size)
+	if opt_idx == -1 {
+		api_set_error_r(err, 1, "option (not found): %s", transmute(rawptr)(name.data))
+		return Api_Dict{}
+	}
+	return vimoption2dict_c(opt_at_ptr(opt_idx), opt_flags, buf, win, arena)
+}
+
+@(export)
+get_all_vimoptions :: proc "c"(arena: rawptr) -> Api_Dict {
+	retval := arena_dict_c(arena, 377)
+	opt_idx: C.int = 0
+	for opt_idx < 377 {
+		opt_dict := vimoption2dict_c(opt_at_ptr(opt_idx), OPT_GLOBAL_S, curbuf, curwin, arena)
+		put_c_dict_c(&retval, transmute(cstring)(opt_at_ptr(opt_idx).fullname), DICT_OBJ(opt_dict))
+		opt_idx += 1
+	}
+	return retval
+}
+
+opt_at_ptr :: #force_inline proc "c"(opt_idx: C.int) -> ^vimoption_T {
+	table := ([^]vimoption_T)(nvim_odin_opt_table())
+	return (^vimoption_T)(uintptr(table) + uintptr(opt_idx) * size_of(vimoption_T))
+}
+
+foreign _ {
+	@(link_name = "free_buf_options")
+	free_buf_options_c :: proc "c" (buf: rawptr, free_p_ff: bool) ---
+	@(link_name = "check_buf_options")
+	check_buf_options_c :: proc "c" (buf: rawptr) ---
+	@(link_name = "set_buflocal_cpt_callbacks")
+	set_buflocal_cpt_callbacks_c :: proc "c" (buf: rawptr) ---
+	@(link_name = "set_buflocal_cfu_callback")
+	set_buflocal_cfu_callback_c :: proc "c" (buf: rawptr) ---
+	@(link_name = "set_buflocal_ofu_callback")
+	set_buflocal_ofu_callback_c :: proc "c" (buf: rawptr) ---
+	@(link_name = "set_buflocal_tfu_callback")
+	set_buflocal_tfu_callback_c :: proc "c" (buf: rawptr) ---
+}
+
+CPO_BUFOPT_S :: 's'
+CPO_BUFOPTGLOB_S :: 'S'
+BCO_ENTER_S :: 1
+BCO_ALWAYS_S :: 2
+BCO_NOHELP_S :: 4
+KEYMAP_INIT_S :: 1
+CMOD_NOSWAPFILE_S :: 0x2000
+
+B_P_INITIALIZED_OFF :: 7888
+B_HELP_OFF :: 11170
+B_KMAP_STATE_OFF :: 7856
+B_P_CHANNEL_OFF :: 10176
+
+// synblock fields: buf_T.b_s @11264, synblock_T offsets probed:
+B_S_OFF :: 11264
+SB_SYN_ISK :: B_S_OFF + 1168 // b_syn_isk within synblock
+SB_P_SPC :: B_S_OFF + 1088
+SB_P_SPF :: B_S_OFF + 1104
+SB_P_SPL :: B_S_OFF + 1112
+SB_P_SPO :: B_S_OFF + 1120
+SB_P_SPO_FLAGS :: B_S_OFF + 1128
+
+foreign _ {
+	@(link_name = "p_ai")
+	p_ai_g: C.int
+	@(link_name = "nvim_odin_get_p_ai_nopaste")
+	get_p_ai_nopaste_c :: proc "c" () -> C.int ---
+	@(link_name = "p_sw")
+	p_sw_g: C.longlong
+	@(link_name = "p_scbk")
+	p_scbk_g: C.longlong
+	@(link_name = "nvim_odin_get_p_tw_nopaste")
+	get_p_tw_nopaste_c :: proc "c" () -> C.longlong ---
+	@(link_name = "nvim_odin_get_p_wm_nopaste")
+	get_p_wm_nopaste_c :: proc "c" () -> C.longlong ---
+	@(link_name = "p_bomb")
+	p_bomb_g: C.int
+	@(link_name = "p_fixeol")
+	p_fixeol_g: C.int
+	@(link_name = "nvim_odin_get_p_et_nopaste")
+	get_p_et_nopaste_c :: proc "c" () -> C.int ---
+	@(link_name = "p_inf")
+	p_inf_g: C.int
+	@(link_name = "p_swf")
+	p_swf_g: C.int
+	@(link_name = "p_cpt")
+	p_cpt_g: ^u8
+	@(link_name = "p_cfu")
+	p_cfu_g: ^u8
+	@(link_name = "p_ofu")
+	p_ofu_g: ^u8
+	@(link_name = "p_tfu")
+	p_tfu_g: ^u8
+	@(link_name = "p_sts")
+	p_sts_g: C.longlong
+	@(link_name = "nvim_odin_get_p_sts_nopaste")
+	get_p_sts_nopaste_c :: proc "c" () -> C.longlong ---
+	@(link_name = "p_vsts")
+	p_vsts_g: ^u8
+	@(link_name = "nvim_odin_get_p_vsts_nopaste")
+	get_p_vsts_nopaste_c :: proc "c" () -> ^u8 ---
+	@(link_name = "p_com")
+	p_com_g: ^u8
+	@(link_name = "p_cms")
+	p_cms_g: ^u8
+	@(link_name = "p_fo")
+	p_fo_g: ^u8
+	@(link_name = "p_nf")
+	p_nf_g: ^u8
+	@(link_name = "p_mps")
+	p_mps_g: ^u8
+	@(link_name = "p_si")
+	p_si_g: C.int
+	@(link_name = "p_ci")
+	p_ci_g: C.int
+	@(link_name = "p_cin")
+	p_cin_g: C.int
+	@(link_name = "p_cink")
+	p_cink_g: ^u8
+	@(link_name = "p_cino")
+	p_cino_g: ^u8
+	@(link_name = "p_cinsd")
+	p_cinsd_g: ^u8
+	@(link_name = "p_lop")
+	p_lop_g: ^u8
+	@(link_name = "p_pi")
+	p_pi_g: C.int
+	@(link_name = "p_cinw")
+	p_cinw_g: ^u8
+	@(link_name = "p_lisp")
+	p_lisp_g: C.int
+	@(link_name = "p_smc")
+	p_smc_g: C.longlong
+	@(link_name = "p_spc")
+	p_spc_g: ^u8
+	@(link_name = "p_spf")
+	p_spf_g: ^u8
+	@(link_name = "p_spl")
+	p_spl_g: ^u8
+	@(link_name = "p_spo")
+	p_spo_g: ^u8
+	@(link_name = "spo_flags")
+	spo_flags_g: C.uint32_t
+	@(link_name = "p_inde")
+	p_inde_g: ^u8
+	@(link_name = "p_indk")
+	p_indk_g: ^u8
+	@(link_name = "p_fex")
+	p_fex_g: ^u8
+	@(link_name = "p_sua")
+	p_sua_g: ^u8
+	@(link_name = "p_qe")
+	p_qe_g: ^u8
+	@(link_name = "p_udf")
+	p_udf_g: C.int
+	@(link_name = "p_inex")
+	p_inex_g: ^u8
+	@(link_name = "p_isk")
+	p_isk_g: ^u8
+	@(link_name = "p_ts")
+	p_ts_g: C.longlong
+	@(link_name = "p_vts")
+	p_vts_g: ^u8
+	@(link_name = "p_fenc")
+	p_fenc_g: ^u8
+	@(link_name = "p_ff")
+	p_ff_g: ^u8
+}
+
+// COPY_OPT_SCTX(buf, bv): buf->b_p_script_ctx[bv] = options[buf_opt_idx[bv]].script_ctx
+// Table generated from build/src/nvim/auto/options_enum.generated.h (kBufOpt* → kOpt*).
+buf_opt_idx_tbl := [92]C.int{6,9,10,16,21,22,27,28,29,30,35,38,39,40,41,42,48,49,51,52,54,55,60,67,69,71,81,82,84,87,90,92,94,97,99,100,114,115,116,117,118,120,121,142,143,145,146,148,149,150,154,158,160,171,172,173,179,180,181,191,194,195,205,208,218,219,230,231,245,268,281,284,286,287,288,289,298,299,301,302,306,308,309,312,320,321,322,334,335,339,340,371}
+
+copy_opt_sctx :: #force_inline proc "c"(buf: rawptr, bv: C.int) {
+	dst := (^sctx_T)(uintptr(buf) + B_P_SCRIPT_CTX_OFF + uintptr(bv) * 24)
+	src := (^sctx_T)(uintptr(opt_at_ptr(buf_opt_idx_tbl[bv])) + 144) // script_ctx @144
+	dst^ = src^
+}
+
+@(export)
+buf_copy_options :: proc "c"(buf: rawptr, flags: C.int) {
+	should_copy := true
+	save_p_isk: ^u8 = nil
+	did_isk := false
+
+	if p_cpo != nil {
+		if (_vim_strchr(transmute(cstring)(p_cpo), CPO_BUFOPTGLOB_S) == nil ||
+		(flags & BCO_ENTER_S) == 0) &&
+		((^bool)(uintptr(buf) + B_P_INITIALIZED_OFF)^ ||
+		((flags & BCO_ENTER_S) == 0 &&
+		_vim_strchr(transmute(cstring)(p_cpo), CPO_BUFOPT_S) != nil)) {
+			should_copy = false
+		}
+
+		if should_copy || (flags & BCO_ALWAYS_S) != 0 {
+			// CLEAR_FIELD(buf->b_p_script_ctx)
+			libc.memset(transmute(rawptr)(uintptr(buf) + B_P_SCRIPT_CTX_OFF), 0, 24 * 92)
+
+			dont_do_help := ((flags & BCO_NOHELP_S) != 0 &&
+			(^bool)(uintptr(buf) + B_HELP_OFF)^) ||
+			(^bool)(uintptr(buf) + B_P_INITIALIZED_OFF)^
+			if dont_do_help {
+				save_p_isk = (^^u8)(uintptr(buf) + B_P_ISK_OFF)^
+				(^^u8)(uintptr(buf) + B_P_ISK_OFF)^ = nil
+			}
+			if !(^bool)(uintptr(buf) + B_P_INITIALIZED_OFF)^ {
+				free_buf_options_c(buf, true)
+				(^C.int)(uintptr(buf) + B_P_RO_OFF)^ = 0
+				(^^u8)(uintptr(buf) + B_P_FENC_OFF)^ = xstrdup_r2(transmute(cstring)(p_fenc_g))
+				ffs0 := b_at(p_ffs_g, 0)
+				if ffs0 == 'm' {
+					(^^u8)(uintptr(buf) + B_P_FF_OFF)^ = xstrdup_r2(cstring("mac"))
+				} else if ffs0 == 'd' {
+					(^^u8)(uintptr(buf) + B_P_FF_OFF)^ = xstrdup_r2(cstring("dos"))
+				} else if ffs0 == 'u' {
+					(^^u8)(uintptr(buf) + B_P_FF_OFF)^ = xstrdup_r2(cstring("unix"))
+				} else {
+					(^^u8)(uintptr(buf) + B_P_FF_OFF)^ = xstrdup_r2(transmute(cstring)(p_ff_g))
+				}
+				(^^u8)(uintptr(buf) + B_P_BH_OFF)^ = empty_string_option_c
+				(^^u8)(uintptr(buf) + B_P_BT_OFF)^ = empty_string_option_c
+			} else {
+				free_buf_options_c(buf, false)
+			}
+
+			bp := buf
+			(^C.int)(uintptr(bp) + B_P_AI_OFF)^ = p_ai_g
+			copy_opt_sctx(bp, 1) // kBufOptAutoindent=1
+			(^C.int)(uintptr(bp) + B_P_AI_NOPASTE_OFF)^ = get_p_ai_nopaste_c()
+			(^C.longlong)(uintptr(bp) + B_P_SW_OFF)^ = p_sw_g
+			copy_opt_sctx(bp, 69)
+			(^C.longlong)(uintptr(bp) + B_P_SCBK_OFF)^ = p_scbk_g
+			copy_opt_sctx(bp, 68)
+			(^C.longlong)(uintptr(bp) + B_P_TW_OFF2)^ = p_tw_g
+			copy_opt_sctx(bp, 84)
+			(^C.longlong)(uintptr(bp) + B_P_TW_NOPASTE_OFF)^ = get_p_tw_nopaste_c()
+			(^C.longlong)(uintptr(bp) + B_P_TW_NOBIN_OFF)^ = get_p_tw_nobin_c()
+			(^C.longlong)(uintptr(bp) + B_P_WM_OFF2)^ = p_wm_g
+			copy_opt_sctx(bp, 91)
+			(^C.longlong)(uintptr(bp) + B_P_WM_NOPASTE_OFF)^ = get_p_wm_nopaste_c()
+			(^C.longlong)(uintptr(bp) + B_P_WM_NOBIN_OFF)^ = get_p_wm_nobin_c()
+			(^C.int)(uintptr(bp) + B_P_BIN_OFF)^ = p_bin_g
+			copy_opt_sctx(bp, 4)
+			(^C.int)(uintptr(bp) + B_P_BOMB_OFF)^ = p_bomb_g
+			copy_opt_sctx(bp, 5)
+			(^C.int)(uintptr(bp) + B_P_ET_OFF2)^ = p_et_g
+			copy_opt_sctx(bp, 30)
+			(^C.int)(uintptr(bp) + B_P_FIXEOL_OFF)^ = p_fixeol_g
+			copy_opt_sctx(bp, 35)
+			(^C.int)(uintptr(bp) + B_P_ET_NOBIN_OFF)^ = get_p_et_nobin_c()
+			(^C.int)(uintptr(bp) + B_P_ET_NOPASTE_OFF)^ = get_p_et_nopaste_c()
+			(^C.int)(uintptr(bp) + B_P_ML_OFF2)^ = p_ml_g
+			copy_opt_sctx(bp, 59)
+			(^C.int)(uintptr(bp) + B_P_ML_NOBIN_OFF)^ = get_p_ml_nobin_c()
+			(^C.int)(uintptr(bp) + B_P_INF_OFF)^ = p_inf_g
+			copy_opt_sctx(bp, 49)
+			if (cmdmod_cmod_flags & CMOD_NOSWAPFILE_S) != 0 {
+				(^C.int)(uintptr(bp) + B_P_SWF_OFF)^ = 0
+			} else {
+				(^C.int)(uintptr(bp) + B_P_SWF_OFF)^ = p_swf_g
+				copy_opt_sctx(bp, 77)
+			}
+			(^^u8)(uintptr(bp) + B_P_CPT_OFF)^ = xstrdup_r2(transmute(cstring)(p_cpt_g))
+			copy_opt_sctx(bp, 18)
+			set_buflocal_cpt_callbacks_c(bp)
+			(^^u8)(uintptr(bp) + B_P_CFU_OFF)^ = xstrdup_r2(transmute(cstring)(p_cfu_g))
+			copy_opt_sctx(bp, 19)
+			set_buflocal_cfu_callback_c(bp)
+			(^^u8)(uintptr(bp) + B_P_OFU_OFF)^ = xstrdup_r2(transmute(cstring)(p_ofu_g))
+			copy_opt_sctx(bp, 63)
+			set_buflocal_ofu_callback_c(bp)
+			(^^u8)(uintptr(bp) + B_P_TFU_OFF)^ = xstrdup_r2(transmute(cstring)(p_tfu_g))
+			copy_opt_sctx(bp, 82)
+			set_buflocal_tfu_callback_c(bp)
+			(^C.longlong)(uintptr(bp) + B_P_STS_OFF)^ = p_sts_g
+			copy_opt_sctx(bp, 71)
+			(^C.longlong)(uintptr(bp) + B_P_STS_NOPASTE_OFF)^ = get_p_sts_nopaste_c()
+			(^^u8)(uintptr(bp) + B_P_VSTS_OFF)^ = xstrdup_r2(transmute(cstring)(p_vsts_g))
+			copy_opt_sctx(bp, 89)
+			if p_vsts_g != nil && p_vsts_g != empty_string_option_c {
+				vsts_arr: ^rawptr = (^rawptr)(uintptr(bp) + B_P_VSTS_ARRAY_OFF)
+				tabstop_set_o(p_vsts_g, (^^u8)(vsts_arr))
+			} else {
+				(^rawptr)(uintptr(bp) + B_P_VSTS_ARRAY_OFF)^ = nil
+			}
+			(^^u8)(uintptr(bp) + B_P_VSTS_NOPASTE_OFF)^ =
+				get_p_vsts_nopaste_c() != nil ? xstrdup_r2(transmute(cstring)(get_p_vsts_nopaste_c())) : nil
+			(^^u8)(uintptr(bp) + B_P_COM_OFF)^ = xstrdup_r2(transmute(cstring)(p_com_g))
+			copy_opt_sctx(bp, 16)
+			(^^u8)(uintptr(bp) + B_P_CMS_OFF)^ = xstrdup_r2(transmute(cstring)(p_cms_g))
+			copy_opt_sctx(bp, 17)
+			(^^u8)(uintptr(bp) + B_P_FO_OFF)^ = xstrdup_r2(transmute(cstring)(p_fo_g))
+			copy_opt_sctx(bp, 38)
+			(^^u8)(uintptr(bp) + B_P_FLP_OFF2)^ = xstrdup_r2(transmute(cstring)(p_flp_g))
+			copy_opt_sctx(bp, 37)
+			(^^u8)(uintptr(bp) + B_P_NF_OFF)^ = xstrdup_r2(transmute(cstring)(p_nf_g))
+			copy_opt_sctx(bp, 62)
+			(^^u8)(uintptr(bp) + B_P_MPS_OFF)^ = xstrdup_r2(transmute(cstring)(p_mps_g))
+			copy_opt_sctx(bp, 58)
+			(^C.int)(uintptr(bp) + B_P_SI_OFF)^ = p_si_g
+			copy_opt_sctx(bp, 70)
+			(^C.longlong)(uintptr(bp) + B_P_CHANNEL_OFF)^ = 0
+			(^C.int)(uintptr(bp) + B_P_CI_OFF)^ = p_ci_g
+			copy_opt_sctx(bp, 22)
+			(^C.int)(uintptr(bp) + B_P_CIN_OFF)^ = p_cin_g
+			copy_opt_sctx(bp, 11)
+			(^^u8)(uintptr(bp) + B_P_CINK_OFF)^ = xstrdup_r2(transmute(cstring)(p_cink_g))
+			copy_opt_sctx(bp, 12)
+			(^^u8)(uintptr(bp) + B_P_CINO_OFF)^ = xstrdup_r2(transmute(cstring)(p_cino_g))
+			copy_opt_sctx(bp, 13)
+			(^^u8)(uintptr(bp) + B_P_CINSD_OFF)^ = xstrdup_r2(transmute(cstring)(p_cinsd_g))
+			copy_opt_sctx(bp, 14)
+			(^^u8)(uintptr(bp) + B_P_LOP_OFF)^ = xstrdup_r2(transmute(cstring)(p_lop_g))
+			copy_opt_sctx(bp, 54)
+			(^^u8)(uintptr(bp) + B_P_FT_OFF)^ = empty_string_option_c
+			(^C.int)(uintptr(bp) + B_P_PI_OFF)^ = p_pi_g
+			copy_opt_sctx(bp, 65)
+			(^^u8)(uintptr(bp) + B_P_CINW_OFF)^ = xstrdup_r2(transmute(cstring)(p_cinw_g))
+			copy_opt_sctx(bp, 15)
+			(^C.int)(uintptr(bp) + B_P_LISP_OFF)^ = p_lisp_g
+			copy_opt_sctx(bp, 53)
+			(^^u8)(uintptr(bp) + B_P_SYN_OFF)^ = empty_string_option_c
+			(^C.longlong)(uintptr(bp) + B_P_SMC_OFF)^ = p_smc_g
+			copy_opt_sctx(bp, 78)
+			(^^u8)(uintptr(bp) + SB_SYN_ISK)^ = transmute(^u8)(empty_string_option_c)
+			(^^u8)(uintptr(bp) + SB_P_SPC)^ = transmute(^u8)(xstrdup_r2(transmute(cstring)(p_spc_g)))
+			copy_opt_sctx(bp, 72)
+			compile_cap_prog(transmute(rawptr)(uintptr(bp) + B_S_OFF))
+			(^^u8)(uintptr(bp) + SB_P_SPF)^ = transmute(^u8)(xstrdup_r2(transmute(cstring)(p_spf_g)))
+			copy_opt_sctx(bp, 73)
+			(^^u8)(uintptr(bp) + SB_P_SPL)^ = transmute(^u8)(xstrdup_r2(transmute(cstring)(p_spl_g)))
+			copy_opt_sctx(bp, 74)
+			(^^u8)(uintptr(bp) + SB_P_SPO)^ = transmute(^u8)(xstrdup_r2(transmute(cstring)(p_spo_g)))
+			copy_opt_sctx(bp, 75)
+			(^C.uint32_t)(uintptr(bp) + SB_P_SPO_FLAGS)^ = spo_flags_g
+			(^^u8)(uintptr(bp) + B_P_INDE_OFF)^ = xstrdup_r2(transmute(cstring)(p_inde_g))
+			copy_opt_sctx(bp, 47)
+			(^^u8)(uintptr(bp) + B_P_INDK_OFF)^ = xstrdup_r2(transmute(cstring)(p_indk_g))
+			copy_opt_sctx(bp, 48)
+			(^^u8)(uintptr(bp) + B_P_FP_OFF)^ = empty_string_option_c
+			(^^u8)(uintptr(bp) + B_P_FEX_OFF)^ = xstrdup_r2(transmute(cstring)(p_fex_g))
+			copy_opt_sctx(bp, 36)
+			(^^u8)(uintptr(bp) + B_P_SUA_OFF)^ = xstrdup_r2(transmute(cstring)(p_sua_g))
+			copy_opt_sctx(bp, 76)
+			(^^u8)(uintptr(bp) + B_P_KEYMAP_OFF)^ = xstrdup_r2(transmute(cstring)(p_keymap_opt))
+			copy_opt_sctx(bp, 51)
+			(^C.int)(uintptr(bp) + B_KMAP_STATE_OFF)^ |= KEYMAP_INIT_S
+			(^C.longlong)(uintptr(bp) + B_P_IMINSERT_OFF)^ = C.longlong(p_iminsert_g)
+			copy_opt_sctx(bp, 43)
+			(^C.longlong)(uintptr(bp) + B_P_IMSEARCH_OFF)^ = C.longlong(p_imsearch_g)
+			copy_opt_sctx(bp, 44)
+
+			// global-local: don't copy, use global value
+			(^C.int)(uintptr(bp) + B_P_AC_OFF)^ = -1
+			(^C.int)(uintptr(bp) + B_P_AR_OFF)^ = -1
+			(^C.longlong)(uintptr(bp) + B_P_FS_OFF)^ = -1
+			(^C.longlong)(uintptr(bp) + B_P_UL_OFF2)^ = NO_LOCAL_UNDOLEVEL_S
+			(^^u8)(uintptr(bp) + B_P_BKC_OFF)^ = empty_string_option_c
+			(^C.uint)(uintptr(bp) + B_BKC_FLAGS_OFF)^ = 0
+			(^^u8)(uintptr(bp) + B_P_GEFM_OFF)^ = empty_string_option_c
+			(^^u8)(uintptr(bp) + B_P_GP_OFF)^ = empty_string_option_c
+			(^^u8)(uintptr(bp) + B_P_MP_OFF)^ = empty_string_option_c
+			(^^u8)(uintptr(bp) + B_P_EFM_OFF)^ = empty_string_option_c
+			(^^u8)(uintptr(bp) + B_P_EP_OFF)^ = empty_string_option_c
+			(^^u8)(uintptr(bp) + B_P_FFU_OFF)^ = empty_string_option_c
+			(^^u8)(uintptr(bp) + B_P_KP_OFF)^ = empty_string_option_c
+			(^^u8)(uintptr(bp) + B_P_PATH_OFF)^ = empty_string_option_c
+			(^^u8)(uintptr(bp) + B_P_TAGS_OFF)^ = empty_string_option_c
+			(^^u8)(uintptr(bp) + B_P_TC_OFF)^ = empty_string_option_c
+			(^C.uint)(uintptr(bp) + B_TC_FLAGS_OFF)^ = 0
+			(^^u8)(uintptr(bp) + B_P_DEF_OFF)^ = empty_string_option_c
+			(^^u8)(uintptr(bp) + B_P_INC_OFF)^ = empty_string_option_c
+			(^^u8)(uintptr(bp) + B_P_INEX_OFF)^ = xstrdup_r2(transmute(cstring)(p_inex_g))
+			copy_opt_sctx(bp, 46)
+			(^^u8)(uintptr(bp) + B_P_COT_OFF)^ = empty_string_option_c
+			(^C.uint)(uintptr(bp) + B_COT_FLAGS_OFF)^ = 0
+			(^^u8)(uintptr(bp) + B_P_DICT_OFF)^ = empty_string_option_c
+			(^^u8)(uintptr(bp) + B_P_DIA_OFF)^ = empty_string_option_c
+			(^^u8)(uintptr(bp) + B_P_TSR_OFF)^ = empty_string_option_c
+			(^^u8)(uintptr(bp) + B_P_TSRFU_OFF)^ = empty_string_option_c
+			(^^u8)(uintptr(bp) + B_P_QE_OFF)^ = xstrdup_r2(transmute(cstring)(p_qe_g))
+			(^C.int)(uintptr(bp) + B_P_UDF_OFF)^ = p_udf_g
+			copy_opt_sctx(bp, 87)
+			(^^u8)(uintptr(bp) + B_P_LW_OFF)^ = empty_string_option_c
+			(^^u8)(uintptr(bp) + B_P_MENC_OFF)^ = empty_string_option_c
+
+			if dont_do_help {
+				(^^u8)(uintptr(bp) + B_P_ISK_OFF)^ = save_p_isk
+				if p_vts_g != nil && b_at(p_vts_g, 0) != 0 &&
+				(^rawptr)(uintptr(bp) + B_P_VSTS_ARRAY_OFF)^ == nil {
+					vsts_arr2: ^rawptr = (^rawptr)(uintptr(bp) + B_P_VSTS_ARRAY_OFF)
+					tabstop_set_o(p_vts_g, (^^u8)(vsts_arr2))
+				} else {
+					(^rawptr)(uintptr(bp) + B_P_VSTS_ARRAY_OFF)^ = nil
+				}
+			} else {
+				(^^u8)(uintptr(bp) + B_P_ISK_OFF)^ = xstrdup_r2(transmute(cstring)(p_isk_g))
+				copy_opt_sctx(bp, 50)
+				did_isk = true
+				(^C.longlong)(uintptr(bp) + B_P_TS_OFF)^ = p_ts_g
+				copy_opt_sctx(bp, 80)
+				(^^u8)(uintptr(bp) + B_P_VTS_OFF)^ = xstrdup_r2(transmute(cstring)(p_vts_g))
+				copy_opt_sctx(bp, 90)
+				if p_vts_g != nil && b_at(p_vts_g, 0) != 0 &&
+				(^rawptr)(uintptr(bp) + B_P_VSTS_ARRAY_OFF)^ == nil {
+					vsts_arr3: ^rawptr = (^rawptr)(uintptr(bp) + B_P_VSTS_ARRAY_OFF)
+					tabstop_set_o(p_vts_g, (^^u8)(vsts_arr3))
+				} else {
+					(^rawptr)(uintptr(bp) + B_P_VSTS_ARRAY_OFF)^ = nil
+				}
+				(^bool)(uintptr(bp) + B_HELP_OFF)^ = false
+				bt := (^^u8)(uintptr(bp) + B_P_BT_OFF)^
+				if bt != nil && b_at(bt, 0) == 'h' {
+					clear_string_option_r(transmute(^u8)((^^u8)(uintptr(bp) + B_P_BT_OFF)))
+				}
+				(^C.int)(uintptr(bp) + B_P_MA_OFF)^ = p_ma_g
+				copy_opt_sctx(bp, 60)
+			}
+		}
+
+		if should_copy {
+			(^bool)(uintptr(buf) + B_P_INITIALIZED_OFF)^ = true
+		}
+	}
+
+	check_buf_options_c(buf)
+	if did_isk {
+		buf_init_chartab_r(buf, false)
+	}
+}
+
+// ── buf_T offsets for buf_copy_options (probe-verified) ──────────────────────
+B_P_ISK_OFF :: 10448
+B_P_RO_OFF :: 10616
+B_P_FENC_OFF :: 10400
+B_P_BH_OFF :: 10144
+B_P_BT_OFF :: 10152
+B_P_AI_OFF :: 10108
+B_P_AI_NOPASTE_OFF :: 10112
+B_P_SW_OFF :: 10624
+B_P_SCBK_OFF :: 10632
+B_P_TW_NOPASTE_OFF :: 10720
+B_P_WM_NOPASTE_OFF :: 10744
+B_P_BOMB_OFF :: 10140
+B_P_FIXEOL_OFF :: 10384
+B_P_ET_NOPASTE_OFF :: 10396
+B_P_ML_NOPASTE_OFF :: 10580
+B_P_INF_OFF :: 10440
+B_P_SWF_OFF :: 10672
+B_P_CPT_OFF :: 10256
+B_P_CFU_OFF :: 10280
+B_P_OFU_OFF :: 10304
+B_P_TFU_OFF :: 10328
+B_P_STS_OFF :: 10648
+B_P_STS_NOPASTE_OFF :: 10656
+B_P_VSTS_OFF :: 10752
+B_P_VSTS_ARRAY_OFF :: 10760
+B_P_VSTS_NOPASTE_OFF :: 10768
+B_P_COM_OFF :: 10224
+B_P_CMS_OFF :: 10232
+B_P_FO_OFF :: 10424
+B_P_NF_OFF :: 10592
+B_P_MPS_OFF :: 10568
+B_P_SI_OFF :: 10640
+B_P_CI_OFF :: 10132
+B_P_CIN_OFF :: 10184
+B_P_CINK_OFF :: 10200
+B_P_CINO_OFF :: 10192
+B_P_CINSD_OFF :: 10216
+B_P_LOP_OFF :: 10552
+B_P_PI_OFF :: 10600
+B_P_CINW_OFF :: 10208
+B_P_LISP_OFF :: 10544
+B_P_SMC_OFF :: 10680
+B_P_INDE_OFF :: 10488
+B_P_INDK_OFF :: 10504
+B_P_FP_OFF :: 10512
+B_P_FEX_OFF :: 10520
+B_P_SUA_OFF :: 10664
+B_P_KEYMAP_OFF :: 10792
+B_P_IMINSERT_OFF :: 7840
+B_P_IMSEARCH_OFF :: 7848
+B_P_AC_OFF :: 10104
+B_P_AR_OFF :: 10848
+B_P_FS_OFF :: 10532
+B_P_BKC_OFF :: 10120
+B_TC_FLAGS_OFF :: 10872
+B_P_GEFM_OFF :: 10800
+B_P_GP_OFF :: 10808
+B_P_MP_OFF :: 10816
+B_P_EFM_OFF :: 10824
+B_P_KP_OFF :: 10536
+B_P_PATH_OFF :: 10840
+B_P_TAGS_OFF :: 10856
+B_P_TC_OFF :: 10864
+B_P_DEF_OFF :: 10456
+B_P_INC_OFF :: 10464
+B_P_INEX_OFF :: 10472
+B_P_COT_OFF :: 10240
+B_COT_FLAGS_OFF :: 10248
+B_P_DICT_OFF :: 10880
+B_P_DIA_OFF :: 10888
+B_P_TSR_OFF :: 10896
+B_P_TSRFU_OFF :: 10904
+B_P_QE_OFF :: 10608
+B_P_UDF_OFF :: 10936
+B_P_LW_OFF :: 10944
+B_P_MENC_OFF :: 10560
+B_P_TS_OFF :: 10696
+B_P_MA_OFF :: 10584
+B_P_VTS_OFF :: 10776
+
+foreign _ {
 }
