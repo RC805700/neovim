@@ -146,9 +146,9 @@ foreign _ {
 
 	@(link_name = "find_special_key")
 	find_special_key_r :: proc "c" (srcp: ^^u8, src_len: C.size_t, modp: ^C.int, flags: C.int, has_lt: ^bool) -> C.int ---
-	@(link_name = "need_maketitle2")
+	@(link_name = "need_maketitle")
 	need_maketitle_opt: bool
-	@(link_name = "redraw_buf_status_later2")
+	@(link_name = "redraw_buf_status_later")
 	redraw_buf_status_later_opt :: proc "c" (buf: rawptr) ---
 	@(link_name = "redraw_tabline")
 	redraw_tabline_opt: bool
@@ -3149,4 +3149,256 @@ vimrc_found :: proc "c"(fname: ^u8, envname: ^u8) {
 foreign _ {
 	@(link_name = "fputs")
 	fputs_o :: proc "c" (s: cstring, fd: ^libc.FILE) -> C.int ---
+}
+
+foreign _ {
+	@(link_name = "bt_prompt")
+	bt_prompt_r :: proc "c" (buf: rawptr) -> bool ---
+	@(link_name = "p_bs")
+	p_bs_g: ^u8
+	@(link_name = "bkc_flags")
+	bkc_flags_g: C.uint
+	@(link_name = "ve_flags")
+	ve_flags_g: C.uint
+	@(link_name = "p_flp")
+	p_flp_g2: ^u8
+	@(link_name = "p_sbr")
+	p_sbr_g: ^u8
+	@(link_name = "p_ffs")
+	p_ffs_g: ^u8
+}
+
+BS_START_S :: 1
+BS_NOSTOP_S :: 3
+
+kOptCuloptFlagLine_S :: 0x01
+kOptCuloptFlagScreenline_S :: 0x02
+kOptCuloptFlagNumber_S :: 0x04
+
+W_P_CULOPT_OFF :: 1064
+W_P_CULOPT_FLAGS_OFF :: 4232
+
+@(export)
+fill_culopt_flags :: proc "c"(val: ^u8, wp: rawptr) -> C.int {
+	p: ^u8
+	if val == nil {
+		p = (^^u8)(uintptr(wp) + W_P_CULOPT_OFF)^
+	} else {
+		p = val
+	}
+	culopt_flags_new: u8 = 0
+
+	for b_at(p, 0) != 0 {
+		if libc.strncmp(transmute(cstring)(p), "line", 4) == 0 {
+			p = (^u8)(uintptr(p) + 4)
+			culopt_flags_new |= kOptCuloptFlagLine_S
+		} else if libc.strncmp(transmute(cstring)(p), "both", 4) == 0 {
+			p = (^u8)(uintptr(p) + 4)
+			culopt_flags_new |= kOptCuloptFlagLine_S | kOptCuloptFlagNumber_S
+		} else if libc.strncmp(transmute(cstring)(p), "number", 6) == 0 {
+			p = (^u8)(uintptr(p) + 6)
+			culopt_flags_new |= kOptCuloptFlagNumber_S
+		} else if libc.strncmp(transmute(cstring)(p), "screenline", 10) == 0 {
+			p = (^u8)(uintptr(p) + 10)
+			culopt_flags_new |= kOptCuloptFlagScreenline_S
+		}
+		c0 := b_at(p, 0)
+		if c0 != ',' && c0 != 0 {
+			return 0 // FAIL
+		}
+		if c0 == ',' {
+			p = (^u8)(uintptr(p) + 1)
+		}
+	}
+
+	// Can't have both "line" and "screenline".
+	if (culopt_flags_new & kOptCuloptFlagLine_S) != 0 &&
+	(culopt_flags_new & kOptCuloptFlagScreenline_S) != 0 {
+		return 0
+	}
+	(^u8)(uintptr(wp) + W_P_CULOPT_FLAGS_OFF)^ = culopt_flags_new
+
+	return 1 // OK
+}
+
+@(export)
+can_bs :: proc "c"(what: C.int) -> bool {
+	if what == BS_START_S && bt_prompt_r(curbuf) {
+		return false
+	}
+	if b_at(p_bs_g, 0) == '2' {
+		return what != BS_NOSTOP_S
+	}
+	return _vim_strchr(transmute(cstring)(p_bs_g), what) != nil
+}
+
+B_BKC_FLAGS_OFF :: 10128
+W_VE_FLAGS_OFF :: 976
+B_P_FLP_OFF2 :: 10432
+W_P_SBR_OFF :: 1080
+B_P_FF_OFF :: 10408
+B_P_BIN_OFF :: 10136
+
+@(export)
+get_bkc_flags :: proc "c"(buf: rawptr) -> C.uint {
+	v := (^C.uint)(uintptr(buf) + B_BKC_FLAGS_OFF)^
+	return v != 0 ? v : bkc_flags_g
+}
+
+@(export)
+get_flp_value :: proc "c"(buf: rawptr) -> ^u8 {
+	flp := (^^u8)(uintptr(buf) + B_P_FLP_OFF2)^
+	if flp == nil || b_at(flp, 0) == 0 {
+		return p_flp_g
+	}
+	return flp
+}
+
+@(export)
+get_ve_flags :: proc "c"(wp: rawptr) -> C.uint {
+	wv := (^C.uint)(uintptr(wp) + W_VE_FLAGS_OFF)^
+	v := wv != 0 ? wv : ve_flags_g
+	return v & ~C.uint(0x10 | 0x20) // kOptVeFlagNone|kOptVeFlagNoneU
+}
+
+@(export)
+get_showbreak_value :: proc "c"(win: rawptr) -> ^u8 {
+	sbr := (^^u8)(uintptr(win) + W_P_SBR_OFF)^
+	if sbr == nil || b_at(sbr, 0) == 0 {
+		return p_sbr_g
+	}
+	if libc.strcmp(transmute(cstring)(sbr), "NONE") == 0 {
+		return empty_string_option_c
+	}
+	return sbr
+}
+
+B_P_EP_OFF :: 10832
+B_P_FFU_OFF :: 10352
+
+foreign _ {
+	@(link_name = "p_ep")
+	p_ep_g: ^u8
+	@(link_name = "p_ffu")
+	p_ffu_g: ^u8
+}
+
+@(export)
+get_equalprg :: proc "c"() -> ^u8 {
+	ep := (^^u8)(uintptr(curbuf) + B_P_EP_OFF)^
+	if b_at(ep, 0) == 0 {
+		return p_ep_g
+	}
+	return ep
+}
+
+@(export)
+get_findfunc :: proc "c"() -> ^u8 {
+	ffu := (^^u8)(uintptr(curbuf) + B_P_FFU_OFF)^
+	if b_at(ffu, 0) == 0 {
+		return p_ffu_g
+	}
+	return ffu
+}
+
+@(export)
+win_copy_options :: proc "c"(wp_from: rawptr, wp_to: rawptr) {
+	copy_winopt((^rawptr)(uintptr(wp_from) + 816), (^rawptr)(uintptr(wp_to) + 816)) // w_onebuf_opt
+	copy_winopt((^rawptr)(uintptr(wp_from) + 2520), (^rawptr)(uintptr(wp_to) + 2520)) // w_allbuf_opt
+	didset_window_options_r(wp_to, true)
+}
+
+@(export)
+get_fileformat :: proc "c"(buf: rawptr) -> C.int {
+	c := b_at((^^u8)(uintptr(buf) + B_P_FF_OFF)^, 0)
+	bin := (^C.int)(uintptr(buf) + B_P_BIN_OFF)^
+
+	if bin != 0 || c == 'u' {
+		return EOL_UNIX_S
+	}
+	if c == 'm' {
+		return EOL_MAC_S
+	}
+	return EOL_DOS_S
+}
+
+foreign _ {
+}
+
+foreign _ {
+	@(link_name = "copy_winopt")
+	copy_winopt :: proc "c" (from: rawptr, to: rawptr) ---
+}
+
+EOL_UNKNOWN_S :: 0
+EOL_UNIX_S :: 1
+EOL_DOS_S :: 2
+EOL_MAC_S :: 3
+
+FORCE_BIN_S :: 1
+
+@(export)
+get_fileformat_force :: proc "c"(buf: rawptr, eap: rawptr) -> C.int {
+	c: u8 = 0
+	if eap != nil {
+		force_ff := (^C.int)(uintptr(eap) + 144)^ // eap.force_ff @144
+		if force_ff != 0 {
+			c = u8(force_ff)
+		} else {
+			force_bin := (^C.int)(uintptr(eap) + 132)^ // force_bin @132
+			bin := (^C.int)(uintptr(buf) + B_P_BIN_OFF)^
+			if (force_bin != 0 ? force_bin == FORCE_BIN_S : bin != 0) {
+				return EOL_UNIX_S
+			}
+			c = b_at((^^u8)(uintptr(buf) + B_P_FF_OFF)^, 0)
+		}
+	} else {
+		bin := (^C.int)(uintptr(buf) + B_P_BIN_OFF)^
+		if bin != 0 {
+			return EOL_UNIX_S
+		}
+		c = b_at((^^u8)(uintptr(buf) + B_P_FF_OFF)^, 0)
+	}
+	if c == 'u' {
+		return EOL_UNIX_S
+	}
+	if c == 'm' {
+		return EOL_MAC_S
+	}
+	return EOL_DOS_S
+}
+
+@(export)
+default_fileformat :: proc "c"() -> C.int {
+	switch b_at(p_ffs_g, 0) {
+	case 'm':
+		return EOL_MAC_S
+	case 'd':
+		return EOL_DOS_S
+	case:
+	}
+	return EOL_UNIX_S
+}
+
+@(export)
+set_fileformat :: proc "c"(eol_style: C.int, opt_flags: C.int) {
+	p: cstring = nil
+
+	switch eol_style {
+	case EOL_UNIX_S:
+		p = cstring("unix")
+	case EOL_MAC_S:
+		p = cstring("mac")
+	case EOL_DOS_S:
+		p = cstring("dos")
+	case:
+	}
+
+	if p != nil {
+		set_option_direct(94, str_optval(transmute(^u8)(p), libc.strlen(p)), opt_flags, 0) // kOptFileformat=94
+	}
+
+	redraw_buf_status_later_opt(curbuf)
+	redraw_tabline_opt = true
+	need_maketitle_opt = true
 }
