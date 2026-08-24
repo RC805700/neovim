@@ -56,8 +56,6 @@ foreign _ {
 	vim_regexec_prog_r :: proc "c" (prog: ^rawptr, ignore_case: bool, line: cstring, col: C.int) -> C.int ---
 
 	// ── option.c / eval ──
-	@(link_name = "did_set_spell_option")
-	did_set_spell_option_r :: proc "c" () -> cstring ---
 
 	// ── syntax/decor/ui (draw.c, decor.c, syntax.c) ──
 	@(link_name = "syn_get_id")
@@ -3875,3 +3873,4 @@ wsal_iswordp :: proc "c"(word: ^C.int, idx: C.int, wp: rawptr, tag: cstring) -> 
 	}
 	return spell_iswordp_w((^C.int)(uintptr(word) + uintptr(idx) * size_of(C.int)), wp)
 }
+

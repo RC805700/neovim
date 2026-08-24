@@ -6992,3 +6992,35 @@ OptIndex nvim_odin_find_option_len(const char *name, size_t len)
 {
   return find_option_len(name, len);
 }
+
+// Startup wrappers: set_init_* have deep static dependencies; keep them callable
+// from Odin via shims until the full port lands.
+void nvim_odin_set_init_1(bool clean_arg)
+{
+  set_init_1(clean_arg);
+}
+
+void nvim_odin_set_init_2(bool headless)
+{
+  set_init_2(headless);
+}
+
+void nvim_odin_set_init_3(void)
+{
+  set_init_3();
+}
+
+void nvim_odin_set_init_tablocal(void)
+{
+  set_init_tablocal();
+}
+
+char *nvim_odin_get_p_term(void)
+{
+  return p_term;
+}
+
+char *nvim_odin_get_p_ttytype(void)
+{
+  return p_ttytype;
+}
