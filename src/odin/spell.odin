@@ -3327,11 +3327,6 @@ did_set_spell_option :: proc "c"() -> cstring {
 	return errmsg
 }
 
-foreign _ {
-	@(link_name = "e_invarg")
-	e_invarg_cstr: cstring
-}
-
 SB_P_SPC_OFF :: 1088 // verify below
 
 @(export)
@@ -3348,7 +3343,7 @@ compile_cap_prog :: proc "c"(synblock: rawptr) -> cstring {
 		xfree(re)
 		if sb_cap_prog_r(synblock) == nil {
 			sb_cap_prog_set(synblock, rp) // restore previous program
-			return e_invarg_cstr
+			return cstring("E474: Invalid argument")
 		}
 	}
 

@@ -100,7 +100,7 @@ foreign _ {
 	lines_left: c.int
 
 	@(link_name = "msg_no_more")
-	msg_no_more: c.int
+	msg_no_more: u8 // C: EXTERN bool msg_no_more (1 byte!) — int decl clobbered ex_nesting_level
 
 	@(link_name = "p_sh")
 	p_sh: cstring

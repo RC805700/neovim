@@ -556,6 +556,12 @@ check_num_option_bounds :: proc "c"(opt_idx: C.int, newval: ^C.longlong, errbuf:
 		}
 	case kOptColumns_E:
 		MIN_COLUMNS :: 12
+		{ dbg := libc.fopen(cstring("/tmp/opencode/col_dbg.txt"), cstring("a"))
+		  if dbg != nil {
+		      libc.fprintf(dbg, cstring("COL val=%lld fs=%d\n"), newval^, full_screen)
+		      libc.fclose(dbg)
+		  }
+		}
 		if newval^ < MIN_COLUMNS && full_screen {
 			libc.snprintf(errbuf, errbuflen, "E594: Need at least %d columns", int(MIN_COLUMNS))
 			errmsg = transmute(cstring)(errbuf)
@@ -2410,10 +2416,6 @@ Columns_opt :: proc "c"() -> C.int {
 }
 
 foreign _ {
-	@(link_name = "e_unknown_option2")
-	e_unknown_option2_g: cstring
-	@(link_name = "e_trailing")
-	e_trailing_cstr: cstring
 	@(link_name = "showoneopt3")
 	_showoneopt_unused: u8 // removed below; showoneopt_o covers it
 	@(link_name = "msg_ext_set_kind2")
@@ -2477,7 +2479,7 @@ do_one_set_option_o :: proc "c"(
 		}
 		if _vim_strchr(cstring("?!&<"), C.int(nextchar)) != nil &&
 		b_at(argp^, 1) != 0 && !ascii_iswhite_sp(b_at(argp^, 1)) {
-			errmsg^ = e_trailing_cstr
+			errmsg^ = cstring("E488: Trailing characters")
 			return
 		}
 	}
@@ -2512,7 +2514,7 @@ do_one_set_option_o :: proc "c"(
 		}
 
 		if nextchar != '?' && nextchar != 0 && !ascii_iswhite_sp(afterchar) {
-			errmsg^ = e_trailing_cstr
+			errmsg^ = cstring("E488: Trailing characters")
 		}
 		return
 	}
@@ -2524,7 +2526,7 @@ do_one_set_option_o :: proc "c"(
 		}
 		if _vim_strchr(cstring("?!&<"), C.int(nextchar)) == nil && nextchar != 0 &&
 		!ascii_iswhite_sp(afterchar) {
-			errmsg^ = e_trailing_cstr
+			errmsg^ = cstring("E488: Trailing characters")
 			return
 		}
 	} else {
@@ -3404,14 +3406,19 @@ wo_copy_str :: proc "c"(to: rawptr, from: rawptr, off: uintptr, dup: bool) {
 
 @(export)
 copy_winopt :: proc "c"(from: rawptr, to: rawptr) {
-	// int/bool scalars (wo_* int/bool/flag fields):
-	scalar_offs := [38]uintptr{
-		0, 140, 144, 148, 160, 168, 208, 308, 312, 136, 4, 296, 304, 232,
-		336, 340, 352, 360, 368, 236, 240, 244, 16, 300, 328, 48, 52, 96,
-		64, 72, 104, 200, 400, 408, 412, 416, 420, 424,
+	// int/bool scalars (wo_* 32-bit int/bool/flag fields):
+	scalar_offs := [26]uintptr{
+		0, 140, 144, 148, 160, 208, 308, 312, 136, 4, 296, 304, 232,
+		336, 340, 236, 240, 244, 16, 300, 400, 408, 412, 416, 420, 424,
 	}
 	for off in scalar_offs {
 		(^C.int)(uintptr(to) + off)^ = (^C.int)(uintptr(from) + off)^
+	}
+	// OptInt (64-bit) fields: wo_scr@224, wo_nuw@168, wo_lhi@200, wo_cole@328,
+	// wo_siso@352, wo_so@360, wo_sop@368, wo_fdl@64, wo_fdl_save@72, wo_fml@96, wo_fdn@104
+	int64_offs := [11]uintptr{224, 168, 200, 328, 352, 360, 368, 64, 72, 96, 104}
+	for off in int64_offs {
+		(^C.longlong)(uintptr(to) + off)^ = (^C.longlong)(uintptr(from) + off)^
 	}
 	// strings:
 	str_offs := [22]uintptr{384, 392, 152, 216, 264, 280, 288, 8, 248, 256,
