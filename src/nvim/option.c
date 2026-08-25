@@ -7181,3 +7181,11 @@ OptInt nvim_odin_get_p_wm_nopaste(void) { return p_wm_nopaste; }
 int nvim_odin_get_p_et_nopaste(void) { return p_et_nopaste; }
 OptInt nvim_odin_get_p_sts_nopaste(void) { return p_sts_nopaste; }
 char *nvim_odin_get_p_vsts_nopaste(void) { return p_vsts_nopaste; }
+
+void nvim_odin_didset_options_sctx(int opt_flags, int *opts)
+{
+  didset_options_sctx(opt_flags, opts);
+}
+
+int *nvim_odin_get_p_bin_dep_opts(void) { return p_bin_dep_opts; }
+int *nvim_odin_get_p_paste_dep_opts(void) { return p_paste_dep_opts; }

@@ -2325,25 +2325,22 @@ valid_spelllang :: proc "c"(val: cstring) -> bool {
 @(export)
 valid_spellfile :: proc "c"(val: cstring) -> bool {
 	spf_name: [MAXPATHL_S]u8
-
-	// check *val exists as file or in 'runtimepath'
-	if b_at(transmute(^u8)(val), 0) == 0 {
-		return false
-	}
-	for s := val; libc.strlen(s) < MAXPATHL_S - 10; {
-		libc.strcpy(&spf_name[0], s)
-		n := libc.strlen(transmute(cstring)(&spf_name[0]))
-		libc.strcpy(([^]u8)(uintptr(&spf_name[0]) + uintptr(n)), ".spl")
-		if os_path_exists_sp(transmute(cstring)(&spf_name[0])) {
-			return true
+	spf := transmute(^u8)(val)
+	for b_at(spf, 0) != 0 {
+		l := copy_option_part_r((^^u8)(uintptr(&spf)), &spf_name[0], MAXPATHL_S, cstring(","))
+		if l >= MAXPATHL_S - 4 || l < 4 ||
+		libc.strcmp(transmute(cstring)((^u8)(uintptr(&spf_name[0]) + uintptr(l - 4))), cstring(".add")) != 0 {
+			return false
 		}
-		next := _vim_strchr(s, ',')
-		if next == nil {
-			break
+		s := (^u8)(&spf_name[0])
+		for b_at(s, 0) != 0 {
+			if !vim_is_fname_char_r(b_at(s, 0)) {
+				return false
+			}
+			s = (^u8)(uintptr(s) + 1)
 		}
-		s = transmute(cstring)((^u8)(uintptr(transmute(^u8)(next)) + 1))
 	}
-	return false
+	return true
 }
 
 foreign _ {
@@ -3360,6 +3357,8 @@ DUMPFLAG_ONECAP :: 8
 DUMPFLAG_ALLCAP :: 16
 
 foreign _ {
+	@(link_name = "vim_is_fname_char")
+	vim_is_fname_char_r :: proc "c" (c: u8) -> bool ---
 }
 
 // :spellinfo

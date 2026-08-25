@@ -556,12 +556,6 @@ check_num_option_bounds :: proc "c"(opt_idx: C.int, newval: ^C.longlong, errbuf:
 		}
 	case kOptColumns_E:
 		MIN_COLUMNS :: 12
-		{ dbg := libc.fopen(cstring("/tmp/opencode/col_dbg.txt"), cstring("a"))
-		  if dbg != nil {
-		      libc.fprintf(dbg, cstring("COL val=%lld fs=%d\n"), newval^, full_screen)
-		      libc.fclose(dbg)
-		  }
-		}
 		if newval^ < MIN_COLUMNS && full_screen {
 			libc.snprintf(errbuf, errbuflen, "E594: Need at least %d columns", int(MIN_COLUMNS))
 			errmsg = transmute(cstring)(errbuf)
@@ -1295,12 +1289,28 @@ set_option_value_handle_tty :: proc "c"(name: cstring, opt_idx: C.int, value: Op
 		libc.snprintf(&static_errbuf[0], IOSIZE_OPT, "E355: Unknown option: %s", name)
 		return transmute(cstring)(&static_errbuf[0])
 	}
-	return set_option_value(opt_idx, value, opt_flags)
+	ret := set_option_value(opt_idx, value, opt_flags)
+	if ret != nil {
+		// Copy errmsg into a stable static buffer: set_option_value returns a
+		// pointer into its own proc-static errbuf which the NEXT call overwrites.
+		stable_len := libc.strlen(transmute(cstring)(ret))
+		if stable_len < IOSIZE_OPT {
+			libc.memcpy(&stable_errbuf_arr[0], transmute(rawptr)(ret), stable_len + 1)
+			ret = transmute(cstring)(&stable_errbuf_arr[0])
+		}
+	}
+	return ret
 }
+
+stable_errbuf_arr: [IOSIZE_OPT]u8
 
 foreign _ {
 	@(link_name = "is_tty_option")
 	is_tty_option_r :: proc "c" (name: cstring) -> bool ---
+	@(link_name = "nvim_odin_didset_options_sctx")
+	didset_options_sctx_c :: proc "c" (opt_flags: C.int, opts: ^C.int) ---
+	@(link_name = "nvim_odin_get_p_bin_dep_opts")
+	nvim_odin_get_p_bin_dep_opts :: proc "c" () -> ^C.int ---
 }
 
 @(export)
@@ -3837,6 +3847,7 @@ set_options_bin :: proc "c"(oldval: C.int, newval: C.int, opt_flags: C.int) {
 			p_et_g = C.int(get_p_et_nobin_c())
 		}
 	}
+	didset_options_sctx_c(opt_flags, nvim_odin_get_p_bin_dep_opts())
 }
 
 @(export)

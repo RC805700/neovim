@@ -285,17 +285,17 @@ semsg_safe :: proc "c"(fmt: cstring, arg: rawptr) {
 @(private)
 @(export)
 buf_kmap_state :: proc "c"(b: rawptr) -> ^i16 {
-	return (^i16)(uintptr(b) + 7872)
+	return (^i16)(uintptr(b) + 7856)
 }
 @(private)
 @(export)
 buf_kmap_ga :: proc "c"(b: rawptr) -> ^Garray {
-	return (^Garray)(uintptr(b) + 15744)
+	return (^Garray)(uintptr(b) + 7864)
 }
 @(private)
 @(export)
 buf_p_keymap :: proc "c"(b: rawptr) -> ^u8 {
-	return (^u8)(uintptr(b) + 23616)
+	return (^u8)(uintptr(b) + 10792)
 }
 @(private)
 @(export)
@@ -2191,8 +2191,9 @@ keymap_init :: proc "c" () -> ^u8 {
 	kstate := buf_kmap_state(b)
 	kstate^ &= ~i16(KEYMAP_INIT)
 
-	p_keymap := buf_p_keymap(b)
-	if p_keymap^ == 0 {
+	p_keymap_slot := (^^u8)(uintptr(b) + 10792) // &curbuf->b_p_keymap
+	p_keymap := p_keymap_slot^ // the char* value stored in b_p_keymap
+	if p_keymap == nil {
 		keymap_unload()
 		do_cmdline_cmd(transmute(^u8)(cstring("unlet! b:keymap_name")))
 	} else {
@@ -2202,9 +2203,21 @@ keymap_init :: proc "c" () -> ^u8 {
 		libc.snprintf(buf, C.size_t(buflen), cstring("keymap/%s_%s.vim"),
 			cstring(p_keymap), cstring(p_enc))
 
+		{ dbg := libc.fopen(cstring("/tmp/opencode/km_dbg.txt"), cstring("a"))
+		  if dbg != nil {
+		      libc.fprintf(dbg, cstring("SR try=%s\n"), transmute(cstring)(buf))
+		      libc.fclose(dbg)
+		  }
+		}
 		if source_runtime(buf, 0) == FAIL {
 			libc.snprintf(buf, C.size_t(buflen), cstring("keymap/%s.vim"),
 				cstring(p_keymap))
+			{ dbg := libc.fopen(cstring("/tmp/opencode/km_dbg.txt"), cstring("a"))
+			  if dbg != nil {
+			      libc.fprintf(dbg, cstring("SR try2=%s\n"), transmute(cstring)(buf))
+			      libc.fclose(dbg)
+			  }
+			}
 			if source_runtime(buf, 0) == FAIL {
 				xfree(buf)
 				return transmute(^u8)(_t("E544: Keymap file not found"))
@@ -2221,8 +2234,8 @@ ex_loadkeymap :: proc "c" (eap: rawptr) {
 	buf: [211]u8 = {}
 	save_cpo := p_cpo
 
-	ea_getline_fn := (^LineGetter)(eap)^
-	cookie := (^rawptr)(uintptr(eap) + 0xc0)^
+	ea_getline_fn := (^LineGetter)(uintptr(eap) + 168)^ // exarg_T.ea_getline @168
+	cookie := (^rawptr)(uintptr(eap) + 176)^            // exarg_T.cookie @176
 
 	if !getline_equal(ea_getline_fn, cookie, getsourceline) {
 		emsg(_t("E105: Using :loadkeymap not in a sourced file"))
