@@ -4034,9 +4034,9 @@ XPP_BACKSLASH :: 72
 XPP_LINE :: 144
 
 kOptFlagExpand_S :: 1 << 0
-kOptFlagComma_S :: 1 << 6
+kOptFlagComma_S :: 1 << 10
 kOptFlagColon_S :: 1 << 25
-kOptFlagFlagList_S :: 1 << 7
+kOptFlagFlagList_S :: 1 << 13
 
 // statics from option.c
 expand_option_idx_g: C.int = -1 // kOptInvalid == -1
