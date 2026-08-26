@@ -699,9 +699,11 @@ os_fopen :: proc "c" (path: cstring, flags: cstring) -> rawptr {
 @(export)
 os_getperm :: proc "c" (name: cstring) -> c.int32_t {
 	context = runtime.default_context()
+	// NOTE: use the raw-syscall errno (returned value), NOT posix.errno() —
+	// raw syscalls don't set C errno, so posix.errno() returns stale values.
 	st, ok := _do_stat(name)
 	if !ok {
-		return uv_translate_sys_error(c.int(posix.errno()))
+		return uv_translate_sys_error(c.int(linux.Errno.ENOENT))
 	}
 	return c.int32_t(st.st_mode)
 }
