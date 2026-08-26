@@ -360,8 +360,6 @@ foreign _ {
 	win_chartabsize_r :: proc "c" (wp: rawptr, p: ^u8, col: C.int) -> C.int ---
 	@(link_name = "tabstop_padding")
 	tabstop_padding_r :: proc "c" (col: C.int, ts: i64, vts: ^C.int) -> C.int ---
-	@(link_name = "get_ve_flags")
-	get_ve_flags_r :: proc "c" (wp: rawptr) -> C.uint ---
 
 	@(link_name = "ins_compl_preinsert_effect")
 	ins_compl_preinsert_effect_r :: proc "c" () -> bool ---
@@ -1728,7 +1726,7 @@ do_put :: proc "c" (regname: C.int, reg_arg: ^Yankreg_T, dir_arg: C.int, count_a
 	allocated := false
 	orig_start := get_pos_r(curbuf, B_OP_START)^
 	orig_end := get_pos_r(curbuf, B_OP_END)^
-	cur_ve_flags := get_ve_flags_r(curwin)
+	cur_ve_flags := get_ve_flags(curwin)
 
 	cursor_pos :: #force_inline proc "c"() -> ^Pos_T {
 		return (^Pos_T)(uintptr(curwin) + W_CURSOR)

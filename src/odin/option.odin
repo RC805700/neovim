@@ -1283,7 +1283,7 @@ set_option_value_handle_tty :: proc "c"(name: cstring, opt_idx: C.int, value: Op
 	static_errbuf: [IOSIZE_OPT]u8
 
 	if opt_idx == kOptInvalid_S {
-		if is_tty_option_r(name) {
+		if is_tty_option(name) {
 			return nil
 		}
 		libc.snprintf(&static_errbuf[0], IOSIZE_OPT, "E355: Unknown option: %s", name)
@@ -1305,8 +1305,6 @@ set_option_value_handle_tty :: proc "c"(name: cstring, opt_idx: C.int, value: Op
 stable_errbuf_arr: [IOSIZE_OPT]u8
 
 foreign _ {
-	@(link_name = "is_tty_option")
-	is_tty_option_r :: proc "c" (name: cstring) -> bool ---
 	@(link_name = "nvim_odin_didset_options_sctx")
 	didset_options_sctx_c :: proc "c" (opt_flags: C.int, opts: ^C.int) ---
 	@(link_name = "nvim_odin_get_p_bin_dep_opts")
@@ -1464,8 +1462,6 @@ foreign _ {
 	did_set_cedit_r :: proc "c" (eap: rawptr) -> cstring ---
 	@(link_name = "did_set_breakat")
 	did_set_breakat_r :: proc "c" (eap: rawptr) -> cstring ---
-	@(link_name = "didset_window_options")
-	didset_window_options_r :: proc "c" (wp: rawptr, all_buf_win_opts: bool) ---
 	@(link_name = "highlight_changed")
 	highlight_changed_r :: proc "c" () ---
 	@(link_name = "set_chars_option")
@@ -2237,7 +2233,7 @@ get_tty_option :: proc "c"(name: cstring) -> OptVal {
 		value = p_term_g != nil ? xstrdup_r2(transmute(cstring)(p_term_g)) : xstrdup_r2(cstring("nvim"))
 	} else if libc.strcmp(name, "ttytype") == 0 {
 		value = p_ttytype_g != nil ? xstrdup_r2(transmute(cstring)(p_ttytype_g)) : xstrdup_r2(cstring("nvim"))
-	} else if is_tty_option_r(name) {
+	} else if is_tty_option(name) {
 		value = xstrdup_r2(cstring(""))
 	}
 
@@ -2635,7 +2631,7 @@ didset_options_o :: proc "c"() {
 	_ = did_set_spell_option()
 	_ = did_set_cedit_r(nil)
 	_ = did_set_breakat_r(nil)
-	didset_window_options_r(curwin, true)
+	didset_window_options(curwin, true)
 }
 
 didset_options2_o :: proc "c"() {
@@ -3274,7 +3270,7 @@ get_findfunc :: proc "c"() -> ^u8 {
 win_copy_options :: proc "c"(wp_from: rawptr, wp_to: rawptr) {
 	copy_winopt((^rawptr)(uintptr(wp_from) + 816), (^rawptr)(uintptr(wp_to) + 816)) // w_onebuf_opt
 	copy_winopt((^rawptr)(uintptr(wp_from) + 2520), (^rawptr)(uintptr(wp_to) + 2520)) // w_allbuf_opt
-	didset_window_options_r(wp_to, true)
+	didset_window_options(wp_to, true)
 }
 
 @(export)
@@ -3374,8 +3370,6 @@ foreign _ {
 	check_colorcolumn_r :: proc "c" (cc: ^u8, wp: rawptr) -> cstring ---
 	@(link_name = "briopt_check")
 	briopt_check_r :: proc "c" (briopt: ^u8, wp: rawptr) -> bool ---
-	@(link_name = "parse_winhl_opt")
-	parse_winhl_opt_r :: proc "c" (winhl: ^u8, wp: rawptr) -> bool ---
 	@(link_name = "set_winbar_win")
 	set_winbar_win_r :: proc "c" (wp: rawptr, make_room: bool, valid_cursor: bool) -> cstring ---
 	@(link_name = "check_signcolumn")
@@ -3478,7 +3472,7 @@ didset_window_options :: proc "c"(wp: rawptr, valid_cursor: bool) {
 	fill_culopt_flags(nil, wp)
 	set_chars_option_o(wp, (^^u8)(uintptr(wp) + 1208)^, kFillchars_S, true, nil, 0)
 	set_chars_option_o(wp, (^^u8)(uintptr(wp) + 1200)^, kListchars_S, true, nil, 0)
-	parse_winhl_opt_r(nil, wp)
+	parse_winhl_opt(nil, wp)
 	check_blending(wp)
 	set_winbar_win_r(wp, false, valid_cursor)
 	check_signcolumn_r(nil, wp)

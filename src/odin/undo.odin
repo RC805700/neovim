@@ -220,8 +220,6 @@ foreign _ {
 	// foldOpenCursor now defined in fold.odin — reuse directly.
 	@(link_name = "messaging")
 	messaging_r :: proc "c" () -> bool ---
-	@(link_name = "shortmess")
-	shortmess_r :: proc "c" (x: C.int) -> bool ---
 	@(link_name = "msg_keep")
 	msg_keep_r :: proc "c" (s: cstring, hl_id: C.int, keep: bool, multiline: bool) -> bool ---
 	@(link_name = "give_warning")
@@ -240,8 +238,6 @@ foreign _ {
 	msg_start_r :: proc "c" () ---
 	@(link_name = "msg_end")
 	msg_end_r :: proc "c" () -> bool ---
-	@(link_name = "copy_option_part")
-	copy_option_part_r :: proc "c" (option: ^^u8, buf: ^u8, maxlen: C.size_t, sep_chars: cstring) -> C.size_t ---
 	@(link_name = "resolve_symlink")
 	resolve_symlink_r :: proc "c" (fname: cstring, buf: ^u8) -> C.int ---
 	@(link_name = "path_tail")
@@ -736,7 +732,7 @@ u_get_undo_file_name :: proc "c" (buf_ffname: cstring, reading: bool) -> ^u8 {
 	// Loop over 'undodir'. When reading find the first file that exists.
 	dirp := p_udir
 	for dirp^ != 0 {
-		dir_len := copy_option_part_r(&dirp, &dir_name[0], 4096, cstring(","))
+		dir_len := copy_option_part(&dirp, &dir_name[0], 4096, cstring(","))
 		if dir_len == 1 && dir_name[0] == '.' {
 			// Use same directory as the ffname: "dir/name" -> "dir/.name.un~"
 			undo_file_name = (^u8)(xmalloc(C.size_t(ffname_len) + 6))
@@ -1753,7 +1749,7 @@ u_doit :: proc "c" (startcount: C.int, quiet: bool, do_buf_event: bool) {
 				buf_set_curhead(curbuf, buf_oldhead(curbuf))
 				beep_flush_r()
 				if count == startcount - 1 {
-					if !shortmess_r(SHM_UNDO_CH) {
+					if !shortmess(SHM_UNDO_CH) {
 						msg_msg(_t(cstring("Already at oldest change")), 0)
 					}
 					return
@@ -1766,7 +1762,7 @@ u_doit :: proc "c" (startcount: C.int, quiet: bool, do_buf_event: bool) {
 			if buf_curhead(curbuf) == nil || get_undolevel(curbuf) <= 0 {
 				beep_flush_r() // nothing to redo
 				if count == startcount - 1 {
-					if !shortmess_r(SHM_UNDO_CH) {
+					if !shortmess(SHM_UNDO_CH) {
 						msg_msg(_t(cstring("Already at newest change")), 0)
 					}
 					return
@@ -1957,7 +1953,7 @@ undo_time :: proc "c" (step: C.int, sec: bool, file: bool, absolute: bool) {
 			}
 
 			if closest == closest_start {
-				if !shortmess_r(SHM_UNDO_CH) {
+				if !shortmess(SHM_UNDO_CH) {
 					if step < 0 {
 						msg_msg(_t(cstring("Already at oldest change")), 0)
 					} else {
@@ -2356,7 +2352,7 @@ u_undo_end :: proc "c" (did_undo_arg: bool, absolute: bool, quiet: bool) {
 		foldOpenCursor()
 	}
 
-	if quiet || global_busy != 0 || !messaging_r() || shortmess_r(SHM_UNDO_CH) {
+	if quiet || global_busy != 0 || !messaging_r() || shortmess(SHM_UNDO_CH) {
 		return
 	}
 

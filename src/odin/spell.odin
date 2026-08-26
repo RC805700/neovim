@@ -2061,7 +2061,7 @@ parse_spelllang :: proc "c"(wp: rawptr) -> ^u8 {
 
 	splp := spl_copy
 	for b_at(splp, 0) != 0 {
-		len := C.int(copy_option_part_r(&splp, &lang[0], MAXWLEN, ","))
+		len := C.int(copy_option_part(&splp, &lang[0], MAXWLEN, ","))
 		region: ^u8 = nil
 
 		if !valid_spelllang_c(&lang[0]) {
@@ -2182,7 +2182,7 @@ parse_spelllang :: proc "c"(wp: rawptr) -> ^u8 {
 			}
 			int_wordlist_spl(&spf_name[0])
 		} else {
-			len := C.int(copy_option_part_r(&spf, &spf_name[0], MAXPATHL_S - 4, ","))
+			len := C.int(copy_option_part(&spf, &spf_name[0], MAXPATHL_S - 4, ","))
 			libc.strcpy(([^]u8)(uintptr(&spf_name[0]) + uintptr(len)), ".spl")
 
 			c := C.int(0)
@@ -2313,13 +2313,11 @@ ascii_isalpha_sp :: proc "c"(c: u8) -> bool {
 }
 
 foreign _ {
-	@(link_name = "valid_name")
-	valid_name_r :: proc "c" (val: cstring, allowed: cstring) -> bool ---
 }
 
 @(export)
 valid_spelllang :: proc "c"(val: cstring) -> bool {
-	return valid_name_r(val, ".-_,@")
+	return valid_name(val, ".-_,@")
 }
 
 @(export)
@@ -2327,7 +2325,7 @@ valid_spellfile :: proc "c"(val: cstring) -> bool {
 	spf_name: [MAXPATHL_S]u8
 	spf := transmute(^u8)(val)
 	for b_at(spf, 0) != 0 {
-		l := copy_option_part_r((^^u8)(uintptr(&spf)), &spf_name[0], MAXPATHL_S, cstring(","))
+		l := copy_option_part((^^u8)(uintptr(&spf)), &spf_name[0], MAXPATHL_S, cstring(","))
 		if l >= MAXPATHL_S - 4 || l < 4 ||
 		libc.strcmp(transmute(cstring)((^u8)(uintptr(&spf_name[0]) + uintptr(l - 4))), cstring(".add")) != 0 {
 			return false
