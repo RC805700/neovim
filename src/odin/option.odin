@@ -4093,6 +4093,7 @@ set_context_in_set_cmd :: proc "c"(xp: rawptr, arg_in: ^u8, opt_flags: C.int) {
 		p = (^u8)(uintptr(p) + 3)
 	}
 	(^rawptr)(uintptr(xp) + XPP_PATTERN)^ = p
+	arg = p // C: `arg = p` — find_option_len must search the post-prefix name
 
 	nextchar: u8
 	flags: C.uint32_t = 0
