@@ -2532,7 +2532,7 @@ spell_move_to :: proc "c"(wp: rawptr, dir: C.int, behaviour: C.int, curline: boo
 			} else {
 				lnum = buf_ml_line_count_r(buf_of_win(wp))
 				wrapped = true
-				if !shortmess_s(SHM_SEARCH) {
+				if !shortmess(SHM_SEARCH) {
 					give_warning_s(cstring("search hit BOTTOM, continuing at TOP"), true, false)
 				}
 			}
@@ -2545,7 +2545,7 @@ spell_move_to :: proc "c"(wp: rawptr, dir: C.int, behaviour: C.int, curline: boo
 			} else {
 				lnum = 1
 				wrapped = true
-				if !shortmess_s(SHM_SEARCH) {
+				if !shortmess(SHM_SEARCH) {
 					give_warning_s(cstring("search hit TOP, continuing at BOTTOM"), true, false)
 				}
 			}

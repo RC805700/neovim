@@ -88,8 +88,6 @@ foreign _ {
 
 	@(link_name = "give_warning")
 	give_warning_s :: proc "c" (message: cstring, hl: bool, hist: bool) ---
-	@(link_name = "shortmess")
-	shortmess_s :: proc "c" (x: C.int) -> bool ---
 	@(link_name = "messaging")
 	messaging_s :: proc "c" () -> bool ---
 	@(link_name = "gotocmdline")
@@ -1118,7 +1116,7 @@ searchit :: proc "c"(
 			}
 
 			lnum = dir == .BACKWARD ? buf_ml_line_count_r(buf) : 1
-			if !shortmess_s(SHM_SEARCH) && shortmess_s(SHM_SEARCHCOUNT) && (options & SEARCH_MSG) != 0 {
+			if !shortmess(SHM_SEARCH) && shortmess(SHM_SEARCHCOUNT) && (options & SEARCH_MSG) != 0 {
 				give_warning_s(dir == .BACKWARD ? cstring("search hit BOTTOM, continuing at TOP") : cstring("search hit TOP, continuing at BOTTOM"), true, false)
 			}
 			if extra_arg != nil {
@@ -1399,7 +1397,7 @@ search_for_exact_line :: proc "c"(buf: rawptr, pos: ^Pos_T, dir: Direction, pat:
 		if pos.lnum < 1 {
 			if p_ws_g != 0 {
 				pos.lnum = buf_ml_line_count_r(buf)
-				if !shortmess_s(SHM_SEARCH) {
+				if !shortmess(SHM_SEARCH) {
 					give_warning_s(cstring("search hit BOTTOM, continuing at TOP"), true, false)
 				}
 			} else {
@@ -1409,7 +1407,7 @@ search_for_exact_line :: proc "c"(buf: rawptr, pos: ^Pos_T, dir: Direction, pat:
 		} else if pos.lnum > buf_ml_line_count_r(buf) {
 			if p_ws_g != 0 {
 				pos.lnum = 1
-				if !shortmess_s(SHM_SEARCH) {
+				if !shortmess(SHM_SEARCH) {
 					give_warning_s(cstring("search hit TOP, continuing at BOTTOM"), true, false)
 				}
 			} else {
@@ -1942,7 +1940,7 @@ do_search :: proc "c"(
 		}
 
 		if (options & SEARCH_ECHO) != 0 && messaging_s() && msg_silent == 0 &&
-		(!cmd_silent || !shortmess_s(SHM_SEARCHCOUNT)) {
+		(!cmd_silent || !shortmess(SHM_SEARCHCOUNT)) {
 			off_buf: [40]u8
 			off_len: C.size_t = 0
 
@@ -1977,7 +1975,7 @@ do_search :: proc "c"(
 			}
 
 			msgbufsize: C.size_t
-			if !shortmess_s(SHM_SEARCHCOUNT) || cmd_silent {
+			if !shortmess(SHM_SEARCHCOUNT) || cmd_silent {
 				if ui_has_s(kUIMessages_S) {
 					msgbufsize = 0
 				} else if msg_scrolled != 0 && !cmd_silent {
@@ -2044,7 +2042,7 @@ do_search :: proc "c"(
 				msg_nowait = true
 			}
 
-			if !shortmess_s(SHM_SEARCHCOUNT) {
+			if !shortmess(SHM_SEARCHCOUNT) {
 				show_search_stats = true
 			}
 		}
@@ -2086,7 +2084,7 @@ do_search :: proc "c"(
 			b_set(dircp, 0, u8(search_delim))
 		}
 
-		if !shortmess_s(SHM_SEARCH) && sia != nil && sia.sa_wrapped != 0 {
+		if !shortmess(SHM_SEARCH) && sia != nil && sia.sa_wrapped != 0 {
 			show_top_bot_msg = true
 		}
 
@@ -2928,7 +2926,7 @@ f_searchcount :: proc "c"(argvars: ^Typval, rettv: ^Typval, fptr: rawptr) {
 
 	tv_dict_alloc_ret_r(rettv)
 
-	if shortmess_s(SHM_SEARCHCOUNT) {
+	if shortmess(SHM_SEARCHCOUNT) {
 		recompute = true
 	}
 
@@ -3282,7 +3280,7 @@ find_pattern_in_path :: proc "c"(
 						curr_fname = new_fname
 						files[depth].lnum = 0
 						files[depth].matched = false
-						if action == ACTION_EXPAND_S && !shortmess_s(SHM_COMPLETIONSCAN) && !silent {
+						if action == ACTION_EXPAND_S && !shortmess(SHM_COMPLETIONSCAN) && !silent {
 							msg_hist_off = 1
 							libc.snprintf(&IObuff[0], IOSIZE_S, "Scanning included file: %s", transmute(cstring)(new_fname))
 							msg_trunc_r(&IObuff[0], true, HLF_R_S)
