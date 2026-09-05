@@ -117,6 +117,45 @@
 
 #include "buffer.c.generated.h"
 
+// Odin port: these functions are now defined in src/odin/buffer.odin.
+// The C definitions below remain as weak fallbacks; the strong Odin
+// definitions win at link time.
+#pragma weak calc_percentage
+#pragma weak buf_valid
+#pragma weak no_write_message_buf
+#pragma weak no_write_message
+#pragma weak no_write_message_nobang
+#pragma weak get_highest_fnum
+#pragma weak set_bufref
+#pragma weak bufref_valid
+#pragma weak buflist_findnr
+#pragma weak buflist_findfmark
+#pragma weak buflist_findlnum
+#pragma weak free_buf_options
+#pragma weak get_winopts
+#pragma weak buflist_new
+#pragma weak curbuf_reusable
+#pragma weak buf_set_file_id
+#pragma weak buf_freeall
+#pragma weak buflist_getfile
+#pragma weak setaltfname
+#pragma weak getaltfname
+#pragma weak buflist_add
+#pragma weak buflist_altfpos
+#pragma weak otherfile
+#pragma weak buflist_findname_exp
+#pragma weak buflist_findname
+#pragma weak setfname
+#pragma weak buf_set_name
+#pragma weak buf_name_changed
+#pragma weak set_curbuf
+#pragma weak do_buffer
+#pragma weak goto_buffer
+#pragma weak handle_swap_exists
+#pragma weak buf_ensure_loaded
+#pragma weak open_buffer
+#pragma weak do_bufdel
+
 #ifdef ABORT_ON_INTERNAL_ERROR
 # define CHECK_CURBUF \
   do { \
@@ -4307,4 +4346,26 @@ void read_buffer_into(buf_T *buf, linenr_T start, linenr_T end, StringBuilder *s
       written += len;
     }
   }
+}
+
+// Odin port shims: buffer.c statics exposed read-only for src/odin/buffer.odin.
+// C code retains sole mutation ownership.
+int nvim_odin_get_top_file_num(void)
+{
+  return top_file_num;
+}
+
+int nvim_odin_get_buf_free_count(void)
+{
+  return buf_free_count;
+}
+
+void nvim_odin_set_top_file_num(int v)
+{
+  top_file_num = v;
+}
+
+void nvim_odin_set_buf_free_count(int v)
+{
+  buf_free_count = v;
 }

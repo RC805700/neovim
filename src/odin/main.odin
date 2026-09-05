@@ -190,7 +190,6 @@ foreign nvim {
   set_argf_var :: proc() ---
   nlua_init :: proc(argv: [^]cstring, argc: c.int, lua_arg0: c.int) ---
   server_init :: proc(listen_addr: cstring) -> bool ---
-  win_init_size :: proc() ---
   default_grid_alloc :: proc() ---
   set_init_2 :: proc(headless: bool) ---
   init_highlight :: proc(load_defaults: bool, reinit: bool) ---
@@ -217,7 +216,6 @@ foreign nvim {
   // highlight_init — PORTED to Odin
   // init_locale — PORTED to Odin (os_lang.odin)
   // set_init_tablocal — PORTED to Odin (option.odin)
-  win_alloc_first :: proc() ---
   startup_alist_init :: proc() ---
   // init_homedir           — PORTED to Odin (uses startup_set_homedir + os.getwd)
   // startup_set_homedir    — PORTED to Odin (os_env.odin; sets `homedir` global)

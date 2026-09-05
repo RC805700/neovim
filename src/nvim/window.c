@@ -85,6 +85,62 @@ void nvim_odin_init_winopt(win_T *win);
 
 #include "window.c.generated.h"
 
+// Odin port: these functions are now defined in src/odin/window.odin.
+// The C definitions below remain as weak fallbacks; the strong Odin
+// definitions win at link time.
+#pragma weak win_valid
+#pragma weak tabpage_win_valid
+#pragma weak win_find_by_handle
+#pragma weak win_valid_any_tab
+#pragma weak win_count
+#pragma weak last_window
+#pragma weak one_window
+#pragma weak win_fdccol_count
+#pragma weak prevwin_curwin
+#pragma weak check_can_set_curbuf_disabled
+#pragma weak check_can_set_curbuf_forceit
+#pragma weak frame2win
+#pragma weak frames_locked
+#pragma weak window_layout_lock
+#pragma weak window_layout_unlock
+#pragma weak window_layout_locked
+#pragma weak window_layout_locked_err
+#pragma weak winframe_remove
+#pragma weak winframe_find_altwin
+#pragma weak frame_new_height
+#pragma weak win_split
+#pragma weak win_init
+#pragma weak win_split_ins
+#pragma weak win_alloc
+#pragma weak win_append
+#pragma weak win_free
+#pragma weak win_init_empty
+#pragma weak curwin_init
+#pragma weak valid_tabpage
+#pragma weak valid_tabpage_win
+#pragma weak tabpage_index
+#pragma weak win_find_tabpage
+#pragma weak lastwin_nofloating
+#pragma weak win_alloc_first
+#pragma weak win_init_size
+#pragma weak win_new_tabpage
+#pragma weak find_tabpage
+#pragma weak goto_tabpage
+#pragma weak goto_tabpage_tp
+#pragma weak goto_tabpage_lastused
+#pragma weak goto_tabpage_win
+#pragma weak close_tabpage
+#pragma weak win_goto
+#pragma weak win_vert_neighbor
+#pragma weak win_horz_neighbor
+#pragma weak win_enter
+#pragma weak trigger_tabclosedpre
+#pragma weak win_close_othertab
+#pragma weak win_close
+#pragma weak win_equal
+#pragma weak win_new_screen_rows
+#pragma weak win_new_screen_cols
+
 #define NOWIN           ((win_T *)-1)   // non-existing window
 
 #define ROWS_AVAIL (Rows - p_ch - tabline_height() - global_stl_height())
@@ -7866,4 +7922,68 @@ win_T *lastwin_nofloating(tabpage_T *tp)
     res = res->w_prev;
   }
   return res;
+}
+
+// Odin port shims: window.c statics exposed for src/odin/window.odin.
+// C code retains sole mutation ownership (except via these helpers).
+int nvim_odin_get_frame_locked(void)
+{
+  return frame_locked;
+}
+
+void nvim_odin_frame_locked_inc(void)
+{
+  frame_locked++;
+}
+
+void nvim_odin_frame_locked_dec(void)
+{
+  frame_locked--;
+}
+
+void nvim_odin_window_layout_lock(void)
+{
+  split_disallowed++;
+  close_disallowed++;
+}
+
+void nvim_odin_window_layout_unlock(void)
+{
+  split_disallowed--;
+  close_disallowed--;
+}
+
+int nvim_odin_get_split_disallowed(void)
+{
+  return split_disallowed;
+}
+
+void nvim_odin_set_split_disallowed(int v)
+{
+  split_disallowed = v;
+}
+
+int nvim_odin_get_close_disallowed(void)
+{
+  return close_disallowed;
+}
+
+long nvim_odin_get_min_set_ch(void)
+{
+  return (long)min_set_ch;
+}
+
+void nvim_odin_set_min_set_ch(long v)
+{
+  min_set_ch = (OptInt)v;
+}
+
+int nvim_odin_next_win_id(void)
+{
+  return ++last_win_id;
+}
+
+void nvim_odin_set_command_frame_height(bool v)
+{
+  command_frame_height = v;
 }

@@ -370,11 +370,9 @@ foreign _ {
 
 	@(link_name = "file_name_at_cursor")
 	file_name_at_cursor_r :: proc "c" (options: C.int, count: C.int, file_lnum: ^C.int) -> ^u8 ---
-	@(link_name = "find_ident_under_cursor")
-	find_ident_under_cursor_r :: proc "c" (text: ^^u8, find_type: C.int, offset: ^C.int) -> C.size_t ---
-	@(link_name = "getaltfname")
-	getaltfname_r :: proc "c" (errmsg: bool) -> ^u8 ---
-	@(link_name = "check_fname")
+ 	@(link_name = "find_ident_under_cursor")
+ 	find_ident_under_cursor_r :: proc "c" (text: ^^u8, find_type: C.int, offset: ^C.int) -> C.size_t ---
+ 	@(link_name = "check_fname")
 	check_fname_r :: proc "c" () -> C.int ---
 	// last_search_pat / set_last_search_pat now defined in search.odin — reuse directly.
 	@(link_name = "buflist_findpat")
@@ -1168,7 +1166,7 @@ get_spec_reg :: proc "c" (regname: C.int, argp: ^^u8, allocated: ^bool, errmsg: 
 		return true
 
 	case '#': // alternate file name
-		argp^ = getaltfname_r(errmsg)
+		argp^ = transmute(^u8)(getaltfname(errmsg))
 		return true
 
 	case '=': // result of expression

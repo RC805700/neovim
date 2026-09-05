@@ -1210,16 +1210,10 @@ foreign _ {
 	@(link_name = "path_full_compare")
 	path_full_compare_r :: proc "c" (s1: cstring, s2: cstring, checkname: bool, expand: bool) -> C.int ---
 
-	@(link_name = "win_split")
-	win_split_r :: proc "c" (size: C.int, flags: C.int) -> C.int ---
 	@(link_name = "prepare_tagpreview")
 	prepare_tagpreview :: proc "c" (keep_help: bool) ---
 	@(link_name = "getfile")
 	getfile_r :: proc "c" (fnum: C.int, ffname: ^u8, sfname: ^u8, setpm: bool, lnum: C.int, forceit: bool) -> C.int ---
-	@(link_name = "win_valid")
-	win_valid_r :: proc "c" (wp: rawptr) -> bool ---
-	@(link_name = "win_enter")
-	win_enter_r :: proc "c" (wp: rawptr, undo_sync: bool) ---
 	@(link_name = "validate_cursor")
 	validate_cursor_r :: proc "c" () ---
 
@@ -3475,7 +3469,7 @@ find_pattern_in_path :: proc "c"(
 								prepare_tagpreview(true)
 							}
 							if action == ACTION_SPLIT_S {
-								if win_split_r(0, 0) == 0 {
+								if win_split(0, 0) == 0 {
 									outer_break = true
 									break
 								}
@@ -3483,7 +3477,7 @@ find_pattern_in_path :: proc "c"(
 							}
 							if depth == -1 {
 								if l_g_do_tagpreview != 0 {
-									if !win_valid_r(curwin_save) {
+									if !win_valid(curwin_save) {
 										outer_break = true
 										break
 									}
@@ -3510,10 +3504,10 @@ find_pattern_in_path :: proc "c"(
 						}
 
 						if l_g_do_tagpreview != 0 &&
-						curwin != curwin_save && win_valid_r(curwin_save) {
+						curwin != curwin_save && win_valid(curwin_save) {
 							validate_cursor_r()
 							redraw_later_r(curwin, UPD_VALID_S)
-							win_enter_r(curwin_save, true)
+							win_enter(curwin_save, true)
 						}
 						outer_break = true
 					}

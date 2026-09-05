@@ -1,0 +1,4477 @@
+// window.odin — port of src/nvim/window.c (window/tabpage model)
+package main
+
+import C "core:c"
+import "core:c/libc"
+
+// ── Batch 1: pure window-list predicates ─────────────────────────────────────
+
+W_HANDLE_OFF :: 0
+TP_FIRSTWIN_OFF :: 40
+TP_NEXT_OFF :: 8
+W_NEXT_OFF :: 112
+W_PREV_OFF :: 104
+
+// firstwin/first_tabpage/curtab/curwin from main.odin;
+// W_FLOATING_OFF (10553) from option.odin.
+
+// Check if "win" is a pointer to an existing window in the current tabpage.
+@(export)
+win_valid :: proc "c"(win: rawptr) -> bool {
+	return tabpage_win_valid(curtab, win)
+}
+
+// Check if "win" is a pointer to an existing window in tabpage "tp".
+@(export)
+tabpage_win_valid :: proc "c"(tp: rawptr, win: rawptr) -> bool {
+	if win == nil {
+		return false
+	}
+	wp := tp == curtab ? firstwin : (^rawptr)(uintptr(tp) + TP_FIRSTWIN_OFF)^
+	for wp != nil {
+		if wp == win {
+			return true
+		}
+		wp = (^rawptr)(uintptr(wp) + W_NEXT_OFF)^
+	}
+	return false
+}
+
+// Find window "handle" in the current tab page.
+// Return NULL if not found.
+@(export)
+win_find_by_handle :: proc "c"(handle: C.int) -> rawptr {
+	tp := curtab
+	wp := tp == curtab ? firstwin : (^rawptr)(uintptr(tp) + TP_FIRSTWIN_OFF)^
+	for wp != nil {
+		if (^C.int)(uintptr(wp) + W_HANDLE_OFF)^ == handle {
+			return wp
+		}
+		wp = (^rawptr)(uintptr(wp) + W_NEXT_OFF)^
+	}
+	return nil
+}
+
+// Check if "win" is a pointer to an existing window in any tabpage.
+@(export)
+win_valid_any_tab :: proc "c"(win: rawptr) -> bool {
+	if win == nil {
+		return false
+	}
+
+	// NOTE: FOR_ALL_TAB_WINDOWS uses tp == curtab ? firstwin for the
+	// inner walk (firstwin and tp_firstwin can transiently diverge) —
+	// replicate exactly, do NOT walk tp_firstwin unconditionally.
+	tp := first_tabpage
+	for tp != nil {
+		wp := tp == curtab ? firstwin : (^rawptr)(uintptr(tp) + TP_FIRSTWIN_OFF)^
+		for wp != nil {
+			if wp == win {
+				return true
+			}
+			wp = (^rawptr)(uintptr(wp) + W_NEXT_OFF)^
+		}
+		tp = (^rawptr)(uintptr(tp) + TP_NEXT_OFF)^
+	}
+	return false
+}
+
+// Return the number of windows.
+@(export)
+win_count :: proc "c"() -> C.int {
+	count: C.int = 0
+	tp := curtab
+	wp := tp == curtab ? firstwin : (^rawptr)(uintptr(tp) + TP_FIRSTWIN_OFF)^
+	for wp != nil {
+		count += 1
+		wp = (^rawptr)(uintptr(wp) + W_NEXT_OFF)^
+	}
+	return count
+}
+
+// Check if "win" is the last non-floating window that exists.
+@(export)
+last_window :: proc "c"(win: rawptr) -> bool {
+	return one_window(win, nil) && (^rawptr)(uintptr(first_tabpage) + TP_NEXT_OFF)^ == nil
+}
+
+// Check if "win" is the only non-floating window in tabpage "tp",
+// or NULL for current tabpage.
+@(export)
+one_window :: proc "c"(win: rawptr, tp: rawptr) -> bool {
+	first := tp != nil ? (^rawptr)(uintptr(tp) + TP_FIRSTWIN_OFF)^ : firstwin
+	if first != win {
+		return false
+	}
+	next := (^rawptr)(uintptr(win) + W_NEXT_OFF)^
+	return next == nil || (^bool)(uintptr(next) + W_FLOATING_OFF)^
+}
+
+// ── Batch 2: small predicates ────────────────────────────────────────────────
+
+W_P_FDC_OFF :: 840
+W_P_WFB_OFF :: 992
+
+E1513_S :: "E1513: Cannot switch buffer. 'winfixbuf' is enabled"
+
+foreign _ {
+	@(link_name = "is_in_cmdwin")
+	is_in_cmdwin_r :: proc "c" () -> bool ---
+	@(link_name = "prevwin")
+	prevwin_g: rawptr
+}
+// getDeepestNesting/emsg/curwin reused from sibling files.
+
+@(export)
+win_fdccol_count :: proc "c"(wp: rawptr) -> C.int {
+	fdc := (^^u8)(uintptr(wp) + W_P_FDC_OFF)^
+
+	// auto:<NUM>
+	if libc.strncmp(transmute(cstring)(fdc), "auto", 4) == 0 {
+		fdccol := b_at(fdc, 4) == ':' ? C.int(b_at(fdc, 5)) - '0' : 1
+		needed_fdccols := getDeepestNesting(wp)
+		return min(fdccol, needed_fdccols)
+	}
+	return C.int(b_at(fdc, 0)) - '0'
+}
+
+// @return the current window, unless in the cmdline window and "prevwin" is
+// set, then return "prevwin".
+@(export)
+prevwin_curwin :: proc "c"() -> rawptr {
+	// In cmdwin, the alternative buffer should be used.
+	return is_in_cmdwin_r() && prevwin_g != nil ? prevwin_g : curwin
+}
+
+// Check if the current window is allowed to move to a different buffer.
+//
+// @return If the window has 'winfixbuf', or this function will return false.
+@(export)
+check_can_set_curbuf_disabled :: proc "c"() -> bool {
+	if (^C.int)(uintptr(curwin) + W_P_WFB_OFF)^ != 0 {
+		emsg(cstring(E1513_S))
+		return false
+	}
+
+	return true
+}
+
+// Check if the current window is allowed to move to a different buffer.
+//
+// @param forceit If true, do not error. If false and 'winfixbuf' is enabled, error.
+//
+// @return If the window has 'winfixbuf', then forceit must be true
+//     or this function will return false.
+@(export)
+check_can_set_curbuf_forceit :: proc "c"(forceit: C.int) -> bool {
+	if forceit == 0 && (^C.int)(uintptr(curwin) + W_P_WFB_OFF)^ != 0 {
+		emsg(cstring(E1513_S))
+		return false
+	}
+
+	return true
+}
+
+// ── Batch 3: frame leaf + layout locks ───────────────────────────────────────
+
+FR_WIN_OFF :: 56
+FR_CHILD_OFF :: 48
+
+CMD_TABNEW_O :: 465
+CMD_SIZE_O :: 561
+K_ERROR_TYPE_EXCEPTION_O :: 2
+
+E1159_S :: "E1159: Cannot split a window when closing the buffer"
+E1312_S :: "E1312: Not allowed to change the window layout in this autocmd"
+
+foreign _ {
+	@(link_name = "nvim_odin_get_frame_locked")
+	nvim_odin_get_frame_locked_r :: proc "c" () -> C.int ---
+	@(link_name = "nvim_odin_frame_locked_inc")
+	nvim_odin_frame_locked_inc_r :: proc "c" () ---
+	@(link_name = "nvim_odin_frame_locked_dec")
+	nvim_odin_frame_locked_dec_r :: proc "c" () ---
+	@(link_name = "nvim_odin_window_layout_lock")
+	nvim_odin_window_layout_lock_r :: proc "c" () ---
+	@(link_name = "nvim_odin_window_layout_unlock")
+	nvim_odin_window_layout_unlock_r :: proc "c" () ---
+	@(link_name = "nvim_odin_get_split_disallowed")
+	nvim_odin_get_split_disallowed_r :: proc "c" () -> C.int ---
+	@(link_name = "nvim_odin_get_close_disallowed")
+	nvim_odin_get_close_disallowed_r :: proc "c" () -> C.int ---
+}
+// api_set_error_r/api_clear_error_r/emsg reused from option.odin.
+
+@(export)
+frame2win :: proc "c"(frp: rawptr) -> rawptr {
+	fr := frp
+	for (^rawptr)(uintptr(fr) + FR_WIN_OFF)^ == nil {
+		fr = (^rawptr)(uintptr(fr) + FR_CHILD_OFF)^
+	}
+	return (^rawptr)(uintptr(fr) + FR_WIN_OFF)^
+}
+
+@(export)
+frames_locked :: proc "c"() -> bool {
+	return nvim_odin_get_frame_locked_r() != 0
+}
+
+frame_locked_inc_o :: proc "c"() {
+	nvim_odin_frame_locked_inc_r()
+}
+
+frame_locked_dec_o :: proc "c"() {
+	nvim_odin_frame_locked_dec_r()
+}
+
+@(export)
+window_layout_lock :: proc "c"() {
+	nvim_odin_window_layout_lock_r()
+}
+
+@(export)
+window_layout_unlock :: proc "c"() {
+	nvim_odin_window_layout_unlock_r()
+}
+
+@(export)
+window_layout_locked :: proc "c"(cmd: C.int) -> bool {
+	err: Api_Error
+	err.typ = -1 // kErrorTypeNone
+	err.msg = nil
+	locked := window_layout_locked_err(cmd, &err)
+	if err.typ != -1 {
+		emsg(transmute(cstring)(err.msg))
+		api_clear_error_r(&err)
+	}
+	return locked
+}
+
+// Like `window_layout_locked`, but set `err` to the (untranslated) error
+// message when locked.
+@(export)
+window_layout_locked_err :: proc "c"(cmd: C.int, err: ^Api_Error) -> bool {
+	if nvim_odin_get_split_disallowed_r() > 0 || nvim_odin_get_close_disallowed_r() > 0 {
+		if nvim_odin_get_close_disallowed_r() == 0 && cmd == CMD_TABNEW_O {
+			api_set_error_r(err, K_ERROR_TYPE_EXCEPTION_O, "%s",
+				transmute(rawptr)(cstring(E1159_S)))
+		} else {
+			api_set_error_r(err, K_ERROR_TYPE_EXCEPTION_O, "%s",
+				transmute(rawptr)(cstring(E1312_S)))
+		}
+		return true
+	}
+	return false
+}
+
+// ── Batch 4: structural frame helpers (C-static; plain procs for Batch 5) ────
+
+FR_LAYOUT_OFF :: 0
+FR_PARENT_OFF :: 24
+FR_NEXT_OFF :: 32
+FR_HEIGHT_OFF :: 12
+FR_WIDTH_OFF :: 4
+TP_CURWIN_OFF :: 24
+FR_PREV_OFF :: 40
+W_FRAME_OFF :: 128
+W_P_WFH_OFF :: 996
+W_P_WFW_OFF :: 1000
+W_VSEP_WIDTH_OFF :: 452
+W_WIDTH_OFF :: 444
+W_WINROW_OFF :: 416
+W_WINCOL_OFF :: 440
+W_HSEP_HEIGHT_OFF :: 448
+W_POS_CHANGED_OFF :: 10552
+
+FR_LEAF_O :: 0
+FR_ROW_O :: 1
+FR_COL_O :: 2
+
+K_OPT_TCL_FLAG_LEFT_O :: 0x01
+K_OPT_TCL_FLAG_USELAST_O :: 0x02
+
+foreign _ {
+	@(link_name = "topframe")
+	topframe_g: rawptr
+	@(link_name = "lastused_tabpage")
+	lastused_tabpage_g: rawptr
+	@(link_name = "tcl_flags")
+	tcl_flags_g: C.uint
+	@(link_name = "p_sb")
+	p_sb_g: C.int
+	@(link_name = "p_spr")
+	p_spr_g: C.int
+	@(link_name = "win_new_width")
+	win_new_width_r :: proc "c" (wp: rawptr, width: C.int) ---
+}
+// redraw_later_r/UPD_NOT_VALID/xfree/first_tabpage/firstwin/curwin/curtab/
+// one_window/frame2win reused.
+
+frame_fixed_height_o :: proc "c" (wp_frame: rawptr) -> bool {
+	frp := wp_frame
+	// frame with one window: fixed height if 'winfixheight' set.
+	if (^rawptr)(uintptr(frp) + FR_WIN_OFF)^ != nil {
+		return (^C.int)(uintptr((^rawptr)(uintptr(frp) + FR_WIN_OFF)^) + W_P_WFH_OFF)^ != 0
+	}
+	if b_at((^u8)(uintptr(frp) + FR_LAYOUT_OFF), 0) == FR_ROW_O {
+		// The frame is fixed height if one of the frames in the row is fixed
+		// height.
+		child := (^rawptr)(uintptr(frp) + FR_CHILD_OFF)^
+		for child != nil {
+			if frame_fixed_height_o(child) {
+				return true
+			}
+			child = (^rawptr)(uintptr(child) + FR_NEXT_OFF)^
+		}
+		return false
+	}
+
+	// fr_layout == FR_COL: fixed if all frames are fixed height.
+	child := (^rawptr)(uintptr(frp) + FR_CHILD_OFF)^
+	for child != nil {
+		if !frame_fixed_height_o(child) {
+			return false
+		}
+		child = (^rawptr)(uintptr(child) + FR_NEXT_OFF)^
+	}
+	return true
+}
+
+frame_fixed_width_o :: proc "c" (wp_frame: rawptr) -> bool {
+	frp := wp_frame
+	// frame with one window: fixed width if 'winfixwidth' set.
+	if (^rawptr)(uintptr(frp) + FR_WIN_OFF)^ != nil {
+		return (^C.int)(uintptr((^rawptr)(uintptr(frp) + FR_WIN_OFF)^) + W_P_WFW_OFF)^ != 0
+	}
+	if b_at((^u8)(uintptr(frp) + FR_LAYOUT_OFF), 0) == FR_COL_O {
+		// The frame is fixed width if one of the frames in the col is fixed
+		// width.
+		child := (^rawptr)(uintptr(frp) + FR_CHILD_OFF)^
+		for child != nil {
+			if frame_fixed_width_o(child) {
+				return true
+			}
+			child = (^rawptr)(uintptr(child) + FR_NEXT_OFF)^
+		}
+		return false
+	}
+
+	// fr_layout == FR_ROW: fixed if all frames are fixed width.
+	child := (^rawptr)(uintptr(frp) + FR_CHILD_OFF)^
+	for child != nil {
+		if !frame_fixed_width_o(child) {
+			return false
+		}
+		child = (^rawptr)(uintptr(child) + FR_NEXT_OFF)^
+	}
+	return true
+}
+
+frame_set_vsep_o :: proc "c" (frp_in: rawptr, add: bool) {
+	frp := frp_in
+	if b_at((^u8)(uintptr(frp) + FR_LAYOUT_OFF), 0) == FR_LEAF_O {
+		wp := (^rawptr)(uintptr(frp) + FR_WIN_OFF)^
+		if add && (^C.int)(uintptr(wp) + W_VSEP_WIDTH_OFF)^ == 0 {
+			if (^C.int)(uintptr(wp) + W_WIDTH_OFF)^ > 0 { // don't make it negative
+				win_new_width_r(wp, (^C.int)(uintptr(wp) + W_WIDTH_OFF)^ - 1)
+			}
+			(^C.int)(uintptr(wp) + W_VSEP_WIDTH_OFF)^ = 1
+		} else if !add && (^C.int)(uintptr(wp) + W_VSEP_WIDTH_OFF)^ == 1 {
+			win_new_width_r(wp, (^C.int)(uintptr(wp) + W_WIDTH_OFF)^ + 1)
+			(^C.int)(uintptr(wp) + W_VSEP_WIDTH_OFF)^ = 0
+		}
+	} else if b_at((^u8)(uintptr(frp) + FR_LAYOUT_OFF), 0) == FR_COL_O {
+		// Handle all the frames in the column.
+		child := (^rawptr)(uintptr(frp) + FR_CHILD_OFF)^
+		for child != nil {
+			frame_set_vsep_o(child, add)
+			child = (^rawptr)(uintptr(child) + FR_NEXT_OFF)^
+		}
+	} else {
+		// Only need to handle the last frame in the row.
+		fr := (^rawptr)(uintptr(frp) + FR_CHILD_OFF)^
+		for (^rawptr)(uintptr(fr) + FR_NEXT_OFF)^ != nil {
+			fr = (^rawptr)(uintptr(fr) + FR_NEXT_OFF)^
+		}
+		frame_set_vsep_o(fr, add)
+	}
+}
+
+frame_remove_o :: proc "c" (frp: rawptr) {
+	prev := (^rawptr)(uintptr(frp) + FR_PREV_OFF)^
+	next := (^rawptr)(uintptr(frp) + FR_NEXT_OFF)^
+	if prev != nil {
+		(^rawptr)(uintptr(prev) + FR_NEXT_OFF)^ = next
+	} else {
+		parent := (^rawptr)(uintptr(frp) + FR_PARENT_OFF)^
+		(^rawptr)(uintptr(parent) + FR_CHILD_OFF)^ = next
+	}
+	if next != nil {
+		(^rawptr)(uintptr(next) + FR_PREV_OFF)^ = prev
+	}
+}
+
+frame_flatten_o :: proc "c" (frp_in: rawptr) {
+	frp := frp_in
+	if (^rawptr)(uintptr(frp) + FR_NEXT_OFF)^ != nil ||
+	(^rawptr)(uintptr(frp) + FR_PREV_OFF)^ != nil {
+		return
+	}
+
+	// There is no other frame in this list, move its info to the parent
+	// and remove it.
+	parent := (^rawptr)(uintptr(frp) + FR_PARENT_OFF)^
+	(^u8)(uintptr(parent) + FR_LAYOUT_OFF)^ = b_at((^u8)(uintptr(frp) + FR_LAYOUT_OFF), 0)
+	(^rawptr)(uintptr(parent) + FR_CHILD_OFF)^ = (^rawptr)(uintptr(frp) + FR_CHILD_OFF)^
+	frp2 := (^rawptr)(uintptr(frp) + FR_CHILD_OFF)^
+	for frp2 != nil {
+		(^rawptr)(uintptr(frp2) + FR_PARENT_OFF)^ = parent
+		frp2 = (^rawptr)(uintptr(frp2) + FR_NEXT_OFF)^
+	}
+	(^rawptr)(uintptr(parent) + FR_WIN_OFF)^ = (^rawptr)(uintptr(frp) + FR_WIN_OFF)^
+	if (^rawptr)(uintptr(frp) + FR_WIN_OFF)^ != nil {
+		(^rawptr)(uintptr((^rawptr)(uintptr(frp) + FR_WIN_OFF)^) + W_FRAME_OFF)^ = parent
+	}
+	frp2 = parent
+	if (^rawptr)(uintptr(topframe_g) + FR_CHILD_OFF)^ == frp {
+		(^rawptr)(uintptr(topframe_g) + FR_CHILD_OFF)^ = frp2
+	}
+	xfree(frp)
+
+	frp = (^rawptr)(uintptr(frp2) + FR_PARENT_OFF)^
+	if frp != nil && b_at((^u8)(uintptr(frp) + FR_LAYOUT_OFF), 0) ==
+	b_at((^u8)(uintptr(frp2) + FR_LAYOUT_OFF), 0) {
+		// The frame above the parent has the same layout, have to merge
+		// the frames into this list.
+		if (^rawptr)(uintptr(frp) + FR_CHILD_OFF)^ == frp2 {
+			(^rawptr)(uintptr(frp) + FR_CHILD_OFF)^ = (^rawptr)(uintptr(frp2) + FR_CHILD_OFF)^
+		}
+		frp2_child := (^rawptr)(uintptr(frp2) + FR_CHILD_OFF)^
+		(^rawptr)(uintptr(frp2_child) + FR_PREV_OFF)^ = (^rawptr)(uintptr(frp2) + FR_PREV_OFF)^
+		if (^rawptr)(uintptr(frp2) + FR_PREV_OFF)^ != nil {
+			(^rawptr)(uintptr((^rawptr)(uintptr(frp2) + FR_PREV_OFF)^) + FR_NEXT_OFF)^ = frp2_child
+		}
+		frp3 := frp2_child
+		for {
+			(^rawptr)(uintptr(frp3) + FR_PARENT_OFF)^ = frp
+			if (^rawptr)(uintptr(frp3) + FR_NEXT_OFF)^ == nil {
+				(^rawptr)(uintptr(frp3) + FR_NEXT_OFF)^ = (^rawptr)(uintptr(frp2) + FR_NEXT_OFF)^
+				if (^rawptr)(uintptr(frp2) + FR_NEXT_OFF)^ != nil {
+					(^rawptr)(uintptr((^rawptr)(uintptr(frp2) + FR_NEXT_OFF)^) + FR_PREV_OFF)^ = frp3
+				}
+				break
+			}
+			frp3 = (^rawptr)(uintptr(frp3) + FR_NEXT_OFF)^
+		}
+	}
+}
+
+frame_comp_pos_o :: proc "c" (topfrp: rawptr, row: ^C.int, col: ^C.int) {
+	wp := (^rawptr)(uintptr(topfrp) + FR_WIN_OFF)^
+	if wp != nil {
+		if (^C.int)(uintptr(wp) + W_WINROW_OFF)^ != row^ ||
+		(^C.int)(uintptr(wp) + W_WINCOL_OFF)^ != col^ {
+			// position changed, redraw
+			(^C.int)(uintptr(wp) + W_WINROW_OFF)^ = row^
+			(^C.int)(uintptr(wp) + W_WINCOL_OFF)^ = col^
+			redraw_later_r(wp, UPD_NOT_VALID)
+			(^bool)(uintptr(wp) + W_REDR_STATUS_OFF)^ = true
+			(^bool)(uintptr(wp) + W_POS_CHANGED_OFF)^ = true
+		}
+		h := (^C.int)(uintptr(wp) + W_HEIGHT_OFF)^ +
+			(^C.int)(uintptr(wp) + W_HSEP_HEIGHT_OFF)^ +
+			(^C.int)(uintptr(wp) + W_STATUS_HEIGHT_OFF)^
+		fr_h := (^C.int)(uintptr(topfrp) + FR_HEIGHT_OFF)^
+		row^ += h > fr_h ? fr_h : h
+		col^ += (^C.int)(uintptr(wp) + W_WIDTH_OFF)^ +
+			(^C.int)(uintptr(wp) + W_VSEP_WIDTH_OFF)^
+	} else {
+		startrow := row^
+		startcol := col^
+		frp := (^rawptr)(uintptr(topfrp) + FR_CHILD_OFF)^
+		for frp != nil {
+			if b_at((^u8)(uintptr(topfrp) + FR_LAYOUT_OFF), 0) == FR_ROW_O {
+				row^ = startrow // all frames are at the same row
+			} else {
+				col^ = startcol // all frames are at the same col
+			}
+			frame_comp_pos_o(frp, row, col)
+			frp = (^rawptr)(uintptr(frp) + FR_NEXT_OFF)^
+		}
+	}
+}
+
+// Return the tabpage that will be used if the current one is closed.
+alt_tabpage_o :: proc "c" () -> rawptr {
+	// Use the last accessed tab page, if possible.
+	if (tcl_flags_g & K_OPT_TCL_FLAG_USELAST_O) != 0 && valid_tabpage(lastused_tabpage_g) {
+		return lastused_tabpage_g
+	}
+
+	// Use the next tab page, if possible.
+	forward := (^rawptr)(uintptr(curtab) + TP_NEXT_OFF)^ != nil &&
+		((tcl_flags_g & K_OPT_TCL_FLAG_LEFT_O) == 0 || curtab == first_tabpage)
+
+	tp: rawptr
+	if forward {
+		tp = (^rawptr)(uintptr(curtab) + TP_NEXT_OFF)^
+	} else {
+		// Use the previous tab page.
+		tp = first_tabpage
+		for (^rawptr)(uintptr(tp) + TP_NEXT_OFF)^ != curtab {
+			tp = (^rawptr)(uintptr(tp) + TP_NEXT_OFF)^
+		}
+	}
+
+	return tp
+}
+
+win_altframe_o :: proc "c" (win: rawptr, tp: rawptr) -> rawptr {
+	if one_window(win, tp) {
+		return (^rawptr)(uintptr(alt_tabpage_o()) + TP_CURWIN_OFF)^
+	}
+
+	frp := (^rawptr)(uintptr(win) + W_FRAME_OFF)^
+
+	if (^rawptr)(uintptr(frp) + FR_PREV_OFF)^ == nil {
+		return (^rawptr)(uintptr(frp) + FR_NEXT_OFF)^
+	}
+	if (^rawptr)(uintptr(frp) + FR_NEXT_OFF)^ == nil {
+		return (^rawptr)(uintptr(frp) + FR_PREV_OFF)^
+	}
+
+	// By default the next window will get the space that was abandoned by this
+	// window
+	target_fr := (^rawptr)(uintptr(frp) + FR_NEXT_OFF)^
+	other_fr := (^rawptr)(uintptr(frp) + FR_PREV_OFF)^
+
+	// If this is part of a column of windows and 'splitbelow' is true then the
+	// previous window will get the space.
+	parent := (^rawptr)(uintptr(frp) + FR_PARENT_OFF)^
+	if parent != nil && b_at((^u8)(uintptr(parent) + FR_LAYOUT_OFF), 0) == FR_COL_O &&
+	p_sb_g != 0 {
+		target_fr = (^rawptr)(uintptr(frp) + FR_PREV_OFF)^
+		other_fr = (^rawptr)(uintptr(frp) + FR_NEXT_OFF)^
+	}
+
+	// If this is part of a row of windows, and 'splitright' is true then the
+	// previous window will get the space.
+	if parent != nil && b_at((^u8)(uintptr(parent) + FR_LAYOUT_OFF), 0) == FR_ROW_O &&
+	p_spr_g != 0 {
+		target_fr = (^rawptr)(uintptr(frp) + FR_PREV_OFF)^
+		other_fr = (^rawptr)(uintptr(frp) + FR_NEXT_OFF)^
+	}
+
+	// If 'wfh' or 'wfw' is set for the target and not for the alternate
+	// window, reverse the selection.
+	if parent != nil && b_at((^u8)(uintptr(parent) + FR_LAYOUT_OFF), 0) == FR_ROW_O {
+		if frame_fixed_width_o(target_fr) && !frame_fixed_width_o(other_fr) {
+			target_fr = other_fr
+		}
+	} else {
+		if frame_fixed_height_o(target_fr) && !frame_fixed_height_o(other_fr) {
+			target_fr = other_fr
+		}
+	}
+
+	return target_fr
+}
+
+// ── Batch 5: winframe_remove cluster (exports + static helpers) ──────────────
+
+W_WINBAR_HEIGHT_OFF :: 436
+STATUS_HEIGHT_O :: 1
+
+foreign _ {
+	@(link_name = "win_new_height")
+	win_new_height_r :: proc "c" (wp: rawptr, height: C.int) ---
+	@(link_name = "tabline_height")
+	tabline_height_r :: proc "c" () -> C.int ---
+	@(link_name = "nvim_odin_get_min_set_ch")
+	nvim_odin_get_min_set_ch_r :: proc "c" () -> C.longlong ---
+	@(link_name = "nvim_odin_set_min_set_ch")
+	nvim_odin_set_min_set_ch_r :: proc "c" (v: C.longlong) ---
+}
+// set_option_value/num_optval/Rows/p_ch/kOptCmdheight_E/global_stl_height_r reused.
+
+is_bottom_win_o :: proc "c" (wp: rawptr) -> bool {
+	frp := (^rawptr)(uintptr(wp) + W_FRAME_OFF)^
+	for (^rawptr)(uintptr(frp) + FR_PARENT_OFF)^ != nil {
+		parent := (^rawptr)(uintptr(frp) + FR_PARENT_OFF)^
+		if b_at((^u8)(uintptr(parent) + FR_LAYOUT_OFF), 0) == FR_COL_O &&
+		(^rawptr)(uintptr(frp) + FR_NEXT_OFF)^ != nil {
+			return false
+		}
+		frp = parent
+	}
+	return true
+}
+
+frame_minheight_o :: proc "c" (topfrp: rawptr, next_curwin: rawptr) -> C.int {
+	m: C.int = 0
+
+	if (^rawptr)(uintptr(topfrp) + FR_WIN_OFF)^ != nil {
+		wp := (^rawptr)(uintptr(topfrp) + FR_WIN_OFF)^
+		// Combined height of window bar and separator column or status line.
+		extra_height := (^C.int)(uintptr(wp) + W_WINBAR_HEIGHT_OFF)^ +
+			(^C.int)(uintptr(wp) + W_HSEP_HEIGHT_OFF)^ +
+			(^C.int)(uintptr(wp) + W_STATUS_HEIGHT_OFF)^
+
+		if wp == next_curwin {
+			m = C.int(p_wh_opt) + extra_height
+		} else {
+			m = C.int(p_wmh_opt) + extra_height
+			if wp == curwin && next_curwin == nil {
+				// Current window is minimal one line high.
+				if p_wmh_opt == 0 {
+					m += 1
+				}
+			}
+		}
+	} else if b_at((^u8)(uintptr(topfrp) + FR_LAYOUT_OFF), 0) == FR_ROW_O {
+		// get the minimal height from each frame in this row
+		m = 0
+		frp := (^rawptr)(uintptr(topfrp) + FR_CHILD_OFF)^
+		for frp != nil {
+			n := frame_minheight_o(frp, next_curwin)
+			if n > m {
+				m = n
+			}
+			frp = (^rawptr)(uintptr(frp) + FR_NEXT_OFF)^
+		}
+	} else {
+		// Add up the minimal heights for all frames in this column.
+		m = 0
+		frp := (^rawptr)(uintptr(topfrp) + FR_CHILD_OFF)^
+		for frp != nil {
+			m += frame_minheight_o(frp, next_curwin)
+			frp = (^rawptr)(uintptr(frp) + FR_NEXT_OFF)^
+		}
+	}
+
+	return m
+}
+
+frame_minwidth_o :: proc "c" (topfrp: rawptr, next_curwin: rawptr) -> C.int {
+	m: C.int = 0
+
+	if (^rawptr)(uintptr(topfrp) + FR_WIN_OFF)^ != nil {
+		wp := (^rawptr)(uintptr(topfrp) + FR_WIN_OFF)^
+		if wp == next_curwin {
+			m = C.int(p_wiw_opt) + (^C.int)(uintptr(wp) + W_VSEP_WIDTH_OFF)^
+		} else {
+			// window: minimal width of the window plus separator column
+			m = C.int(p_wmw_opt) + (^C.int)(uintptr(wp) + W_VSEP_WIDTH_OFF)^
+			// Current window is minimal one column wide
+			if p_wmw_opt == 0 && wp == curwin && next_curwin == nil {
+				m += 1
+			}
+		}
+	} else if b_at((^u8)(uintptr(topfrp) + FR_LAYOUT_OFF), 0) == FR_COL_O {
+		// get the minimal width from each frame in this column
+		m = 0
+		frp := (^rawptr)(uintptr(topfrp) + FR_CHILD_OFF)^
+		for frp != nil {
+			n := frame_minwidth_o(frp, next_curwin)
+			if n > m {
+				m = n
+			}
+			frp = (^rawptr)(uintptr(frp) + FR_NEXT_OFF)^
+		}
+	} else {
+		// Add up the minimal widths for all frames in this row.
+		m = 0
+		frp := (^rawptr)(uintptr(topfrp) + FR_CHILD_OFF)^
+		for frp != nil {
+			m += frame_minwidth_o(frp, next_curwin)
+			frp = (^rawptr)(uintptr(frp) + FR_NEXT_OFF)^
+		}
+	}
+
+	return m
+}
+
+@(export)
+frame_new_height :: proc "c"(topfrp: rawptr, height_in: C.int, topfirst: bool, wfh: bool, set_ch: bool) {
+	height := height_in
+	if (^rawptr)(uintptr(topfrp) + FR_PARENT_OFF)^ == nil && set_ch {
+		// topframe: update the command line height, with side effects.
+		new_ch := max(nvim_odin_get_min_set_ch_r(),
+			C.longlong(p_ch) + C.longlong((^C.int)(uintptr(topfrp) + FR_HEIGHT_OFF)^) - C.longlong(height))
+		if new_ch != C.longlong(p_ch) {
+			save_ch := nvim_odin_get_min_set_ch_r()
+			set_option_value(kOptCmdheight_E, num_optval(new_ch), 0)
+			nvim_odin_set_min_set_ch_r(save_ch)
+		}
+		height = min(Rows - C.int(p_ch) - tabline_height_r() - global_stl_height_r(), height)
+	}
+	if (^rawptr)(uintptr(topfrp) + FR_WIN_OFF)^ != nil {
+		// Simple case: just one window.
+		wp := (^rawptr)(uintptr(topfrp) + FR_WIN_OFF)^
+		if is_bottom_win_o(wp) {
+			(^C.int)(uintptr(wp) + W_HSEP_HEIGHT_OFF)^ = 0
+		}
+		win_new_height_r(wp, height - (^C.int)(uintptr(wp) + W_HSEP_HEIGHT_OFF)^ -
+			(^C.int)(uintptr(wp) + W_STATUS_HEIGHT_OFF)^)
+	} else if b_at((^u8)(uintptr(topfrp) + FR_LAYOUT_OFF), 0) == FR_ROW_O {
+		frp: rawptr
+		for {
+			// All frames in this row get the same new height.
+			done := true
+			child := (^rawptr)(uintptr(topfrp) + FR_CHILD_OFF)^
+			for child != nil {
+				frp = child
+				frame_new_height(child, height, topfirst, wfh, set_ch)
+				if (^C.int)(uintptr(frp) + FR_HEIGHT_OFF)^ > height {
+					// Could not fit the windows, make the whole row higher.
+					height = (^C.int)(uintptr(frp) + FR_HEIGHT_OFF)^
+					done = false
+					break
+				}
+				child = (^rawptr)(uintptr(child) + FR_NEXT_OFF)^
+			}
+			if done {
+				frp = nil
+			}
+			if frp == nil {
+				break
+			}
+		}
+	} else { // fr_layout == FR_COL
+		// Complicated case: Resize a column of frames.  Resize the bottom
+		// frame first, frames above that when needed.
+
+		frp := (^rawptr)(uintptr(topfrp) + FR_CHILD_OFF)^
+		if wfh {
+			// Advance past frames with one window with 'wfh' set.
+			for frame_fixed_height_o(frp) {
+				frp = (^rawptr)(uintptr(frp) + FR_NEXT_OFF)^
+				if frp == nil {
+					return // no frame without 'wfh', give up
+				}
+			}
+		}
+		if !topfirst {
+			// Find the bottom frame of this column
+			for (^rawptr)(uintptr(frp) + FR_NEXT_OFF)^ != nil {
+				frp = (^rawptr)(uintptr(frp) + FR_NEXT_OFF)^
+			}
+			if wfh {
+				// Advance back for frames with one window with 'wfh' set.
+				for frame_fixed_height_o(frp) {
+					frp = (^rawptr)(uintptr(frp) + FR_PREV_OFF)^
+				}
+			}
+		}
+
+		extra_lines := height - (^C.int)(uintptr(topfrp) + FR_HEIGHT_OFF)^
+		if extra_lines < 0 {
+			// reduce height of contained frames, bottom or top frame first
+			for frp != nil {
+				h := frame_minheight_o(frp, nil)
+				if (^C.int)(uintptr(frp) + FR_HEIGHT_OFF)^ + extra_lines < h {
+					extra_lines += (^C.int)(uintptr(frp) + FR_HEIGHT_OFF)^ - h
+					frame_new_height(frp, h, topfirst, wfh, set_ch)
+				} else {
+					frame_new_height(frp, (^C.int)(uintptr(frp) + FR_HEIGHT_OFF)^ + extra_lines,
+						topfirst, wfh, set_ch)
+					break
+				}
+				if topfirst {
+					for {
+						frp = (^rawptr)(uintptr(frp) + FR_NEXT_OFF)^
+						if !(wfh && frp != nil && frame_fixed_height_o(frp)) {
+							break
+						}
+					}
+				} else {
+					for {
+						frp = (^rawptr)(uintptr(frp) + FR_PREV_OFF)^
+						if !(wfh && frp != nil && frame_fixed_height_o(frp)) {
+							break
+						}
+					}
+				}
+				// Increase "height" if we could not reduce enough frames.
+				if frp == nil {
+					height -= extra_lines
+				}
+			}
+		} else if extra_lines > 0 {
+			// increase height of bottom or top frame
+			frame_new_height(frp, (^C.int)(uintptr(frp) + FR_HEIGHT_OFF)^ + extra_lines,
+				topfirst, wfh, set_ch)
+		}
+	}
+	(^C.int)(uintptr(topfrp) + FR_HEIGHT_OFF)^ = height
+}
+
+@(export)
+frame_new_width :: proc "c"(topfrp: rawptr, width_in: C.int, leftfirst: bool, wfw: bool) {
+	width := width_in
+	if b_at((^u8)(uintptr(topfrp) + FR_LAYOUT_OFF), 0) == FR_LEAF_O {
+		// Simple case: just one window.
+		wp := (^rawptr)(uintptr(topfrp) + FR_WIN_OFF)^
+		// Find out if there are any windows right of this one.
+		frp := topfrp
+		for (^rawptr)(uintptr(frp) + FR_PARENT_OFF)^ != nil {
+			parent := (^rawptr)(uintptr(frp) + FR_PARENT_OFF)^
+			if b_at((^u8)(uintptr(parent) + FR_LAYOUT_OFF), 0) == FR_ROW_O &&
+			(^rawptr)(uintptr(frp) + FR_NEXT_OFF)^ != nil {
+				break
+			}
+			frp = parent
+		}
+		if (^rawptr)(uintptr(frp) + FR_PARENT_OFF)^ == nil {
+			(^C.int)(uintptr(wp) + W_VSEP_WIDTH_OFF)^ = 0
+		}
+		win_new_width_r(wp, width - (^C.int)(uintptr(wp) + W_VSEP_WIDTH_OFF)^)
+	} else if b_at((^u8)(uintptr(topfrp) + FR_LAYOUT_OFF), 0) == FR_COL_O {
+		frp: rawptr
+		for {
+			// All frames in this column get the same new width.
+			done := true
+			child := (^rawptr)(uintptr(topfrp) + FR_CHILD_OFF)^
+			for child != nil {
+				frp = child
+				frame_new_width(frp, width, leftfirst, wfw)
+				if (^C.int)(uintptr(frp) + FR_WIDTH_OFF)^ > width {
+					// Could not fit the windows, make whole column wider.
+					width = (^C.int)(uintptr(frp) + FR_WIDTH_OFF)^
+					done = false
+					break
+				}
+				child = (^rawptr)(uintptr(child) + FR_NEXT_OFF)^
+			}
+			if done {
+				frp = nil
+			}
+			if frp == nil {
+				break
+			}
+		}
+	} else { // fr_layout == FR_ROW
+		// Complicated case: Resize a row of frames.  Resize the rightmost
+		// frame first, frames left of it when needed.
+
+		frp := (^rawptr)(uintptr(topfrp) + FR_CHILD_OFF)^
+		if wfw {
+			// Advance past frames with one window with 'wfw' set.
+			for frame_fixed_width_o(frp) {
+				frp = (^rawptr)(uintptr(frp) + FR_NEXT_OFF)^
+				if frp == nil {
+					return // no frame without 'wfw', give up
+				}
+			}
+		}
+		if !leftfirst {
+			// Find the rightmost frame of this row
+			for (^rawptr)(uintptr(frp) + FR_NEXT_OFF)^ != nil {
+				frp = (^rawptr)(uintptr(frp) + FR_NEXT_OFF)^
+			}
+			if wfw {
+				// Advance back for frames with one window with 'wfw' set.
+				for frame_fixed_width_o(frp) {
+					frp = (^rawptr)(uintptr(frp) + FR_PREV_OFF)^
+				}
+			}
+		}
+
+		extra_cols := width - (^C.int)(uintptr(topfrp) + FR_WIDTH_OFF)^
+		if extra_cols < 0 {
+			// reduce frame width, rightmost frame first
+			for frp != nil {
+				w := frame_minwidth_o(frp, nil)
+				if (^C.int)(uintptr(frp) + FR_WIDTH_OFF)^ + extra_cols < w {
+					extra_cols += (^C.int)(uintptr(frp) + FR_WIDTH_OFF)^ - w
+					frame_new_width(frp, w, leftfirst, wfw)
+				} else {
+					frame_new_width(frp, (^C.int)(uintptr(frp) + FR_WIDTH_OFF)^ + extra_cols,
+						leftfirst, wfw)
+					break
+				}
+				if leftfirst {
+					for {
+						frp = (^rawptr)(uintptr(frp) + FR_NEXT_OFF)^
+						if !(wfw && frp != nil && frame_fixed_width_o(frp)) {
+							break
+						}
+					}
+				} else {
+					for {
+						frp = (^rawptr)(uintptr(frp) + FR_PREV_OFF)^
+						if !(wfw && frp != nil && frame_fixed_width_o(frp)) {
+							break
+						}
+					}
+				}
+				// Increase "width" if we could not reduce enough frames.
+				if frp == nil {
+					width -= extra_cols
+				}
+			}
+		} else if extra_cols > 0 {
+			// increase width of rightmost frame
+			frame_new_width(frp, (^C.int)(uintptr(frp) + FR_WIDTH_OFF)^ + extra_cols,
+				leftfirst, wfw)
+		}
+	}
+	(^C.int)(uintptr(topfrp) + FR_WIDTH_OFF)^ = width
+}
+
+@(export)
+winframe_find_altwin :: proc "c"(win: rawptr, dirp: ^C.int, tp: rawptr, altfr: ^rawptr) -> rawptr {
+	// If there is only one non-floating window there is nothing to remove.
+	if one_window(win, tp) {
+		return nil
+	}
+
+	frp_close := (^rawptr)(uintptr(win) + W_FRAME_OFF)^
+
+	// Find the window and frame that gets the space.
+	frp2 := win_altframe_o(win, tp)
+	wp := frame2win(frp2)
+
+	if b_at((^u8)(uintptr((^rawptr)(uintptr(frp_close) + FR_PARENT_OFF)^) + FR_LAYOUT_OFF), 0) == FR_COL_O {
+		// When 'winfixheight' is set, try to find another frame in the column
+		// (as close to the closed frame as possible) to distribute the height
+		// to.
+		frp2_win := (^rawptr)(uintptr(frp2) + FR_WIN_OFF)^
+		if frp2_win != nil && (^C.int)(uintptr(frp2_win) + W_P_WFH_OFF)^ != 0 {
+			frp := (^rawptr)(uintptr(frp_close) + FR_PREV_OFF)^
+			frp3 := (^rawptr)(uintptr(frp_close) + FR_NEXT_OFF)^
+			for frp != nil || frp3 != nil {
+				if frp != nil {
+					if !frame_fixed_height_o(frp) {
+						frp2 = frp
+						wp = frame2win(frp2)
+						break
+					}
+					frp = (^rawptr)(uintptr(frp) + FR_PREV_OFF)^
+				}
+				if frp3 != nil {
+					frp3_win := (^rawptr)(uintptr(frp3) + FR_WIN_OFF)^
+					if frp3_win != nil && (^C.int)(uintptr(frp3_win) + W_P_WFH_OFF)^ == 0 {
+						frp2 = frp3
+						wp = frp3_win
+						break
+					}
+					frp3 = (^rawptr)(uintptr(frp3) + FR_NEXT_OFF)^
+				}
+			}
+		}
+		dirp^ = 'v'
+	} else {
+		// When 'winfixwidth' is set, try to find another frame in the column
+		// (as close to the closed frame as possible) to distribute the width
+		// to.
+		frp2_win := (^rawptr)(uintptr(frp2) + FR_WIN_OFF)^
+		if frp2_win != nil && (^C.int)(uintptr(frp2_win) + W_P_WFW_OFF)^ != 0 {
+			frp := (^rawptr)(uintptr(frp_close) + FR_PREV_OFF)^
+			frp3 := (^rawptr)(uintptr(frp_close) + FR_NEXT_OFF)^
+			for frp != nil || frp3 != nil {
+				if frp != nil {
+					if !frame_fixed_width_o(frp) {
+						frp2 = frp
+						wp = frame2win(frp2)
+						break
+					}
+					frp = (^rawptr)(uintptr(frp) + FR_PREV_OFF)^
+				}
+				if frp3 != nil {
+					frp3_win := (^rawptr)(uintptr(frp3) + FR_WIN_OFF)^
+					if frp3_win != nil && (^C.int)(uintptr(frp3_win) + W_P_WFW_OFF)^ == 0 {
+						frp2 = frp3
+						wp = frp3_win
+						break
+					}
+					frp3 = (^rawptr)(uintptr(frp3) + FR_NEXT_OFF)^
+				}
+			}
+		}
+		dirp^ = 'h'
+	}
+
+	if altfr != nil {
+		altfr^ = frp2
+	}
+
+	return wp
+}
+
+@(export)
+winframe_remove :: proc "c"(win: rawptr, dirp: ^C.int, tp: rawptr, unflat_altfr: ^rawptr) -> rawptr {	altfr: rawptr = nil
+	wp := winframe_find_altwin(win, dirp, tp, &altfr)
+	if wp == nil {
+		return nil
+	}
+
+	frp_close := (^rawptr)(uintptr(win) + W_FRAME_OFF)^
+
+	frame_locked_inc_o()
+
+	// Save the position of the containing frame (which will also contain the
+	// altframe) before we remove anything, to recompute window positions later.
+	parent := (^rawptr)(uintptr(frp_close) + FR_PARENT_OFF)^
+	topleft := frame2win(parent)
+	row := (^C.int)(uintptr(topleft) + W_WINROW_OFF)^
+	col := (^C.int)(uintptr(topleft) + W_WINCOL_OFF)^
+
+	// If this is a rightmost window, remove vertical separators to the left.
+	if (^C.int)(uintptr(win) + W_VSEP_WIDTH_OFF)^ == 0 &&
+	b_at((^u8)(uintptr(parent) + FR_LAYOUT_OFF), 0) == FR_ROW_O &&
+	(^rawptr)(uintptr(frp_close) + FR_PREV_OFF)^ != nil {
+		frame_set_vsep_o((^rawptr)(uintptr(frp_close) + FR_PREV_OFF)^, false)
+	}
+
+	// Remove this frame from the list of frames.
+	frame_remove_o(frp_close)
+
+	if dirp^ == 'v' {
+		frame_new_height(altfr,
+			(^C.int)(uintptr(altfr) + FR_HEIGHT_OFF)^ +
+			(^C.int)(uintptr(frp_close) + FR_HEIGHT_OFF)^,
+			altfr == (^rawptr)(uintptr(frp_close) + FR_NEXT_OFF)^, false, false)
+	} else {
+		frame_new_width(altfr,
+			(^C.int)(uintptr(altfr) + FR_WIDTH_OFF)^ +
+			(^C.int)(uintptr(frp_close) + FR_WIDTH_OFF)^,
+			altfr == (^rawptr)(uintptr(frp_close) + FR_NEXT_OFF)^, false)
+	}
+
+	// If the altframe wasn't adjacent and left/above, resizing it will have
+	// changed window positions within the parent frame.  Recompute them.
+	if altfr != (^rawptr)(uintptr(frp_close) + FR_PREV_OFF)^ {
+		frame_comp_pos_o(parent, &row, &col)
+	}
+
+	if unflat_altfr == nil {
+		frame_flatten_o(altfr)
+	} else {
+		unflat_altfr^ = altfr
+	}
+
+	frame_locked_dec_o()
+
+	return wp
+}
+
+// ── Batch 9: win_free ────────────────────────────────────────────────────────
+W_LINES_OFF :: 632
+W_STATUS_CLICK_DEFS_OFF :: 11080
+W_STATUS_CLICK_DEFS_SIZE_OFF :: 11088
+W_WINBAR_CLICK_DEFS_OFF :: 11096
+W_WINBAR_CLICK_DEFS_SIZE_OFF :: 11104
+W_STATUSCOL_CLICK_DEFS_OFF :: 11112
+W_P_CC_COLS_OFF :: 4224
+TP_PREVWIN_OFF :: 32
+DV_HASHTAB_OFF :: 16
+WC_TITLE_CHUNKS_OFF :: 400
+WC_FOOTER_CHUNKS_OFF :: 440
+
+foreign _ {
+	@(link_name = "alist_unlink")
+	alist_unlink_r :: proc "c" (al: rawptr) ---
+	@(link_name = "vars_clear")
+	vars_clear_r :: proc "c" (ht: rawptr) ---
+	@(link_name = "unref_var_dict")
+	unref_var_dict_r :: proc "c" (dict: rawptr) ---
+	@(link_name = "tagstack_clear_entry")
+	tagstack_clear_entry_r :: proc "c" (item: rawptr) ---
+	@(link_name = "stl_clear_click_defs")
+	stl_clear_click_defs_r :: proc "c" (click_defs: rawptr, click_defs_size: C.size_t) ---
+	@(link_name = "clear_matches")
+	clear_matches_r :: proc "c" (wp: rawptr) ---
+	@(link_name = "qf_free_all")
+	qf_free_all_r :: proc "c" (wp: rawptr) ---
+	@(link_name = "win_remove")
+	win_remove_r :: proc "c" (wp: rawptr, tp: rawptr) ---
+	@(link_name = "au_pending_free_win")
+	au_pending_free_win_g: rawptr
+	@(link_name = "autocmd_busy")
+	autocmd_busy_g: bool
+}
+// clearFolding/clear_winopt/deleteFoldRecurse/free_jumplist/win_free_grid_r/
+// xfree/block+unblock/win_valid_any_tab/set_destroy-via-xfree reused.
+
+// Free one WinInfo.
+free_wininfo_o :: proc "c"(wip: rawptr, bp: rawptr) {
+	if (^bool)(uintptr(wip) + WI_OPTSET_OFF)^ {
+		clear_winopt(transmute(rawptr)(uintptr(wip) + WI_OPT_OFF))
+		deleteFoldRecurse(bp, (^Garray)(uintptr(wip) + WI_FOLDS_OFF))
+	}
+	xfree(wip)
+}
+
+// Remove window 'wp' from the window list and free the structure.
+//
+// @param tp tab page "win" is in, NULL for current
+@(export)
+win_free :: proc "c"(wp: rawptr, tp: rawptr) {
+	map_del_int_ptr_t(&window_handles_g, (^C.int)(uintptr(wp) + W_HANDLE_OFF)^, nil)
+	clearFolding(wp)
+
+	// reduce the reference count to the argument list.
+	alist_unlink_r((^rawptr)(uintptr(wp) + W_ALIST_OFF)^)
+
+	// Don't execute autocommands while the window is halfway being deleted.
+	block_autocmds_r()
+
+	// set_destroy(uint32_t): C khash layout {4xu32, flags@16, keys@24}.
+	ns_set := uintptr(wp) + W_NS_SET_OFF
+	xfree((^rawptr)(ns_set + 16)^)
+	xfree((^rawptr)(ns_set + 24)^)
+
+	clear_winopt(transmute(rawptr)(uintptr(wp) + W_ONEBUF_OPT_OFF))
+	clear_winopt(transmute(rawptr)(uintptr(wp) + W_ALLBUF_OPT_OFF))
+
+	xfree((^rawptr)(uintptr(wp) + W_P_LCS_CHARS_OFF + 56)^)
+	xfree((^rawptr)(uintptr(wp) + W_P_LCS_CHARS_OFF + 64)^)
+
+	vars := (^rawptr)(uintptr(wp) + W_VARS_OFF)^
+	vars_clear_r(transmute(rawptr)(uintptr(vars) + DV_HASHTAB_OFF))
+	hash_init_r(transmute(rawptr)(uintptr(vars) + DV_HASHTAB_OFF))
+	unref_var_dict_r(vars)
+
+	if prevwin_g == wp {
+		prevwin_g = nil
+	}
+	tp2 := first_tabpage
+	for tp2 != nil {
+		if (^rawptr)(uintptr(tp2) + TP_PREVWIN_OFF)^ == wp {
+			(^rawptr)(uintptr(tp2) + TP_PREVWIN_OFF)^ = nil
+		}
+		tp2 = (^rawptr)(uintptr(tp2) + TP_NEXT_OFF)^
+	}
+
+	xfree((^rawptr)(uintptr(wp) + W_LINES_OFF)^)
+
+	for i: C.int = 0; i < (^C.int)(uintptr(wp) + W_TAGSTACKLEN_OFF)^; i += 1 {
+		tagstack_clear_entry_r(transmute(rawptr)(uintptr(wp) + W_TAGSTACK_OFF + uintptr(i) * TAGGY_SIZE_O))
+	}
+
+	xfree((^rawptr)(uintptr(wp) + W_LOCALDIR_OFF)^)
+	xfree((^rawptr)(uintptr(wp) + W_PREVDIR_OFF)^)
+
+	stl_clear_click_defs_r((^rawptr)(uintptr(wp) + W_STATUS_CLICK_DEFS_OFF)^,
+		(^C.size_t)(uintptr(wp) + W_STATUS_CLICK_DEFS_SIZE_OFF)^)
+	xfree((^rawptr)(uintptr(wp) + W_STATUS_CLICK_DEFS_OFF)^)
+
+	stl_clear_click_defs_r((^rawptr)(uintptr(wp) + W_WINBAR_CLICK_DEFS_OFF)^,
+		(^C.size_t)(uintptr(wp) + W_WINBAR_CLICK_DEFS_SIZE_OFF)^)
+	xfree((^rawptr)(uintptr(wp) + W_WINBAR_CLICK_DEFS_OFF)^)
+
+	sc_map := (^rawptr)(uintptr(wp) + W_STATUSCOL_CLICK_DEFS_OFF)^
+	if sc_map != nil {
+		sc_mp := (^Map_int_StcClicks)(sc_map)
+		// values[] is dense 0..n_keys (key index space, not buckets).
+		for i: u32 = 0; i < sc_mp.set.h.n_keys; i += 1 {
+			inner := sc_mp.values[i] // StcClicks map
+			for j: u32 = 0; j < inner.set.h.n_keys; j += 1 {
+				row_defs := inner.values[j] // StcClick
+				stl_clear_click_defs_r(transmute(rawptr)(row_defs.def),
+					C.size_t(row_defs.size))
+				xfree(transmute(rawptr)(row_defs.def))
+			}
+			// map_destroy(int, &inner): free keys+hash arrays.
+			xfree(transmute(rawptr)(inner.set.keys))
+			xfree(transmute(rawptr)(inner.set.h.hash))
+		}
+		// map_destroy(int, wp->w_statuscol_click_defs): frees internals only
+		// (C does not free the Map struct itself — mirror exactly).
+		xfree(transmute(rawptr)(sc_mp.set.keys))
+		xfree(transmute(rawptr)(sc_mp.set.h.hash))
+	}
+
+	// Remove the window from the b_wininfo lists, it may happen that the
+	// freed memory is re-used for another window.
+	buf := firstbuf
+	for buf != nil {
+		n := wininfo_count_o(buf)
+		pos_wip: u64 = n
+		pos_null: u64 = n
+		wip_wp: rawptr = nil
+		for i: u64 = 0; i < n; i += 1 {
+			wip := wininfo_at_o(buf, i)
+			if (^rawptr)(uintptr(wip) + WI_WIN_OFF)^ == wp {
+				wip_wp = wip
+				pos_wip = i
+			} else if (^rawptr)(uintptr(wip) + WI_WIN_OFF)^ == nil {
+				pos_null = i
+			}
+		}
+
+		if wip_wp != nil {
+			(^rawptr)(uintptr(wip_wp) + WI_WIN_OFF)^ = nil
+			// Discard saved options if the style is minimal.
+			if (^C.int)(uintptr(wp) + W_CONFIG_OFF)^ == K_WIN_STYLE_MINIMAL_O &&
+			(^bool)(uintptr(wip_wp) + WI_OPTSET_OFF)^ {
+				clear_winopt(transmute(rawptr)(uintptr(wip_wp) + WI_OPT_OFF))
+				deleteFoldRecurse(buf, (^Garray)(uintptr(wip_wp) + WI_FOLDS_OFF))
+				(^bool)(uintptr(wip_wp) + WI_OPTSET_OFF)^ = false
+			}
+			// If there already is an entry with "wi_win" set to NULL, only
+			// the first entry with NULL will ever be used, delete the other one.
+			if pos_null < n {
+				pos_delete := max(pos_null, pos_wip)
+				free_wininfo_o(wininfo_at_o(buf, pos_delete), buf)
+				// kv_shift(buf->b_wininfo, pos_delete, 1)
+				items := ([^]rawptr)((^rawptr)(uintptr(buf) + B_WININFO_OFF + 16)^)
+				for j := pos_delete + 1; j < n; j += 1 {
+					items[j - 1] = items[j]
+				}
+				(^u64)(uintptr(buf) + B_WININFO_OFF)^ = n - 1
+			}
+		}
+		buf = (^rawptr)(uintptr(buf) + B_NEXT_OFF)^
+	}
+
+	// free the border text
+	clear_virttext_r((^Kvec_VT)(uintptr(wp) + W_CONFIG_OFF + WC_TITLE_CHUNKS_OFF))
+	clear_virttext_r((^Kvec_VT)(uintptr(wp) + W_CONFIG_OFF + WC_FOOTER_CHUNKS_OFF))
+
+	clear_matches_r(wp)
+
+	free_jumplist(wp)
+
+	qf_free_all_r(wp)
+
+	xfree((^rawptr)(uintptr(wp) + W_P_CC_COLS_OFF)^)
+
+	win_free_grid_r(wp, false)
+
+	if win_valid_any_tab(wp) {
+		win_remove_r(wp, tp)
+	}
+	if autocmd_busy_g {
+		(^rawptr)(uintptr(wp) + W_NEXT_OFF)^ = au_pending_free_win_g
+		au_pending_free_win_g = wp
+	} else {
+		xfree(wp)
+	}
+
+	unblock_autocmds_r()
+}
+
+// ── win_split_ins ────────────────────────────────────────────────────────────
+// When "new_wp" is NULL: split the current window in two.
+// When "new_wp" is not NULL: insert this window at the far
+// top/left/right/bottom.
+// When "to_flatten" is not NULL: flatten this frame before reorganising frames;
+// remains unflattened on failure.
+//
+// On failure, if "new_wp" was not NULL, no changes will have been made to the
+// window layout or sizes.
+// @return NULL for failure, or pointer to new window
+@(export)
+win_split_ins :: proc "c"(size: C.int, flags: C.int, new_wp: rawptr, dir: C.int, to_flatten: rawptr) -> rawptr {
+	wp := new_wp
+
+	// aucmd_win[] should always remain floating
+	if new_wp != nil && is_aucmd_win_r(new_wp) {
+		return nil
+	}
+
+	if new_wp == nil {
+		trigger_winnewpre_o()
+	}
+
+	oldwin: rawptr
+	if (flags & WSP_TOP_O) != 0 {
+		oldwin = firstwin
+	} else if (flags & WSP_BOT_O) != 0 || (^bool)(uintptr(curwin) + W_FLOATING_OFF)^ {
+		// can't split float, use last nonfloating window instead
+		oldwin = lastwin_nofloating(nil)
+	} else {
+		oldwin = curwin
+	}
+
+	need_status: C.int = 0
+	new_size := size
+	vertical := (flags & WSP_VERT_O) != 0
+	toplevel := (flags & (WSP_TOP_O | WSP_BOT_O)) != 0
+
+	// add a status line when p_ls == 1 and splitting the first window
+	if one_window(firstwin, nil) && p_ls_g == 1 &&
+	(^C.int)(uintptr(oldwin) + W_STATUS_HEIGHT_OFF)^ == 0 {
+		if (^C.int)(uintptr(oldwin) + W_HEIGHT_OFF)^ <= C.int(p_wmh_opt) {
+			emsg(cstring(E36_S))
+			return nil
+		}
+		need_status = STATUS_HEIGHT_O
+		win_float_anchor_laststatus_r()
+	}
+
+	do_equal := false
+	oldwin_height: C.int = 0
+	layout := vertical ? FR_ROW_O : FR_COL_O
+	did_set_fraction := false
+
+	if vertical {
+		// Check if we are able to split the current window and compute its
+		// width. Current window requires at least 1 space.
+		wmw1 := p_wmw_opt == 0 ? 1 : C.int(p_wmw_opt)
+		needed := wmw1 + 1
+		if (flags & WSP_ROOM_O) != 0 {
+			needed += C.int(p_wiw_opt) - wmw1
+		}
+		minwidth: C.int = 0
+		available: C.int = 0
+		if toplevel {
+			minwidth = frame_minwidth_o(topframe_g, nowin_o())
+			available = (^C.int)(uintptr(topframe_g) + FR_WIDTH_OFF)^
+			needed += minwidth
+		} else if p_ea_g != 0 {
+			minwidth = frame_minwidth_o((^rawptr)(uintptr(oldwin) + W_FRAME_OFF)^, nowin_o())
+			prevfrp := (^rawptr)(uintptr(oldwin) + W_FRAME_OFF)^
+			frp := (^rawptr)(uintptr(prevfrp) + FR_PARENT_OFF)^
+			for frp != nil {
+				if b_at((^u8)(uintptr(frp) + FR_LAYOUT_OFF), 0) == FR_ROW_O {
+					child := (^rawptr)(uintptr(frp) + FR_CHILD_OFF)^
+					for child != nil {
+						if child != prevfrp {
+							minwidth += frame_minwidth_o(child, nowin_o())
+						}
+						child = (^rawptr)(uintptr(child) + FR_NEXT_OFF)^
+					}
+				}
+				prevfrp = frp
+				frp = (^rawptr)(uintptr(frp) + FR_PARENT_OFF)^
+			}
+			available = (^C.int)(uintptr(topframe_g) + FR_WIDTH_OFF)^
+			needed += minwidth
+		} else {
+			minwidth = frame_minwidth_o((^rawptr)(uintptr(oldwin) + W_FRAME_OFF)^, nowin_o())
+			available = (^C.int)(uintptr((^rawptr)(uintptr(oldwin) + W_FRAME_OFF)^) + FR_WIDTH_OFF)^
+			needed += minwidth
+		}
+		if available < needed {
+			emsg(cstring(E36_S))
+			return nil
+		}
+		if new_size == 0 {
+			new_size = (^C.int)(uintptr(oldwin) + W_WIDTH_OFF)^ / 2
+		}
+		new_size = max(min(new_size, available - minwidth - 1), wmw1)
+
+		// if it doesn't fit in the current window, need win_equal()
+		if (^C.int)(uintptr(oldwin) + W_WIDTH_OFF)^ - new_size - 1 < C.int(p_wmw_opt) {
+			do_equal = true
+		}
+
+		// We don't like to take lines for the new window from a
+		// 'winfixwidth' window. Take them from a window to the left or right
+		// instead, if possible. Add one for the separator.
+		if (^C.int)(uintptr(oldwin) + W_P_WFW_OFF)^ != 0 {
+			win_setwidth_win_r((^C.int)(uintptr(oldwin) + W_WIDTH_OFF)^ + new_size + 1,
+				oldwin, true)
+		}
+
+		// Only make all windows the same width if one of them (except oldwin)
+		// is wider than one of the split windows.
+		if !do_equal && p_ea_g != 0 && size == 0 && b_at(p_ead_g, 0) != 'v' &&
+		(^rawptr)(uintptr((^rawptr)(uintptr(oldwin) + W_FRAME_OFF)^) + FR_PARENT_OFF)^ != nil {
+			frp := (^rawptr)(uintptr((^rawptr)(uintptr(oldwin) + W_FRAME_OFF)^) + FR_CHILD_OFF)^
+			// NOTE: C walks fr_parent->fr_child; same thing via oldwin frame parent.
+			frp = (^rawptr)(uintptr((^rawptr)(uintptr((^rawptr)(uintptr(oldwin) + W_FRAME_OFF)^) + FR_PARENT_OFF)^) + FR_CHILD_OFF)^
+			for frp != nil {
+				frp_win := (^rawptr)(uintptr(frp) + FR_WIN_OFF)^
+				if frp_win != oldwin && frp_win != nil &&
+				((^C.int)(uintptr(frp_win) + W_WIDTH_OFF)^ > new_size ||
+				(^C.int)(uintptr(frp_win) + W_WIDTH_OFF)^ >
+				(^C.int)(uintptr(oldwin) + W_WIDTH_OFF)^ - new_size - 1) {
+					do_equal = true
+					break
+				}
+				frp = (^rawptr)(uintptr(frp) + FR_NEXT_OFF)^
+			}
+		}
+	} else {
+		// Check if we are able to split the current window and compute its height.
+		// Current window requires at least 1 space plus space for the window bar.
+		wmh1 := max(C.int(p_wmh_opt), 1) + (^C.int)(uintptr(oldwin) + W_WINBAR_HEIGHT_OFF)^
+		needed := wmh1 + STATUS_HEIGHT_O
+		if (flags & WSP_ROOM_O) != 0 {
+			needed += C.int(p_wh_opt) - wmh1 + (^C.int)(uintptr(oldwin) + W_WINBAR_HEIGHT_OFF)^
+		}
+		if C.longlong(p_ch) < 1 {
+			needed += 1 // Adjust for cmdheight=0.
+		}
+		minheight: C.int = 0
+		available: C.int = 0
+		if toplevel {
+			minheight = frame_minheight_o(topframe_g, nowin_o()) + need_status
+			available = (^C.int)(uintptr(topframe_g) + FR_HEIGHT_OFF)^
+			needed += minheight
+		} else if p_ea_g != 0 {
+			minheight = frame_minheight_o((^rawptr)(uintptr(oldwin) + W_FRAME_OFF)^, nowin_o()) + need_status
+			prevfrp := (^rawptr)(uintptr(oldwin) + W_FRAME_OFF)^
+			frp := (^rawptr)(uintptr(prevfrp) + FR_PARENT_OFF)^
+			for frp != nil {
+				if b_at((^u8)(uintptr(frp) + FR_LAYOUT_OFF), 0) == FR_COL_O {
+					child := (^rawptr)(uintptr(frp) + FR_CHILD_OFF)^
+					for child != nil {
+						if child != prevfrp {
+							minheight += frame_minheight_o(child, nowin_o())
+						}
+						child = (^rawptr)(uintptr(child) + FR_NEXT_OFF)^
+					}
+				}
+				prevfrp = frp
+				frp = (^rawptr)(uintptr(frp) + FR_PARENT_OFF)^
+			}
+			available = (^C.int)(uintptr(topframe_g) + FR_HEIGHT_OFF)^
+			needed += minheight
+		} else {
+			minheight = frame_minheight_o((^rawptr)(uintptr(oldwin) + W_FRAME_OFF)^, nowin_o()) + need_status
+			available = (^C.int)(uintptr((^rawptr)(uintptr(oldwin) + W_FRAME_OFF)^) + FR_HEIGHT_OFF)^
+			needed += minheight
+		}
+		if available < needed {
+			emsg(cstring(E36_S))
+			return nil
+		}
+		oldwin_height = (^C.int)(uintptr(oldwin) + W_HEIGHT_OFF)^
+		if need_status != 0 {
+			(^C.int)(uintptr(oldwin) + W_STATUS_HEIGHT_OFF)^ = STATUS_HEIGHT_O
+			oldwin_height -= STATUS_HEIGHT_O
+		}
+		if new_size == 0 {
+			new_size = oldwin_height / 2
+		}
+
+		new_size = max(min(new_size, available - minheight - STATUS_HEIGHT_O), wmh1)
+
+		// if it doesn't fit in the current window, need win_equal()
+		if oldwin_height - new_size - STATUS_HEIGHT_O < C.int(p_wmh_opt) {
+			do_equal = true
+		}
+
+		// We don't like to take lines for the new window from a
+		// 'winfixheight' window. Take them from a window above or below
+		// instead, if possible.
+		if (^C.int)(uintptr(oldwin) + W_P_WFH_OFF)^ != 0 {
+			// Set w_fraction now so that the cursor keeps the same relative
+			// vertical position using the old height.
+			set_fraction_r(oldwin)
+			did_set_fraction = true
+
+			win_setheight_win_r((^C.int)(uintptr(oldwin) + W_HEIGHT_OFF)^ + new_size + STATUS_HEIGHT_O,
+				oldwin, true)
+			oldwin_height = (^C.int)(uintptr(oldwin) + W_HEIGHT_OFF)^
+			if need_status != 0 {
+				oldwin_height -= STATUS_HEIGHT_O
+			}
+		}
+
+		// Only make all windows the same height if one of them (except oldwin)
+		// is higher than one of the split windows.
+		if !do_equal && p_ea_g != 0 && size == 0 &&
+		b_at(p_ead_g, 0) != 'h' &&
+		(^rawptr)(uintptr((^rawptr)(uintptr(oldwin) + W_FRAME_OFF)^) + FR_PARENT_OFF)^ != nil {
+			frp := (^rawptr)(uintptr((^rawptr)(uintptr((^rawptr)(uintptr(oldwin) + W_FRAME_OFF)^) + FR_PARENT_OFF)^) + FR_CHILD_OFF)^
+			for frp != nil {
+				frp_win := (^rawptr)(uintptr(frp) + FR_WIN_OFF)^
+				if frp_win != oldwin && frp_win != nil &&
+				((^C.int)(uintptr(frp_win) + W_HEIGHT_OFF)^ > new_size ||
+				(^C.int)(uintptr(frp_win) + W_HEIGHT_OFF)^ >
+				oldwin_height - new_size - STATUS_HEIGHT_O) {
+					do_equal = true
+					break
+				}
+				frp = (^rawptr)(uintptr(frp) + FR_NEXT_OFF)^
+			}
+		}
+	}
+
+	// allocate new window structure and link it in the window list
+	if (flags & WSP_TOP_O) == 0 &&
+	((flags & WSP_BOT_O) != 0 || (flags & WSP_BELOW_O) != 0 ||
+	((flags & WSP_ABOVE_O) == 0 && (vertical ? p_spr_g != 0 : p_sb_g != 0))) {
+		// new window below/right of current one
+		if new_wp == nil {
+			wp = win_alloc(oldwin, false)
+		} else {
+			win_append(oldwin, wp, nil)
+		}
+	} else {
+		if new_wp == nil {
+			wp = win_alloc((^rawptr)(uintptr(oldwin) + W_PREV_OFF)^, false)
+		} else {
+			win_append((^rawptr)(uintptr(oldwin) + W_PREV_OFF)^, wp, nil)
+		}
+	}
+
+	if new_wp == nil {
+		if wp == nil {
+			return nil
+		}
+
+		new_frame_o(wp)
+
+		// make the contents of the new window the same as the current one
+		win_init(wp, curwin, flags)
+	} else if (^bool)(uintptr(wp) + W_FLOATING_OFF)^ {
+		ui_comp_remove_grid_r(transmute(rawptr)(uintptr(wp) + W_GRID_HANDLE_OFF))
+		if ui_has(K_UIMULTIGRID_O) {
+			(^bool)(uintptr(wp) + W_POS_CHANGED_OFF)^ = true
+		} else {
+			// No longer a float, a non-multigrid UI shouldn't draw it as such
+			ui_call_win_hide_r((^C.int)(uintptr(wp) + W_GRID_HANDLE_OFF)^)
+			win_free_grid_r(wp, true)
+		}
+
+		// External windows are independent of tabpages, and may have been the curwin of others.
+		if (^bool)(uintptr(wp) + WCFG_EXTERNAL_OFF)^ {
+			tp := first_tabpage
+			for tp != nil {
+				if tp != curtab && (^rawptr)(uintptr(tp) + TP_CURWIN_OFF)^ == wp {
+					(^rawptr)(uintptr(tp) + TP_CURWIN_OFF)^ = (^rawptr)(uintptr(tp) + TP_FIRSTWIN_OFF)^
+				}
+				tp = (^rawptr)(uintptr(tp) + TP_NEXT_OFF)^
+			}
+		}
+
+		(^bool)(uintptr(wp) + W_FLOATING_OFF)^ = false
+		new_frame_o(wp)
+
+		// non-floating window doesn't store float config or have a border.
+		clear_float_config_r(transmute(rawptr)(uintptr(wp) + W_CONFIG_OFF), true)
+		libc.memset(transmute(rawptr)(uintptr(wp) + W_BORDER_ADJ_OFF), 0, W_BORDER_ADJ_SIZE)
+	}
+
+	// Going to reorganize frames now, make sure they're flat.
+	if to_flatten != nil {
+		frame_flatten_o(to_flatten)
+	}
+
+	before: bool = false
+	curfrp: rawptr = nil
+
+	// Reorganise the tree of frames to insert the new window.
+	if toplevel {
+		if ((b_at((^u8)(uintptr(topframe_g) + FR_LAYOUT_OFF), 0) == FR_COL_O && !vertical) ||
+		(b_at((^u8)(uintptr(topframe_g) + FR_LAYOUT_OFF), 0) == FR_ROW_O && vertical)) {
+			curfrp = (^rawptr)(uintptr(topframe_g) + FR_CHILD_OFF)^
+			if (flags & WSP_BOT_O) != 0 {
+				for (^rawptr)(uintptr(curfrp) + FR_NEXT_OFF)^ != nil {
+					curfrp = (^rawptr)(uintptr(curfrp) + FR_NEXT_OFF)^
+				}
+			}
+		} else {
+			curfrp = topframe_g
+		}
+		before = (flags & WSP_TOP_O) != 0
+	} else {
+		curfrp = (^rawptr)(uintptr(oldwin) + W_FRAME_OFF)^
+		if (flags & WSP_BELOW_O) != 0 {
+			before = false
+		} else if (flags & WSP_ABOVE_O) != 0 {
+			before = true
+		} else if vertical {
+			before = p_spr_g == 0
+		} else {
+			before = p_sb_g == 0
+		}
+	}
+	if (^rawptr)(uintptr(curfrp) + FR_PARENT_OFF)^ == nil ||
+	b_at((^u8)(uintptr((^rawptr)(uintptr(curfrp) + FR_PARENT_OFF)^) + FR_LAYOUT_OFF), 0) != u8(layout) {
+		// Need to create a new frame in the tree to make a branch.
+		frp := (^rawptr)(xcalloc(1, 64))
+		libc.memcpy(frp, curfrp, 64)
+		b_set((^u8)(uintptr(curfrp) + FR_LAYOUT_OFF), 0, u8(layout))
+		(^rawptr)(uintptr(frp) + FR_PARENT_OFF)^ = curfrp
+		(^rawptr)(uintptr(frp) + FR_NEXT_OFF)^ = nil
+		(^rawptr)(uintptr(frp) + FR_PREV_OFF)^ = nil
+		(^rawptr)(uintptr(curfrp) + FR_CHILD_OFF)^ = frp
+		(^rawptr)(uintptr(curfrp) + FR_WIN_OFF)^ = nil
+		curfrp = frp
+		if (^rawptr)(uintptr(frp) + FR_WIN_OFF)^ != nil {
+			(^rawptr)(uintptr(oldwin) + W_FRAME_OFF)^ = frp
+		} else {
+			child := (^rawptr)(uintptr(frp) + FR_CHILD_OFF)^
+			for child != nil {
+				(^rawptr)(uintptr(child) + FR_PARENT_OFF)^ = curfrp
+				child = (^rawptr)(uintptr(child) + FR_NEXT_OFF)^
+			}
+		}
+	}
+
+	frp: rawptr = nil
+	if new_wp == nil {
+		frp = (^rawptr)(uintptr(wp) + W_FRAME_OFF)^
+	} else {
+		frp = (^rawptr)(uintptr(new_wp) + W_FRAME_OFF)^
+	}
+	(^rawptr)(uintptr(frp) + FR_PARENT_OFF)^ = (^rawptr)(uintptr(curfrp) + FR_PARENT_OFF)^
+
+	// Insert the new frame at the right place in the frame list.
+	if before {
+		frame_insert_o(curfrp, frp)
+	} else {
+		frame_append_o(curfrp, frp)
+	}
+
+	// Set w_fraction now so that the cursor keeps the same relative
+	// vertical position.
+	if !did_set_fraction {
+		set_fraction_r(oldwin)
+	}
+	(^C.int)(uintptr(wp) + W_FRACTION_OFF)^ = (^C.int)(uintptr(oldwin) + W_FRACTION_OFF)^
+
+	if vertical {
+		(^C.int)(uintptr(wp) + W_P_SCR_OFF)^ = (^C.int)(uintptr(curwin) + W_P_SCR_OFF)^
+
+		if need_status != 0 {
+			win_new_height_r(oldwin, (^C.int)(uintptr(oldwin) + W_HEIGHT_OFF)^ - 1)
+			(^C.int)(uintptr(oldwin) + W_STATUS_HEIGHT_OFF)^ = need_status
+		}
+		if toplevel {
+			// set height and row of new window to full height
+			(^C.int)(uintptr(wp) + W_WINROW_OFF)^ = tabline_height_r()
+			win_new_height_r(wp, (^C.int)(uintptr(curfrp) + FR_HEIGHT_OFF)^ - (p_ls_g == 1 || p_ls_g == 2 ? 1 : 0))
+			(^C.int)(uintptr(wp) + W_STATUS_HEIGHT_OFF)^ = (p_ls_g == 1 || p_ls_g == 2) ? 1 : 0
+			(^C.int)(uintptr(wp) + W_HSEP_HEIGHT_OFF)^ = 0
+		} else {
+			// height and row of new window is same as current window
+			(^C.int)(uintptr(wp) + W_WINROW_OFF)^ = (^C.int)(uintptr(oldwin) + W_WINROW_OFF)^
+			win_new_height_r(wp, (^C.int)(uintptr(oldwin) + W_HEIGHT_OFF)^)
+			(^C.int)(uintptr(wp) + W_STATUS_HEIGHT_OFF)^ = (^C.int)(uintptr(oldwin) + W_STATUS_HEIGHT_OFF)^
+			(^C.int)(uintptr(wp) + W_HSEP_HEIGHT_OFF)^ = (^C.int)(uintptr(oldwin) + W_HSEP_HEIGHT_OFF)^
+		}
+		(^C.int)(uintptr(frp) + FR_HEIGHT_OFF)^ = (^C.int)(uintptr(curfrp) + FR_HEIGHT_OFF)^
+
+		// "new_size" of the current window goes to the new window, use
+		// one column for the vertical separator
+		win_new_width_r(wp, new_size)
+		if before {
+			(^C.int)(uintptr(wp) + W_VSEP_WIDTH_OFF)^ = 1
+		} else {
+			(^C.int)(uintptr(wp) + W_VSEP_WIDTH_OFF)^ = (^C.int)(uintptr(oldwin) + W_VSEP_WIDTH_OFF)^
+			(^C.int)(uintptr(oldwin) + W_VSEP_WIDTH_OFF)^ = 1
+		}
+		if toplevel {
+			if (flags & WSP_BOT_O) != 0 {
+				frame_set_vsep_o(curfrp, true)
+			}
+			// Set width of neighbor frame
+			frame_new_width((^rawptr)(curfrp), (^C.int)(uintptr(curfrp) + FR_WIDTH_OFF)^ -
+				(new_size + (((flags & WSP_TOP_O) != 0) ? 1 : 0)),
+				(flags & WSP_TOP_O) != 0, false)
+		} else {
+			win_new_width_r(oldwin, (^C.int)(uintptr(oldwin) + W_WIDTH_OFF)^ - (new_size + 1))
+		}
+		if before { // new window left of current one
+			(^C.int)(uintptr(wp) + W_WINCOL_OFF)^ = (^C.int)(uintptr(oldwin) + W_WINCOL_OFF)^
+			(^C.int)(uintptr(oldwin) + W_WINCOL_OFF)^ += new_size + 1
+		} else { // new window right of current one
+			(^C.int)(uintptr(wp) + W_WINCOL_OFF)^ = (^C.int)(uintptr(oldwin) + W_WINCOL_OFF)^ +
+				(^C.int)(uintptr(oldwin) + W_WIDTH_OFF)^ + 1
+		}
+		frame_fix_width_o(oldwin)
+		frame_fix_width_o(wp)
+	} else {
+		is_stl_global := global_stl_height_r() > 0
+		// width and column of new window is same as current window
+		if toplevel {
+			(^C.int)(uintptr(wp) + W_WINCOL_OFF)^ = 0
+			win_new_width_r(wp, Columns)
+			(^C.int)(uintptr(wp) + W_VSEP_WIDTH_OFF)^ = 0
+		} else {
+			(^C.int)(uintptr(wp) + W_WINCOL_OFF)^ = (^C.int)(uintptr(oldwin) + W_WINCOL_OFF)^
+			win_new_width_r(wp, (^C.int)(uintptr(oldwin) + W_WIDTH_OFF)^)
+			(^C.int)(uintptr(wp) + W_VSEP_WIDTH_OFF)^ = (^C.int)(uintptr(oldwin) + W_VSEP_WIDTH_OFF)^
+		}
+		(^C.int)(uintptr(frp) + FR_WIDTH_OFF)^ = (^C.int)(uintptr(curfrp) + FR_WIDTH_OFF)^
+
+		// "new_size" of the current window goes to the new window, use
+		// one row for the status line
+		win_new_height_r(wp, new_size)
+		old_status_height := (^C.int)(uintptr(oldwin) + W_STATUS_HEIGHT_OFF)^
+		if before {
+			(^C.int)(uintptr(wp) + W_HSEP_HEIGHT_OFF)^ = is_stl_global ? 1 : 0
+		} else {
+			(^C.int)(uintptr(wp) + W_HSEP_HEIGHT_OFF)^ = (^C.int)(uintptr(oldwin) + W_HSEP_HEIGHT_OFF)^
+			(^C.int)(uintptr(oldwin) + W_HSEP_HEIGHT_OFF)^ = is_stl_global ? 1 : 0
+		}
+		if toplevel {
+			new_fr_height := (^C.int)(uintptr(curfrp) + FR_HEIGHT_OFF)^ - new_size
+			if is_stl_global {
+				if (flags & WSP_BOT_O) != 0 {
+					frame_add_hsep_o(curfrp)
+				} else {
+					new_fr_height -= 1
+				}
+			} else {
+				if !(((flags & WSP_BOT_O) != 0) && p_ls_g == 0) {
+					new_fr_height -= STATUS_HEIGHT_O
+				}
+				if (flags & WSP_BOT_O) != 0 {
+					frame_add_statusline_o(curfrp)
+				}
+			}
+			frame_new_height(curfrp, new_fr_height, (flags & WSP_TOP_O) != 0, false, false)
+		} else {
+			win_new_height_r(oldwin, oldwin_height - (new_size + STATUS_HEIGHT_O))
+		}
+
+		if before { // new window above current one
+			(^C.int)(uintptr(wp) + W_WINROW_OFF)^ = (^C.int)(uintptr(oldwin) + W_WINROW_OFF)^
+			if is_stl_global {
+				(^C.int)(uintptr(wp) + W_STATUS_HEIGHT_OFF)^ = 0
+				(^C.int)(uintptr(oldwin) + W_WINROW_OFF)^ += (^C.int)(uintptr(wp) + W_HEIGHT_OFF)^ + 1
+			} else {
+				(^C.int)(uintptr(wp) + W_STATUS_HEIGHT_OFF)^ = STATUS_HEIGHT_O
+				(^C.int)(uintptr(oldwin) + W_WINROW_OFF)^ += (^C.int)(uintptr(wp) + W_HEIGHT_OFF)^ + STATUS_HEIGHT_O
+			}
+		} else { // new window below current one
+			if is_stl_global {
+				(^C.int)(uintptr(wp) + W_WINROW_OFF)^ = (^C.int)(uintptr(oldwin) + W_WINROW_OFF)^ +
+					(^C.int)(uintptr(oldwin) + W_HEIGHT_OFF)^ + 1
+				(^C.int)(uintptr(wp) + W_STATUS_HEIGHT_OFF)^ = 0
+			} else {
+				(^C.int)(uintptr(wp) + W_WINROW_OFF)^ = (^C.int)(uintptr(oldwin) + W_WINROW_OFF)^ +
+					(^C.int)(uintptr(oldwin) + W_HEIGHT_OFF)^ + STATUS_HEIGHT_O
+				(^C.int)(uintptr(wp) + W_STATUS_HEIGHT_OFF)^ = old_status_height
+				if ((flags & WSP_BOT_O) == 0) {
+					(^C.int)(uintptr(oldwin) + W_STATUS_HEIGHT_OFF)^ = STATUS_HEIGHT_O
+				}
+			}
+		}
+		frame_fix_height_o(oldwin)
+		frame_fix_height_o(wp)
+	}
+
+	if toplevel {
+		win_comp_pos_r()
+	}
+
+	// Both windows need redrawing. Update all status lines, in case they
+	// show something related to the window count or position.
+	redraw_later_r(wp, UPD_NOT_VALID_O)
+	redraw_later_r(oldwin, UPD_NOT_VALID_O)
+	status_redraw_all_r()
+
+	if need_status != 0 {
+		msg_row = Rows - 1
+		msg_col = sc_col
+		msg_clr_eos_force_r() // Old command/ruler may still be there
+		comp_col_r()
+		msg_row = Rows - 1
+		msg_col = 0 // put position back at start of line
+	}
+
+	// equalize the window sizes.
+	if do_equal || dir != 0 {
+		win_equal(wp, true, vertical ? (dir == 'v' ? 'b' : 'h') : (dir == 'h' ? 'b' : 'v'))
+	} else if !is_aucmd_win_r(wp) {
+		win_fix_scroll_r(false)
+	}
+
+	i: C.int = 0
+
+	// Don't change the window height/width to 'winheight' / 'winwidth' if a
+	// size was given.
+	if (flags & WSP_VERT_O) != 0 {
+		i = C.int(p_wiw_opt)
+		if size != 0 {
+			p_wiw_opt = C.longlong(size)
+		}
+	} else {
+		i = C.int(p_wh_opt)
+		if size != 0 {
+			p_wh_opt = C.longlong(size)
+		}
+	}
+
+	if ((flags & WSP_NOENTER_O) == 0) {
+		// make the new window the current window
+		win_enter_ext_o(wp, (new_wp == nil ? WEE_TRIGGER_NEW_AUTOCMDS_O : 0) |
+			WEE_TRIGGER_ENTER_AUTOCMDS_O | WEE_TRIGGER_LEAVE_AUTOCMDS_O)
+	}
+	if vertical {
+		p_wiw_opt = C.longlong(i)
+	} else {
+		p_wh_opt = C.longlong(i)
+	}
+
+	if win_valid(oldwin) {
+		// Send the window positions to the UI
+		(^bool)(uintptr(oldwin) + W_POS_CHANGED_OFF)^ = true
+	}
+
+	return wp
+}
+
+// ── Batch 7: win_split_ins + win_enter_ext + frame fix/add helpers ────────────
+
+WSP_NOENTER_O :: 0x200
+WEE_UNDO_SYNC_O :: 0x01
+WEE_CURWIN_INVALID_O :: 0x02
+WEE_TRIGGER_NEW_AUTOCMDS_O :: 0x04
+WEE_TRIGGER_ENTER_AUTOCMDS_O :: 0x08
+WEE_TRIGGER_LEAVE_AUTOCMDS_O :: 0x10
+MODE_NORMAL_O :: 0x01
+MODE_CMDLINE_O :: 0x08
+MODE_TERMINAL_O :: 0x80
+BCO_ENTER_O :: 1
+BCO_NOHELP_O :: 4
+EVENT_BUFENTER_O :: 3
+EVENT_BUFLEAVE_O :: 7
+EVENT_WINENTER_O :: 143
+EVENT_WINLEAVE_O :: 144
+EVENT_WINNEW_O :: 145
+EVENT_WINNEWPRE_O :: 146
+E36_S :: "E36: Not enough room"
+K_UIMULTIGRID_O :: 6
+FRACTION_MULT_O :: 16384
+
+W_P_SCR_OFF :: 1040
+WCFG_EXTERNAL_OFF :: 10608
+WCFG_FOCUSABLE_OFF :: 10609
+WCFG_MOUSE_OFF :: 10610
+WCFG_ZINDEX_OFF :: 10616
+WCFG_BUFPOS_LNUM_OFF :: 10564
+WCFG_CMDLINE_OFF_OFF :: 11032
+KZINDEX_FLOAT_DEFAULT_O :: 50
+INT_MAX_O :: 2147483647
+W_BORDER_ADJ_OFF :: 516
+W_BORDER_ADJ_SIZE :: 16
+
+nowin_o :: proc "c"() -> rawptr {
+	return transmute(rawptr)(~uintptr(0))
+}
+
+// Insert frame "frp" in a frame list before frame "before".
+frame_insert_o :: proc "c"(before: rawptr, frp: rawptr) {
+	(^rawptr)(uintptr(frp) + FR_NEXT_OFF)^ = before
+	(^rawptr)(uintptr(frp) + FR_PREV_OFF)^ = (^rawptr)(uintptr(before) + FR_PREV_OFF)^
+	(^rawptr)(uintptr(before) + FR_PREV_OFF)^ = frp
+	if (^rawptr)(uintptr(frp) + FR_PREV_OFF)^ != nil {
+		(^rawptr)(uintptr((^rawptr)(uintptr(frp) + FR_PREV_OFF)^) + FR_NEXT_OFF)^ = frp
+	} else {
+		(^rawptr)(uintptr((^rawptr)(uintptr(frp) + FR_PARENT_OFF)^) + FR_CHILD_OFF)^ = frp
+	}
+}
+
+// Append frame "frp" in a frame list after frame "after".
+frame_append_o :: proc "c"(after: rawptr, frp: rawptr) {
+	(^rawptr)(uintptr(frp) + FR_NEXT_OFF)^ = (^rawptr)(uintptr(after) + FR_NEXT_OFF)^
+	(^rawptr)(uintptr(after) + FR_NEXT_OFF)^ = frp
+	if (^rawptr)(uintptr(frp) + FR_NEXT_OFF)^ != nil {
+		(^rawptr)(uintptr((^rawptr)(uintptr(frp) + FR_NEXT_OFF)^) + FR_PREV_OFF)^ = frp
+	}
+	(^rawptr)(uintptr(frp) + FR_PREV_OFF)^ = after
+}
+
+W_DO_WIN_FIX_CURSOR_OFF :: 488
+W_HL_NORMAL_OFF :: 92
+W_HL_NORMALNC_OFF :: 96
+W_GRID_HANDLE_OFF :: 10456 // w_grid_alloc.handle @+0
+
+foreign _ {
+	@(link_name = "is_aucmd_win")
+	is_aucmd_win_r :: proc "c" (wp: rawptr) -> bool ---
+	@(link_name = "lastwin")
+	lastwin_g: rawptr
+	@(link_name = "win_float_anchor_laststatus")
+	win_float_anchor_laststatus_r :: proc "c" () ---
+	@(link_name = "set_fraction")
+	set_fraction_r :: proc "c" (wp: rawptr) ---
+	@(link_name = "win_setheight_win")
+	win_setheight_win_r :: proc "c" (height: C.int, win: rawptr, from_top: bool) ---
+ 	@(link_name = "win_setwidth_win")
+ 	win_setwidth_win_r :: proc "c" (width: C.int, wp: rawptr, from_left: bool) ---
+ 	@(link_name = "clear_float_config")
+	clear_float_config_r :: proc "c" (fconfig: rawptr, free_fields: bool) ---
+	@(link_name = "ui_comp_remove_grid")
+	ui_comp_remove_grid_r :: proc "c" (grid: rawptr) ---
+	@(link_name = "ui_call_win_hide")
+	ui_call_win_hide_r :: proc "c" (grid: C.int) ---
+	@(link_name = "win_free_grid")
+	win_free_grid_r :: proc "c" (wp: rawptr, reinit: bool) ---
+	@(link_name = "win_comp_pos")
+	win_comp_pos_r :: proc "c" () -> C.int ---
+	@(link_name = "msg_clr_eos_force")
+	msg_clr_eos_force_r :: proc "c" () ---
+	@(link_name = "win_fix_scroll")
+	win_fix_scroll_r :: proc "c" (resize: bool) ---
+	@(link_name = "leaving_window")
+	leaving_window_r :: proc "c" (win: rawptr) ---
+	@(link_name = "entering_window")
+	entering_window_r :: proc "c" (win: rawptr) ---
+	@(link_name = "changed_line_abv_curs")
+	changed_line_abv_curs_r :: proc "c" () ---
+	@(link_name = "get_real_state")
+	get_real_state_r :: proc "c" () -> C.int ---
+	@(link_name = "win_fix_current_dir")
+	win_fix_current_dir_r :: proc "c" () ---
+	@(link_name = "do_autochdir")
+	do_autochdir_r :: proc "c" () ---
+	@(link_name = "win_setheight")
+	win_setheight_r :: proc "c" (height: C.int) ---
+	@(link_name = "win_setwidth")
+	win_setwidth_r :: proc "c" (width: C.int) ---
+	@(link_name = "aborting")
+	aborting_r :: proc "c" () -> bool ---
+	@(link_name = "cursor_down_inner")
+	cursor_down_inner_r :: proc "c" (wp: rawptr, n: C.int, skip_conceal: bool) ---
+	@(link_name = "cursor_up_inner")
+	cursor_up_inner_r :: proc "c" (wp: rawptr, n: C.long, skip_conceal: bool) ---
+	@(link_name = "scroll_to_fraction")
+	scroll_to_fraction_r :: proc "c" (wp: rawptr, prev_height: C.int) ---
+ 	@(link_name = "validate_botline_win")
+ 	validate_botline_win_r :: proc "c" (wp: rawptr) ---
+ 	@(link_name = "p_ls")
+	p_ls_g: C.longlong
+	@(link_name = "p_ea")
+	p_ea_g: C.int
+	@(link_name = "p_ead")
+	p_ead_g: ^u8
+}
+// sc_col (search.odin), msg_row/Rows/Columns (main.odin), p_ru?, redraw_cmdline?
+// lastwin/prevwin/curwin/curbuf/firstwin/first_tabpage/curtab/topframe from main.odin.
+
+new_frame_o :: proc "c"(wp: rawptr) {
+	frp := (^rawptr)(xcalloc(1, 64))
+
+	(^rawptr)(uintptr(wp) + W_FRAME_OFF)^ = frp
+	b_set((^u8)(uintptr(frp) + FR_LAYOUT_OFF), 0, FR_LEAF_O)
+	(^rawptr)(uintptr(frp) + FR_WIN_OFF)^ = wp
+}
+
+trigger_winnewpre_o :: proc "c"() {
+	window_layout_lock()
+	apply_autocmds(EVENT_WINNEWPRE_O, nil, nil, false, nil)
+	window_layout_unlock()
+}
+
+// Set frame width from the window it contains.
+frame_fix_width_o :: proc "c"(wp: rawptr) {
+	(^C.int)(uintptr((^rawptr)(uintptr(wp) + W_FRAME_OFF)^) + FR_WIDTH_OFF)^ =
+		(^C.int)(uintptr(wp) + W_WIDTH_OFF)^ + (^C.int)(uintptr(wp) + W_VSEP_WIDTH_OFF)^
+}
+
+// Set frame height from the window it contains.
+frame_fix_height_o :: proc "c"(wp: rawptr) {
+	(^C.int)(uintptr((^rawptr)(uintptr(wp) + W_FRAME_OFF)^) + FR_HEIGHT_OFF)^ =
+		(^C.int)(uintptr(wp) + W_HEIGHT_OFF)^ + (^C.int)(uintptr(wp) + W_HSEP_HEIGHT_OFF)^ +
+		(^C.int)(uintptr(wp) + W_STATUS_HEIGHT_OFF)^
+}
+
+// Add the horizontal separator to windows at the bottom of "frp".
+frame_add_hsep_o :: proc "c"(frp_in: rawptr) {
+	frp := frp_in
+	if b_at((^u8)(uintptr(frp) + FR_LAYOUT_OFF), 0) == FR_LEAF_O {
+		wp := (^rawptr)(uintptr(frp) + FR_WIN_OFF)^
+		(^C.int)(uintptr(wp) + W_HSEP_HEIGHT_OFF)^ = 1
+	} else if b_at((^u8)(uintptr(frp) + FR_LAYOUT_OFF), 0) == FR_ROW_O {
+		// Handle all the frames in the row.
+		child := (^rawptr)(uintptr(frp) + FR_CHILD_OFF)^
+		for child != nil {
+			frame_add_hsep_o(child)
+			child = (^rawptr)(uintptr(child) + FR_NEXT_OFF)^
+		}
+	} else {
+		// Only need to handle the last frame in the column.
+		fr := (^rawptr)(uintptr(frp) + FR_CHILD_OFF)^
+		for (^rawptr)(uintptr(fr) + FR_NEXT_OFF)^ != nil {
+			fr = (^rawptr)(uintptr(fr) + FR_NEXT_OFF)^
+		}
+		frame_add_hsep_o(fr)
+	}
+}
+
+frame_add_statusline_o :: proc "c"(frp_in: rawptr) {
+	frp := frp_in
+	if b_at((^u8)(uintptr(frp) + FR_LAYOUT_OFF), 0) == FR_LEAF_O {
+		wp := (^rawptr)(uintptr(frp) + FR_WIN_OFF)^
+		(^C.int)(uintptr(wp) + W_STATUS_HEIGHT_OFF)^ = STATUS_HEIGHT_O
+	} else if b_at((^u8)(uintptr(frp) + FR_LAYOUT_OFF), 0) == FR_ROW_O {
+		// Handle all the frames in the row.
+		child := (^rawptr)(uintptr(frp) + FR_CHILD_OFF)^
+		for child != nil {
+			frame_add_statusline_o(child)
+			child = (^rawptr)(uintptr(child) + FR_NEXT_OFF)^
+		}
+	} else {
+		// Only need to handle the last frame in the column.
+		frp = (^rawptr)(uintptr(frp) + FR_CHILD_OFF)^
+		for (^rawptr)(uintptr(frp) + FR_NEXT_OFF)^ != nil {
+			frp = (^rawptr)(uintptr(frp) + FR_NEXT_OFF)^
+		}
+		frame_add_statusline_o(frp)
+	}
+}
+
+win_fix_cursor_o :: proc "c"(normal: bool) {
+	wp := curwin
+
+	if !(^bool)(uintptr(wp) + W_DO_WIN_FIX_CURSOR_OFF)^ ||
+	(^C.int)(uintptr((^rawptr)(uintptr(wp) + W_BUFFER_OFF)^) + B_ML_LINE_COUNT_OFF)^ <
+	(^C.int)(uintptr(wp) + W_VIEW_HEIGHT_OFF)^ {
+		return
+	}
+
+	(^bool)(uintptr(wp) + W_DO_WIN_FIX_CURSOR_OFF)^ = false
+	// Determine valid cursor range.
+	so := C.int(min((^C.int)(uintptr(wp) + W_VIEW_HEIGHT_OFF)^ / 2,
+		C.int(get_scrolloff_value(wp))))
+	lnum := (^C.int)(uintptr(wp) + W_CURSOR_OFF)^
+
+	(^C.int)(uintptr(wp) + W_CURSOR_OFF)^ = (^C.int)(uintptr(wp) + W_TOPLINE_OFF)^
+	cursor_down_inner_r(wp, so, false)
+	top := (^C.int)(uintptr(wp) + W_CURSOR_OFF)^
+
+	(^C.int)(uintptr(wp) + W_CURSOR_OFF)^ = (^C.int)(uintptr(wp) + W_BOTLINE_OFF)^ - 1
+	cursor_up_inner_r(wp, C.long(so), false)
+	bot := (^C.int)(uintptr(wp) + W_CURSOR_OFF)^
+
+	(^C.int)(uintptr(wp) + W_CURSOR_OFF)^ = lnum
+	// Check if cursor position is above or below valid cursor range.
+	nlnum: C.int = 0
+	if lnum > bot && ((^C.int)(uintptr(wp) + W_BOTLINE_OFF)^ -
+	(^C.int)(uintptr((^rawptr)(uintptr(wp) + W_BUFFER_OFF)^) + B_ML_LINE_COUNT_OFF)^) != 1 {
+		nlnum = bot
+	} else if lnum < top && (^C.int)(uintptr(wp) + W_TOPLINE_OFF)^ != 1 {
+		nlnum = (so == (^C.int)(uintptr(wp) + W_VIEW_HEIGHT_OFF)^ / 2) ? bot : top
+	}
+
+	if nlnum != 0 { // Cursor is invalid for current scroll position.
+		if normal { // Save to jumplist and set cursor to avoid scrolling.
+			setmark('\'')
+			(^C.int)(uintptr(wp) + W_CURSOR_OFF)^ = nlnum
+		} else { // Scroll instead when not in normal mode.
+			(^C.int)(uintptr(wp) + W_FRACTION_OFF)^ = (nlnum == bot) ? FRACTION_MULT_O : 0
+			scroll_to_fraction_r(wp, (^C.int)(uintptr(wp) + W_PREV_HEIGHT_OFF)^)
+			validate_botline_win_r(curwin)
+		}
+	}
+}
+
+win_enter_ext_o :: proc "c"(wp: rawptr, flags: C.int) {
+	other_buffer := false
+	curwin_invalid := (flags & WEE_CURWIN_INVALID_O) != 0
+
+	if wp == curwin && !curwin_invalid { // nothing to do
+		return
+	}
+
+	if !curwin_invalid {
+		leaving_window_r(curwin)
+	}
+
+	if !curwin_invalid && (flags & WEE_TRIGGER_LEAVE_AUTOCMDS_O) != 0 {
+		// Be careful: If autocommands delete the window, return now.
+		if (^rawptr)(uintptr(wp) + W_BUFFER_OFF)^ != curbuf {
+			apply_autocmds(EVENT_BUFLEAVE_O, nil, nil, false, curbuf)
+			other_buffer = true
+			if !win_valid(wp) {
+				return
+			}
+		}
+		apply_autocmds(EVENT_WINLEAVE_O, nil, nil, false, curbuf)
+		if !win_valid(wp) {
+			return
+		}
+		// autocmds may abort script processing
+		if aborting_r() {
+			return
+		}
+	}
+
+	// sync undo before leaving the current buffer
+	if ((flags & WEE_UNDO_SYNC_O) != 0 && curbuf != (^rawptr)(uintptr(wp) + W_BUFFER_OFF)^) {
+		u_sync(false)
+	}
+
+	// Might need to scroll the old window before switching, e.g., when the
+	// cursor was moved.
+	if b_at(p_spk_g, 0) == 'c' && !curwin_invalid {
+		update_topline_r(curwin)
+	}
+
+	// may have to copy the buffer options when 'cpo' contains 'S'
+	if (^rawptr)(uintptr(wp) + W_BUFFER_OFF)^ != curbuf {
+		buf_copy_options((^rawptr)(uintptr(wp) + W_BUFFER_OFF)^, BCO_ENTER_O | BCO_NOHELP_O)
+	}
+	if !curwin_invalid {
+		prevwin_g = curwin // remember for CTRL-W p
+		(^bool)(uintptr(curwin) + W_REDR_STATUS_OFF)^ = true
+	}
+	curwin = wp
+	curbuf = (^rawptr)(uintptr(wp) + W_BUFFER_OFF)^
+
+	check_cursor_r(curwin)
+	if !virtual_active_r(curwin) {
+		(^C.int)(uintptr(curwin) + W_CURSOR_OFF + 8)^ = 0 // w_cursor.coladd
+	}
+	if b_at(p_spk_g, 0) == 'c' {
+		changed_line_abv_curs_r() // assume cursor position needs updating
+	} else {
+		// Make sure the cursor position is valid, either by moving the cursor
+		// or by scrolling the text.
+		win_fix_cursor_o(get_real_state_r() & (MODE_NORMAL_O | MODE_CMDLINE_O | MODE_TERMINAL_O) != 0)
+	}
+
+	win_fix_current_dir_r()
+
+	entering_window_r(curwin)
+	// Careful: autocommands may close the window and make "wp" invalid
+	if (flags & WEE_TRIGGER_NEW_AUTOCMDS_O) != 0 {
+		apply_autocmds(EVENT_WINNEW_O, nil, nil, false, curbuf)
+	}
+	if (flags & WEE_TRIGGER_ENTER_AUTOCMDS_O) != 0 {
+		apply_autocmds(EVENT_WINENTER_O, nil, nil, false, curbuf)
+		if other_buffer {
+			apply_autocmds(EVENT_BUFENTER_O, nil, nil, false, curbuf)
+		}
+	}
+
+	maketitle_r()
+	(^bool)(uintptr(curwin) + W_REDR_STATUS_OFF)^ = true
+	redraw_tabline_opt = true
+	if restart_edit != 0 {
+		redraw_later_r(curwin, UPD_VALID_O)
+	}
+
+	// change background color according to NormalNC,
+	// but only if actually defined (otherwise no extra redraw)
+	if (^C.int)(uintptr(curwin) + W_HL_NORMAL_OFF)^ !=
+	(^C.int)(uintptr(curwin) + W_HL_NORMALNC_OFF)^ {
+		redraw_later_r(curwin, UPD_NOT_VALID_O)
+	}
+	if prevwin_g != nil {
+		if (^C.int)(uintptr(prevwin_g) + W_HL_NORMAL_OFF)^ !=
+		(^C.int)(uintptr(prevwin_g) + W_HL_NORMALNC_OFF)^ {
+			redraw_later_r(prevwin_g, UPD_NOT_VALID_O)
+		}
+	}
+
+	// set window height to desired minimal value
+	if (^C.int)(uintptr(curwin) + W_HEIGHT_OFF)^ < C.int(p_wh_opt) &&
+	(^C.int)(uintptr(curwin) + W_P_WFH_OFF)^ == 0 &&
+	(^bool)(uintptr(curwin) + W_FLOATING_OFF)^ == false {
+		win_setheight_r(C.int(p_wh_opt))
+	} else if (^C.int)(uintptr(curwin) + W_HEIGHT_OFF)^ == 0 {
+		win_setheight_r(1)
+	}
+
+	// set window width to desired minimal value
+	if (^C.int)(uintptr(curwin) + W_WIDTH_OFF)^ < C.int(p_wiw_opt) &&
+	(^C.int)(uintptr(curwin) + W_P_WFW_OFF)^ == 0 &&
+	(^bool)(uintptr(curwin) + W_FLOATING_OFF)^ == false {
+		win_setwidth_r(C.int(p_wiw_opt))
+	}
+
+	setmouse_r() // in case jumped to/from help buffer
+
+	// Change directories when the 'acd' option is set.
+	do_autochdir_r()
+}
+
+// ── Batch 6: splits (win_split/win_init) + snapshots ─────────────────────────
+
+WSP_ROOM_O :: 0x01
+WSP_VERT_O :: 0x02
+WSP_TOP_O :: 0x08
+WSP_BOT_O :: 0x10
+WSP_HELP_O :: 0x20
+WSP_BELOW_O :: 0x40
+WSP_ABOVE_O :: 0x80
+WSP_NEWLOC_O :: 0x100
+WSP_QUICKFIX_O :: 0x400
+
+SNAP_HELP_IDX_O :: 0
+SNAP_QUICKFIX_IDX_O :: 2
+
+E442_S :: "E442: Can't split topleft and botright at the same time"
+EVENT_TABNEWENTERED_O :: 118
+
+// cmdmod fields via mark.odin's cmdmod_cmod_flags (@0): split@4, tab@8.
+CMOD_SPLIT_OFF :: 4
+CMOD_TAB_OFF :: 8
+
+cmdmod_split_o :: proc "c"() -> C.int {
+	return (^C.int)(uintptr(&cmdmod_cmod_flags) + CMOD_SPLIT_OFF)^
+}
+
+cmdmod_tab_o :: proc "c"() -> C.int {
+	return (^C.int)(uintptr(&cmdmod_cmod_flags) + CMOD_TAB_OFF)^
+}
+
+set_cmdmod_tab_o :: proc "c"(v: C.int) {
+	(^C.int)(uintptr(&cmdmod_cmod_flags) + CMOD_TAB_OFF)^ = v
+}
+TP_SNAPSHOT_OFF :: 168
+AL_REFCOUNT_OFF :: 24
+
+W_BUFFER_OFF :: 8
+W_VALID_OFF :: 540
+W_CURSWANT_OFF :: 148
+W_SET_CURSWANT_OFF :: 152
+W_TOPLINE_OFF :: 364
+W_TOPFILL_OFF :: 372
+W_PCMARK_OFF :: 4296
+W_PREV_PCMARK_OFF :: 4308
+W_WROW_OFF :: 600
+W_FRACTION_OFF :: 11040
+W_PREV_FRACTION_ROW_OFF :: 11044
+W_LLIST_OFF :: 11064
+W_LLIST_REF_OFF :: 11072
+W_LOCALDIR_OFF :: 800
+W_PREVDIR_OFF :: 808
+W_BOTLINE_OFF :: 612
+W_PREV_WINROW_OFF :: 424
+W_TAGSTACK_OFF :: 9152
+W_TAGSTACKLEN_OFF :: 10436
+W_TAGSTACKIDX_OFF :: 10432
+W_CHANGELISTIDX_OFF :: 9128
+W_ALIST_OFF :: 784
+W_ARG_IDX_OFF :: 792
+B_NWINDOWS_OFF :: 136
+TAGGY_SIZE_O :: 64
+TAGGY_TAGNAME_OFF :: 0
+TAGGY_USERDATA_OFF :: 56
+
+foreign _ {
+	@(link_name = "check_split_disallowed")
+	check_split_disallowed_r :: proc "c" (wp: rawptr) -> C.int ---
+	@(link_name = "copy_loclist_stack")
+	copy_loclist_stack_r :: proc "c" (from: rawptr, to: rawptr) ---
+	@(link_name = "p_spk")
+	p_spk_g: ^u8
+	@(link_name = "postponed_split_tab")
+	postponed_split_tab_g: C.int
+}
+// make_snapshot/clear_snapshot are C-exported? No — make_snapshot is exported,
+// clear_snapshot* are static: port all three + rec helpers below.
+
+@(export)
+win_split :: proc "c"(size: C.int, flags_in: C.int) -> C.int {
+	flags := flags_in
+	if check_split_disallowed_r(curwin) == FAIL_S {
+		return FAIL_S
+	}
+
+	// When the ":tab" modifier was used open a new tab page instead.
+	if may_open_tabpage_o() == OK_S {
+		return OK_S
+	}
+
+	// Add flags from ":vertical", ":topleft" and ":botright".
+	flags |= cmdmod_split_o()
+	if (flags & WSP_TOP_O) != 0 && (flags & WSP_BOT_O) != 0 {
+		emsg(cstring(E442_S))
+		return FAIL_S
+	}
+
+	// When creating the help window make a snapshot of the window layout.
+	// Otherwise clear the snapshot, it's now invalid.
+	if (flags & WSP_HELP_O) != 0 {
+		make_snapshot_o(SNAP_HELP_IDX_O)
+	} else {
+		clear_snapshot_o(curtab, SNAP_HELP_IDX_O)
+	}
+
+	if (flags & WSP_QUICKFIX_O) != 0 {
+		make_snapshot_o(SNAP_QUICKFIX_IDX_O)
+	} else {
+		clear_snapshot_o(curtab, SNAP_QUICKFIX_IDX_O)
+	}
+
+	return win_split_ins(size, flags, nil, 0, nil) == nil ? FAIL_S : OK_S
+}
+
+may_open_tabpage_o :: proc "c"() -> C.int {
+	n := cmdmod_tab_o() == 0 ? postponed_split_tab_g : cmdmod_tab_o()
+
+	if n == 0 {
+		return FAIL_S
+	}
+
+	set_cmdmod_tab_o(0) // reset it to avoid doing it twice
+	postponed_split_tab_g = 0
+
+	if n == 0 {
+		return FAIL_S
+	}
+
+		status: C.int = win_new_tabpage(n, nil, true, nil) != nil ? OK_S : FAIL_S
+	if status == OK_S {
+		apply_autocmds(EVENT_TABNEWENTERED_O, nil, nil, false, curbuf)
+	}
+	return status
+}
+
+make_snapshot_o :: proc "c"(idx: C.int) {
+	clear_snapshot_o(curtab, idx)
+	slot := (^rawptr)(uintptr(curtab) + TP_SNAPSHOT_OFF + uintptr(idx) * 8)
+	make_snapshot_rec_o(topframe_g, slot)
+}
+
+make_snapshot_rec_o :: proc "c"(fr: rawptr, frp: ^rawptr) {
+	frp^ = xcalloc(1, 64)
+	dst := frp^
+	libc.memcpy(transmute(rawptr)(uintptr(dst) + FR_LAYOUT_OFF),
+		transmute(rawptr)(uintptr(fr) + FR_LAYOUT_OFF), 1)
+	(^C.int)(uintptr(dst) + FR_WIDTH_OFF)^ = (^C.int)(uintptr(fr) + FR_WIDTH_OFF)^
+	(^C.int)(uintptr(dst) + FR_HEIGHT_OFF)^ = (^C.int)(uintptr(fr) + FR_HEIGHT_OFF)^
+	if (^rawptr)(uintptr(fr) + FR_NEXT_OFF)^ != nil {
+		make_snapshot_rec_o((^rawptr)(uintptr(fr) + FR_NEXT_OFF)^,
+			(^rawptr)(uintptr(dst) + FR_NEXT_OFF))
+	}
+	if (^rawptr)(uintptr(fr) + FR_CHILD_OFF)^ != nil {
+		make_snapshot_rec_o((^rawptr)(uintptr(fr) + FR_CHILD_OFF)^,
+			(^rawptr)(uintptr(dst) + FR_CHILD_OFF))
+	}
+	if b_at((^u8)(uintptr(fr) + FR_LAYOUT_OFF), 0) == FR_LEAF_O &&
+	(^rawptr)(uintptr(fr) + FR_WIN_OFF)^ == curwin {
+		(^rawptr)(uintptr(dst) + FR_WIN_OFF)^ = curwin
+	}
+}
+
+// Remove any existing snapshot.
+clear_snapshot_o :: proc "c"(tp: rawptr, idx: C.int) {
+	slot := (^rawptr)(uintptr(tp) + TP_SNAPSHOT_OFF + uintptr(idx) * 8)
+	clear_snapshot_rec_o(slot^)
+	slot^ = nil
+}
+
+clear_snapshot_rec_o :: proc "c"(fr: rawptr) {
+	if fr == nil {
+		return
+	}
+	clear_snapshot_rec_o((^rawptr)(uintptr(fr) + FR_NEXT_OFF)^)
+	clear_snapshot_rec_o((^rawptr)(uintptr(fr) + FR_CHILD_OFF)^)
+	xfree(fr)
+}
+
+xstrdup_o :: proc "c"(s: ^u8) -> ^u8 {
+	n := libc.strlen(transmute(cstring)(s))
+	dup := (^u8)(xmalloc_sp(n + 1))
+	libc.memcpy(dup, s, n + 1)
+	return dup
+}
+
+@(export)
+win_init :: proc "c"(newp: rawptr, oldp: rawptr, flags: C.int) {
+	(^rawptr)(uintptr(newp) + W_BUFFER_OFF)^ = (^rawptr)(uintptr(oldp) + W_BUFFER_OFF)^
+	(^rawptr)(uintptr(newp) + W_S_OFF)^ = (^rawptr)(uintptr(oldp) + W_S_OFF)^
+	(^C.int)(uintptr((^rawptr)(uintptr(oldp) + W_BUFFER_OFF)^) + B_NWINDOWS_OFF)^ += 1
+	libc.memcpy(transmute(rawptr)(uintptr(newp) + W_CURSOR_OFF),
+		transmute(rawptr)(uintptr(oldp) + W_CURSOR_OFF), 12)
+	(^C.int)(uintptr(newp) + W_VALID_OFF)^ = 0
+	(^C.int)(uintptr(newp) + W_CURSWANT_OFF)^ = (^C.int)(uintptr(oldp) + W_CURSWANT_OFF)^
+	(^bool)(uintptr(newp) + W_SET_CURSWANT_OFF)^ = (^bool)(uintptr(oldp) + W_SET_CURSWANT_OFF)^
+	(^C.int)(uintptr(newp) + W_TOPLINE_OFF)^ = (^C.int)(uintptr(oldp) + W_TOPLINE_OFF)^
+	(^C.int)(uintptr(newp) + W_TOPFILL_OFF)^ = (^C.int)(uintptr(oldp) + W_TOPFILL_OFF)^
+	(^C.int)(uintptr(newp) + W_LEFTCOL_OFF)^ = (^C.int)(uintptr(oldp) + W_LEFTCOL_OFF)^
+	libc.memcpy(transmute(rawptr)(uintptr(newp) + W_PCMARK_OFF),
+		transmute(rawptr)(uintptr(oldp) + W_PCMARK_OFF), 12)
+	libc.memcpy(transmute(rawptr)(uintptr(newp) + W_PREV_PCMARK_OFF),
+		transmute(rawptr)(uintptr(oldp) + W_PREV_PCMARK_OFF), 12)
+	(^C.int)(uintptr(newp) + W_ALT_FNUM)^ = (^C.int)(uintptr(oldp) + W_ALT_FNUM)^
+	(^C.int)(uintptr(newp) + W_WROW_OFF)^ = (^C.int)(uintptr(oldp) + W_WROW_OFF)^
+	(^C.int)(uintptr(newp) + W_FRACTION_OFF)^ = (^C.int)(uintptr(oldp) + W_FRACTION_OFF)^
+	(^C.int)(uintptr(newp) + W_PREV_FRACTION_ROW_OFF)^ = (^C.int)(uintptr(oldp) + W_PREV_FRACTION_ROW_OFF)^
+	copy_jumplist(oldp, newp)
+	if (flags & WSP_NEWLOC_O) != 0 {
+		// Don't copy the location list.
+		(^rawptr)(uintptr(newp) + W_LLIST_OFF)^ = nil
+		(^rawptr)(uintptr(newp) + W_LLIST_REF_OFF)^ = nil
+	} else {
+		copy_loclist_stack_r(oldp, newp)
+	}
+	old_local := (^rawptr)(uintptr(oldp) + W_LOCALDIR_OFF)^
+	(^rawptr)(uintptr(newp) + W_LOCALDIR_OFF)^ = old_local == nil ? nil : transmute(rawptr)(xstrdup_o(transmute(^u8)(old_local)))
+	old_prev := (^rawptr)(uintptr(oldp) + W_PREVDIR_OFF)^
+	(^rawptr)(uintptr(newp) + W_PREVDIR_OFF)^ = old_prev == nil ? nil : transmute(rawptr)(xstrdup_o(transmute(^u8)(old_prev)))
+
+	if b_at(p_spk_g, 0) != 'c' {
+		if b_at(p_spk_g, 0) == 't' {
+			(^C.int)(uintptr(newp) + W_SKIPCOL_OFF)^ = (^C.int)(uintptr(oldp) + W_SKIPCOL_OFF)^
+		}
+		(^C.int)(uintptr(newp) + W_BOTLINE_OFF)^ = (^C.int)(uintptr(oldp) + W_BOTLINE_OFF)^
+		(^C.int)(uintptr(newp) + W_PREV_HEIGHT_OFF)^ = (^C.int)(uintptr(oldp) + W_HEIGHT_OFF)^
+		(^C.int)(uintptr(newp) + W_PREV_WINROW_OFF)^ = (^C.int)(uintptr(oldp) + W_WINROW_OFF)^
+	}
+
+	// copy tagstack and folds
+	for i: C.int = 0; i < (^C.int)(uintptr(oldp) + W_TAGSTACKLEN_OFF)^; i += 1 {
+		tag := (^u8)(uintptr(newp) + W_TAGSTACK_OFF + uintptr(i) * TAGGY_SIZE_O)
+		otag := (^u8)(uintptr(oldp) + W_TAGSTACK_OFF + uintptr(i) * TAGGY_SIZE_O)
+		libc.memcpy(tag, otag, TAGGY_SIZE_O)
+		if ((^rawptr)(uintptr(tag) + TAGGY_TAGNAME_OFF))^ != nil {
+			((^rawptr)(uintptr(tag) + TAGGY_TAGNAME_OFF))^ =
+				transmute(rawptr)(xstrdup_o(transmute(^u8)(((^rawptr)(uintptr(tag) + TAGGY_TAGNAME_OFF))^)))
+		}
+		if ((^rawptr)(uintptr(tag) + TAGGY_USERDATA_OFF))^ != nil {
+			((^rawptr)(uintptr(tag) + TAGGY_USERDATA_OFF))^ =
+				transmute(rawptr)(xstrdup_o(transmute(^u8)(((^rawptr)(uintptr(tag) + TAGGY_USERDATA_OFF))^)))
+		}
+	}
+	(^C.int)(uintptr(newp) + W_TAGSTACKIDX_OFF)^ = (^C.int)(uintptr(oldp) + W_TAGSTACKIDX_OFF)^
+	(^C.int)(uintptr(newp) + W_TAGSTACKLEN_OFF)^ = (^C.int)(uintptr(oldp) + W_TAGSTACKLEN_OFF)^
+
+	// Keep same changelist position in new window.
+	(^C.int)(uintptr(newp) + W_CHANGELISTIDX_OFF)^ = (^C.int)(uintptr(oldp) + W_CHANGELISTIDX_OFF)^
+
+	copyFoldingState(oldp, newp)
+
+	win_init_some_o(newp, oldp)
+
+	(^C.int)(uintptr(newp) + W_WINBAR_HEIGHT_OFF)^ = (^C.int)(uintptr(oldp) + W_WINBAR_HEIGHT_OFF)^
+}
+
+// Initialize window "newp" from window "old".
+// Only the essential things are copied.
+win_init_some_o :: proc "c"(newp: rawptr, oldp: rawptr) {
+	// Use the same argument list.
+	(^rawptr)(uintptr(newp) + W_ALIST_OFF)^ = (^rawptr)(uintptr(oldp) + W_ALIST_OFF)^
+	(^C.int)(uintptr((^rawptr)(uintptr(newp) + W_ALIST_OFF)^) + AL_REFCOUNT_OFF)^ += 1
+	(^C.int)(uintptr(newp) + W_ARG_IDX_OFF)^ = (^C.int)(uintptr(oldp) + W_ARG_IDX_OFF)^
+
+	// copy options from existing window
+	win_copy_options(oldp, newp)
+}
+
+// ── Batch 8: win_alloc/win_append ────────────────────────────────────────────
+
+WIN_SIZE_O :: 11160
+TP_LASTWIN_OFF :: 48
+W_GRID_MOUSE_OFF :: 10515
+W_VARS_OFF :: 4288
+W_WINVAR_OFF :: 4264
+W_NS_SET_SIZE :: 32 // C Set(uint32_t): 4xu32 + 2ptr
+W_NS_SET_OFF :: 48
+W_ALLBUF_SO_OFF :: 2880
+W_SCBOUND_POS_OFF :: 4256
+W_VIEWPORT_INVALID_OFF :: 564
+W_VIEWPORT_LAST_TOPLINE_OFF :: 568
+W_ALLBUF_SOP_OFF :: 2888
+W_P_SOP_OFF :: 1184
+W_ALLBUF_SISO_OFF :: 2872
+W_P_SISO_OFF :: 1168
+W_P_SO_OFF :: 1176
+W_NEXT_MATCH_ID_OFF :: 9144
+VAR_SCOPE_O :: 1
+
+foreign _ {
+	@(link_name = "nvim_odin_next_win_id")
+	nvim_odin_next_win_id_r :: proc "c" () -> C.int ---
+	@(link_name = "window_handles")
+	window_handles_g: Map_int_ptr_t
+	@(link_name = "grid_assign_handle")
+	grid_assign_handle_r :: proc "c" (grid: rawptr) ---
+	@(link_name = "tv_dict_alloc")
+	tv_dict_alloc_r :: proc "c" () -> rawptr ---
+	@(link_name = "init_var_dict")
+	init_var_dict_r :: proc "c" (dict: rawptr, dict_var: rawptr, scope: C.int) ---
+	@(link_name = "nvim_odin_init_winopt")
+	nvim_odin_init_winopt_r :: proc "c" (win: rawptr) ---
+}
+// nvim_odin_init_winopt (option_shim.c) reused.
+
+@(export)
+win_alloc :: proc "c"(after: rawptr, hidden: bool) -> rawptr {
+	// allocate window structure and linesizes arrays
+	new_wp := xcalloc(1, WIN_SIZE_O)
+
+	// Initialize window string options to empty_string_option so that they
+	// are never NULL before the option defaults have been applied.
+	nvim_odin_init_winopt_r(new_wp)
+
+	(^C.int)(uintptr(new_wp) + W_HANDLE_OFF)^ = nvim_odin_next_win_id_r()
+	new_item: bool = false
+	slot := map_put_ref_int_ptr_t(&window_handles_g,
+		(^C.int)(uintptr(new_wp) + W_HANDLE_OFF)^, nil, &new_item)
+	slot^ = new_wp
+
+	(^bool)(uintptr(new_wp) + W_GRID_MOUSE_OFF)^ = true
+
+	grid_assign_handle_r(transmute(rawptr)(uintptr(new_wp) + W_GRID_ALLOC_OFF))
+
+	// Init w: variables.
+	vars := tv_dict_alloc_r()
+	(^rawptr)(uintptr(new_wp) + W_VARS_OFF)^ = vars
+	init_var_dict_r(vars, transmute(rawptr)(uintptr(new_wp) + W_WINVAR_OFF), VAR_SCOPE_O)
+
+	// Don't execute autocommands while the window is not properly
+	// initialized yet. gui_create_scrollbar() may trigger a FocusGained
+	// event.
+	block_autocmds_r()
+	// link the window in the window list
+	if !hidden {
+		tp: rawptr = nil
+		if after != nil {
+			tp = win_find_tabpage(after)
+			if tp == curtab {
+				tp = nil
+			}
+		}
+		win_append(after, new_wp, tp)
+	}
+
+	(^C.int)(uintptr(new_wp) + W_WINCOL_OFF)^ = 0
+	(^C.int)(uintptr(new_wp) + W_WIDTH_OFF)^ = Columns
+
+	// position the display and the cursor at the top of the file.
+	(^C.int)(uintptr(new_wp) + W_TOPLINE_OFF)^ = 1
+	(^C.int)(uintptr(new_wp) + W_TOPFILL_OFF)^ = 0
+	(^C.int)(uintptr(new_wp) + W_BOTLINE_OFF)^ = 2
+	(^C.int)(uintptr(new_wp) + W_CURSOR_OFF)^ = 1
+	(^C.int)(uintptr(new_wp) + W_SCBOUND_POS_OFF)^ = 1
+	(^bool)(uintptr(new_wp) + W_FLOATING_OFF)^ = false
+	// w_config = WIN_CONFIG_INIT (xcalloc zeroed the rest): focusable,
+	// mouse, zindex, bufpos.lnum, _cmdline_offset are nonzero.
+	(^bool)(uintptr(new_wp) + WCFG_FOCUSABLE_OFF)^ = true
+	(^bool)(uintptr(new_wp) + WCFG_MOUSE_OFF)^ = true
+	(^C.int)(uintptr(new_wp) + WCFG_ZINDEX_OFF)^ = KZINDEX_FLOAT_DEFAULT_O
+	(^C.int)(uintptr(new_wp) + WCFG_BUFPOS_LNUM_OFF)^ = -1
+	(^C.int)(uintptr(new_wp) + WCFG_CMDLINE_OFF_OFF)^ = INT_MAX_O
+	(^bool)(uintptr(new_wp) + W_VIEWPORT_INVALID_OFF)^ = true
+	(^C.int)(uintptr(new_wp) + W_VIEWPORT_LAST_TOPLINE_OFF)^ = 1
+
+	(^C.int)(uintptr(new_wp) + W_NS_HL_OFF)^ = -1
+
+	libc.memset(transmute(rawptr)(uintptr(new_wp) + W_NS_SET_OFF), 0, W_NS_SET_SIZE)
+
+	// use global option for global-local options
+	(^C.longlong)(uintptr(new_wp) + W_ALLBUF_SO_OFF)^ = -1
+	(^C.longlong)(uintptr(new_wp) + W_P_SO_OFF)^ = -1
+	(^C.longlong)(uintptr(new_wp) + W_ALLBUF_SOP_OFF)^ = -1
+	(^C.longlong)(uintptr(new_wp) + W_P_SOP_OFF)^ = -1
+	(^C.longlong)(uintptr(new_wp) + W_ALLBUF_SISO_OFF)^ = -1
+	(^C.longlong)(uintptr(new_wp) + W_P_SISO_OFF)^ = -1
+
+	// We won't calculate w_fraction until resizing the window
+	(^C.int)(uintptr(new_wp) + W_FRACTION_OFF)^ = 0
+	(^C.int)(uintptr(new_wp) + W_PREV_FRACTION_ROW_OFF)^ = -1
+
+	foldInitWin(new_wp)
+	unblock_autocmds_r()
+	(^C.int)(uintptr(new_wp) + W_NEXT_MATCH_ID_OFF)^ = 1000 // up to 1000 can be picked by the user
+	return new_wp
+}
+
+// Append window "wp" in the window list after window "after".
+//
+// @param tp tab page "win" (and "after", if not NULL) is in, NULL for current
+@(export)
+win_append :: proc "c"(after: rawptr, wp: rawptr, tp: rawptr) {
+	first := tp == nil ? &firstwin : transmute(^rawptr)(uintptr(tp) + TP_FIRSTWIN_OFF)
+	last := tp == nil ? &lastwin_g : transmute(^rawptr)(uintptr(tp) + TP_LASTWIN_OFF)
+
+	// after NULL is in front of the first
+	before := after == nil ? first^ : (^rawptr)(uintptr(after) + W_NEXT_OFF)^
+
+	(^rawptr)(uintptr(wp) + W_NEXT_OFF)^ = before
+	(^rawptr)(uintptr(wp) + W_PREV_OFF)^ = after
+	if after == nil {
+		first^ = wp
+	} else {
+		(^rawptr)(uintptr(after) + W_NEXT_OFF)^ = wp
+	}
+	if before == nil {
+		last^ = wp
+	} else {
+		(^rawptr)(uintptr(before) + W_PREV_OFF)^ = wp
+	}
+}
+
+// ── Batch 10: win_init_empty + tabpage walks ─────────────────────────────────
+
+W_LINES_VALID_OFF :: 624
+
+@(export)
+win_init_empty :: proc "c"(wp: rawptr) {
+	redraw_later_r(wp, UPD_NOT_VALID_O)
+	(^C.int)(uintptr(wp) + W_LINES_VALID_OFF)^ = 0
+	(^C.int)(uintptr(wp) + W_CURSOR_OFF)^ = 1
+	(^C.int)(uintptr(wp) + W_CURSWANT_OFF)^ = 0
+	(^C.int)(uintptr(wp) + W_CURSOR_OFF + 4)^ = 0 // w_cursor.col
+	(^C.int)(uintptr(wp) + W_CURSOR_OFF + 8)^ = 0 // w_cursor.coladd
+	(^C.int)(uintptr(wp) + W_PCMARK_OFF)^ = 1 // pcmark not cleared but set to line 1
+	(^C.int)(uintptr(wp) + W_PCMARK_OFF + 4)^ = 0
+	(^C.int)(uintptr(wp) + W_PREV_PCMARK_OFF)^ = 0
+	(^C.int)(uintptr(wp) + W_PREV_PCMARK_OFF + 4)^ = 0
+	(^C.int)(uintptr(wp) + W_TOPLINE_OFF)^ = 1
+	(^C.int)(uintptr(wp) + W_TOPFILL_OFF)^ = 0
+	(^C.int)(uintptr(wp) + W_BOTLINE_OFF)^ = 2
+	(^C.int)(uintptr(wp) + W_VALID_OFF)^ = 0
+	(^rawptr)(uintptr(wp) + W_S_OFF)^ =
+		transmute(rawptr)(uintptr((^rawptr)(uintptr(wp) + W_BUFFER_OFF)^) + B_S_OFF)
+}
+
+// Init the current window "curwin".
+// Called when a new file is being edited.
+@(export)
+curwin_init :: proc "c"() {
+	win_init_empty(curwin)
+}
+
+@(export)
+valid_tabpage :: proc "c"(tpc: rawptr) -> bool {
+	tp := first_tabpage
+	for tp != nil {
+		if tp == tpc {
+			return true
+		}
+		tp = (^rawptr)(uintptr(tp) + TP_NEXT_OFF)^
+	}
+	return false
+}
+
+// Returns true when `tpc` is valid and at least one window is valid.
+@(export)
+valid_tabpage_win :: proc "c"(tpc: rawptr) -> C.int {
+	tp := first_tabpage
+	for tp != nil {
+		if tp == tpc {
+			wp := tp == curtab ? firstwin : (^rawptr)(uintptr(tp) + TP_FIRSTWIN_OFF)^
+			for wp != nil {
+				if win_valid_any_tab(wp) {
+					return 1
+				}
+				wp = (^rawptr)(uintptr(wp) + W_NEXT_OFF)^
+			}
+			return 0
+		}
+		tp = (^rawptr)(uintptr(tp) + TP_NEXT_OFF)^
+	}
+	// shouldn't happen
+	return 0
+}
+
+// Get index of tab page "tp". First one has index 1.
+// When not found returns number of tab pages plus one.
+@(export)
+tabpage_index :: proc "c"(ftp: rawptr) -> C.int {
+	i: C.int = 1
+	tp := first_tabpage
+	for tp != nil && tp != ftp {
+		tp = (^rawptr)(uintptr(tp) + TP_NEXT_OFF)^
+		i += 1
+	}
+	return i
+}
+
+@(export)
+win_find_tabpage :: proc "c"(win: rawptr) -> rawptr {
+	tp := first_tabpage
+	for tp != nil {
+		wp := tp == curtab ? firstwin : (^rawptr)(uintptr(tp) + TP_FIRSTWIN_OFF)^
+		for wp != nil {
+			if wp == win {
+				return tp
+			}
+			wp = (^rawptr)(uintptr(wp) + W_NEXT_OFF)^
+		}
+		tp = (^rawptr)(uintptr(tp) + TP_NEXT_OFF)^
+	}
+	return nil
+}
+
+@(export)
+lastwin_nofloating :: proc "c"(tp: rawptr) -> rawptr {
+	res := tp != nil ? (^rawptr)(uintptr(tp) + TP_LASTWIN_OFF)^ : lastwin_g
+	for (^bool)(uintptr(res) + W_FLOATING_OFF)^ {
+		res = (^rawptr)(uintptr(res) + W_PREV_OFF)^
+	}
+	return res
+}
+
+// ── Batch 11: startup alloc path + win_new_tabpage ───────────────────────────
+// Offsets probed 2026-09-05 via off11/off11b (cc offsetof against real headers).
+
+TP_TOPFRAME_OFF :: 16
+TP_OLD_ROWS_AVAIL_OFF :: 56
+TP_OLD_COLUMNS_OFF :: 64
+TP_CH_USED_OFF :: 72
+TP_DIFF_INVALID_OFF :: 160
+TP_WINVAR_OFF :: 192
+TP_VARS_OFF :: 216
+TP_LOCALDIR_OFF :: 224
+TP_PREVDIR_OFF :: 232
+W_HEIGHT_OUTER_OFF :: 532
+W_VIEW_WIDTH_OFF :: 504
+W_WIDTH_OUTER_OFF :: 536
+W_WINROW_OFF_OFF :: 492 // w_winrow_off (vs w_winrow@416)
+W_P_SCB_OFF :: 1112
+W_P_CRB_OFF :: 1152
+TABPAGE_SIZE_O :: 240
+BLN_LISTED_O :: 2
+EVENT_TABLEAVE_O :: 115
+EVENT_TABNEW_O :: 117
+EVENT_TABENTER_O :: 114
+
+// switchwin_T (eval/window.h): 2 ptrs + 2 bools = 24 bytes.
+Switchwin_T :: struct {
+	sw_curwin:       rawptr,
+	sw_curtab:       rawptr,
+	sw_same_win:     bool,
+	sw_visual_active: bool,
+}
+#assert(size_of(Switchwin_T) == 24)
+
+@(private="file")
+last_tp_handle_b11: C.int = 0
+
+foreign _ {
+	@(link_name = "unuse_tabpage")
+	unuse_tabpage_r :: proc "c" (tp: rawptr) ---
+	@(link_name = "use_tabpage")
+	use_tabpage_r :: proc "c" (tp: rawptr) ---
+	@(link_name = "reset_VIsual_and_resel")
+	reset_VIsual_and_resel_r :: proc "c" () ---
+	@(link_name = "reset_dragwin")
+	reset_dragwin_r :: proc "c" () ---
+	@(link_name = "redraw_all_later")
+	redraw_all_later_r :: proc "c" (type: C.int) ---
+	@(link_name = "terminal_check_size")
+	terminal_check_size_r :: proc "c" (term: rawptr) ---
+	@(link_name = "switch_win_noblock")
+	switch_win_noblock_r :: proc "c" (switchwin: rawptr, win: rawptr, tp: rawptr, no_display: bool) -> C.int ---
+	@(link_name = "restore_win_noblock")
+	restore_win_noblock_r :: proc "c" (switchwin: rawptr, no_display: bool) ---
+	@(link_name = "tabpage_handles")
+	tabpage_handles_g: Map_int_ptr_t
+	@(link_name = "global_alist")
+	global_alist_u8: u8 // address-of only (&global_alist); never read as value
+}
+
+// Allocate a new tabpage_T and init the values (C static: no export/weak).
+alloc_tabpage_o :: proc "c"() -> rawptr {
+	tp := xcalloc(1, TABPAGE_SIZE_O)
+	last_tp_handle_b11 += 1
+	(^C.int)(tp)^ = last_tp_handle_b11
+	new_item: bool = false
+	slot := map_put_ref_int_ptr_t(&tabpage_handles_g,
+		(^C.int)(tp)^, nil, &new_item)
+	slot^ = tp
+	// Init t: variables.
+	vars := tv_dict_alloc_r()
+	(^rawptr)(uintptr(tp) + TP_VARS_OFF)^ = vars
+	init_var_dict_r(vars, transmute(rawptr)(uintptr(tp) + TP_WINVAR_OFF), VAR_SCOPE_O)
+	(^bool)(uintptr(tp) + TP_DIFF_INVALID_OFF)^ = true
+	(^C.longlong)(uintptr(tp) + TP_CH_USED_OFF)^ = C.longlong(p_ch)
+	return tp
+}
+
+// rows_avail shared helper (ROWS_AVAIL macro: Rows - p_ch - tabline - stl).
+rows_avail_o :: proc "c"() -> C.int {
+	return Rows - C.int(p_ch) - tabline_height_r() - global_stl_height_r()
+}
+
+// Allocate the first window or the first window in a new tab page
+// (C static: no export/weak).
+win_alloc_firstwin_o :: proc "c"(oldwin: rawptr) -> C.int {
+	curwin = win_alloc(nil, false)
+	if oldwin == nil {
+		// Very first window, need to create an empty buffer for it and
+		// initialize from scratch.
+		curbuf = buflist_new(nil, nil, 1, BLN_LISTED_O)
+		if curbuf == nil {
+			return FAIL
+		}
+		(^rawptr)(uintptr(curwin) + W_BUFFER_OFF)^ = curbuf
+		// ADDRESS of embedded b_s (Batch-10 lesson: never deref).
+		(^rawptr)(uintptr(curwin) + W_S_OFF)^ =
+			transmute(rawptr)(uintptr(curbuf) + B_S_OFF)
+		(^C.int)(uintptr(curbuf) + B_NWINDOWS_OFF)^ = 1
+		(^rawptr)(uintptr(curwin) + W_ALIST_OFF)^ = transmute(rawptr)(&global_alist_u8)
+		curwin_init() // init current window
+	} else {
+		// First window in new tab page, initialize it from "oldwin".
+		win_init(curwin, oldwin, 0)
+		// We don't want cursor- and scroll-binding in the first window.
+		(^bool)(uintptr(curwin) + W_P_SCB_OFF)^ = false // RESET_BINDING
+		(^bool)(uintptr(curwin) + W_P_CRB_OFF)^ = false
+	}
+	new_frame_o(curwin)
+	topframe_g = (^rawptr)(uintptr(curwin) + W_FRAME_OFF)^
+	(^C.int)(uintptr(topframe_g) + FR_WIDTH_OFF)^ = Columns
+	(^C.int)(uintptr(topframe_g) + FR_HEIGHT_OFF)^ =
+		Rows - C.int(p_ch) - global_stl_height_r()
+	return OK
+}
+
+// Allocate the first window and put an empty buffer in it.
+// Only called from main().
+@(export)
+win_alloc_first :: proc "c"() {
+	if win_alloc_firstwin_o(nil) == FAIL {
+		// allocating first buffer before any autocmds should not fail.
+		libc.abort()
+	}
+	first_tabpage = alloc_tabpage_o()
+	curtab = first_tabpage
+	unuse_tabpage_r(first_tabpage)
+}
+
+// Initialize the window and frame size to the maximum.
+@(export)
+win_init_size :: proc "c"() {
+	(^C.int)(uintptr(firstwin) + W_HEIGHT_OFF)^ = rows_avail_o()
+	(^C.int)(uintptr(firstwin) + W_PREV_HEIGHT_OFF)^ = rows_avail_o()
+	(^C.int)(uintptr(firstwin) + W_VIEW_HEIGHT_OFF)^ =
+		(^C.int)(uintptr(firstwin) + W_HEIGHT_OFF)^ -
+		(^C.int)(uintptr(firstwin) + W_WINBAR_HEIGHT_OFF)^
+	(^C.int)(uintptr(firstwin) + W_HEIGHT_OUTER_OFF)^ =
+		(^C.int)(uintptr(firstwin) + W_HEIGHT_OFF)^
+	(^C.int)(uintptr(firstwin) + W_WINROW_OFF_OFF)^ =
+		(^C.int)(uintptr(firstwin) + W_WINBAR_HEIGHT_OFF)^
+	(^C.int)(uintptr(topframe_g) + FR_HEIGHT_OFF)^ = rows_avail_o()
+	(^C.int)(uintptr(firstwin) + W_WIDTH_OFF)^ = Columns
+	(^C.int)(uintptr(firstwin) + W_VIEW_WIDTH_OFF)^ =
+		(^C.int)(uintptr(firstwin) + W_WIDTH_OFF)^
+	(^C.int)(uintptr(firstwin) + W_WIDTH_OUTER_OFF)^ =
+		(^C.int)(uintptr(firstwin) + W_WIDTH_OFF)^
+	(^C.int)(uintptr(topframe_g) + FR_WIDTH_OFF)^ = Columns
+}
+
+// Stop using the current tab page: save window state into it (C static).
+leave_tabpage_o :: proc "c"(new_curbuf: rawptr, trigger_leave_autocmds: bool) -> C.int {
+	tp := curtab
+	leaving_window_r(curwin)
+	reset_VIsual_and_resel_r() // stop Visual mode
+	if trigger_leave_autocmds {
+		if new_curbuf != curbuf {
+			apply_autocmds(EVENT_BUFLEAVE_O, nil, nil, false, curbuf)
+			if curtab != tp {
+				return FAIL
+			}
+		}
+		apply_autocmds(EVENT_WINLEAVE_O, nil, nil, false, curbuf)
+		if curtab != tp {
+			return FAIL
+		}
+		apply_autocmds(EVENT_TABLEAVE_O, nil, nil, false, curbuf)
+		if curtab != tp {
+			return FAIL
+		}
+	}
+	reset_dragwin_r()
+	(^rawptr)(uintptr(tp) + TP_CURWIN_OFF)^ = curwin
+	(^rawptr)(uintptr(tp) + TP_PREVWIN_OFF)^ = prevwin_g
+	(^rawptr)(uintptr(tp) + TP_FIRSTWIN_OFF)^ = firstwin
+	(^rawptr)(uintptr(tp) + TP_LASTWIN_OFF)^ = lastwin_g
+	(^C.longlong)(uintptr(tp) + TP_OLD_ROWS_AVAIL_OFF)^ = C.longlong(rows_avail_o())
+	if (^C.longlong)(uintptr(tp) + TP_OLD_COLUMNS_OFF)^ != -1 {
+		(^C.longlong)(uintptr(tp) + TP_OLD_COLUMNS_OFF)^ = C.longlong(Columns)
+	}
+	firstwin = nil
+	lastwin_g = nil
+	return OK
+}
+
+// Move external floats to curtab; mark windows pos-changed (C static).
+tabpage_check_windows_o :: proc "c"(old_curtab: rawptr) {
+	wp := (^rawptr)(uintptr(old_curtab) + TP_FIRSTWIN_OFF)^
+	for wp != nil {
+		next_wp := (^rawptr)(uintptr(wp) + W_NEXT_OFF)^
+		if (^bool)(uintptr(wp) + W_FLOATING_OFF)^ {
+			if (^bool)(uintptr(wp) + WCFG_EXTERNAL_OFF)^ {
+				win_remove_r(wp, old_curtab)
+				win_append(lastwin_nofloating(nil), wp, nil)
+			} else {
+				ui_comp_remove_grid_r(transmute(rawptr)(uintptr(wp) + W_GRID_HANDLE_OFF))
+			}
+		}
+		(^bool)(uintptr(wp) + W_POS_CHANGED_OFF)^ = true
+		wp = next_wp
+	}
+}
+
+// Create a new tabpage with one window. Edits the current buffer, like :split.
+@(export)
+win_new_tabpage :: proc "c"(after: C.int, filename: cstring, enter: bool, first: ^rawptr) -> rawptr {
+	old_curtab := curtab
+	if window_layout_locked(CMD_TABNEW_O) {
+		return nil
+	}
+	newtp := alloc_tabpage_o()
+	// Remember the current windows in this Tab page.
+	// Avoid side-effects via unuse_tabpage when not entering.
+	if enter {
+		if leave_tabpage_o(curbuf, true) == FAIL {
+			xfree(newtp)
+			return nil
+		}
+	} else {
+		unuse_tabpage_r(curtab)
+		// Save this to tell if we need to make room for the tabline.
+		(^C.longlong)(uintptr(curtab) + TP_OLD_ROWS_AVAIL_OFF)^ = C.longlong(rows_avail_o())
+		firstwin = nil
+		lastwin_g = nil
+	}
+	old_local := (^rawptr)(uintptr(old_curtab) + TP_LOCALDIR_OFF)^
+	(^rawptr)(uintptr(newtp) + TP_LOCALDIR_OFF)^ =
+		old_local == nil ? nil : transmute(rawptr)(xstrdup_o(transmute(^u8)(old_local)))
+	curtab = newtp
+	// Create a new empty window (does not fail for first window of new tabpage).
+	win_alloc_firstwin_o((^rawptr)(uintptr(old_curtab) + TP_CURWIN_OFF)^)
+	if first != nil {
+		first^ = curwin
+	}
+	// Make the new Tab page the new topframe.
+	if after == 1 {
+		// New tab page becomes the first one.
+		(^rawptr)(uintptr(newtp) + TP_NEXT_OFF)^ = first_tabpage
+		first_tabpage = newtp
+	} else {
+		tp := old_curtab
+		if after > 0 {
+			// Put new tab page before tab page "after".
+			n: C.int = 2
+			tp = first_tabpage
+			for (^rawptr)(uintptr(tp) + TP_NEXT_OFF)^ != nil && n < after {
+				tp = (^rawptr)(uintptr(tp) + TP_NEXT_OFF)^
+				n += 1
+			}
+		}
+		(^rawptr)(uintptr(newtp) + TP_NEXT_OFF)^ = (^rawptr)(uintptr(tp) + TP_NEXT_OFF)^
+		(^rawptr)(uintptr(tp) + TP_NEXT_OFF)^ = newtp
+	}
+	(^rawptr)(uintptr(newtp) + TP_FIRSTWIN_OFF)^ = curwin
+	(^rawptr)(uintptr(newtp) + TP_LASTWIN_OFF)^ = curwin
+	(^rawptr)(uintptr(newtp) + TP_CURWIN_OFF)^ = curwin
+	win_init_size()
+	(^C.int)(uintptr(firstwin) + W_WINROW_OFF)^ = tabline_height_r()
+	(^C.int)(uintptr(firstwin) + W_PREV_WINROW_OFF)^ =
+		(^C.int)(uintptr(firstwin) + W_WINROW_OFF)^
+	win_comp_scroll_r(curwin)
+	(^rawptr)(uintptr(newtp) + TP_TOPFRAME_OFF)^ = topframe_g
+	last_status_r(false)
+	if (^rawptr)(uintptr(curbuf) + B_TERMINAL_OFF)^ != nil {
+		terminal_check_size_r((^rawptr)(uintptr(curbuf) + B_TERMINAL_OFF)^)
+	}
+	if enter {
+		redraw_all_later_r(UPD_NOT_VALID_O)
+		tabpage_check_windows_o(old_curtab)
+		lastused_tabpage_g = old_curtab
+		entering_window_r(curwin)
+		apply_autocmds(EVENT_WINNEW_O, nil, nil, false, curbuf)
+		apply_autocmds(EVENT_WINENTER_O, nil, nil, false, curbuf)
+		apply_autocmds(EVENT_TABNEW_O, filename, filename, false, curbuf)
+		apply_autocmds(EVENT_TABENTER_O, nil, nil, false, curbuf)
+	} else {
+		unuse_tabpage_r(curtab)
+		use_tabpage_r(old_curtab)
+		// Tabline maybe added, or its contents changed.
+		redraw_tabline_opt = true
+		if (^C.longlong)(uintptr(curtab) + TP_OLD_ROWS_AVAIL_OFF)^ != C.longlong(rows_avail_o()) {
+			win_new_screen_rows()
+		}
+		// Trigger autocommands in the context of the new window.
+		switchwin: Switchwin_T
+		// tp_curwin is valid in newtp: does not fail.
+		switch_win_noblock_r(&switchwin, (^rawptr)(uintptr(newtp) + TP_CURWIN_OFF)^, newtp, true)
+		apply_autocmds(EVENT_WINNEW_O, nil, nil, false, curbuf)
+		apply_autocmds(EVENT_TABNEW_O, filename, filename, false, curbuf)
+		restore_win_noblock_r(&switchwin, true)
+	}
+	return newtp
+}
+
+// ── Batch 12: tabpage navigation (enter/goto/find) ───────────────────────────
+
+foreign _ {
+	@(link_name = "set_keep_msg")
+	set_keep_msg_r :: proc "c" (s: cstring, hl_id: C.int) ---
+	@(link_name = "skip_win_fix_scroll")
+	skip_win_fix_scroll_g: bool
+	@(link_name = "diff_need_scrollbind")
+	diff_need_scrollbind_g: bool
+	@(link_name = "nvim_odin_set_command_frame_height")
+	nvim_odin_set_command_frame_height_r :: proc "c" (v: bool) ---
+}
+
+// Start using tab page "tp" (C static: no export/weak).
+// Only to be used after leave_tabpage() or freeing the current tab page.
+enter_tabpage_o :: proc "c"(tp: rawptr, old_curbuf: rawptr, trigger_enter_autocmds: bool, trigger_leave_autocmds: bool) {
+	old_off := (^C.int)(uintptr((^rawptr)(uintptr(tp) + TP_FIRSTWIN_OFF)^) + W_WINROW_OFF)^
+	next_prevwin := (^rawptr)(uintptr(tp) + TP_PREVWIN_OFF)^
+	old_curtab := curtab
+	prev_p_ch := p_ch
+	use_tabpage_r(tp)
+	if old_curtab != curtab && p_ch != prev_p_ch {
+		tabpage_check_windows_o(old_curtab)
+		// use_tabpage() loaded a different cmdheight for the new tab. Fire
+		// OptionSet and adjust the cmdline row without touching frame sizes.
+		new_ch := p_ch
+		p_ch = prev_p_ch
+		nvim_odin_set_command_frame_height_r(false)
+		set_option_value(kOptCmdheight_E, num_optval(new_ch), 0)
+		nvim_odin_set_command_frame_height_r(true)
+	} else if old_curtab != curtab {
+		tabpage_check_windows_o(old_curtab)
+	}
+	// We would like doing the TabEnter event first, but we don't have a
+	// valid current window yet, which may break some commands.
+	win_enter_ext_o((^rawptr)(uintptr(tp) + TP_CURWIN_OFF)^, WEE_CURWIN_INVALID_O |
+		(trigger_enter_autocmds ? WEE_TRIGGER_ENTER_AUTOCMDS_O : 0) |
+		(trigger_leave_autocmds ? WEE_TRIGGER_LEAVE_AUTOCMDS_O : 0))
+	prevwin_g = next_prevwin
+	last_status_r(false) // status line may appear or disappear
+	win_float_update_statusline_r(nil)
+	win_comp_pos_r() // recompute w_winrow for all windows
+	diff_need_scrollbind_g = true
+	// If there was a click in a window, it won't be usable for a following drag.
+	reset_dragwin_r()
+	// The tabpage line may have appeared or disappeared, may need to resize
+	// the frames for that. When the Vim window was resized or ROWS_AVAIL
+	// changed need to update frame sizes too.
+	if (^C.longlong)(uintptr(curtab) + TP_OLD_ROWS_AVAIL_OFF)^ != C.longlong(rows_avail_o()) ||
+		old_off != (^C.int)(uintptr(firstwin) + W_WINROW_OFF)^ {
+		win_new_screen_rows()
+	}
+	if (^C.longlong)(uintptr(curtab) + TP_OLD_COLUMNS_OFF)^ != C.longlong(Columns) {
+		if starting == 0 {
+			win_new_screen_cols() // update window widths
+			(^C.longlong)(uintptr(curtab) + TP_OLD_COLUMNS_OFF)^ = C.longlong(Columns)
+		} else {
+			(^C.longlong)(uintptr(curtab) + TP_OLD_COLUMNS_OFF)^ = -1 // update later
+		}
+	}
+	lastused_tabpage_g = old_curtab
+	// Apply autocommands after updating the display, when 'rows' and
+	// 'columns' have been set correctly.
+	if trigger_enter_autocmds {
+		apply_autocmds(EVENT_TABENTER_O, nil, nil, false, curbuf)
+		if old_curbuf != curbuf {
+			apply_autocmds(EVENT_BUFENTER_O, nil, nil, false, curbuf)
+		}
+	}
+	redraw_all_later_r(UPD_NOT_VALID_O)
+}
+
+// Find tab page "n" (first one is 1). Returns NULL when not found.
+@(export)
+find_tabpage :: proc "c"(n: C.int) -> rawptr {
+	if n == 0 {
+		return curtab
+	}
+	i: C.int = 1
+	tp := first_tabpage
+	for tp != nil && i != n {
+		tp = (^rawptr)(uintptr(tp) + TP_NEXT_OFF)^
+		i += 1
+	}
+	return tp
+}
+
+@(export)
+goto_tabpage :: proc "c"(n: C.int) {
+	if text_locked_r() {
+		// Not allowed when editing the command line.
+		text_locked_msg_r()
+		return
+	}
+	// If there is only one it can't work.
+	if (^rawptr)(uintptr(first_tabpage) + TP_NEXT_OFF)^ == nil {
+		if n > 1 {
+			beep_flush_r()
+		}
+		return
+	}
+	tp: rawptr = nil // shut up compiler
+	if n == 0 {
+		// No count, go to next tab page, wrap around end.
+		if (^rawptr)(uintptr(curtab) + TP_NEXT_OFF)^ == nil {
+			tp = first_tabpage
+		} else {
+			tp = (^rawptr)(uintptr(curtab) + TP_NEXT_OFF)^
+		}
+	} else if n < 0 {
+		// "gT": go to previous tab page, wrap around end. "N gT" repeats this N times.
+		ttp := curtab
+		for i := n; i < 0; i += 1 {
+			tp = first_tabpage
+			for (^rawptr)(uintptr(tp) + TP_NEXT_OFF)^ != ttp &&
+				(^rawptr)(uintptr(tp) + TP_NEXT_OFF)^ != nil {
+				tp = (^rawptr)(uintptr(tp) + TP_NEXT_OFF)^
+			}
+			ttp = tp
+		}
+	} else if n == 9999 {
+		// Go to last tab page.
+		tp = first_tabpage
+		for (^rawptr)(uintptr(tp) + TP_NEXT_OFF)^ != nil {
+			tp = (^rawptr)(uintptr(tp) + TP_NEXT_OFF)^
+		}
+	} else {
+		// Go to tab page "n".
+		tp = find_tabpage(n)
+		if tp == nil {
+			beep_flush_r()
+			return
+		}
+	}
+	goto_tabpage_tp(tp, true, true)
+}
+
+// Go to tabpage "tp". Note: doesn't update the GUI tab.
+@(export)
+goto_tabpage_tp :: proc "c"(tp: rawptr, trigger_enter_autocmds: bool, trigger_leave_autocmds: bool) {
+	// Don't repeat a message in another tab page.
+	set_keep_msg_r(nil, 0)
+	skip_win_fix_scroll_g = true
+	if tp != curtab &&
+		leave_tabpage_o((^rawptr)(uintptr((^rawptr)(uintptr(tp) + TP_CURWIN_OFF)^) + W_BUFFER_OFF)^,
+			trigger_leave_autocmds) == OK {
+		if valid_tabpage(tp) {
+			enter_tabpage_o(tp, curbuf, trigger_enter_autocmds, trigger_leave_autocmds)
+		} else {
+			enter_tabpage_o(curtab, curbuf, trigger_enter_autocmds, trigger_leave_autocmds)
+		}
+	}
+	skip_win_fix_scroll_g = false
+}
+
+// Go to the last accessed tab page, if there is one.
+@(export)
+goto_tabpage_lastused :: proc "c"() -> bool {
+	if !valid_tabpage(lastused_tabpage_g) {
+		return false
+	}
+	goto_tabpage_tp(lastused_tabpage_g, true, true)
+	return true
+}
+
+// Enter window "wp" in tab page "tp". Also updates the GUI tab.
+@(export)
+goto_tabpage_win :: proc "c"(tp: rawptr, wp: rawptr) {
+	goto_tabpage_tp(tp, true, true)
+	if curtab == tp && win_valid(wp) {
+		win_enter(wp, true)
+	}
+}
+
+// ── Batch 13: close_tabpage + win_goto + neighbor walks ──────────────────────
+// w_wcol@604 / w_p_cole@1144 probed 2026-09-05 via off13 (w_wrow@600,
+// w_wincol@440, w_winrow@416, w_cursor@136 all matched existing consts).
+
+W_WCOL_OFF :: 604
+W_P_COLE_OFF :: 1144
+WCFG_HIDE_OFF :: 11030 // w_config.hide (WinConfig+470, probed off15b)
+
+foreign _ {
+	@(link_name = "text_or_buf_locked")
+	text_or_buf_locked_r :: proc "c" () -> bool ---
+	@(link_name = "free_tabpage")
+	free_tabpage_r :: proc "c" (tp: rawptr) ---
+}
+
+// Close tabpage "tab", assuming it has no windows in it.
+// There must be another tabpage or this will crash.
+@(export)
+close_tabpage :: proc "c"(tab: rawptr) {
+	ptp: rawptr
+	if tab == first_tabpage {
+		first_tabpage = (^rawptr)(uintptr(tab) + TP_NEXT_OFF)^
+		ptp = first_tabpage
+	} else {
+		ptp = first_tabpage
+		for ptp != nil && (^rawptr)(uintptr(ptp) + TP_NEXT_OFF)^ != tab {
+			// do nothing
+			ptp = (^rawptr)(uintptr(ptp) + TP_NEXT_OFF)^
+		}
+		// ptp != NULL (there must be another tabpage).
+		(^rawptr)(uintptr(ptp) + TP_NEXT_OFF)^ = (^rawptr)(uintptr(tab) + TP_NEXT_OFF)^
+	}
+	goto_tabpage_tp(ptp, false, false)
+	free_tabpage_r(tab)
+}
+
+// Go to another window. When jumping to another buffer, stop Visual mode.
+@(export)
+win_goto :: proc "c"(wp: rawptr) {
+	owp := curwin
+	if text_or_buf_locked_r() {
+		beep_flush_r()
+		return
+	}
+	if (^rawptr)(uintptr(wp) + W_BUFFER_OFF)^ != curbuf {
+		// careful: triggers ModeChanged autocommand
+		reset_VIsual_and_resel_r()
+	} else if VIsual_active {
+		libc.memcpy(transmute(rawptr)(uintptr(wp) + W_CURSOR_OFF),
+			transmute(rawptr)(uintptr(curwin) + W_CURSOR_OFF), 12)
+	}
+	// autocommand may have made wp invalid
+	if !win_valid(wp) {
+		return
+	}
+	win_enter(wp, true)
+	// Conceal cursor line in previous window, unconceal in current window.
+	if win_valid(owp) && (^C.int)(uintptr(owp) + W_P_COLE_OFF)^ > 0 && msg_scrolled == 0 {
+		redrawWinline_r(owp, (^C.int)(uintptr(owp) + W_CURSOR_OFF)^)
+	}
+	if (^C.int)(uintptr(curwin) + W_P_COLE_OFF)^ > 0 && msg_scrolled == 0 {
+		redrawWinline_r(curwin, (^C.int)(uintptr(curwin) + W_CURSOR_OFF)^)
+	}
+}
+
+// Get the above or below neighbor window of the specified window.
+@(export)
+win_vert_neighbor :: proc "c"(tp: rawptr, wp: rawptr, up: bool, count: C.int) -> rawptr {
+	foundfr := (^rawptr)(uintptr(wp) + W_FRAME_OFF)^
+	if (^bool)(uintptr(wp) + W_FLOATING_OFF)^ {
+		return win_valid(prevwin_g) && !(^bool)(uintptr(prevwin_g) + W_FLOATING_OFF)^ ? prevwin_g : firstwin
+	}
+	n := count
+	done := false
+	for n > 0 && !done {
+		n -= 1
+		nfr: rawptr = nil
+		// First go upwards in the tree of frames until we find an upwards or
+		// downwards neighbor.
+		fr := foundfr
+		up_done := false
+		for !up_done && !done {
+			if fr == (^rawptr)(uintptr(tp) + TP_TOPFRAME_OFF)^ {
+				done = true
+			} else {
+				if up {
+					nfr = (^rawptr)(uintptr(fr) + FR_PREV_OFF)^
+				} else {
+					nfr = (^rawptr)(uintptr(fr) + FR_NEXT_OFF)^
+				}
+				if b_at((^u8)(uintptr((^rawptr)(uintptr(fr) + FR_PARENT_OFF)^) + FR_LAYOUT_OFF), 0) == FR_COL_O && nfr != nil {
+					up_done = true
+				} else {
+					fr = (^rawptr)(uintptr(fr) + FR_PARENT_OFF)^
+				}
+			}
+		}
+		if done {
+			break
+		}
+		// Now go downwards to find the bottom or top frame in it.
+		for {
+			if b_at((^u8)(uintptr(nfr) + FR_LAYOUT_OFF), 0) == FR_LEAF_O {
+				foundfr = nfr
+				break
+			}
+			fr = (^rawptr)(uintptr(nfr) + FR_CHILD_OFF)^
+			if b_at((^u8)(uintptr(nfr) + FR_LAYOUT_OFF), 0) == FR_ROW_O {
+				// Find the frame at the cursor row.
+				for (^rawptr)(uintptr(fr) + FR_NEXT_OFF)^ != nil &&
+					(^C.int)(uintptr(frame2win(fr)) + W_WINCOL_OFF)^ +
+					(^C.int)(uintptr(fr) + FR_WIDTH_OFF)^ <=
+					(^C.int)(uintptr(wp) + W_WINCOL_OFF)^ + (^C.int)(uintptr(wp) + W_WCOL_OFF)^ {
+					fr = (^rawptr)(uintptr(fr) + FR_NEXT_OFF)^
+				}
+			}
+			if b_at((^u8)(uintptr(nfr) + FR_LAYOUT_OFF), 0) == FR_COL_O && up {
+				for (^rawptr)(uintptr(fr) + FR_NEXT_OFF)^ != nil {
+					fr = (^rawptr)(uintptr(fr) + FR_NEXT_OFF)^
+				}
+			}
+			nfr = fr
+		}
+	}
+	if foundfr != nil {
+		return (^rawptr)(uintptr(foundfr) + FR_WIN_OFF)^
+	}
+	return nil
+}
+
+// Move to window above or below "count" times (C static: no export/weak).
+win_goto_ver_o :: proc "c"(up: bool, count: C.int) {
+	win := win_vert_neighbor(curtab, curwin, up, count)
+	if win != nil {
+		win_goto(win)
+	}
+}
+
+// Get the left or right neighbor window of the specified window.
+@(export)
+win_horz_neighbor :: proc "c"(tp: rawptr, wp: rawptr, left: bool, count: C.int) -> rawptr {
+	foundfr := (^rawptr)(uintptr(wp) + W_FRAME_OFF)^
+	if (^bool)(uintptr(wp) + W_FLOATING_OFF)^ {
+		return win_valid(prevwin_g) && !(^bool)(uintptr(prevwin_g) + W_FLOATING_OFF)^ ? prevwin_g : firstwin
+	}
+	n := count
+	done := false
+	for n > 0 && !done {
+		n -= 1
+		nfr: rawptr = nil
+		// First go upwards in the tree of frames until we find a left or
+		// right neighbor.
+		fr := foundfr
+		up_done := false
+		for !up_done && !done {
+			if fr == (^rawptr)(uintptr(tp) + TP_TOPFRAME_OFF)^ {
+				done = true
+			} else {
+				if left {
+					nfr = (^rawptr)(uintptr(fr) + FR_PREV_OFF)^
+				} else {
+					nfr = (^rawptr)(uintptr(fr) + FR_NEXT_OFF)^
+				}
+				if b_at((^u8)(uintptr((^rawptr)(uintptr(fr) + FR_PARENT_OFF)^) + FR_LAYOUT_OFF), 0) == FR_ROW_O && nfr != nil {
+					up_done = true
+				} else {
+					fr = (^rawptr)(uintptr(fr) + FR_PARENT_OFF)^
+				}
+			}
+		}
+		if done {
+			break
+		}
+		// Now go downwards to find the leftmost or rightmost frame in it.
+		for {
+			if b_at((^u8)(uintptr(nfr) + FR_LAYOUT_OFF), 0) == FR_LEAF_O {
+				foundfr = nfr
+				break
+			}
+			fr = (^rawptr)(uintptr(nfr) + FR_CHILD_OFF)^
+			if b_at((^u8)(uintptr(nfr) + FR_LAYOUT_OFF), 0) == FR_COL_O {
+				// Find the frame at the cursor row.
+				for (^rawptr)(uintptr(fr) + FR_NEXT_OFF)^ != nil &&
+					(^C.int)(uintptr(frame2win(fr)) + W_WINROW_OFF)^ +
+					(^C.int)(uintptr(fr) + FR_HEIGHT_OFF)^ <=
+					(^C.int)(uintptr(wp) + W_WINROW_OFF)^ + (^C.int)(uintptr(wp) + W_WROW_OFF)^ {
+					fr = (^rawptr)(uintptr(fr) + FR_NEXT_OFF)^
+				}
+			}
+			if b_at((^u8)(uintptr(nfr) + FR_LAYOUT_OFF), 0) == FR_ROW_O && left {
+				for (^rawptr)(uintptr(fr) + FR_NEXT_OFF)^ != nil {
+					fr = (^rawptr)(uintptr(fr) + FR_NEXT_OFF)^
+				}
+			}
+			nfr = fr
+		}
+	}
+	if foundfr != nil {
+		return (^rawptr)(uintptr(foundfr) + FR_WIN_OFF)^
+	}
+	return nil
+}
+
+// Move to left or right window (C static: no export/weak).
+win_goto_hor_o :: proc "c"(left: bool, count: C.int) {
+	win := win_horz_neighbor(curtab, curwin, left, count)
+	if win != nil {
+		win_goto(win)
+	}
+}
+
+// Make window "wp" the current window.
+@(export)
+win_enter :: proc "c"(wp: rawptr, undo_sync: bool) {
+	win_enter_ext_o(wp, (undo_sync ? WEE_UNDO_SYNC_O : 0) |
+		WEE_TRIGGER_ENTER_AUTOCMDS_O | WEE_TRIGGER_LEAVE_AUTOCMDS_O)
+}
+
+// ── Batch 14: win_close helper statics ───────────────────────────────────────
+// b_p_bl@10172 (bool) / w_locked@120 (int) probed 2026-09-05 via off14
+// (w_buffer@8 matched existing W_BUFFER_OFF).
+
+W_LOCKED_OFF :: 120
+B_P_BL_OFF :: 10172
+DOBUF_UNLOAD_O :: 2
+EVENT_WINCLOSED_O :: 142
+
+@(private="file")
+do_autocmd_winclosed_busy: bool = false
+
+foreign _ {
+	@(link_name = "reset_synblock")
+	reset_synblock_r :: proc "c" (wp: rawptr) ---
+	@(link_name = "bt_quickfix")
+	bt_quickfix_r :: proc "c" (buf: rawptr) -> bool ---
+	@(link_name = "close_buffer")
+	close_buffer_r :: proc "c" (win: rawptr, buf: rawptr, action: C.int, abort_if_last: bool, ignore_abort: bool, set_context: bool) -> bool ---
+	@(link_name = "has_event")
+	has_event_r :: proc "c" (e: C.int) -> bool ---
+}
+
+// Close the possibly last window in a tab page (C static: no export/weak).
+// Returns false if there are other windows and nothing is done.
+close_last_window_tabpage_o :: proc "c"(win: rawptr, free_buf: bool, prev_curtab: rawptr) -> bool {
+	if firstwin != lastwin_g { // !ONE_WINDOW
+		return false
+	}
+	old_curbuf := curbuf
+	term: rawptr = nil
+	if (^rawptr)(uintptr(win) + W_BUFFER_OFF)^ != nil {
+		term = (^rawptr)(uintptr((^rawptr)(uintptr(win) + W_BUFFER_OFF)^) + B_TERMINAL_OFF)^
+	}
+	fb := free_buf
+	if term != nil {
+		// Don't free terminal buffers
+		fb = false
+	}
+	// Closing the last window in a tab page. First go to another tab page
+	// and then close the window and the tab page.
+	goto_tabpage_tp(alt_tabpage_o(), false, (^rawptr)(uintptr(win) + W_BUFFER_OFF)^ != nil)
+	// Safety check: Autocommands may have switched back to the old tab page
+	// or closed the window when jumping to the other tab page.
+	if curtab != prev_curtab && valid_tabpage(prev_curtab) &&
+		(^rawptr)(uintptr(prev_curtab) + TP_FIRSTWIN_OFF)^ == win {
+		win_close_othertab(win, fb ? 1 : 0, prev_curtab, false)
+	}
+	entering_window_r(curwin)
+	// Since goto_tabpage_tp above did not trigger *Enter autocommands, do
+	// that now.
+	apply_autocmds(EVENT_WINENTER_O, nil, nil, false, curbuf)
+	apply_autocmds(EVENT_TABENTER_O, nil, nil, false, curbuf)
+	if old_curbuf != curbuf {
+		apply_autocmds(EVENT_BUFENTER_O, nil, nil, false, curbuf)
+	}
+	return true
+}
+
+// Close the buffer of "win" and unload it if "action" is DOBUF_UNLOAD
+// (C static: no export/weak).
+win_close_buffer_o :: proc "c"(win: rawptr, action: C.int, abort_if_last: bool) -> bool {
+	// Free independent synblock before the buffer is freed.
+	if (^rawptr)(uintptr(win) + W_BUFFER_OFF)^ != nil {
+		reset_synblock_r(win)
+	}
+	// When a quickfix/location list window is closed and the buffer is
+	// displayed in only one window, then unlist the buffer.
+	buf := (^rawptr)(uintptr(win) + W_BUFFER_OFF)^
+	if buf != nil && bt_quickfix_r(buf) && (^C.int)(uintptr(buf) + B_NWINDOWS_OFF)^ == 1 {
+		(^bool)(uintptr(buf) + B_P_BL_OFF)^ = false
+	}
+	retval := false
+	// Close the link to the buffer.
+	if (^rawptr)(uintptr(win) + W_BUFFER_OFF)^ != nil {
+		bufref: Bufref_T
+		set_bufref(&bufref, curbuf)
+		(^C.int)(uintptr(win) + W_LOCKED_OFF)^ += 1
+		retval = close_buffer_r(win, (^rawptr)(uintptr(win) + W_BUFFER_OFF)^,
+			action, abort_if_last, true, true)
+		if win_valid_any_tab(win) {
+			(^C.int)(uintptr(win) + W_LOCKED_OFF)^ -= 1
+		}
+		// Make sure curbuf is valid. It can become invalid if 'bufhidden'
+		// is "wipe".
+		if !bufref_valid(&bufref) {
+			curbuf = firstbuf
+		}
+	}
+	return retval
+}
+
+// When failing to close a window after already calling close_buffer() on it,
+// call this to make the window have a buffer again (C static).
+win_unclose_buffer_o :: proc "c"(win: rawptr, bufref: ^Bufref_T) {
+	if (^rawptr)(uintptr(win) + W_BUFFER_OFF)^ == nil {
+		// If the buffer was removed from the window we have to give it any buffer.
+		(^rawptr)(uintptr(win) + W_BUFFER_OFF)^ = firstbuf
+		(^C.int)(uintptr(firstbuf) + B_NWINDOWS_OFF)^ += 1
+		if win == curwin {
+			curbuf = (^rawptr)(uintptr(curwin) + W_BUFFER_OFF)^
+		}
+		win_init_empty(win)
+	}
+}
+
+// Fire WinClosed just before starting to free window resources (C static).
+do_autocmd_winclosed_o :: proc "c"(win: rawptr) {
+	if do_autocmd_winclosed_busy || !has_event_r(EVENT_WINCLOSED_O) {
+		return
+	}
+	do_autocmd_winclosed_busy = true
+	winid: [NUMBUFLEN]u8
+	libc.snprintf(&winid[0], NUMBUFLEN, cstring("%d"),
+		(^C.int)(uintptr(win) + W_HANDLE_OFF)^)
+	apply_autocmds(EVENT_WINCLOSED_O, cstring(&winid[0]), cstring(&winid[0]),
+		false, (^rawptr)(uintptr(win) + W_BUFFER_OFF)^)
+	do_autocmd_winclosed_busy = false
+}
+
+// ── Batch 15: win_close proper ───────────────────────────────────────────────
+// Offsets probed 2026-09-05 via off15: B_LOCKED 144/B_LOCKED_SPLIT 148 (int),
+// TP_DID_TABCLOSEDPRE 80 (bool), W_STATUS_HEIGHT 432 (int), W_P_PVW 1008 (int),
+// CMD_close 79. Error strings from source: E444/E813/E5601/E814.
+
+B_LOCKED_OFF :: 144
+B_LOCKED_SPLIT_OFF :: 148
+TP_DID_TABCLOSEDPRE_OFF :: 80
+W_P_PVW_OFF :: 1008
+CMD_CLOSE_O :: 79
+EVENT_TABCLOSED_O :: 112
+EVENT_TABCLOSEDPRE_O :: 113
+E_CANNOT_CLOSE_LAST_WINDOW_S :: "E444: Cannot close last window"
+E_AUTOCMD_CLOSE_S :: "E813: Cannot close autocmd window"
+E_FLOATONLY_S :: "E5601: Cannot close window, only floating window would remain"
+E_AUCMD_ONLY_S :: "E814: Cannot close window, only autocmd window would remain"
+
+@(private="file")
+trigger_tabclosedpre_busy: bool = false
+
+foreign _ {
+	@(link_name = "win_locked")
+	win_locked_r :: proc "c" (wp: rawptr) -> C.int ---
+	@(link_name = "buf_hide")
+	buf_hide_r :: proc "c" (buf: rawptr) -> bool ---
+	@(link_name = "win_float_find_altwin")
+	win_float_find_altwin_r :: proc "c" (win: rawptr, tp: rawptr) -> rawptr ---
+	@(link_name = "bt_help")
+	bt_help_r :: proc "c" (buf: rawptr) -> bool ---
+	@(link_name = "restore_snapshot")
+	restore_snapshot_r :: proc "c" (idx: C.int, close_curwin: C.int) ---
+	@(link_name = "diffopt_closeoff")
+	diffopt_closeoff_r :: proc "c" () -> bool ---
+	@(link_name = "ui_call_win_close")
+	ui_call_win_close_r :: proc "c" (grid: C.longlong) ---
+	@(link_name = "nvim_odin_set_split_disallowed")
+	nvim_odin_set_split_disallowed_r :: proc "c" (v: C.int) ---
+	@(link_name = "p_ru")
+	p_ru_g: C.int
+	@(link_name = "redraw_cmdline")
+	redraw_cmdline_g: bool
+	@(link_name = "cmdline_win")
+	cmdline_win_g: rawptr
+}
+
+// Check if floating windows in tabpage "tp" can be closed (C static).
+can_close_floating_windows_o :: proc "c"(tp: rawptr) -> bool {
+	for wp := tp != nil ? (^rawptr)(uintptr(tp) + TP_LASTWIN_OFF)^ : lastwin_g;
+		(^bool)(uintptr(wp) + W_FLOATING_OFF)^;
+		wp = (^rawptr)(uintptr(wp) + W_PREV_OFF)^ {
+		buf := (^rawptr)(uintptr(wp) + W_BUFFER_OFF)^
+		need_hide := bufIsChanged(buf) && (^C.int)(uintptr(buf) + B_NWINDOWS_OFF)^ <= 1
+		if need_hide && !buf_hide_r(buf) {
+			return false
+		}
+	}
+	return true
+}
+
+@(export)
+trigger_tabclosedpre :: proc "c"(tp: rawptr) {
+	ptp := curtab
+	// Quickly return when no TabClosedPre autocommands to be executed or
+	// already executing.
+	if !has_event_r(EVENT_TABCLOSEDPRE_O) || trigger_tabclosedpre_busy {
+		return
+	}
+	if valid_tabpage(tp) {
+		goto_tabpage_tp(tp, false, false)
+	}
+	trigger_tabclosedpre_busy = true
+	window_layout_lock()
+	apply_autocmds(EVENT_TABCLOSEDPRE_O, nil, nil, false, nil)
+	window_layout_unlock()
+	trigger_tabclosedpre_busy = false
+	// tabpage may have been modified or deleted by autocmds
+	if valid_tabpage(ptp) {
+		// try to recover the tabpage first
+		goto_tabpage_tp(ptp, false, false)
+	} else {
+		// fall back to the first tabpage
+		goto_tabpage_tp(first_tabpage, false, false)
+	}
+}
+
+// Traverse a snapshot to find the previous curwin (C statics).
+get_snapshot_curwin_rec_o :: proc "c"(ft: rawptr) -> rawptr {
+	wp: rawptr
+	if (^rawptr)(uintptr(ft) + FR_NEXT_OFF)^ != nil {
+		wp = get_snapshot_curwin_rec_o((^rawptr)(uintptr(ft) + FR_NEXT_OFF)^)
+		if wp != nil {
+			return wp
+		}
+	}
+	if (^rawptr)(uintptr(ft) + FR_CHILD_OFF)^ != nil {
+		wp = get_snapshot_curwin_rec_o((^rawptr)(uintptr(ft) + FR_CHILD_OFF)^)
+		if wp != nil {
+			return wp
+		}
+	}
+	return (^rawptr)(uintptr(ft) + FR_WIN_OFF)^
+}
+
+get_snapshot_curwin_o :: proc "c"(idx: C.int) -> rawptr {
+	if (^rawptr)(uintptr(curtab) + TP_SNAPSHOT_OFF + uintptr(idx) * 8)^ == nil {
+		return nil
+	}
+	return get_snapshot_curwin_rec_o((^rawptr)(uintptr(curtab) + TP_SNAPSHOT_OFF + uintptr(idx) * 8)^)
+}
+
+// Close window "win" in tab page "tp", which is not the current tab page.
+@(export)
+win_close_othertab :: proc "c"(win: rawptr, free_buf: C.int, tp: rawptr, force: bool) -> bool {
+	bufref: Bufref_T // (declared up front: leave_open sites below use it)
+	leave_open := false
+	// Commands that may call win_close_othertab() already check this, but
+	// check here again just in case.
+	if window_layout_locked(CMD_SIZE_O) {
+		return false
+	}
+	// Get here with win->w_buffer == NULL when win_close() detects the tab
+	// page changed.
+	if win_locked_r(win) != 0 ||
+		((^rawptr)(uintptr(win) + W_BUFFER_OFF)^ != nil &&
+			(^C.int)(uintptr((^rawptr)(uintptr(win) + W_BUFFER_OFF)^) + B_LOCKED_OFF)^ > 0) {
+		return false // window is already being closed
+	}
+	if is_aucmd_win_r(win) {
+		emsg(cstring(E_AUTOCMD_CLOSE_S))
+		return false
+	}
+	// Check if closing this window would leave only floating windows.
+	if (^bool)(uintptr((^rawptr)(uintptr(tp) + TP_LASTWIN_OFF)^) + W_FLOATING_OFF)^ &&
+		one_window(win, tp) {
+		if force || can_close_floating_windows_o(tp) {
+			// close the last window until the there are no floating windows
+			for (^bool)(uintptr((^rawptr)(uintptr(tp) + TP_LASTWIN_OFF)^) + W_FLOATING_OFF)^ && !leave_open {
+				// `force` flag isn't actually used when closing a floating window.
+				lastw := (^rawptr)(uintptr(tp) + TP_LASTWIN_OFF)^
+				hide: C.int = buf_hide_r((^rawptr)(uintptr(lastw) + W_BUFFER_OFF)^) ? 0 : 1
+				if !win_close_othertab(lastw, hide, tp, true) {
+					// If closing the window fails give up, to avoid looping forever.
+					leave_open = true
+				}
+			}
+			if !leave_open && !win_valid_any_tab(win) {
+				return false // window already closed by autocommands
+			}
+		} else {
+			emsg(cstring(E_FLOATONLY_S))
+			leave_open = true
+		}
+	}
+	if !leave_open {
+		// Fire WinClosed just before starting to free window-related resources.
+		// If the buffer is NULL, it isn't safe to trigger autocommands,
+		// and win_close() should have already triggered WinClosed.
+		if (^rawptr)(uintptr(win) + W_BUFFER_OFF)^ != nil {
+			do_autocmd_winclosed_o(win)
+			// autocmd may have freed the window already.
+			if !win_valid_any_tab(win) {
+				return false
+			}
+		}
+		if (^rawptr)(uintptr(tp) + TP_FIRSTWIN_OFF)^ == (^rawptr)(uintptr(tp) + TP_LASTWIN_OFF)^ &&
+			!(^bool)(uintptr(tp) + TP_DID_TABCLOSEDPRE_OFF)^ {
+			trigger_tabclosedpre(tp)
+			// autocmd may have freed the window already.
+			if !win_valid_any_tab(win) {
+				return false
+			}
+		}
+		set_bufref(&bufref, (^rawptr)(uintptr(win) + W_BUFFER_OFF)^)
+		if (^rawptr)(uintptr(win) + W_BUFFER_OFF)^ != nil {
+			// Close the link to the buffer.
+			fb := free_buf
+			close_buffer_r(win, (^rawptr)(uintptr(win) + W_BUFFER_OFF)^,
+				fb != 0 ? DOBUF_UNLOAD_O : 0, false, true, true)
+		}
+		// Careful: Autocommands may have closed the tab page or made it the
+		// current tab page.
+		if !valid_tabpage(tp) || tp == curtab {
+			leave_open = true
+		} else if !tabpage_win_valid(tp, win) {
+			// Autocommands may have closed the window already, or
+			// nvim_win_set_config moved it to a different tab page.
+			leave_open = true
+		} else if (^bool)(uintptr((^rawptr)(uintptr(tp) + TP_LASTWIN_OFF)^) + W_FLOATING_OFF)^ &&
+			one_window(win, tp) {
+			// Autocommands may again cause closing this window to leave only
+			// floats. Check again; we'll not bother closing floating windows
+			// this time.
+			emsg(cstring(E_FLOATONLY_S))
+			leave_open = true
+		}
+	}
+	if !leave_open {
+		free_tp_idx: C.int = 0
+		// When closing the last window in a tab page remove the tab page.
+		if (^rawptr)(uintptr(tp) + TP_FIRSTWIN_OFF)^ == (^rawptr)(uintptr(tp) + TP_LASTWIN_OFF)^ {
+			free_tp_idx = tabpage_index(tp)
+			h := tabline_height_r()
+			if tp == first_tabpage {
+				first_tabpage = (^rawptr)(uintptr(tp) + TP_NEXT_OFF)^
+			} else {
+				ptp := first_tabpage
+				for ptp != nil && (^rawptr)(uintptr(ptp) + TP_NEXT_OFF)^ != tp {
+					// loop
+					ptp = (^rawptr)(uintptr(ptp) + TP_NEXT_OFF)^
+				}
+				if ptp == nil {
+					_internal_error(cstring("win_close_othertab()"))
+					return false
+				}
+				(^rawptr)(uintptr(ptp) + TP_NEXT_OFF)^ = (^rawptr)(uintptr(tp) + TP_NEXT_OFF)^
+			}
+			redraw_tabline_opt = true
+			if h != tabline_height_r() {
+				win_new_screen_rows()
+			}
+		}
+		// About to free the window. Remember its final buffer for
+		// terminal_check_size/TabClosed, which may have changed since the
+		// last set_bufref. (e.g: close_buffer autocmds)
+		set_bufref(&bufref, (^rawptr)(uintptr(win) + W_BUFFER_OFF)^)
+		if (^rawptr)(uintptr(win) + W_BUFFER_OFF)^ != nil {
+			(^C.int)(uintptr((^rawptr)(uintptr(win) + W_BUFFER_OFF)^) + B_NWINDOWS_OFF)^ -= 1
+		}
+		// Free the memory used for the window.
+		dir: C.int = 0
+		win_free_mem_o(win, &dir, tp)
+		if bufref.br_buf != nil && bufref_valid(&bufref) &&
+			(^rawptr)(uintptr(bufref.br_buf) + B_TERMINAL_OFF)^ != nil {
+			terminal_check_size_r((^rawptr)(uintptr(bufref.br_buf) + B_TERMINAL_OFF)^)
+		}
+		if free_tp_idx > 0 {
+			free_tabpage_r(tp)
+			if has_event_r(EVENT_TABCLOSED_O) {
+				prev_idx: [NUMBUFLEN]u8
+				libc.snprintf(&prev_idx[0], NUMBUFLEN, cstring("%i"), free_tp_idx)
+				apply_autocmds(EVENT_TABCLOSED_O, cstring(&prev_idx[0]),
+					cstring(&prev_idx[0]), false,
+					bufref.br_buf != nil && bufref_valid(&bufref) ? bufref.br_buf : curbuf)
+			}
+		}
+		return true
+	}
+	if win_valid_any_tab(win) {
+		win_unclose_buffer_o(win, &bufref)
+	}
+	return false
+}
+
+// Free the memory used for a window (C static: no export/weak).
+// Returns a pointer to the window that got the freed up space.
+win_free_mem_o :: proc "c"(win: rawptr, dirp: ^C.int, tp: rawptr) -> rawptr {
+	win_tp := tp != nil ? tp : curtab
+	wp: rawptr
+	if !(^bool)(uintptr(win) + W_FLOATING_OFF)^ {
+		// Remove the window and its frame from the tree of frames.
+		frp := (^rawptr)(uintptr(win) + W_FRAME_OFF)^
+		wp = winframe_remove(win, dirp, tp, nil)
+		xfree(frp)
+	} else {
+		dirp^ = C.int('h') // Dummy value.
+		wp = win_float_find_altwin_r(win, tp)
+	}
+	win_free(win, tp)
+	// When deleting the current window in the tab, select a new current window.
+	if win == (^rawptr)(uintptr(win_tp) + TP_CURWIN_OFF)^ {
+		(^rawptr)(uintptr(win_tp) + TP_CURWIN_OFF)^ = wp
+	}
+	// Avoid executing cmdline_win logic after it is closed.
+	if win == cmdline_win_g {
+		cmdline_win_g = nil
+	}
+	return wp
+}
+
+// Close window "win". Only works for the current tab page.
+// Called by :quit, :close, :xit, :wq and findtag().
+// Returns FAIL when the window was not closed.
+@(export)
+win_close :: proc "c"(win: rawptr, free_buf: bool, force: bool) -> C.int {
+	prev_curtab := curtab
+	win_frame: rawptr = nil
+	if !(^bool)(uintptr(win) + W_FLOATING_OFF)^ {
+		win_frame = (^rawptr)(uintptr((^rawptr)(uintptr(win) + W_FRAME_OFF)^) + FR_PARENT_OFF)^
+	}
+	had_diffmode := (^C.int)(uintptr(win) + W_P_DIFF_OFF)^
+	if last_window(win) {
+		emsg(cstring(E_CANNOT_CLOSE_LAST_WINDOW_S))
+		return FAIL
+	}
+	if !(^bool)(uintptr(win) + W_FLOATING_OFF)^ && window_layout_locked(CMD_CLOSE_O) {
+		return FAIL
+	}
+	if win_locked_r(win) != 0 ||
+		((^rawptr)(uintptr(win) + W_BUFFER_OFF)^ != nil &&
+			(^C.int)(uintptr((^rawptr)(uintptr(win) + W_BUFFER_OFF)^) + B_LOCKED_OFF)^ > 0) {
+		return FAIL // window is already being closed
+	}
+	if is_aucmd_win_r(win) {
+		emsg(cstring(E_AUTOCMD_CLOSE_S))
+		return FAIL
+	}
+	if (^bool)(uintptr(lastwin_g) + W_FLOATING_OFF)^ && one_window(win, nil) {
+		if is_aucmd_win_r(lastwin_g) {
+			emsg(cstring(E_AUCMD_ONLY_S))
+			return FAIL
+		}
+		if force || can_close_floating_windows_o(nil) {
+			// close the last window until the there are no floating windows
+			for (^bool)(uintptr(lastwin_g) + W_FLOATING_OFF)^ {
+				// `force` flag isn't actually used when closing a floating window.
+				hide := buf_hide_r((^rawptr)(uintptr(lastwin_g) + W_BUFFER_OFF)^) ? 0 : 1
+				if win_close(lastwin_g, hide != 0, true) == FAIL {
+					// If closing the window fails give up, to avoid looping forever.
+					return FAIL
+				}
+			}
+			if !win_valid_any_tab(win) {
+				return FAIL // window already closed by autocommands
+			}
+			// Autocommands may have closed all other tabpages; check again.
+			if last_window(win) {
+				emsg(cstring(E_CANNOT_CLOSE_LAST_WINDOW_S))
+				return FAIL
+			}
+		} else {
+			emsg(cstring(E_FLOATONLY_S))
+			return FAIL
+		}
+	}
+	// When closing the last window in a tab page first go to another tab page
+	// and then close the window and the tab page to avoid that curwin and
+	// curtab are invalid while we are freeing memory.
+	if close_last_window_tabpage_o(win, free_buf, prev_curtab) {
+		return FAIL
+	}
+	help_window := false
+	quickfix_window := false
+	// When closing the help window, try restoring a snapshot after closing
+	// the window. Otherwise clear the snapshot, it's now invalid.
+	if bt_help_r((^rawptr)(uintptr(win) + W_BUFFER_OFF)^) {
+		help_window = true
+	} else {
+		clear_snapshot_o(curtab, SNAP_HELP_IDX_O)
+	}
+	if bt_quickfix_r((^rawptr)(uintptr(win) + W_BUFFER_OFF)^) {
+		quickfix_window = true
+	} else {
+		clear_snapshot_o(curtab, SNAP_QUICKFIX_IDX_O)
+	}
+	other_buffer := false
+	if win == curwin {
+		leaving_window_r(curwin)
+		// Guess which window is going to be the new current window.
+		// This may change because of the autocommands (sigh).
+		wp: rawptr
+		if (^bool)(uintptr(win) + W_FLOATING_OFF)^ {
+			wp = win_float_find_altwin_r(win, nil)
+		} else {
+			wp = frame2win(win_altframe_o(win, nil))
+		}
+		// Be careful: If autocommands delete the window or cause this window
+		// to be the last one left, return now.
+		if (^rawptr)(uintptr(wp) + W_BUFFER_OFF)^ != curbuf {
+			reset_VIsual_and_resel_r() // stop Visual mode
+			other_buffer = true
+			if !win_valid(win) {
+				return FAIL
+			}
+			(^C.int)(uintptr(win) + W_LOCKED_OFF)^ += 1
+			apply_autocmds(EVENT_BUFLEAVE_O, nil, nil, false, curbuf)
+			if !win_valid(win) {
+				return FAIL
+			}
+			(^C.int)(uintptr(win) + W_LOCKED_OFF)^ -= 1
+			if last_window(win) {
+				return FAIL
+			}
+		}
+		(^C.int)(uintptr(win) + W_LOCKED_OFF)^ += 1
+		apply_autocmds(EVENT_WINLEAVE_O, nil, nil, false, curbuf)
+		if !win_valid(win) {
+			return FAIL
+		}
+		(^C.int)(uintptr(win) + W_LOCKED_OFF)^ -= 1
+		if last_window(win) {
+			return FAIL
+		}
+		// autocmds may abort script processing
+		if aborting_r() {
+			return FAIL
+		}
+	}
+	// Fire WinClosed just before starting to free window-related resources.
+	do_autocmd_winclosed_o(win)
+	// autocmd may have freed the window already.
+	if !win_valid_any_tab(win) {
+		return OK
+	}
+	bufref: Bufref_T
+	set_bufref(&bufref, (^rawptr)(uintptr(win) + W_BUFFER_OFF)^)
+	fb := free_buf
+	win_close_buffer_o(win, fb ? DOBUF_UNLOAD_O : 0, true)
+	if win_valid(win) && (^rawptr)(uintptr(win) + W_BUFFER_OFF)^ == nil &&
+		!(^bool)(uintptr(win) + W_FLOATING_OFF)^ && last_window(win) {
+		// Autocommands have closed all windows, quit now. Restore
+		// curwin->w_buffer, otherwise writing ShaDa file may fail.
+		if (^rawptr)(uintptr(curwin) + W_BUFFER_OFF)^ == nil {
+			(^rawptr)(uintptr(curwin) + W_BUFFER_OFF)^ = curbuf
+		}
+		getout(0)
+	}
+	// Autocommands may have moved to another tab page.
+	if curtab != prev_curtab && win_valid_any_tab(win) &&
+		(^rawptr)(uintptr(win) + W_BUFFER_OFF)^ == nil {
+		// Need to close the window anyway, since the buffer is NULL.
+		win_close_othertab(win, 0, prev_curtab, force)
+		return FAIL
+	}
+	// Autocommands may have closed the window already, or closed the only
+	// other window or moved to another tab page.
+	if !win_valid(win) {
+		return FAIL
+	}
+	if one_window(win, nil) &&
+		((^rawptr)(uintptr(first_tabpage) + TP_NEXT_OFF)^ == nil ||
+			(^bool)(uintptr(lastwin_g) + W_FLOATING_OFF)^) {
+		if (^rawptr)(uintptr(first_tabpage) + TP_NEXT_OFF)^ != nil {
+			emsg(cstring(E_FLOATONLY_S))
+		}
+		win_unclose_buffer_o(win, &bufref)
+		return FAIL
+	}
+	if close_last_window_tabpage_o(win, free_buf, prev_curtab) {
+		return FAIL
+	}
+	// Now we are really going to close the window. Disallow any autocommand
+	// to split a window to avoid trouble.
+	nvim_odin_set_split_disallowed_r(nvim_odin_get_split_disallowed_r() + 1)
+	was_floating := (^bool)(uintptr(win) + W_FLOATING_OFF)^
+	if ui_has(K_UIMULTIGRID_O) {
+		ui_call_win_close_r(C.longlong((^C.int)(uintptr(win) + W_GRID_HANDLE_OFF)^))
+	}
+	if (^bool)(uintptr(win) + W_FLOATING_OFF)^ {
+		ui_comp_remove_grid_r(transmute(rawptr)(uintptr(win) + W_GRID_HANDLE_OFF))
+		if (^bool)(uintptr(win) + WCFG_EXTERNAL_OFF)^ {
+			tp := first_tabpage
+			for tp != nil {
+				if tp != curtab &&
+					(^rawptr)(uintptr(tp) + TP_CURWIN_OFF)^ == win {
+					// NB: an autocmd can still abort the closing of this
+					// window, but carrying out this change anyway shouldn't
+					// be a catastrophe.
+					(^rawptr)(uintptr(tp) + TP_CURWIN_OFF)^ =
+						(^rawptr)(uintptr(tp) + TP_FIRSTWIN_OFF)^
+				}
+				tp = (^rawptr)(uintptr(tp) + TP_NEXT_OFF)^
+			}
+		}
+	}
+	// About to free the window. Remember its final buffer for
+	// terminal_check_size, which may have changed since the last set_bufref.
+	// (e.g: close_buffer autocmds)
+	set_bufref(&bufref, (^rawptr)(uintptr(win) + W_BUFFER_OFF)^)
+	if (^rawptr)(uintptr(win) + W_BUFFER_OFF)^ != nil {
+		(^C.int)(uintptr((^rawptr)(uintptr(win) + W_BUFFER_OFF)^) + B_NWINDOWS_OFF)^ -= 1
+	}
+	had_cmdline_ruler := p_ru_g != 0 && win == curwin &&
+		(^C.int)(uintptr(win) + W_STATUS_HEIGHT_OFF)^ == 0
+	// Free the memory used for the window and get the window that received
+	// the screen space.
+	dir: C.int = 0
+	wp := win_free_mem_o(win, &dir, nil)
+	if help_window || quickfix_window {
+		// Closing the help window moves the cursor back to the current window
+		// of the snapshot.
+		prev_win := get_snapshot_curwin_o(help_window ? SNAP_HELP_IDX_O : SNAP_QUICKFIX_IDX_O)
+		if win_valid(prev_win) {
+			wp = prev_win
+		}
+	}
+	close_curwin := false
+	// Make sure curwin isn't invalid. It can cause severe trouble when
+	// printing an error message. For win_equal() curbuf needs to be valid too.
+	if win == curwin {
+		curwin = wp
+		if (^C.int)(uintptr(wp) + W_P_PVW_OFF)^ != 0 ||
+			bt_quickfix_r((^rawptr)(uintptr(wp) + W_BUFFER_OFF)^) {
+			// If the cursor goes to the preview or the quickfix window, try
+			// finding another window to go to.
+			for {
+				if (^rawptr)(uintptr(wp) + W_NEXT_OFF)^ == nil {
+					wp = firstwin
+				} else {
+					wp = (^rawptr)(uintptr(wp) + W_NEXT_OFF)^
+				}
+				if wp == curwin {
+					break
+				}
+				if (^C.int)(uintptr(wp) + W_P_PVW_OFF)^ == 0 &&
+					!bt_quickfix_r((^rawptr)(uintptr(wp) + W_BUFFER_OFF)^) &&
+					!((^bool)(uintptr(wp) + W_FLOATING_OFF)^ &&
+						((^bool)(uintptr(wp) + WCFG_HIDE_OFF)^ ||
+							!(^bool)(uintptr(wp) + WCFG_FOCUSABLE_OFF)^)) {
+					curwin = wp
+					break
+				}
+			}
+		}
+		curbuf = (^rawptr)(uintptr(curwin) + W_BUFFER_OFF)^
+		close_curwin = true
+		// The cursor position may be invalid if the buffer changed after last
+		// using the window.
+		check_cursor_r(curwin)
+	}
+	if !was_floating {
+		// If last window has a status line now and we don't want one,
+		// remove the status line. Do this before win_equal(), because
+		// it may change the height of a window.
+		last_status_r(false)
+		if !((^bool)(uintptr(curwin) + W_FLOATING_OFF)^) && p_ea_g != 0 &&
+			(b_at(p_ead_g, 0) == 'b' || C.int(b_at(p_ead_g, 0)) == dir) {
+			// If the frame of the closed window contains the new current
+			// window, only resize that frame. Otherwise resize all windows.
+			win_equal(curwin,
+				(^rawptr)(uintptr(curwin) + W_FRAME_OFF)^ != nil &&
+				(^rawptr)(uintptr((^rawptr)(uintptr(curwin) + W_FRAME_OFF)^) + FR_PARENT_OFF)^ == win_frame, dir)
+		} else {
+			win_comp_pos_r()
+			win_fix_scroll_r(false)
+		}
+	} else if had_cmdline_ruler && (^C.int)(uintptr(wp) + W_STATUS_HEIGHT_OFF)^ > 0 {
+		redraw_cmdline_g = true // clear cmdline 'ruler'
+	}
+	if bufref.br_buf != nil && bufref_valid(&bufref) &&
+		(^rawptr)(uintptr(bufref.br_buf) + B_TERMINAL_OFF)^ != nil {
+		terminal_check_size_r((^rawptr)(uintptr(bufref.br_buf) + B_TERMINAL_OFF)^)
+	}
+	if close_curwin {
+		win_enter_ext_o(wp, WEE_CURWIN_INVALID_O | WEE_TRIGGER_ENTER_AUTOCMDS_O |
+			WEE_TRIGGER_LEAVE_AUTOCMDS_O)
+		if other_buffer {
+			// careful: after this wp and win may be invalid!
+			apply_autocmds(EVENT_BUFENTER_O, nil, nil, false, curbuf)
+		}
+	}
+	if firstwin == lastwin_g && (^C.int)(uintptr(curwin) + W_LOCKED_OFF)^ != 0 &&
+		(^C.int)(uintptr(curbuf) + B_LOCKED_SPLIT_OFF)^ != 0 &&
+		(^rawptr)(uintptr(first_tabpage) + TP_NEXT_OFF)^ != nil {
+		// The new curwin is the last window in the current tab page, and it
+		// is already being closed. Trigger TabLeave now, as after its buffer
+		// is removed it's no longer safe to do that.
+		apply_autocmds(EVENT_TABLEAVE_O, nil, nil, false, curbuf)
+	}
+	nvim_odin_set_split_disallowed_r(nvim_odin_get_split_disallowed_r() - 1)
+	// After closing the help or quickfix window, try restoring the window
+	// layout from before it was opened.
+	if help_window || quickfix_window {
+		restore_snapshot_r(help_window ? SNAP_HELP_IDX_O : SNAP_QUICKFIX_IDX_O,
+			close_curwin ? 1 : 0)
+	}
+	// If the window had 'diff' set and now there is only one window left in
+	// the tab page with 'diff' set, and "closeoff" is in 'diffopt', then
+	// execute ":diffoff!".
+	if diffopt_closeoff_r() && had_diffmode != 0 && curtab == prev_curtab {
+		diffcount: C.int = 0
+		dwin := (^rawptr)(uintptr(curtab) + TP_FIRSTWIN_OFF)^
+		for dwin != nil {
+			if (^C.int)(uintptr(dwin) + W_P_DIFF_OFF)^ != 0 {
+				diffcount += 1
+			}
+			dwin = (^rawptr)(uintptr(dwin) + W_NEXT_OFF)^
+		}
+		if diffcount == 1 {
+			do_cmdline_cmd_r(cstring("diffoff!"))
+		}
+	}
+	(^bool)(uintptr(curwin) + W_POS_CHANGED_OFF)^ = true
+	if !was_floating {
+		// TODO(bfredl): how about no?
+		redraw_all_later_r(UPD_NOT_VALID_O)
+	}
+	return OK
+}
+
+// ── Batch 16: win_equal family ───────────────────────────────────────────────
+
+FR_NEWWIDTH_OFF :: 8
+FR_NEWHEIGHT_OFF :: 16
+
+foreign _ {
+	@(link_name = "global_winbar_height")
+	global_winbar_height_r :: proc "c" () -> C.int ---
+}
+
+// True when frame "frp" contains window "wp" (C static: no export/weak).
+frame_has_win_o :: proc "c"(frp: rawptr, wp: rawptr) -> bool {
+	if b_at((^u8)(uintptr(frp) + FR_LAYOUT_OFF), 0) == FR_LEAF_O {
+		return (^rawptr)(uintptr(frp) + FR_WIN_OFF)^ == wp
+	}
+	p := (^rawptr)(uintptr(frp) + FR_CHILD_OFF)^
+	for p != nil {
+		if frame_has_win_o(p, wp) {
+			return true
+		}
+		p = (^rawptr)(uintptr(p) + FR_NEXT_OFF)^
+	}
+	return false
+}
+
+// Compute maximum windows fitting within "height" in frame "fr" (C static).
+get_maximum_wincount_o :: proc "c"(fr: rawptr, height: C.int) -> C.int {
+	if b_at((^u8)(uintptr(fr) + FR_LAYOUT_OFF), 0) != FR_COL_O {
+		return height / (C.int(p_wmh_opt) + STATUS_HEIGHT_O +
+			(^C.int)(uintptr(frame2win(fr)) + W_WINBAR_HEIGHT_OFF)^)
+	} else if global_winbar_height_r() != 0 {
+		// Winbar globally enabled: no per-window check needed.
+		return height / (C.int(p_wmh_opt) + STATUS_HEIGHT_O + 1)
+	}
+	total_wincount: C.int = 0
+	h := height
+	// First, try to fit all child frames of "fr" into "height".
+	frp := (^rawptr)(uintptr(fr) + FR_CHILD_OFF)^
+	for frp != nil {
+		wp := frame2win(frp)
+		if h < C.int(p_wmh_opt) + STATUS_HEIGHT_O +
+			(^C.int)(uintptr(wp) + W_WINBAR_HEIGHT_OFF)^ {
+			break
+		}
+		h -= C.int(p_wmh_opt) + STATUS_HEIGHT_O +
+			(^C.int)(uintptr(wp) + W_WINBAR_HEIGHT_OFF)^
+		total_wincount += 1
+		frp = (^rawptr)(uintptr(frp) + FR_NEXT_OFF)^
+	}
+	// Remaining room fits more windows at default winbar height (0).
+	total_wincount += h / (C.int(p_wmh_opt) + STATUS_HEIGHT_O)
+	return total_wincount
+}
+
+// Make all windows the same height/width.
+@(export)
+win_equal :: proc "c"(next_curwin: rawptr, current: bool, dir: C.int) {
+	d := dir
+	if d == 0 {
+		d = C.int(b_at(p_ead_g, 0))
+	}
+	win_equal_rec_o(next_curwin == nil ? curwin : next_curwin, current,
+		topframe_g, d, 0, tabline_height_r(), Columns,
+		(^C.int)(uintptr(topframe_g) + FR_HEIGHT_OFF)^)
+	if !is_aucmd_win_r(next_curwin) {
+		win_fix_scroll_r(true)
+	}
+}
+
+// Set frame sizes equally (recursive worker; C static: no export/weak).
+win_equal_rec_o :: proc "c"(next_curwin: rawptr, current: bool, topfr: rawptr, dir: C.int, col: C.int, row: C.int, width: C.int, height: C.int) {
+	extra_sep: C.int = 0
+	totwincount: C.int = 0
+	next_curwin_size: C.int = 0
+	room: C.int = 0
+	has_next_curwin := false
+	w := width
+	h := height
+	c := col
+	r := row
+	if b_at((^u8)(uintptr(topfr) + FR_LAYOUT_OFF), 0) == FR_LEAF_O {
+		// Set the width/height of this frame; redraw on change.
+		if (^C.int)(uintptr(topfr) + FR_HEIGHT_OFF)^ != h ||
+			(^C.int)(uintptr((^rawptr)(uintptr(topfr) + FR_WIN_OFF)^) + W_WINROW_OFF)^ != r ||
+			(^C.int)(uintptr(topfr) + FR_WIDTH_OFF)^ != w ||
+			(^C.int)(uintptr((^rawptr)(uintptr(topfr) + FR_WIN_OFF)^) + W_WINCOL_OFF)^ != c {
+			(^C.int)(uintptr((^rawptr)(uintptr(topfr) + FR_WIN_OFF)^) + W_WINROW_OFF)^ = r
+			frame_new_height(topfr, h, false, false, false)
+			(^C.int)(uintptr((^rawptr)(uintptr(topfr) + FR_WIN_OFF)^) + W_WINCOL_OFF)^ = c
+			frame_new_width(topfr, w, false, false)
+			redraw_all_later_r(UPD_NOT_VALID_O)
+		}
+	} else if b_at((^u8)(uintptr(topfr) + FR_LAYOUT_OFF), 0) == FR_ROW_O {
+		(^C.int)(uintptr(topfr) + FR_WIDTH_OFF)^ = w
+		(^C.int)(uintptr(topfr) + FR_HEIGHT_OFF)^ = h
+		if dir != 'v' { // equalize frame widths
+			n := frame_minwidth_o(topfr, nowin_o())
+			// add one for the rightmost window (no separator)
+			if c + w == Columns {
+				extra_sep = 1
+			}
+			totwincount = (n + extra_sep) / (C.int(p_wmw_opt) + 1)
+			has_next_curwin = frame_has_win_o(topfr, next_curwin)
+			// "m" is the minimal width counting p_wiw for "next_curwin".
+			m := frame_minwidth_o(topfr, next_curwin)
+			room = w - m
+			if room < 0 {
+				next_curwin_size = C.int(p_wiw_opt) + room
+				room = 0
+			} else {
+				next_curwin_size = -1
+				fr := (^rawptr)(uintptr(topfr) + FR_CHILD_OFF)^
+				for fr != nil {
+					if !frame_fixed_width_o(fr) {
+						fr = (^rawptr)(uintptr(fr) + FR_NEXT_OFF)^
+						continue
+					}
+					// If 'winfixwidth' set keep the window width if possible.
+					n = frame_minwidth_o(fr, nowin_o())
+					new_size := (^C.int)(uintptr(fr) + FR_WIDTH_OFF)^
+					if frame_has_win_o(fr, next_curwin) {
+						room += C.int(p_wiw_opt) - C.int(p_wmw_opt)
+						next_curwin_size = 0
+						new_size = max(new_size, C.int(p_wiw_opt))
+					} else {
+						// These windows don't use up room.
+						nxtnull := (^rawptr)(uintptr(fr) + FR_NEXT_OFF)^ == nil
+						totwincount -= (n + (nxtnull ? extra_sep : 0)) / (C.int(p_wmw_opt) + 1)
+					}
+					room -= new_size - n
+					if room < 0 {
+						new_size += room
+						room = 0
+					}
+					(^C.int)(uintptr(fr) + FR_NEWWIDTH_OFF)^ = new_size
+					fr = (^rawptr)(uintptr(fr) + FR_NEXT_OFF)^
+				}
+				if next_curwin_size == -1 {
+					if !has_next_curwin {
+						next_curwin_size = 0
+					} else if totwincount > 1 &&
+						(room + (totwincount - 2)) / (totwincount - 1) > C.int(p_wiw_opt) {
+						// Can make all windows wider than 'winwidth'.
+						next_curwin_size = C.int(room + C.int(p_wiw_opt) +
+							(totwincount - 1) * C.int(p_wmw_opt) +
+							(totwincount - 1)) / totwincount
+						room -= next_curwin_size - C.int(p_wiw_opt)
+					} else {
+						next_curwin_size = C.int(p_wiw_opt)
+					}
+				}
+			}
+			if has_next_curwin {
+				totwincount -= 1 // don't count curwin
+			}
+		}
+		fr := (^rawptr)(uintptr(topfr) + FR_CHILD_OFF)^
+		for fr != nil {
+			wincount: C.int = 1
+			new_size: C.int
+			if (^rawptr)(uintptr(fr) + FR_NEXT_OFF)^ == nil {
+				// last frame gets all that remains (avoid roundoff error)
+				new_size = w
+			} else if dir == 'v' {
+				new_size = (^C.int)(uintptr(fr) + FR_WIDTH_OFF)^
+			} else if frame_fixed_width_o(fr) {
+				new_size = (^C.int)(uintptr(fr) + FR_NEWWIDTH_OFF)^
+				wincount = 0 // doesn't count as a sizeable window
+			} else {
+				n := frame_minwidth_o(fr, nowin_o())
+				nxtnull := (^rawptr)(uintptr(fr) + FR_NEXT_OFF)^ == nil
+				wincount = (n + (nxtnull ? extra_sep : 0)) / (C.int(p_wmw_opt) + 1)
+				m := frame_minwidth_o(fr, next_curwin)
+				hnc := has_next_curwin && frame_has_win_o(fr, next_curwin)
+				if hnc { // don't count next_curwin
+					wincount -= 1
+				}
+				if totwincount == 0 {
+					new_size = room
+				} else {
+					new_size = (wincount * room + (totwincount / 2)) / totwincount
+				}
+				if hnc { // add next_curwin size
+					next_curwin_size -= C.int(p_wiw_opt) - (m - n)
+					next_curwin_size = max(next_curwin_size, 0)
+					new_size += next_curwin_size
+					room -= new_size - next_curwin_size
+				} else {
+					room -= new_size
+				}
+				new_size += n
+			}
+			// Skip full-width frame when splitting/closing, unless equalizing.
+			if !current || dir != 'v' || (^rawptr)(uintptr(topfr) + FR_PARENT_OFF)^ != nil ||
+				new_size != (^C.int)(uintptr(fr) + FR_WIDTH_OFF)^ ||
+				frame_has_win_o(fr, next_curwin) {
+				win_equal_rec_o(next_curwin, current, fr, dir, c, r, new_size, h)
+			}
+			c += new_size
+			w -= new_size
+			totwincount -= wincount
+			fr = (^rawptr)(uintptr(fr) + FR_NEXT_OFF)^
+		}
+	} else { // topfr->fr_layout == FR_COL
+		(^C.int)(uintptr(topfr) + FR_WIDTH_OFF)^ = w
+		(^C.int)(uintptr(topfr) + FR_HEIGHT_OFF)^ = h
+		if dir != 'h' { // equalize frame heights
+			n := frame_minheight_o(topfr, nowin_o())
+			// add one for the bottom window (no statusline/separator)
+			if r + h >= cmdline_row && p_ls_g == 0 {
+				extra_sep = STATUS_HEIGHT_O
+			} else if global_stl_height_r() > 0 {
+				extra_sep = 1
+			}
+			totwincount = get_maximum_wincount_o(topfr, n + extra_sep)
+			has_next_curwin = frame_has_win_o(topfr, next_curwin)
+			// "m" is the minimal height counting p_wh for "next_curwin".
+			m := frame_minheight_o(topfr, next_curwin)
+			room = h - m
+			if room < 0 {
+				next_curwin_size = C.int(p_wh_opt) + room
+				room = 0
+			} else {
+				next_curwin_size = -1
+				fr := (^rawptr)(uintptr(topfr) + FR_CHILD_OFF)^
+				for fr != nil {
+					if !frame_fixed_height_o(fr) {
+						fr = (^rawptr)(uintptr(fr) + FR_NEXT_OFF)^
+						continue
+					}
+					// If 'winfixheight' set keep the window height if possible.
+					n = frame_minheight_o(fr, nowin_o())
+					new_size := (^C.int)(uintptr(fr) + FR_HEIGHT_OFF)^
+					if frame_has_win_o(fr, next_curwin) {
+						room += C.int(p_wh_opt) - C.int(p_wmh_opt)
+						next_curwin_size = 0
+						new_size = max(new_size, C.int(p_wh_opt))
+					} else {
+						// These windows don't use up room.
+						nxtnull := (^rawptr)(uintptr(fr) + FR_NEXT_OFF)^ == nil
+						totwincount -= get_maximum_wincount_o(fr,
+							n + (nxtnull ? extra_sep : 0))
+					}
+					room -= new_size - n
+					if room < 0 {
+						new_size += room
+						room = 0
+					}
+					(^C.int)(uintptr(fr) + FR_NEWHEIGHT_OFF)^ = new_size
+					fr = (^rawptr)(uintptr(fr) + FR_NEXT_OFF)^
+				}
+				if next_curwin_size == -1 {
+					if !has_next_curwin {
+						next_curwin_size = 0
+					} else if totwincount > 1 &&
+						(room + (totwincount - 2)) / (totwincount - 1) > C.int(p_wh_opt) {
+						// Can make all windows higher than 'winheight'.
+						next_curwin_size = C.int(room + C.int(p_wh_opt) +
+							(totwincount - 1) * C.int(p_wmh_opt) +
+							(totwincount - 1)) / totwincount
+						room -= next_curwin_size - C.int(p_wh_opt)
+					} else {
+						next_curwin_size = C.int(p_wh_opt)
+					}
+				}
+			}
+			if has_next_curwin {
+				totwincount -= 1 // don't count curwin
+			}
+		}
+		fr := (^rawptr)(uintptr(topfr) + FR_CHILD_OFF)^
+		for fr != nil {
+			new_size: C.int
+			wincount: C.int = 1
+			if (^rawptr)(uintptr(fr) + FR_NEXT_OFF)^ == nil {
+				// last frame gets all that remains (avoid roundoff error)
+				new_size = h
+			} else if dir == 'h' {
+				new_size = (^C.int)(uintptr(fr) + FR_HEIGHT_OFF)^
+			} else if frame_fixed_height_o(fr) {
+				new_size = (^C.int)(uintptr(fr) + FR_NEWHEIGHT_OFF)^
+				wincount = 0 // doesn't count as a sizeable window
+			} else {
+				n := frame_minheight_o(fr, nowin_o())
+				nxtnull := (^rawptr)(uintptr(fr) + FR_NEXT_OFF)^ == nil
+				wincount = get_maximum_wincount_o(fr, n + (nxtnull ? extra_sep : 0))
+				m := frame_minheight_o(fr, next_curwin)
+				hnc := has_next_curwin && frame_has_win_o(fr, next_curwin)
+				if hnc { // don't count next_curwin
+					wincount -= 1
+				}
+				if totwincount == 0 {
+					new_size = room
+				} else {
+					new_size = (wincount * room + (totwincount / 2)) / totwincount
+				}
+				if hnc { // add next_curwin size
+					next_curwin_size -= C.int(p_wh_opt) - (m - n)
+					new_size += next_curwin_size
+					room -= new_size - next_curwin_size
+				} else {
+					room -= new_size
+				}
+				new_size += n
+			}
+			// Skip full-width frame when splitting/closing, unless equalizing.
+			if !current || dir != 'h' || (^rawptr)(uintptr(topfr) + FR_PARENT_OFF)^ != nil ||
+				new_size != (^C.int)(uintptr(fr) + FR_HEIGHT_OFF)^ ||
+				frame_has_win_o(fr, next_curwin) {
+				win_equal_rec_o(next_curwin, current, fr, dir, c, r, w, new_size)
+			}
+			r += new_size
+			h -= new_size
+			totwincount -= wincount
+			fr = (^rawptr)(uintptr(fr) + FR_NEXT_OFF)^
+		}
+	}
+}
+
+// ── Batch 17: screen resize ──────────────────────────────────────────────────
+
+foreign _ {
+	@(link_name = "win_reconfig_floats")
+	win_reconfig_floats_r :: proc "c" () ---
+	@(link_name = "compute_cmdrow")
+	compute_cmdrow_r :: proc "c" () ---
+}
+
+// Check that "topfrp" and its children are at the right height (C static).
+frame_check_height_o :: proc "c"(topfrp: rawptr, height: C.int) -> bool {
+	if (^C.int)(uintptr(topfrp) + FR_HEIGHT_OFF)^ != height {
+		return false
+	}
+	if b_at((^u8)(uintptr(topfrp) + FR_LAYOUT_OFF), 0) == FR_ROW_O {
+		frp := (^rawptr)(uintptr(topfrp) + FR_CHILD_OFF)^
+		for frp != nil {
+			if (^C.int)(uintptr(frp) + FR_HEIGHT_OFF)^ != height {
+				return false
+			}
+			frp = (^rawptr)(uintptr(frp) + FR_NEXT_OFF)^
+		}
+	}
+	return true
+}
+
+// Check that "topfrp" and its children are at the right width (C static).
+frame_check_width_o :: proc "c"(topfrp: rawptr, width: C.int) -> bool {
+	if (^C.int)(uintptr(topfrp) + FR_WIDTH_OFF)^ != width {
+		return false
+	}
+	if b_at((^u8)(uintptr(topfrp) + FR_LAYOUT_OFF), 0) == FR_COL_O {
+		frp := (^rawptr)(uintptr(topfrp) + FR_CHILD_OFF)^
+		for frp != nil {
+			if (^C.int)(uintptr(frp) + FR_WIDTH_OFF)^ != width {
+				return false
+			}
+			frp = (^rawptr)(uintptr(frp) + FR_NEXT_OFF)^
+		}
+	}
+	return true
+}
+
+// Recompute window heights for the current tab page (e.g. after 'rows').
+@(export)
+win_new_screen_rows :: proc "c"() {
+	if firstwin == nil { // not initialized yet
+		return
+	}
+	h := max(rows_avail_o(), frame_minheight_o(topframe_g, nil))
+	// First try setting the heights of windows with 'winfixheight'. If
+	// that doesn't result in the right height, forget about that option.
+	frame_new_height(topframe_g, h, false, true, false)
+	if !frame_check_height_o(topframe_g, h) {
+		frame_new_height(topframe_g, h, false, false, false)
+	}
+	win_comp_pos_r() // recompute w_winrow and w_wincol
+	win_reconfig_floats_r() // The size of floats might change
+	compute_cmdrow_r()
+	(^C.longlong)(uintptr(curtab) + TP_CH_USED_OFF)^ = C.longlong(p_ch)
+	if !skip_win_fix_scroll_g {
+		win_fix_scroll_r(true)
+	}
+}
+
+// Recompute window widths for the current tab page (after 'columns').
+@(export)
+win_new_screen_cols :: proc "c"() {
+	if firstwin == nil { // not initialized yet
+		return
+	}
+	// First try setting the widths of windows with 'winfixwidth'. If that
+	// doesn't result in the right width, forget about that option.
+	frame_new_width(topframe_g, Columns, false, true)
+	if !frame_check_width_o(topframe_g, Columns) {
+		frame_new_width(topframe_g, Columns, false, false)
+	}
+	win_comp_pos_r() // recompute w_winrow and w_wincol
+	win_reconfig_floats_r() // The size of floats might change
+}

@@ -84,8 +84,6 @@ foreign _ {
 	// ── buffer/ex_cmds helpers ──
 	@(link_name = "do_cmdline_cmd")
 	do_cmdline_cmd_r :: proc "c" (cmd: cstring) -> C.int ---
-	@(link_name = "win_valid_any_tab")
-	win_valid_any_tab_r :: proc "c" (wp: rawptr) -> bool ---
 }
 
 // These are DEFINED here (C defined them in spell.c) — spellfile.c links to them.
@@ -2013,10 +2011,6 @@ spell_delete_wordlist :: proc "c"() {
 parse_spell_recursive: bool = false
 
 foreign _ {
-	@(link_name = "set_bufref")
-	set_bufref_r :: proc "c" (bufref: rawptr, buf: rawptr) ---
-	@(link_name = "bufref_valid")
-	bufref_valid_r :: proc "c" (bufref: rawptr) -> bool ---
 	@(link_name = "path_full_compare")
 	path_full_compare_sp :: proc "c" (s1: cstring, s2: cstring, checkname: bool, expand: bool) -> C.int ---
 	@(link_name = "path_fnamecmp")
@@ -2044,7 +2038,7 @@ parse_spelllang :: proc "c"(wp: rawptr) -> ^u8 {
 	sb := win_s_r(wp)
 	bufref: [64]u8 // bufref_T is small; opaque storage
 	mem_zero_sp(&bufref[0], 64)
-	set_bufref_r(&bufref[0], buf_of_win(wp))
+	set_bufref((^Bufref_T)(&bufref[0]), buf_of_win(wp))
 
 	if parse_spell_recursive {
 		return nil
@@ -2122,7 +2116,7 @@ parse_spelllang :: proc "c"(wp: rawptr) -> ^u8 {
 				spell_load_file_r(&lang[0], &lang[0], nil, false)
 			} else {
 				spell_load_lang(&lang[0])
-				if !bufref_valid_r(&bufref[0]) || !win_valid_any_tab_r(wp) {
+				if !bufref_valid((^Bufref_T)(&bufref[0])) || !win_valid_any_tab(wp) {
 					ret_msg = "E797: SpellFileMissing autocommand deleted buffer"
 					break
 				}

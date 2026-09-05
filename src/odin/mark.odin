@@ -281,9 +281,6 @@ foreign _ {
 // ── Foreign: C-only helpers ──────────────────────────────────────────────────
 
 foreign _ {
-	buflist_findnr :: proc "c" (nr: C.int) -> rawptr ---
-	buflist_getfile :: proc "c" (n: C.int, lnum: C.int, options: C.int, forceit: C.int) -> C.int ---
-	buflist_new :: proc "c" (ffname_arg: ^u8, sfname_arg: ^u8, lnum: C.int, flags: C.int) -> rawptr ---
 	buflist_nr2name :: proc "c" (n: C.int, fullname: C.int, helptail: C.int) -> ^u8 ---
 
 	bt_prompt :: proc "c" (buf: rawptr) -> bool ---
@@ -1095,7 +1092,7 @@ fname2fnum :: proc "c"(fm: ^Xfmark_T) {
 	p := path_shorten_fname(&name_buff[0], &IObuff[0])
 
 	// buflist_new() will call fmarks_check_names()
-	_ = buflist_new(&name_buff[0], p, 1, 0)
+	_ = buflist_new(transmute(cstring)(&name_buff[0]), transmute(cstring)(p), 1, 0)
 }
 
 MAXPATHL_INT :: 4096

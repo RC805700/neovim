@@ -155,9 +155,8 @@ foreign _ {
 	@(link_name = "api_free_string")
 	api_free_string_r :: proc "c" (s: NvimString) ---
 	@(link_name = "empty_string_option")
-	empty_string_option_c: ^u8
-	// curbufIsChanged is an Odin proc in undo.odin — reuse directly.
-	@(link_name = "copy_string")
+	_empty_string_arr: [1]u8
+	// curbufIsChanged is an Odin proc in undo.odin — reuse directly.	@(link_name = "copy_string")
 	copy_string_o :: proc "c" (s: NvimString, arena: rawptr) -> NvimString ---
 	@(link_name = "min_rows_for_all_tabpages")
 	min_rows_for_all_tabpages_r :: proc "c" () -> C.int ---
@@ -189,6 +188,14 @@ foreign _ {
 	magic_overruled_g: C.int
 	@(link_name = "p_shm")
 	p_shm: ^u8
+}
+
+// C's empty_string_option is a char ARRAY (symbol IS the storage), not a
+// pointer — binding it as ^u8 reads its first 8 bytes (zeros) as nil.
+// Bind the array (_empty_string_arr above); this returns its address,
+// the same value C code compares against.
+empty_string_opt :: proc "c"() -> ^u8 {
+	return transmute(^u8)(&_empty_string_arr[0])
 }
 
 // find_key_len is static in option.c — reimplemented here via find_special_key.
@@ -394,7 +401,7 @@ optval_free :: proc "c"(o_in: OptVal) {
 	switch o.typ {
 	case kOptValTypeString:
 		s := NvimString{transmute(cstring)(ov_str_data(&o)), ov_str_size(&o)}
-		if ov_str_data(&o) != empty_string_option_c && s.size > 0 {
+		if ov_str_data(&o) != empty_string_opt() && s.size > 0 {
 			api_free_string_r(s)
 		}
 	case:
@@ -473,7 +480,7 @@ optval_from_varp :: proc "c"(opt_idx: C.int, varp: rawptr) -> OptVal {
 	case kOptValTypeString:
 		sd := (^^u8)(varp)^
 		if sd == nil {
-			return str_optval(empty_string_option_c, 0)
+			return str_optval(empty_string_opt(), 0)
 		}
 		return str_optval(sd, libc.strlen(transmute(cstring)(sd)))
 	}
@@ -718,8 +725,6 @@ validate_num_option :: proc "c"(opt_idx: C.int, newval: ^C.longlong, errbuf: ^u8
 }
 
 foreign _ {
-	@(link_name = "check_illegal_path_names")
-	check_illegal_path_names_r :: proc "c" (varp: ^u8, flags: C.uint32_t) -> bool ---
 	@(link_name = "buf_init_chartab")
 	buf_init_chartab_r :: proc "c" (buf: rawptr, send_error: bool) -> bool ---
 	@(link_name = "set_option_sctx")
@@ -871,7 +876,7 @@ get_option_unset_value_o :: proc "c"(opt_idx: C.int) -> OptVal {
 
 	if option_is_global_local_i(opt_idx) {
 		if o.typ == kOptValTypeString {
-			return str_optval(empty_string_option_c, 0)
+			return str_optval(empty_string_opt(), 0)
 		}
 		switch opt_idx {
 		case 6: // kOptAutocomplete
@@ -930,10 +935,14 @@ did_set_option_o :: proc "c"(
 	} else if (secure || sandbox != 0) && (opt.flags & kOptFlagSecure) != 0 {
 		errmsg = e_secure_s
 	} else if new_value.typ == kOptValTypeString &&
-	check_illegal_path_names_r((^^u8)(varp)^, opt.flags) {
+	check_illegal_path_names((^^u8)(varp)^, opt.flags) {
 		errmsg = cstring("E474: Invalid argument") // e_invarg
-	} else if opt.opt_did_set_cb != nil {
-		cb := transmute(proc "c" (^optset_T) -> cstring)(opt.opt_did_set_cb)
+	} else if opt.opt_did_set_cb != nil || did_set_dispatch_o(opt_idx) != nil {
+		cb_ptr := did_set_dispatch_o(opt_idx)
+		if cb_ptr == nil {
+			cb_ptr = opt.opt_did_set_cb
+		}
+		cb := transmute(proc "c" (^optset_T) -> cstring)(cb_ptr)
 		errmsg = cb(&did_set_cb_args)
 		value_changed = did_set_cb_args.os_value_changed
 		value_checked = did_set_cb_args.os_value_checked
@@ -1455,19 +1464,17 @@ foreign _ {
 	@(link_name = "init_chartab")
 	init_chartab_r :: proc "c" () -> C.int ---
 	@(link_name = "spell_check_msm")
-	spell_check_msm_r :: proc "c" () ---
+	spell_check_msm_r :: proc "c" () -> C.int ---
 	@(link_name = "spell_check_sps")
-	spell_check_sps_r :: proc "c" () ---
+	spell_check_sps_r :: proc "c" () -> C.int ---
 	@(link_name = "did_set_cedit")
 	did_set_cedit_r :: proc "c" (eap: rawptr) -> cstring ---
 	@(link_name = "did_set_breakat")
 	did_set_breakat_r :: proc "c" (eap: rawptr) -> cstring ---
 	@(link_name = "highlight_changed")
 	highlight_changed_r :: proc "c" () ---
-	@(link_name = "set_chars_option")
-	set_chars_option_o :: proc "c" (wp: rawptr, val: ^u8, opt: C.int, add: bool, errbuf: ^u8, errbuflen: C.size_t) -> C.int ---
 	@(link_name = "check_opt_wim")
-	check_opt_wim_r :: proc "c" () -> cstring ---
+	check_opt_wim_r :: proc "c" () -> C.int ---
 	@(link_name = "tabstop_set")
 	tabstop_set_o :: proc "c" (val: ^u8, ret_list: ^^u8) -> bool ---
 	@(link_name = "get_special_key_name")
@@ -2557,18 +2564,12 @@ foreign _ {
 	win_comp_scroll_r :: proc "c" (wp: rawptr) ---
 	@(link_name = "parse_cino")
 	parse_cino_r :: proc "c" (buf: rawptr) ---
-	@(link_name = "didset_string_options")
-	didset_string_options_r :: proc "c" () ---
 	@(link_name = "parse_shape_opt")
 	parse_shape_opt_r :: proc "c" (shape: C.int) -> cstring ---
 	@(link_name = "last_status")
 	last_status_r :: proc "c" (more: bool) ---
 	@(link_name = "win_float_update_statusline")
 	win_float_update_statusline_r :: proc "c" (wp: rawptr) ---
-	@(link_name = "win_new_screen_rows")
-	win_new_screen_rows_r :: proc "c" () ---
-	@(link_name = "check_string_option")
-	check_string_option_r :: proc "c" (varp: ^u8) ---
 }
 
 SHAPE_CURSOR_S :: 0
@@ -2598,7 +2599,7 @@ current_sctx_sc_sid :: proc "c"() -> C.int {
 check_options :: proc "c"() {
 	for opt_idx := C.int(0); opt_idx < nvim_odin_opt_count(); opt_idx += 1 {
 		if option_has_type(opt_idx, kOptValTypeString) && opt_at(opt_idx).varp != nil {
-			check_string_option_r(transmute(^u8)(opt_at(opt_idx).varp))
+			check_string_option(transmute(^u8)(opt_at(opt_idx).varp))
 		}
 	}
 }
@@ -2624,7 +2625,7 @@ set_options_default_o :: proc "c"(opt_flags: C.int) {
 
 didset_options_o :: proc "c"() {
 	init_chartab_r()
-	didset_string_options_r()
+	didset_string_options()
 	spell_check_msm_r()
 	spell_check_sps_r()
 	compile_cap_prog(win_s_r(curwin))
@@ -2636,8 +2637,8 @@ didset_options_o :: proc "c"() {
 
 didset_options2_o :: proc "c"() {
 	highlight_changed_r()
-	set_chars_option_o(curwin, (^u8)(uintptr(curwin) + 1208), 0, true, nil, 0) // w_p_fcs
-	set_chars_option_o(curwin, (^u8)(uintptr(curwin) + 1200), 1, true, nil, 0) // w_p_lcs
+	set_chars_option(curwin, (^u8)(uintptr(curwin) + 1208), 0, true, nil, 0) // w_p_fcs
+	set_chars_option(curwin, (^u8)(uintptr(curwin) + 1200), 1, true, nil, 0) // w_p_lcs
 	_ = check_opt_wim_r()
 	vsts_arr := transmute(^^u8)(uintptr(curbuf) + 10760)
 	xfree(vsts_arr^)
@@ -2651,7 +2652,7 @@ didset_options_all_o :: proc "c"() {
 	_ = parse_shape_opt_r(SHAPE_CURSOR_S)
 	last_status_r(false)
 	win_float_update_statusline_r(nil)
-	win_new_screen_rows_r()
+	win_new_screen_rows()
 }
 
 @(export)
@@ -3233,7 +3234,7 @@ get_showbreak_value :: proc "c"(win: rawptr) -> ^u8 {
 		return p_sbr_g
 	}
 	if libc.strcmp(transmute(cstring)(sbr), "NONE") == 0 {
-		return empty_string_option_c
+		return empty_string_opt()
 	}
 	return sbr
 }
@@ -3366,16 +3367,12 @@ set_fileformat :: proc "c"(eol_style: C.int, opt_flags: C.int) {
 // ── winopt_T copy/clear/didset ───────────────────────────────────────────────
 
 foreign _ {
+	@(link_name = "set_winbar_win")
+	set_winbar_win_r :: proc "c" (wp: rawptr, make_room: bool, valid_cursor: bool) -> cstring ---
 	@(link_name = "check_colorcolumn")
 	check_colorcolumn_r :: proc "c" (cc: ^u8, wp: rawptr) -> cstring ---
 	@(link_name = "briopt_check")
 	briopt_check_r :: proc "c" (briopt: ^u8, wp: rawptr) -> bool ---
-	@(link_name = "set_winbar_win")
-	set_winbar_win_r :: proc "c" (wp: rawptr, make_room: bool, valid_cursor: bool) -> cstring ---
-	@(link_name = "check_signcolumn")
-	check_signcolumn_r :: proc "c" (scl: ^u8, wp: rawptr) -> C.int ---
-	@(link_name = "clear_string_option")
-	clear_string_option_r :: proc "c" (pp: ^u8) ---
 	@(link_name = "free_operatorfunc_option")
 	free_operatorfunc_option :: proc "c" () ---
 	@(link_name = "free_tagfunc_option")
@@ -3400,8 +3397,8 @@ wo_copy_str :: proc "c"(to: rawptr, from: rawptr, off: uintptr, dup: bool) {
 	if dup {
 		(^^u8)(uintptr(to) + off)^ = xstrdup_r2(transmute(cstring)(src))
 	} else {
-		if src == empty_string_option_c {
-			(^^u8)(uintptr(to) + off)^ = empty_string_option_c
+		if src == empty_string_opt() {
+			(^^u8)(uintptr(to) + off)^ = empty_string_opt()
 		} else {
 			(^^u8)(uintptr(to) + off)^ = xstrdup_r2(transmute(cstring)(src))
 		}
@@ -3437,18 +3434,18 @@ copy_winopt :: proc "c"(from: rawptr, to: rawptr) {
 		(^^u8)(uintptr(to) + 40)^ = xstrdup_r2(transmute(cstring)((^^u8)(uintptr(from) + 40)^))
 		(^^u8)(uintptr(to) + 88)^ = xstrdup_r2(transmute(cstring)((^^u8)(uintptr(from) + 88)^))
 	} else {
-		(^^u8)(uintptr(to) + 40)^ = empty_string_option_c
-		(^^u8)(uintptr(to) + 88)^ = empty_string_option_c
+		(^^u8)(uintptr(to) + 40)^ = empty_string_opt()
+		(^^u8)(uintptr(to) + 88)^ = empty_string_opt()
 	}
 	libc.memmove(
 		transmute(rawptr)(uintptr(to) + 432), transmute(rawptr)(uintptr(from) + 432),
 		24 * 53) // wo_script_ctx[kWinOptCount=53]
 	// check_winopt: replace any NULL with empty_string_option
 	for off in str_offs {
-		check_string_option_r(transmute(^u8)((^^u8)(uintptr(to) + off)))
+		check_string_option(transmute(^u8)((^^u8)(uintptr(to) + off)))
 	}
-	check_string_option_r(transmute(^u8)((^^u8)(uintptr(to) + 40)))
-	check_string_option_r(transmute(^u8)((^^u8)(uintptr(to) + 88)))
+	check_string_option(transmute(^u8)((^^u8)(uintptr(to) + 40)))
+	check_string_option(transmute(^u8)((^^u8)(uintptr(to) + 88)))
 }
 
 @(export)
@@ -3456,7 +3453,7 @@ clear_winopt :: proc "c"(wop: rawptr) {
 	str_offs := [23]uintptr{24, 40, 56, 80, 88, 112, 120, 128, 32, 344, 216,
 		264, 280, 248, 256, 320, 8, 376, 384, 392, 152, 288, 272}
 	for off in str_offs {
-		clear_string_option_r(transmute(^u8)((^^u8)(uintptr(wop) + off)))
+		clear_string_option(transmute(^u8)((^^u8)(uintptr(wop) + off)))
 	}
 }
 
@@ -3470,12 +3467,12 @@ didset_window_options :: proc "c"(wp: rawptr, valid_cursor: bool) {
 	check_colorcolumn_r(nil, wp)
 	briopt_check_r(nil, wp)
 	fill_culopt_flags(nil, wp)
-	set_chars_option_o(wp, (^^u8)(uintptr(wp) + 1208)^, kFillchars_S, true, nil, 0)
-	set_chars_option_o(wp, (^^u8)(uintptr(wp) + 1200)^, kListchars_S, true, nil, 0)
+	set_chars_option(wp, (^^u8)(uintptr(wp) + 1208)^, kFillchars_S, true, nil, 0)
+	set_chars_option(wp, (^^u8)(uintptr(wp) + 1200)^, kListchars_S, true, nil, 0)
 	parse_winhl_opt(nil, wp)
 	check_blending(wp)
 	set_winbar_win_r(wp, false, valid_cursor)
-	check_signcolumn_r(nil, wp)
+	check_signcolumn(nil, wp)
 	(^C.int)(uintptr(wp) + 10514)^ =
 		(^C.longlong)(uintptr(wp) + W_P_WINBL_OFF)^ > 0 ? 1 : 0
 }
@@ -3521,8 +3518,6 @@ foreign _ {
 	getuid_c :: proc "c" () -> C.int ---
 	@(link_name = "xmemdupz")
 	xmemdupz_o2 :: proc "c" (s: ^u8, len: C.size_t) -> ^u8 ---
-	@(link_name = "free_string_option")
-	free_string_option_o :: proc "c" (p: ^u8) ---
 	@(link_name = "nvim_odin_switch_option_context")
 	nvim_odin_switch_option_context :: proc "c" (ctx: rawptr, scope: C.int, from: rawptr, err: rawptr) -> bool ---
 	@(link_name = "nvim_odin_restore_option_context")
@@ -3614,7 +3609,7 @@ set_helplang_default :: proc "c"(lang: ^u8) {
 	if (opt_at(130).flags & kOptFlagWasSet_S) != 0 { // kOptHelplang=130
 		return
 	}
-	free_string_option_o(p_hlg_g)
+	free_string_option(p_hlg_g)
 	p_hlg_g = xmemdupz_o2(lang, lang_len)
 	// zh_CN becomes "cn", zh_TW becomes "tw".
 	if strncasecmp_o(transmute(cstring)(p_hlg_g), cstring("zh_"), 3) == 0 && lang_len >= 5 {
@@ -4888,13 +4883,13 @@ W_HL_NEEDS_UPDATE_OFF :: 100
 
 @(export)
 parse_winhl_opt :: proc "c"(winhl: ^u8, wp: rawptr) -> bool {
-	p: ^u8 = empty_string_option_c
+	p: ^u8 = empty_string_opt()
 	if winhl != nil {
 		p = winhl
 	} else if wp != nil {
 		p2 := (^^u8)(uintptr(wp) + W_P_WINHL_OFF)^ // w_p_winhl
 		if p2 == nil {
-			p2 = empty_string_option_c
+			p2 = empty_string_opt()
 		}
 		p = p2
 	}
@@ -4957,7 +4952,7 @@ parse_winhl_opt :: proc "c"(winhl: ^u8, wp: rawptr) -> bool {
 		if b_at(commap, 0) != 0 {
 			p = (^u8)(uintptr(commap) + 1)
 		} else {
-			p = empty_string_option_c
+			p = empty_string_opt()
 		}
 	}
 
@@ -5208,8 +5203,6 @@ opt_at_ptr :: #force_inline proc "c"(opt_idx: C.int) -> ^vimoption_T {
 foreign _ {
 	@(link_name = "free_buf_options")
 	free_buf_options_c :: proc "c" (buf: rawptr, free_p_ff: bool) ---
-	@(link_name = "check_buf_options")
-	check_buf_options_c :: proc "c" (buf: rawptr) ---
 	@(link_name = "set_buflocal_cpt_callbacks")
 	set_buflocal_cpt_callbacks_c :: proc "c" (buf: rawptr) ---
 	@(link_name = "set_buflocal_cfu_callback")
@@ -5399,8 +5392,8 @@ buf_copy_options :: proc "c"(buf: rawptr, flags: C.int) {
 				} else {
 					(^^u8)(uintptr(buf) + B_P_FF_OFF)^ = xstrdup_r2(transmute(cstring)(p_ff_g))
 				}
-				(^^u8)(uintptr(buf) + B_P_BH_OFF)^ = empty_string_option_c
-				(^^u8)(uintptr(buf) + B_P_BT_OFF)^ = empty_string_option_c
+				(^^u8)(uintptr(buf) + B_P_BH_OFF)^ = empty_string_opt()
+				(^^u8)(uintptr(buf) + B_P_BT_OFF)^ = empty_string_opt()
 			} else {
 				free_buf_options_c(buf, false)
 			}
@@ -5459,7 +5452,7 @@ buf_copy_options :: proc "c"(buf: rawptr, flags: C.int) {
 			(^C.longlong)(uintptr(bp) + B_P_STS_NOPASTE_OFF)^ = get_p_sts_nopaste_c()
 			(^^u8)(uintptr(bp) + B_P_VSTS_OFF)^ = xstrdup_r2(transmute(cstring)(p_vsts_g))
 			copy_opt_sctx(bp, 89)
-			if p_vsts_g != nil && p_vsts_g != empty_string_option_c {
+			if p_vsts_g != nil && p_vsts_g != empty_string_opt() {
 				vsts_arr: ^rawptr = (^rawptr)(uintptr(bp) + B_P_VSTS_ARRAY_OFF)
 				tabstop_set_o(p_vsts_g, (^^u8)(vsts_arr))
 			} else {
@@ -5494,17 +5487,17 @@ buf_copy_options :: proc "c"(buf: rawptr, flags: C.int) {
 			copy_opt_sctx(bp, 14)
 			(^^u8)(uintptr(bp) + B_P_LOP_OFF)^ = xstrdup_r2(transmute(cstring)(p_lop_g))
 			copy_opt_sctx(bp, 54)
-			(^^u8)(uintptr(bp) + B_P_FT_OFF)^ = empty_string_option_c
+			(^^u8)(uintptr(bp) + B_P_FT_OFF)^ = empty_string_opt()
 			(^C.int)(uintptr(bp) + B_P_PI_OFF)^ = p_pi_g
 			copy_opt_sctx(bp, 65)
 			(^^u8)(uintptr(bp) + B_P_CINW_OFF)^ = xstrdup_r2(transmute(cstring)(p_cinw_g))
 			copy_opt_sctx(bp, 15)
 			(^C.int)(uintptr(bp) + B_P_LISP_OFF)^ = p_lisp_g
 			copy_opt_sctx(bp, 53)
-			(^^u8)(uintptr(bp) + B_P_SYN_OFF)^ = empty_string_option_c
+			(^^u8)(uintptr(bp) + B_P_SYN_OFF)^ = empty_string_opt()
 			(^C.longlong)(uintptr(bp) + B_P_SMC_OFF)^ = p_smc_g
 			copy_opt_sctx(bp, 78)
-			(^^u8)(uintptr(bp) + SB_SYN_ISK)^ = transmute(^u8)(empty_string_option_c)
+			(^^u8)(uintptr(bp) + SB_SYN_ISK)^ = transmute(^u8)(empty_string_opt())
 			(^^u8)(uintptr(bp) + SB_P_SPC)^ = transmute(^u8)(xstrdup_r2(transmute(cstring)(p_spc_g)))
 			copy_opt_sctx(bp, 72)
 			compile_cap_prog(transmute(rawptr)(uintptr(bp) + B_S_OFF))
@@ -5519,7 +5512,7 @@ buf_copy_options :: proc "c"(buf: rawptr, flags: C.int) {
 			copy_opt_sctx(bp, 47)
 			(^^u8)(uintptr(bp) + B_P_INDK_OFF)^ = xstrdup_r2(transmute(cstring)(p_indk_g))
 			copy_opt_sctx(bp, 48)
-			(^^u8)(uintptr(bp) + B_P_FP_OFF)^ = empty_string_option_c
+			(^^u8)(uintptr(bp) + B_P_FP_OFF)^ = empty_string_opt()
 			(^^u8)(uintptr(bp) + B_P_FEX_OFF)^ = xstrdup_r2(transmute(cstring)(p_fex_g))
 			copy_opt_sctx(bp, 36)
 			(^^u8)(uintptr(bp) + B_P_SUA_OFF)^ = xstrdup_r2(transmute(cstring)(p_sua_g))
@@ -5537,34 +5530,34 @@ buf_copy_options :: proc "c"(buf: rawptr, flags: C.int) {
 			(^C.int)(uintptr(bp) + B_P_AR_OFF)^ = -1
 			(^C.longlong)(uintptr(bp) + B_P_FS_OFF)^ = -1
 			(^C.longlong)(uintptr(bp) + B_P_UL_OFF2)^ = NO_LOCAL_UNDOLEVEL_S
-			(^^u8)(uintptr(bp) + B_P_BKC_OFF)^ = empty_string_option_c
+			(^^u8)(uintptr(bp) + B_P_BKC_OFF)^ = empty_string_opt()
 			(^C.uint)(uintptr(bp) + B_BKC_FLAGS_OFF)^ = 0
-			(^^u8)(uintptr(bp) + B_P_GEFM_OFF)^ = empty_string_option_c
-			(^^u8)(uintptr(bp) + B_P_GP_OFF)^ = empty_string_option_c
-			(^^u8)(uintptr(bp) + B_P_MP_OFF)^ = empty_string_option_c
-			(^^u8)(uintptr(bp) + B_P_EFM_OFF)^ = empty_string_option_c
-			(^^u8)(uintptr(bp) + B_P_EP_OFF)^ = empty_string_option_c
-			(^^u8)(uintptr(bp) + B_P_FFU_OFF)^ = empty_string_option_c
-			(^^u8)(uintptr(bp) + B_P_KP_OFF)^ = empty_string_option_c
-			(^^u8)(uintptr(bp) + B_P_PATH_OFF)^ = empty_string_option_c
-			(^^u8)(uintptr(bp) + B_P_TAGS_OFF)^ = empty_string_option_c
-			(^^u8)(uintptr(bp) + B_P_TC_OFF)^ = empty_string_option_c
+			(^^u8)(uintptr(bp) + B_P_GEFM_OFF)^ = empty_string_opt()
+			(^^u8)(uintptr(bp) + B_P_GP_OFF)^ = empty_string_opt()
+			(^^u8)(uintptr(bp) + B_P_MP_OFF)^ = empty_string_opt()
+			(^^u8)(uintptr(bp) + B_P_EFM_OFF)^ = empty_string_opt()
+			(^^u8)(uintptr(bp) + B_P_EP_OFF)^ = empty_string_opt()
+			(^^u8)(uintptr(bp) + B_P_FFU_OFF)^ = empty_string_opt()
+			(^^u8)(uintptr(bp) + B_P_KP_OFF)^ = empty_string_opt()
+			(^^u8)(uintptr(bp) + B_P_PATH_OFF)^ = empty_string_opt()
+			(^^u8)(uintptr(bp) + B_P_TAGS_OFF)^ = empty_string_opt()
+			(^^u8)(uintptr(bp) + B_P_TC_OFF)^ = empty_string_opt()
 			(^C.uint)(uintptr(bp) + B_TC_FLAGS_OFF)^ = 0
-			(^^u8)(uintptr(bp) + B_P_DEF_OFF)^ = empty_string_option_c
-			(^^u8)(uintptr(bp) + B_P_INC_OFF)^ = empty_string_option_c
+			(^^u8)(uintptr(bp) + B_P_DEF_OFF)^ = empty_string_opt()
+			(^^u8)(uintptr(bp) + B_P_INC_OFF)^ = empty_string_opt()
 			(^^u8)(uintptr(bp) + B_P_INEX_OFF)^ = xstrdup_r2(transmute(cstring)(p_inex_g))
 			copy_opt_sctx(bp, 46)
-			(^^u8)(uintptr(bp) + B_P_COT_OFF)^ = empty_string_option_c
+			(^^u8)(uintptr(bp) + B_P_COT_OFF)^ = empty_string_opt()
 			(^C.uint)(uintptr(bp) + B_COT_FLAGS_OFF)^ = 0
-			(^^u8)(uintptr(bp) + B_P_DICT_OFF)^ = empty_string_option_c
-			(^^u8)(uintptr(bp) + B_P_DIA_OFF)^ = empty_string_option_c
-			(^^u8)(uintptr(bp) + B_P_TSR_OFF)^ = empty_string_option_c
-			(^^u8)(uintptr(bp) + B_P_TSRFU_OFF)^ = empty_string_option_c
+			(^^u8)(uintptr(bp) + B_P_DICT_OFF)^ = empty_string_opt()
+			(^^u8)(uintptr(bp) + B_P_DIA_OFF)^ = empty_string_opt()
+			(^^u8)(uintptr(bp) + B_P_TSR_OFF)^ = empty_string_opt()
+			(^^u8)(uintptr(bp) + B_P_TSRFU_OFF)^ = empty_string_opt()
 			(^^u8)(uintptr(bp) + B_P_QE_OFF)^ = xstrdup_r2(transmute(cstring)(p_qe_g))
 			(^C.int)(uintptr(bp) + B_P_UDF_OFF)^ = p_udf_g
 			copy_opt_sctx(bp, 87)
-			(^^u8)(uintptr(bp) + B_P_LW_OFF)^ = empty_string_option_c
-			(^^u8)(uintptr(bp) + B_P_MENC_OFF)^ = empty_string_option_c
+			(^^u8)(uintptr(bp) + B_P_LW_OFF)^ = empty_string_opt()
+			(^^u8)(uintptr(bp) + B_P_MENC_OFF)^ = empty_string_opt()
 
 			if dont_do_help {
 				(^^u8)(uintptr(bp) + B_P_ISK_OFF)^ = save_p_isk
@@ -5593,7 +5586,7 @@ buf_copy_options :: proc "c"(buf: rawptr, flags: C.int) {
 				(^bool)(uintptr(bp) + B_HELP_OFF)^ = false
 				bt := (^^u8)(uintptr(bp) + B_P_BT_OFF)^
 				if bt != nil && b_at(bt, 0) == 'h' {
-					clear_string_option_r(transmute(^u8)((^^u8)(uintptr(bp) + B_P_BT_OFF)))
+					clear_string_option(transmute(^u8)((^^u8)(uintptr(bp) + B_P_BT_OFF)))
 				}
 				(^C.int)(uintptr(bp) + B_P_MA_OFF)^ = p_ma_g
 				copy_opt_sctx(bp, 60)
@@ -5605,7 +5598,7 @@ buf_copy_options :: proc "c"(buf: rawptr, flags: C.int) {
 		}
 	}
 
-	check_buf_options_c(buf)
+	check_buf_options(buf)
 	if did_isk {
 		buf_init_chartab_r(buf, false)
 	}
