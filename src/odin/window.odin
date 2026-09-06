@@ -1529,7 +1529,7 @@ win_split_ins :: proc "c"(size: C.int, flags: C.int, new_wp: rawptr, dir: C.int,
 		new_frame_o(wp)
 
 		// non-floating window doesn't store float config or have a border.
-		clear_float_config_r(transmute(rawptr)(uintptr(wp) + W_CONFIG_OFF), true)
+		clear_float_config(transmute(rawptr)(uintptr(wp) + W_CONFIG_OFF), true)
 		libc.memset(transmute(rawptr)(uintptr(wp) + W_BORDER_ADJ_OFF), 0, W_BORDER_ADJ_SIZE)
 	}
 
@@ -1869,8 +1869,6 @@ foreign _ {
 	lastwin_g: rawptr
 	@(link_name = "win_float_anchor_laststatus")
 	win_float_anchor_laststatus_r :: proc "c" () ---
- 	@(link_name = "clear_float_config")
-	clear_float_config_r :: proc "c" (fconfig: rawptr, free_fields: bool) ---
 	@(link_name = "ui_comp_remove_grid")
 	ui_comp_remove_grid_r :: proc "c" (grid: rawptr) ---
  	@(link_name = "ui_call_win_hide")
@@ -6329,4 +6327,94 @@ win_set_buf :: proc "c"(win: rawptr, buf: rawptr, err: rawptr) {
 	validate_cursor_r(curwin)
 	restore_win_noblock_r(&switchwin, true)
 	RedrawingDisabled -= 1
+}
+
+// ── Batch 38: float-config clear + tabpage maker + scroll snapshot ───────────
+// WinConfig: zindex@56/bufpos@4(WCFG_BUFPOS_LNUM=+0)/style@60/_cmdline_offset@472
+// (relative); w_last_topline@392/topfill@396/leftcol@400/skipcol@404/width@408/
+// height@412 — cc-probed via off42 (focusable/mouse/zindex/bufpos/cmdline-off
+// WIN_CONFIG_INIT fields already in B8).
+
+WCFG_STYLE_OFF :: 10620 // W_CONFIG + 60
+W_LAST_TOPLINE_OFF :: 392
+W_LAST_TOPFILL_OFF :: 396
+// WinConfig-relative offsets (for bare WinConfig*, e.g. clear_float_config).
+WCFG_REL_BUFPOS_LNUM :: 4
+WCFG_REL_FOCUSABLE :: 49
+WCFG_REL_MOUSE :: 50
+WCFG_REL_ZINDEX :: 56
+WCFG_REL_STYLE :: 60
+WCFG_REL_CMDLINE_OFF :: 472
+W_LAST_LEFTCOL_OFF :: 400
+W_LAST_SKIPCOL_OFF :: 404
+W_LAST_WIDTH_OFF :: 408
+W_LAST_HEIGHT_OFF :: 412
+
+foreign _ {
+	@(link_name = "p_tpm")
+	p_tpm_g: C.longlong
+}
+
+// Fill "fconfig" with WIN_CONFIG_INIT (zeros + 5 nonzero fields, B8).
+win_config_init_assign_o :: proc "c"(fconfig: rawptr) {
+	libc.memset(fconfig, 0, WINCONFIG_SIZE_O)
+	(^bool)(uintptr(fconfig) + WCFG_REL_FOCUSABLE)^ = true
+	(^bool)(uintptr(fconfig) + WCFG_REL_MOUSE)^ = true
+	(^C.int)(uintptr(fconfig) + WCFG_REL_ZINDEX)^ = KZINDEX_FLOAT_DEFAULT_O
+	(^C.int)(uintptr(fconfig) + WCFG_REL_BUFPOS_LNUM)^ = -1
+	(^C.int)(uintptr(fconfig) + WCFG_REL_CMDLINE_OFF)^ = INT_MAX_O
+}
+
+// Clear float-only fields in "fconfig" (full reset if free_fields).
+// NOTE: fconfig is a bare WinConfig* → RELATIVE offsets (style@60,
+// _cmdline_offset@472), not the absolute WCFG_*_OFF consts.
+@(export)
+clear_float_config :: proc "c"(fconfig: rawptr, free_fields: bool) {
+	saved_style := (^C.int)(uintptr(fconfig) + WCFG_REL_STYLE)^
+	saved_cmdline_offset := (^C.int)(uintptr(fconfig) + WCFG_REL_CMDLINE_OFF)^
+	if free_fields {
+		init: WinConfig_Opaque // zeroed; fill below
+		win_config_init_assign_o(&init)
+		merge_win_config(fconfig, transmute(rawptr)(&init))
+	} else {
+		win_config_init_assign_o(fconfig)
+	}
+	(^C.int)(uintptr(fconfig) + WCFG_REL_STYLE)^ = saved_style
+	(^C.int)(uintptr(fconfig) + WCFG_REL_CMDLINE_OFF)^ = saved_cmdline_offset
+}
+
+// Create up to "maxcount" tabpages. Returns actual number made.
+@(export)
+make_tabpages :: proc "c"(maxcount: C.int) -> C.int {
+	count := maxcount
+	// Limit to 'tabpagemax' tabs.
+	count = min(count, C.int(p_tpm_g))
+	// Don't execute autocommands while creating the tab pages. Must do
+	// that when putting the buffers in the windows.
+	block_autocmds_r()
+	todo := count - 1
+	for todo > 0 {
+		todo -= 1
+		if win_new_tabpage(0, nil, true, nil) == nil {
+			break
+		}
+	}
+	unblock_autocmds_r()
+	// return actual number of tab pages
+	return count - todo
+}
+
+// Save scroll/size of all windows in current tab (for :mksession restore).
+@(export)
+snapshot_windows_scroll_size :: proc "c"() {
+	wp := firstwin // FOR_ALL_WINDOWS_IN_TAB(wp, curtab): curtab nuance
+	for wp != nil {
+		(^C.int)(uintptr(wp) + W_LAST_TOPLINE_OFF)^ = (^C.int)(uintptr(wp) + W_TOPLINE_OFF)^
+		(^C.int)(uintptr(wp) + W_LAST_TOPFILL_OFF)^ = (^C.int)(uintptr(wp) + W_TOPFILL_OFF)^
+		(^C.int)(uintptr(wp) + W_LAST_LEFTCOL_OFF)^ = (^C.int)(uintptr(wp) + W_SKIPCOL_OFF)^
+		(^C.int)(uintptr(wp) + W_LAST_SKIPCOL_OFF)^ = (^C.int)(uintptr(wp) + W_SKIPCOL_OFF)^
+		(^C.int)(uintptr(wp) + W_LAST_WIDTH_OFF)^ = (^C.int)(uintptr(wp) + W_WIDTH_OFF)^
+		(^C.int)(uintptr(wp) + W_LAST_HEIGHT_OFF)^ = (^C.int)(uintptr(wp) + W_HEIGHT_OFF)^
+		wp = (^rawptr)(uintptr(wp) + W_NEXT_OFF)^
+	}
 }
