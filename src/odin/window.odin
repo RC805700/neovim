@@ -6271,3 +6271,62 @@ make_windows :: proc "c"(count_in: C.int, vertical: bool) -> C.int {
 	// return actual number of windows
 	return count - todo
 }
+
+// ── Batch 37: win_set_buf + merge_win_config ─────────────────────────────────
+// WinConfig.title_chunks@400/footer_chunks@440 (Kvec_VT.items@16) cc-probed.
+
+WC_TITLE_ITEMS_OFF :: 416 // W_CONFIG + 400 + 16
+WC_FOOTER_ITEMS_OFF :: 456 // W_CONFIG + 440 + 16
+WINCONFIG_SIZE_O :: 480
+
+foreign _ {
+	@(link_name = "p_acd")
+	p_acd_g: C.int
+}
+
+// Merge float config "src" into "dst" (freeing replaced virttext).
+@(export)
+merge_win_config :: proc "c"(dst: rawptr, src: rawptr) {
+	if (^rawptr)(uintptr(dst) + WC_TITLE_ITEMS_OFF)^ !=
+		(^rawptr)(uintptr(src) + WC_TITLE_ITEMS_OFF)^ {
+		clear_virttext_r(transmute(^Kvec_VT)(uintptr(dst) + W_CONFIG_OFF + WC_TITLE_CHUNKS_OFF))
+	}
+	if (^rawptr)(uintptr(dst) + WC_FOOTER_ITEMS_OFF)^ !=
+		(^rawptr)(uintptr(src) + WC_FOOTER_ITEMS_OFF)^ {
+		clear_virttext_r(transmute(^Kvec_VT)(uintptr(dst) + W_CONFIG_OFF + WC_FOOTER_CHUNKS_OFF))
+	}
+	libc.memcpy(dst, src, WINCONFIG_SIZE_O)
+}
+
+// Set buffer "buf" in window "win" (API nvim_win_set_buf path).
+@(export)
+win_set_buf :: proc "c"(win: rawptr, buf: rawptr, err: rawptr) {
+	win_handle := (^C.int)(uintptr(win) + W_HANDLE_OFF)^
+	tab := win_find_tabpage(win)
+	// no redrawing and don't set the window title
+	RedrawingDisabled += 1
+	switchwin: Switchwin_T
+	win_result: C.int = 0
+	// TRY_WRAP: wrapped calls don't throw; plain block is exact.
+	win_result = switch_win_noblock_r(&switchwin, win, tab, true)
+	if win_result != FAIL {
+		save_acd := p_acd_g
+		if !switchwin.sw_same_win {
+			// Temporarily disable 'autochdir' in another window.
+			p_acd_g = 0
+		}
+		do_buffer(DOBUF_GOTO_O, DOBUF_FIRST_O, FORWARD_DIR, (^C.int)(uintptr(buf) + B_FNUM_OFF)^, 0)
+		if !switchwin.sw_same_win {
+			p_acd_g = save_acd
+		}
+	}
+	if win_result == FAIL && !ERROR_SET(err) {
+		msg: [64]u8
+		libc.snprintf(&msg[0], size_of(msg), cstring("Failed to switch to window %d"), win_handle)
+		api_set_error_r(err, 2, cstring("%s"), transmute(rawptr)(&msg[0]))
+	}
+	// If window is not current, state logic will not validate its cursor.
+	validate_cursor_r(curwin)
+	restore_win_noblock_r(&switchwin, true)
+	RedrawingDisabled -= 1
+}
