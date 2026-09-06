@@ -596,7 +596,7 @@ clear_wininfo_o :: proc "c"(buf: rawptr) {
 	n := (^uint)(uintptr(buf) + B_WINFOFF_SIZE)^
 	items := (^rawptr)(uintptr(buf) + B_WINFOFF_ITEMS)^
 	for i: uint = 0; i < n; i += 1 {
-		free_wininfo_o(([^]rawptr)(items)[i], buf)
+		free_wininfo(([^]rawptr)(items)[i], buf)
 	}
 	(^uint)(uintptr(buf) + B_WINFOFF_SIZE)^ = 0
 }
@@ -1278,8 +1278,6 @@ DOBUF_FORCEIT_O :: 1
 foreign _ {
 	@(link_name = "VIsual_reselect")
 	visual_reselect_g: C.int
-	@(link_name = "close_windows")
-	close_windows_r :: proc "c" (buf: rawptr, keep_curwin: bool) ---
 	@(link_name = "diff_buf_add")
 	diff_buf_add_r :: proc "c" (buf: rawptr) ---
 	@(link_name = "need_fileinfo")
@@ -1494,7 +1492,7 @@ do_buffer_ext :: proc "c"(action: C.int, start: C.int, dir: C.int, count_in: C.i
 		// If the deleted buffer is the current one, close the current
 		// window (unless it's the only non-floating window).
 		for buf == curbuf &&
-			!(win_locked_r(curwin) != 0 ||
+			!(win_locked(curwin) != 0 ||
 				(^C.int)(uintptr((^rawptr)(uintptr(curwin) + W_BUFFER_OFF)^) + B_LOCKED_OFF)^ > 0) &&
 			(is_aucmd_win_r(lastwin_g) || !last_window(curwin)) {
 			if win_close(curwin, false, false) == FAIL {
@@ -1507,7 +1505,7 @@ do_buffer_ext :: proc "c"(action: C.int, start: C.int, dir: C.int, count_in: C.i
 				// Remove the buffer to be deleted from the jump list.
 				mark_jumplist_forget_file(curwin, buf_fnum)
 			}
-			close_windows_r(buf, false)
+			close_windows(buf, false)
 			// close_windows() refuses to close curtab's last non-float
 			// window. If it still shows buf, retry the delete from there.
 			if buf != curbuf && bufref_valid(&bref) &&
@@ -1751,7 +1749,7 @@ set_curbuf :: proc "c"(buf: rawptr, action: C.int, update_jumplist: bool) {
 			reset_synblock_r(curwin)
 		}
 		if unload {
-			close_windows_r(prevbuf, false)
+			close_windows(prevbuf, false)
 		}
 		if bufref_valid(&prevbufref) && !aborting_r() {
 			// Do not sync when in Insert mode and the buffer is open in
@@ -1892,8 +1890,8 @@ foreign _ {
 can_unload_buffer_o :: proc "c"(buf: rawptr) -> bool {
 	can_unload := (^C.int)(uintptr(buf) + B_LOCKED_OFF)^ == 0
 	if can_unload && updating_screen_g {
-		// FOR_ALL_WINDOWS_IN_TAB: single-tab walk uses tp_firstwin directly.
-		wp := (^rawptr)(uintptr(curtab) + TP_FIRSTWIN_OFF)^
+		// FOR_ALL_WINDOWS_IN_TAB(wp, curtab) = firstwin (curtab nuance).
+		wp := firstwin
 		for wp != nil {
 			if (^rawptr)(uintptr(wp) + W_BUFFER_OFF)^ == buf {
 				can_unload = false
@@ -1946,7 +1944,7 @@ empty_curbuf_o :: proc "c"(close_others: bool, forceit: C.int, action: C.int) ->
 		// If fine to close all other windows with this buffer, keep the
 		// current window and close others; otherwise close_windows() would
 		// refuse the last non-floating window, so allow closing current.
-		close_windows_r(buf, can_close_all_others)
+		close_windows(buf, can_close_all_others)
 	}
 	setpcmark()
 	retval := do_ecmd_r(0, nil, nil, nil, ECMD_ONE_O, forceit != 0 ? ECMD_FORCEIT_O : 0, curwin)

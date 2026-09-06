@@ -2333,12 +2333,10 @@ foreign _ {
 	get_var_value_r :: proc "c" (name: cstring) -> ^u8 ---
 	@(link_name = "do_unlet")
 	do_unlet_r :: proc "c" (name: cstring, name_len: C.size_t, forceit: bool) -> C.int ---
-	@(link_name = "enc_canonize")
-	enc_canonize_r :: proc "c" (enc: ^u8) -> ^u8 ---
-	@(link_name = "terminal_notify_theme")
-	terminal_notify_theme_r :: proc "c" (term: rawptr, dark: bool) ---
-	@(link_name = "global_stl_height")
-	global_stl_height_r :: proc "c" () -> C.int ---
+ 	@(link_name = "enc_canonize")
+ 	enc_canonize_r :: proc "c" (enc: ^u8) -> ^u8 ---
+ 	@(link_name = "terminal_notify_theme")
+ 	terminal_notify_theme_r :: proc "c" (term: rawptr, dark: bool) ---
 }
 // redraw_later_r/redraw_buf_later_o/free_fmark/os_time/firstbuf reused.
 
@@ -2418,7 +2416,7 @@ did_set_buftype :: proc "c"(args: ^optset_T) -> cstring {
 		(^Fmarkv_T)(promptp + 24)^ = INIT_FMARKV // view
 		(^rawptr)(promptp + 32)^ = nil // additional_data
 	}
-	if (^C.int)(uintptr(win) + W_STATUS_HEIGHT_OFF)^ != 0 || global_stl_height_r() != 0 {
+	if (^C.int)(uintptr(win) + W_STATUS_HEIGHT_OFF)^ != 0 || global_stl_height() != 0 {
 		(^bool)(uintptr(win) + W_REDR_STATUS_OFF)^ = true
 		redraw_later_r(win, UPD_VALID_O)
 	}

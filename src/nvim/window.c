@@ -140,6 +140,53 @@ void nvim_odin_init_winopt(win_T *win);
 #pragma weak win_equal
 #pragma weak win_new_screen_rows
 #pragma weak win_new_screen_cols
+#pragma weak win_setheight
+#pragma weak win_setheight_win
+#pragma weak win_setwidth
+#pragma weak win_setwidth_win
+#pragma weak unuse_tabpage
+#pragma weak use_tabpage
+#pragma weak close_others
+#pragma weak only_one_window
+#pragma weak free_tabpage
+#pragma weak win_comp_scroll
+#pragma weak command_height
+#pragma weak leaving_window
+#pragma weak entering_window
+#pragma weak tabpage_move
+#pragma weak last_status
+#pragma weak win_remove_status_line
+#pragma weak global_stl_height
+#pragma weak last_stl_height
+#pragma weak global_winbar_height
+#pragma weak set_winbar_win
+#pragma weak set_winbar
+#pragma weak tabline_height
+#pragma weak close_windows
+#pragma weak min_rows
+#pragma weak min_rows_for_all_tabpages
+#pragma weak set_fraction
+#pragma weak win_fix_scroll
+#pragma weak win_new_height
+#pragma weak win_new_width
+#pragma weak get_last_winid
+#pragma weak win_locked
+#pragma weak scroll_to_fraction
+#pragma weak win_comp_pos
+#pragma weak win_remove
+#pragma weak win_get_tabwin
+#pragma weak win_new_screensize
+#pragma weak restore_snapshot
+#pragma weak win_size_save
+#pragma weak win_size_restore
+#pragma weak win_default_scroll
+#pragma weak make_snapshot
+#pragma weak free_wininfo
+#pragma weak win_move_after
+#pragma weak check_lnums
+#pragma weak check_lnums_nested
+#pragma weak reset_lnums
+#pragma weak win_set_inner_size
 
 #define NOWIN           ((win_T *)-1)   // non-existing window
 
@@ -7983,7 +8030,17 @@ int nvim_odin_next_win_id(void)
   return ++last_win_id;
 }
 
+int nvim_odin_get_last_win_id(void)
+{
+  return last_win_id;
+}
+
 void nvim_odin_set_command_frame_height(bool v)
 {
   command_frame_height = v;
+}
+
+bool nvim_odin_get_command_frame_height(void)
+{
+  return command_frame_height;
 }

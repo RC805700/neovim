@@ -157,12 +157,8 @@ foreign _ {
 	@(link_name = "empty_string_option")
 	_empty_string_arr: [1]u8
 	// curbufIsChanged is an Odin proc in undo.odin — reuse directly.	@(link_name = "copy_string")
-	copy_string_o :: proc "c" (s: NvimString, arena: rawptr) -> NvimString ---
-	@(link_name = "min_rows_for_all_tabpages")
-	min_rows_for_all_tabpages_r :: proc "c" () -> C.int ---
-	@(link_name = "win_default_scroll")
-	win_default_scroll_r :: proc "c" (wp: rawptr) -> C.int ---
-	@(link_name = "status_redraw_all")
+ 	copy_string_o :: proc "c" (s: NvimString, arena: rawptr) -> NvimString ---
+ 	@(link_name = "status_redraw_all")
 	status_redraw_all_r :: proc "c" () ---
 	@(link_name = "changed_window_setting")
 	changed_window_setting_opt :: proc "c" (wp: rawptr) ---
@@ -553,10 +549,9 @@ check_num_option_bounds :: proc "c"(opt_idx: C.int, newval: ^C.longlong, errbuf:
 
 	switch opt_idx {
 	case kOptLines_E:
-		if newval^ < C.longlong(min_rows_for_all_tabpages_r()) && full_screen {
-			libc.snprintf(errbuf, errbuflen, "E593: Need at least %d lines", min_rows_for_all_tabpages_r())
-			errmsg = transmute(cstring)(errbuf)
-			newval^ = C.longlong(min_rows_for_all_tabpages_r())
+		if newval^ < C.longlong(min_rows_for_all_tabpages()) && full_screen {
+			libc.snprintf(errbuf, errbuflen, "E593: Need at least %d lines", min_rows_for_all_tabpages())
+			newval^ = C.longlong(min_rows_for_all_tabpages())
 		}
 		if newval^ > C.longlong(0x7FFFFFFF) {
 			newval^ = 0x7FFFFFFF
@@ -585,7 +580,7 @@ check_num_option_bounds :: proc "c"(opt_idx: C.int, newval: ^C.longlong, errbuf:
 			if newval^ != 0 {
 				errmsg = e_scroll_s
 			}
-			newval^ = C.longlong(win_default_scroll_r(curwin))
+			newval^ = win_default_scroll(curwin)
 		}
 	case:
 	}
@@ -739,8 +734,6 @@ foreign _ {
 	do_spelllang_source_r :: proc "c" (wp: rawptr) ---
 	@(link_name = "comp_col")
 	comp_col_r :: proc "c" () ---
-	@(link_name = "set_winbar")
-	set_winbar_r :: proc "c" (force: bool) ---
 }
 
 SCCTX_SIZE :: 24
@@ -1013,7 +1006,7 @@ did_set_option_o :: proc "c"(
 		redraw_all_later_o(UPD_NOT_VALID_SP)
 	} else if varp == transmute(rawptr)(&p_wbr_g) ||
 	varp == transmute(rawptr)(uintptr(curwin) + W_P_WBR_OFF2) {
-		set_winbar_r(true)
+		set_winbar(true)
 	}
 
 	w_curswant := (^C.longlong)(uintptr(curwin) + 148)^
@@ -2560,14 +2553,10 @@ do_one_set_option_o :: proc "c"(
 }
 
 foreign _ {
-	@(link_name = "win_comp_scroll")
-	win_comp_scroll_r :: proc "c" (wp: rawptr) ---
 	@(link_name = "parse_cino")
 	parse_cino_r :: proc "c" (buf: rawptr) ---
 	@(link_name = "parse_shape_opt")
 	parse_shape_opt_r :: proc "c" (shape: C.int) -> cstring ---
-	@(link_name = "last_status")
-	last_status_r :: proc "c" (more: bool) ---
 	@(link_name = "win_float_update_statusline")
 	win_float_update_statusline_r :: proc "c" (wp: rawptr) ---
 }
@@ -2580,7 +2569,7 @@ set_option_default_o :: proc "c"(opt_idx: C.int, opt_flags: C.int) {
 	set_option_direct(opt_idx, def_val, opt_flags, current_sctx_sc_sid())
 
 	if opt_idx == kOptScroll_E {
-		win_comp_scroll_r(curwin)
+		win_comp_scroll(curwin)
 	}
 
 	flagsp := insecure_flag_c(curwin, opt_idx, opt_flags)
@@ -2615,7 +2604,7 @@ set_options_default_o :: proc "c"(opt_flags: C.int) {
 	for tp != nil {
 		wp := (^rawptr)(uintptr(tp) + 40)^
 		for wp != nil {
-			win_comp_scroll_r(wp)
+			win_comp_scroll(wp)
 			wp = (^rawptr)(uintptr(wp) + 112)^
 		}
 		tp = (^rawptr)(uintptr(tp) + 8)^ // tp_next @8
@@ -2650,7 +2639,7 @@ didset_options2_o :: proc "c"() {
 
 didset_options_all_o :: proc "c"() {
 	_ = parse_shape_opt_r(SHAPE_CURSOR_S)
-	last_status_r(false)
+		last_status(false)
 	win_float_update_statusline_r(nil)
 	win_new_screen_rows()
 }
@@ -3367,8 +3356,6 @@ set_fileformat :: proc "c"(eol_style: C.int, opt_flags: C.int) {
 // ── winopt_T copy/clear/didset ───────────────────────────────────────────────
 
 foreign _ {
-	@(link_name = "set_winbar_win")
-	set_winbar_win_r :: proc "c" (wp: rawptr, make_room: bool, valid_cursor: bool) -> cstring ---
 	@(link_name = "check_colorcolumn")
 	check_colorcolumn_r :: proc "c" (cc: ^u8, wp: rawptr) -> cstring ---
 	@(link_name = "briopt_check")
@@ -3471,7 +3458,7 @@ didset_window_options :: proc "c"(wp: rawptr, valid_cursor: bool) {
 	set_chars_option(wp, (^^u8)(uintptr(wp) + 1200)^, kListchars_S, true, nil, 0)
 	parse_winhl_opt(nil, wp)
 	check_blending(wp)
-	set_winbar_win_r(wp, false, valid_cursor)
+	set_winbar_win(wp, false, valid_cursor)
 	check_signcolumn(nil, wp)
 	(^C.int)(uintptr(wp) + 10514)^ =
 		(^C.longlong)(uintptr(wp) + W_P_WINBL_OFF)^ > 0 ? 1 : 0

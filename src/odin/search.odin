@@ -1215,7 +1215,7 @@ foreign _ {
 	@(link_name = "getfile")
 	getfile_r :: proc "c" (fnum: C.int, ffname: ^u8, sfname: ^u8, setpm: bool, lnum: C.int, forceit: bool) -> C.int ---
 	@(link_name = "validate_cursor")
-	validate_cursor_r :: proc "c" () ---
+	validate_cursor_r :: proc "c" (wp: rawptr) ---
 
 	@(link_name = "msg_trunc")
 	msg_trunc_r :: proc "c" (s: ^u8, check: bool, hl_id: C.int) ---
@@ -3505,7 +3505,7 @@ find_pattern_in_path :: proc "c"(
 
 						if l_g_do_tagpreview != 0 &&
 						curwin != curwin_save && win_valid(curwin_save) {
-							validate_cursor_r()
+							validate_cursor_r(curwin)
 							redraw_later_r(curwin, UPD_VALID_S)
 							win_enter(curwin_save, true)
 						}
