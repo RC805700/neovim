@@ -183,6 +183,9 @@ void nvim_odin_init_winopt(win_T *win);
 #pragma weak make_snapshot
 #pragma weak free_wininfo
 #pragma weak win_move_after
+#pragma weak check_split_disallowed_err
+#pragma weak win_free_grid
+#pragma weak make_windows
 #pragma weak check_lnums
 #pragma weak check_lnums_nested
 #pragma weak reset_lnums

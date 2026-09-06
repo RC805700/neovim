@@ -1231,7 +1231,7 @@ win_free :: proc "c"(wp: rawptr, tp: rawptr) {
 
 	xfree((^rawptr)(uintptr(wp) + W_P_CC_COLS_OFF)^)
 
-	win_free_grid_r(wp, false)
+	win_free_grid(wp, false)
 
 	if win_valid_any_tab(wp) {
 		win_remove(wp, tp)
@@ -1511,7 +1511,7 @@ win_split_ins :: proc "c"(size: C.int, flags: C.int, new_wp: rawptr, dir: C.int,
 		} else {
 			// No longer a float, a non-multigrid UI shouldn't draw it as such
 			ui_call_win_hide_r((^C.int)(uintptr(wp) + W_GRID_HANDLE_OFF)^)
-			win_free_grid_r(wp, true)
+			win_free_grid(wp, true)
 		}
 
 		// External windows are independent of tabpages, and may have been the curwin of others.
@@ -1873,11 +1873,9 @@ foreign _ {
 	clear_float_config_r :: proc "c" (fconfig: rawptr, free_fields: bool) ---
 	@(link_name = "ui_comp_remove_grid")
 	ui_comp_remove_grid_r :: proc "c" (grid: rawptr) ---
-	@(link_name = "ui_call_win_hide")
-	ui_call_win_hide_r :: proc "c" (grid: C.int) ---
-	@(link_name = "win_free_grid")
-	win_free_grid_r :: proc "c" (wp: rawptr, reinit: bool) ---
-	@(link_name = "msg_clr_eos_force")
+ 	@(link_name = "ui_call_win_hide")
+ 	ui_call_win_hide_r :: proc "c" (grid: C.int) ---
+ 	@(link_name = "msg_clr_eos_force")
 	msg_clr_eos_force_r :: proc "c" () ---
  	@(link_name = "changed_line_abv_curs")
 	changed_line_abv_curs_r :: proc "c" () ---
@@ -6181,4 +6179,95 @@ win_move_after :: proc "c"(win1: rawptr, win2: rawptr) {
 	(^bool)(uintptr(win1) + W_POS_CHANGED_OFF)^ = true
 	(^bool)(uintptr(win2) + W_POS_CHANGED_OFF)^ = true
 	win_enter(win1, false)
+}
+
+// ── Batch 36: split-guard + grid free + make_windows ─────────────────────────
+
+E242_S :: "E242: Can't split a window while closing another"
+SCREEN_GRID_SIZE_O :: 96
+
+foreign _ {
+	@(link_name = "ui_call_grid_destroy")
+	ui_call_grid_destroy_r :: proc "c" (grid: C.longlong) ---
+	@(link_name = "grid_free")
+	grid_free_r :: proc "c" (grid: rawptr) ---
+}
+
+// Error if splitting is currently disallowed (e.g. buffer is closing).
+@(export)
+check_split_disallowed_err :: proc "c"(wp: rawptr, err: rawptr) -> bool {
+	if nvim_odin_get_split_disallowed_r() > 0 {
+		api_set_error_r(err, 2, cstring(E242_S), nil)
+		return false
+	}
+	if (^C.int)(uintptr((^rawptr)(uintptr(wp) + W_BUFFER_OFF)^) + B_LOCKED_SPLIT_OFF)^ != 0 {
+		api_set_error_r(err, 2, cstring("%s"), transmute(rawptr)(cstring(E1159_S)))
+		return false
+	}
+	return true
+}
+
+// Free the grid of window "wp" (reinit clears for reuse as split).
+@(export)
+win_free_grid :: proc "c"(wp: rawptr, reinit: bool) {
+	if (^C.int)(uintptr(wp) + W_GRID_HANDLE_OFF)^ != 0 && ui_has(K_UIMULTIGRID_O) {
+		ui_call_grid_destroy_r(C.longlong((^C.int)(uintptr(wp) + W_GRID_HANDLE_OFF)^))
+	}
+	grid_free_r(transmute(rawptr)(uintptr(wp) + W_GRID_ALLOC_OFF))
+	if reinit {
+		// if a float is turned into a split, the grid data structure
+		// will be reused
+		libc.memset(transmute(rawptr)(uintptr(wp) + W_GRID_ALLOC_OFF), 0, SCREEN_GRID_SIZE_O)
+	}
+}
+
+// Split into "count" windows (vertical if set). Returns actual number made.
+@(export)
+make_windows :: proc "c"(count_in: C.int, vertical: bool) -> C.int {
+	count := count_in
+	maxcount: C.int
+	if vertical {
+		// Each window needs at least 'winminwidth' lines and a separator.
+		maxcount = C.int((^C.int)(uintptr(curwin) + W_WIDTH_OFF)^ +
+			(^C.int)(uintptr(curwin) + W_VSEP_WIDTH_OFF)^ -
+			(C.int(p_wiw_opt) - C.int(p_wmw_opt))) / (C.int(p_wmw_opt) + 1)
+	} else {
+		// Each window needs at least 'winminheight' lines.
+		// If statusline isn't global, each window also needs a statusline.
+		// If 'winbar' is set, each window also needs a winbar.
+		maxcount = C.int((^C.int)(uintptr(curwin) + W_HEIGHT_OFF)^ +
+			(^C.int)(uintptr(curwin) + W_HSEP_HEIGHT_OFF)^ +
+			(^C.int)(uintptr(curwin) + W_STATUS_HEIGHT_OFF)^ -
+			(C.int(p_wh_opt) - C.int(p_wmh_opt))) /
+			(C.int(p_wmh_opt) + STATUS_HEIGHT_O + global_winbar_height())
+	}
+	maxcount = max(maxcount, 2)
+	count = min(count, maxcount)
+	// add status line now, otherwise first window will be too big
+	if count > 1 {
+		last_status(true)
+	}
+	// Don't execute autocommands while creating the windows. Must do that
+	// when putting the buffers in the windows.
+	block_autocmds_r()
+	todo := count - 1
+	for todo > 0 {
+		todo -= 1
+		if vertical {
+			if win_split((^C.int)(uintptr(curwin) + W_WIDTH_OFF)^ -
+				((^C.int)(uintptr(curwin) + W_WIDTH_OFF)^ - todo) / (todo + 1) - 1,
+				WSP_VERT_O | WSP_ABOVE_O) == FAIL {
+				break
+			}
+		} else {
+			if win_split((^C.int)(uintptr(curwin) + W_HEIGHT_OFF)^ -
+				((^C.int)(uintptr(curwin) + W_HEIGHT_OFF)^ - todo * STATUS_HEIGHT_O) /
+				(todo + 1) - STATUS_HEIGHT_O, WSP_ABOVE_O) == FAIL {
+				break
+			}
+		}
+	}
+	unblock_autocmds_r()
+	// return actual number of windows
+	return count - todo
 }
