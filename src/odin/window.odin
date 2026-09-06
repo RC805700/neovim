@@ -6418,3 +6418,58 @@ snapshot_windows_scroll_size :: proc "c"() {
 		wp = (^rawptr)(uintptr(wp) + W_NEXT_OFF)^
 	}
 }
+
+// ── Batch 39: win_splitmove ──────────────────────────────────────────────────
+
+foreign _ {
+	@(link_name = "winframe_restore")
+	winframe_restore_r :: proc "c" (wp: rawptr, dir: C.int, unflat_altfr: rawptr) ---
+}
+
+// Move "wp" into a new split in a given direction (CTRL-W H/J/K/L).
+@(export)
+win_splitmove :: proc "c"(wp: rawptr, size: C.int, flags: C.int) -> C.int {
+	dir: C.int = 0
+	height := (^C.int)(uintptr(wp) + W_HEIGHT_OFF)^
+	if one_window(wp, nil) {
+		return OK // nothing to do
+	}
+	if is_aucmd_win_r(wp) || check_split_disallowed_r(wp) == FAIL {
+		return FAIL
+	}
+	unflat_altfr: rawptr = nil
+	if (^bool)(uintptr(wp) + W_FLOATING_OFF)^ {
+		win_remove(wp, nil)
+	} else {
+		// Remove the window and frame from the tree of frames. Don't
+		// flatten any frames yet so we can restore things if win_split_ins
+		// fails.
+		winframe_remove(wp, &dir, nil, &unflat_altfr)
+		win_remove(wp, nil)
+		last_status(false) // may need to remove last status line
+		win_comp_pos() // recompute window positions
+	}
+	// Split a window on the desired side and put "wp" there.
+	if win_split_ins(size, flags, wp, dir, unflat_altfr) == nil {
+		if !(^bool)(uintptr(wp) + W_FLOATING_OFF)^ {
+			// win_split_ins doesn't change sizes or layout if it fails to
+			// insert an existing window, so just undo winframe_remove.
+			winframe_restore_r(wp, dir, unflat_altfr)
+		}
+		win_append((^rawptr)(uintptr(wp) + W_PREV_OFF)^, wp, nil)
+		return FAIL
+	}
+	// If splitting horizontally, try to preserve height.
+	// Note that win_split_ins autocommands may have immediately closed
+	// "wp", or made it floating!
+	if size == 0 && (flags & WSP_VERT_O) == 0 && win_valid(wp) &&
+		!(^bool)(uintptr(wp) + W_FLOATING_OFF)^ {
+		win_setheight_win(height, wp, true)
+		if p_ea_g != 0 {
+			// Equalize windows. Note that win_split_ins autocommands may
+			// have made a window other than "wp" current.
+			win_equal(curwin, curwin == wp, 'v')
+		}
+	}
+	return OK
+}
