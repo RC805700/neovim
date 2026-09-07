@@ -6262,8 +6262,206 @@ make_windows :: proc "c"(count_in: C.int, vertical: bool) -> C.int {
 		}
 	}
 	unblock_autocmds_r()
-	// return actual number of windows
+	// return actual number of tab pages
 	return count - todo
+}
+
+// ── Batch 42: mouse-dragged separators ───────────────────────────────────────
+
+// Status line of "dragwin" is dragged "offset" lines down (negative is up).
+@(export)
+win_drag_status_line :: proc "c"(dragwin: rawptr, offset_in: C.int) {
+	offset := offset_in
+	fr := (^rawptr)(uintptr(dragwin) + W_FRAME_OFF)^
+	curfr := fr
+	if fr != topframe_g { // more than one window
+		fr = (^rawptr)(uintptr(fr) + FR_PARENT_OFF)^
+		// When the parent frame is not a column of frames, its parent
+		// should be.
+		if b_at((^u8)(uintptr(fr) + FR_LAYOUT_OFF), 0) != FR_COL_O {
+			curfr = fr
+			if fr != topframe_g { // only a row of windows, may drag statusline
+				fr = (^rawptr)(uintptr(fr) + FR_PARENT_OFF)^
+			}
+		}
+	}
+	// If this is the last frame in a column, may want to resize the parent
+	// frame instead (go two up to skip a row of frames).
+	for curfr != topframe_g && (^rawptr)(uintptr(curfr) + FR_NEXT_OFF)^ == nil {
+		if fr != topframe_g {
+			fr = (^rawptr)(uintptr(fr) + FR_PARENT_OFF)^
+		}
+		curfr = fr
+		if fr != topframe_g {
+			fr = (^rawptr)(uintptr(fr) + FR_PARENT_OFF)^
+		}
+	}
+	room: C.int
+	up := offset < 0 // if true, drag status line up, otherwise down
+	if up { // drag up
+		offset = -offset
+		// sum up the room of the current frame and above it
+		if fr == curfr {
+			// only one window
+			room = (^C.int)(uintptr(fr) + FR_HEIGHT_OFF)^ - frame_minheight_o(fr, nil)
+		} else {
+			room = 0
+			fr = (^rawptr)(uintptr(fr) + FR_CHILD_OFF)^
+			for {
+				room += (^C.int)(uintptr(fr) + FR_HEIGHT_OFF)^ - frame_minheight_o(fr, nil)
+				if fr == curfr {
+					break
+				}
+				fr = (^rawptr)(uintptr(fr) + FR_NEXT_OFF)^
+			}
+		}
+		fr = (^rawptr)(uintptr(curfr) + FR_NEXT_OFF)^ // put fr at frame that grows
+	} else { // drag down
+		// Only dragging the last status line can reduce p_ch.
+		room = Rows - cmdline_row
+		if (^rawptr)(uintptr(curfr) + FR_NEXT_OFF)^ != nil {
+			room -= C.int(p_ch) + global_stl_height()
+		} else if nvim_odin_get_min_set_ch_r() > 0 {
+			room -= 1
+		}
+		room = max(room, 0)
+		// sum up the room of frames below of the current one
+		fr = (^rawptr)(uintptr(curfr) + FR_NEXT_OFF)^
+		for fr != nil {
+			room += (^C.int)(uintptr(fr) + FR_HEIGHT_OFF)^ - frame_minheight_o(fr, nil)
+			fr = (^rawptr)(uintptr(fr) + FR_NEXT_OFF)^
+		}
+		fr = curfr // put fr at window that grows
+	}
+	// If not enough room then move as far as we can
+	offset = min(offset, room)
+	if offset <= 0 {
+		return
+	}
+	// Grow frame fr by "offset" lines.
+	// Doesn't happen when dragging the last status line up.
+	if fr != nil {
+		frame_new_height(fr, (^C.int)(uintptr(fr) + FR_HEIGHT_OFF)^ + offset, up, false, true)
+	}
+	if up {
+		fr = curfr // current frame gets smaller
+	} else {
+		fr = (^rawptr)(uintptr(curfr) + FR_NEXT_OFF)^ // next frame gets smaller
+	}
+	// Now make the other frames smaller.
+	for fr != nil && offset > 0 {
+		n := frame_minheight_o(fr, nil)
+		if (^C.int)(uintptr(fr) + FR_HEIGHT_OFF)^ - offset <= n {
+			offset -= (^C.int)(uintptr(fr) + FR_HEIGHT_OFF)^ - n
+			frame_new_height(fr, n, !up, false, true)
+		} else {
+			frame_new_height(fr, (^C.int)(uintptr(fr) + FR_HEIGHT_OFF)^ - offset, !up, false, true)
+			break
+		}
+		if up {
+			fr = (^rawptr)(uintptr(fr) + FR_PREV_OFF)^
+		} else {
+			fr = (^rawptr)(uintptr(fr) + FR_NEXT_OFF)^
+		}
+	}
+	win_comp_pos()
+	win_fix_scroll(true)
+	redraw_all_later_r(UPD_SOME_VALID_O)
+	showmode_r()
+}
+
+// Separator line of "dragwin" is dragged "offset" lines right (neg is left).
+@(export)
+win_drag_vsep_line :: proc "c"(dragwin: rawptr, offset_in: C.int) {
+	offset := offset_in
+	fr := (^rawptr)(uintptr(dragwin) + W_FRAME_OFF)^
+	if fr == topframe_g { // only one window (cannot happen?)
+		return
+	}
+	curfr := fr
+	fr = (^rawptr)(uintptr(fr) + FR_PARENT_OFF)^
+	// When the parent frame is not a row of frames, its parent should be.
+	if b_at((^u8)(uintptr(fr) + FR_LAYOUT_OFF), 0) != FR_ROW_O {
+		if fr == topframe_g { // only a column of windows (cannot happen?)
+			return
+		}
+		curfr = fr
+		fr = (^rawptr)(uintptr(fr) + FR_PARENT_OFF)^
+	}
+	// If this is the last frame in a row, may want to resize a parent
+	// frame instead.
+	for (^rawptr)(uintptr(curfr) + FR_NEXT_OFF)^ == nil {
+		if fr == topframe_g {
+			break
+		}
+		curfr = fr
+		fr = (^rawptr)(uintptr(fr) + FR_PARENT_OFF)^
+		if fr != topframe_g {
+			curfr = fr
+			fr = (^rawptr)(uintptr(fr) + FR_PARENT_OFF)^
+		}
+	}
+	room: C.int
+	left := offset < 0 // if true, drag separator line left, otherwise right
+	if left { // drag left
+		offset = -offset
+		// sum up the room of the current frame and left of it
+		room = 0
+		fr = (^rawptr)(uintptr(fr) + FR_CHILD_OFF)^
+		for {
+			room += (^C.int)(uintptr(fr) + FR_WIDTH_OFF)^ - frame_minwidth_o(fr, nil)
+			if fr == curfr {
+				break
+			}
+			fr = (^rawptr)(uintptr(fr) + FR_NEXT_OFF)^
+		}
+		fr = (^rawptr)(uintptr(curfr) + FR_NEXT_OFF)^ // put fr at frame that grows
+	} else { // drag right
+		// sum up the room of frames right of the current one
+		room = 0
+		fr = (^rawptr)(uintptr(curfr) + FR_NEXT_OFF)^
+		for fr != nil {
+			room += (^C.int)(uintptr(fr) + FR_WIDTH_OFF)^ - frame_minwidth_o(fr, nil)
+			fr = (^rawptr)(uintptr(fr) + FR_NEXT_OFF)^
+		}
+		fr = curfr // put fr at window that grows
+	}
+	// If not enough room then move as far as we can
+	offset = min(offset, room)
+	// No room at all, quit.
+	if offset <= 0 {
+		return
+	}
+	if fr == nil {
+		// This can happen when calling win_move_separator() on the
+		// rightmost window. Just don't do anything.
+		return
+	}
+	// grow frame fr by offset lines
+	frame_new_width(fr, (^C.int)(uintptr(fr) + FR_WIDTH_OFF)^ + offset, left, false)
+	// shrink other frames: current and at the left or at the right
+	if left {
+		fr = curfr // current frame gets smaller
+	} else {
+		fr = (^rawptr)(uintptr(curfr) + FR_NEXT_OFF)^ // next frame gets smaller
+	}
+	for fr != nil && offset > 0 {
+		w := frame_minwidth_o(fr, nil)
+		if (^C.int)(uintptr(fr) + FR_WIDTH_OFF)^ - offset <= w {
+			offset -= (^C.int)(uintptr(fr) + FR_WIDTH_OFF)^ - w
+			frame_new_width(fr, w, !left, false)
+		} else {
+			frame_new_width(fr, (^C.int)(uintptr(fr) + FR_WIDTH_OFF)^ - offset, !left, false)
+			break
+		}
+		if left {
+			fr = (^rawptr)(uintptr(fr) + FR_PREV_OFF)^
+		} else {
+			fr = (^rawptr)(uintptr(fr) + FR_NEXT_OFF)^
+		}
+	}
+	win_comp_pos()
+	redraw_all_later_r(UPD_NOT_VALID_O)
 }
 
 // ── Batch 41: dir fix + jump-open + scroll-snapshot flag ─────────────────────
