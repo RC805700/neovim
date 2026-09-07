@@ -7524,3 +7524,130 @@ do_window_newwindow :: proc "c"(nchar: C.int, prenum: C.int) {
 	xstrlcat(&cbuf[0], transmute(^u8)(cstring("new")), size_of(cbuf))
 	do_cmdline_cmd_r(transmute(cstring)(&cbuf[0]))
 }
+
+// ── Batch 45: viewport + ui flush ────────────────────────────────────────────
+// w_viewport_invalid@564/last_topline@568 (+botline/topfill/skipcol below) and
+// grid.pending_comp_index_update@89/chars@8 cc-probed via off46 (matching the
+// pre-existing B8 consts above).
+
+W_VIEWPORT_LAST_BOTLINE_OFF :: 572
+W_VIEWPORT_LAST_TOPFILL_OFF :: 576
+W_VIEWPORT_LAST_SKIPCOL_OFF :: 580
+W_REDR_TYPE_OFF :: 692
+W_EMPTY_ROWS_OFF :: 616
+GRID_PENDING_COMP_OFF :: 89
+GRID_CHARS_OFF :: 8
+
+foreign _ {
+	@(link_name = "win_text_height")
+	win_text_height_r :: proc "c" (wp: rawptr, start_lnum: C.int, start_vcol: C.longlong, end_lnum: ^C.int, end_vcol: ^C.longlong, fill: rawptr, max: C.longlong) -> C.longlong ---
+	@(link_name = "ui_call_win_viewport")
+	ui_call_win_viewport_r :: proc "c" (grid: C.longlong, win: C.int, topline: C.longlong, botline: C.longlong, curline: C.longlong, curcol: C.longlong, line_count: C.longlong, scroll_delta: C.longlong) ---
+	@(link_name = "ui_ext_win_position")
+	ui_ext_win_position_r :: proc "c" (wp: rawptr, validate: bool) ---
+	@(link_name = "pum_ui_flush")
+	pum_ui_flush_r :: proc "c" () ---
+	@(link_name = "msg_ui_flush")
+	msg_ui_flush_r :: proc "c" () ---
+}
+
+@(export)
+ui_ext_win_viewport :: proc "c"(wp: rawptr) {
+	// NOTE: win_viewport is delayed until next flush when updates pending.
+	do_viewport := wp == curwin || ui_has(K_UIMULTIGRID_O)
+	if do_viewport && (^bool)(uintptr(wp) + W_VIEWPORT_INVALID_OFF)^ &&
+		(^C.int)(uintptr(wp) + W_REDR_TYPE_OFF)^ == 0 {
+		line_count := (^C.int)(uintptr((^rawptr)(uintptr(wp) + W_BUFFER_OFF)^) + B_ML_LINE_COUNT_OFF)^
+		// Avoid ml_get errors when producing "scroll_delta".
+		cur_topline := min((^C.int)(uintptr(wp) + W_TOPLINE_OFF)^, line_count)
+		cur_botline := min((^C.int)(uintptr(wp) + W_BOTLINE_OFF)^, line_count)
+		delta: C.longlong = 0
+		last_topline := (^C.int)(uintptr(wp) + W_VIEWPORT_LAST_TOPLINE_OFF)^
+		last_botline := (^C.int)(uintptr(wp) + W_VIEWPORT_LAST_BOTLINE_OFF)^
+		last_topfill := (^C.int)(uintptr(wp) + W_VIEWPORT_LAST_TOPFILL_OFF)^
+		last_skipcol := (^C.longlong)(uintptr(wp) + W_VIEWPORT_LAST_SKIPCOL_OFF)^
+		if last_topline > line_count {
+			delta -= C.longlong(last_topline - line_count)
+			last_topline = line_count
+			last_topfill = 0
+			last_skipcol = MAXCOL
+		}
+		last_botline = min(last_botline, line_count)
+		if cur_topline < last_topline ||
+			(cur_topline == last_topline &&
+				(^C.int)(uintptr(wp) + W_SKIPCOL_OFF)^ < C.int(last_skipcol)) {
+			vcole := last_skipcol
+			lnume := last_topline
+			if last_topline > 0 && cur_botline < last_topline {
+				// Scrolling too many lines: only approximate "scroll_delta".
+				delta -= C.longlong(last_topline - cur_botline)
+				lnume = cur_botline
+				vcole = 0
+			}
+			delta -= win_text_height_r(wp, cur_topline,
+				C.longlong((^C.int)(uintptr(wp) + W_SKIPCOL_OFF)^), &lnume, &vcole, nil, 0x7fffffffffffffff)
+		} else if cur_topline > last_topline ||
+			(cur_topline == last_topline &&
+				(^C.int)(uintptr(wp) + W_SKIPCOL_OFF)^ > C.int(last_skipcol)) {
+			vcole := (^C.longlong)(uintptr(wp) + W_SKIPCOL_OFF)^
+			lnume := cur_topline
+			if last_botline > 0 && cur_topline > last_botline {
+				// Scrolling too many lines: only approximate "scroll_delta".
+				delta += C.longlong(cur_topline - last_botline)
+				lnume = last_botline
+				vcole = 0
+			}
+			delta += win_text_height_r(wp, last_topline, last_skipcol, &lnume, &vcole, nil, 0x7fffffffffffffff)
+		}
+		delta += C.longlong(last_topfill)
+		delta -= C.longlong((^C.int)(uintptr(wp) + W_TOPFILL_OFF)^)
+		ev_botline := (^C.int)(uintptr(wp) + W_BOTLINE_OFF)^
+		if ev_botline == line_count + 1 && (^C.int)(uintptr(wp) + W_EMPTY_ROWS_OFF)^ == 0 {
+			ev_botline = line_count
+		}
+		ui_call_win_viewport_r(
+			C.longlong((^C.int)(uintptr(wp) + W_GRID_HANDLE_OFF)^),
+			(^C.int)(uintptr(wp) + W_HANDLE_OFF)^,
+			C.longlong((^C.int)(uintptr(wp) + W_TOPLINE_OFF)^ - 1),
+			C.longlong(ev_botline),
+			C.longlong((^C.int)(uintptr(wp) + W_CURSOR_OFF)^ - 1),
+			C.longlong((^C.int)(uintptr(wp) + W_CURSOR_OFF + 4)^),
+			C.longlong(line_count), delta)
+		(^bool)(uintptr(wp) + W_VIEWPORT_INVALID_OFF)^ = false
+		(^C.int)(uintptr(wp) + W_VIEWPORT_LAST_TOPLINE_OFF)^ = (^C.int)(uintptr(wp) + W_TOPLINE_OFF)^
+		(^C.int)(uintptr(wp) + W_VIEWPORT_LAST_BOTLINE_OFF)^ = (^C.int)(uintptr(wp) + W_BOTLINE_OFF)^
+		(^C.int)(uintptr(wp) + W_VIEWPORT_LAST_TOPFILL_OFF)^ = (^C.int)(uintptr(wp) + W_TOPFILL_OFF)^
+		(^C.longlong)(uintptr(wp) + W_VIEWPORT_LAST_SKIPCOL_OFF)^ = C.longlong((^C.int)(uintptr(wp) + W_SKIPCOL_OFF)^)
+	}
+}
+
+@(export)
+win_ui_flush :: proc "c"(validate: bool) {
+	tp := first_tabpage
+	for tp != nil {
+		wp := tp == curtab ? firstwin : (^rawptr)(uintptr(tp) + TP_FIRSTWIN_OFF)^
+		for wp != nil {
+			grid := uintptr(wp) + W_GRID_ALLOC_OFF
+			if ((^bool)(uintptr(wp) + W_POS_CHANGED_OFF)^ ||
+				(^bool)(grid + GRID_PENDING_COMP_OFF)^) &&
+				(^rawptr)(grid + GRID_CHARS_OFF)^ != nil {
+				if tp == curtab {
+					ui_ext_win_position_r(wp, validate)
+				} else {
+					ui_call_win_hide_r((^C.int)(uintptr(wp) + W_GRID_HANDLE_OFF)^)
+					(^bool)(uintptr(wp) + W_POS_CHANGED_OFF)^ = false
+				}
+				(^bool)(grid + GRID_PENDING_COMP_OFF)^ = false
+			}
+			if tp == curtab {
+				ui_ext_win_viewport(wp)
+			}
+			wp = (^rawptr)(uintptr(wp) + W_NEXT_OFF)^
+		}
+		tp = (^rawptr)(uintptr(tp) + TP_NEXT_OFF)^
+	}
+	// The popupmenu could also have moved or changed its comp_index
+	pum_ui_flush_r()
+	// And the message
+	msg_ui_flush_r()
+}

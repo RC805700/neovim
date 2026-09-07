@@ -195,6 +195,8 @@ void nvim_odin_init_winopt(win_T *win);
 #pragma weak buf_jump_open_win
 #pragma weak win_fix_current_dir
 #pragma weak may_make_initial_scroll_size_snapshot
+#pragma weak ui_ext_win_viewport
+#pragma weak win_ui_flush
 #pragma weak win_drag_status_line
 #pragma weak win_drag_vsep_line
 #pragma weak win_splitmove
