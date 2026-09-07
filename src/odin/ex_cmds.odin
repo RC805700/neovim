@@ -24,6 +24,12 @@ DOCMD_VERBOSE_O :: 0x01
 SHM_OVERALL_O :: C.int('O')
 // E1546_S already in buffer.odin — reuse.
 E143_S :: "E143: Autocommands unexpectedly deleted new buffer %s"
+// Batch 26: :file/:write/:update (ex_cmds.c dispatch statics stay C).
+CMD_SAVEAS_O :: 390
+EXARG_LINE1_OFF :: 84
+EXARG_USEFILTER_OFF :: 120
+EVENT_BUFFILEPRE_O :: 5
+EVENT_BUFFILEPOST_O :: 4
 
 foreign _ {
 	@(link_name = "check_changed")
@@ -56,6 +62,10 @@ foreign _ {
 	msg_listdo_overwrite_g: C.int
 	@(link_name = "msg_scrolled_ign")
 	msg_scrolled_ign_g: bool
+	@(link_name = "do_write")
+	do_write_r :: proc "c"(eap: rawptr) -> C.int ---
+	@(link_name = "do_bang")
+	do_bang_r :: proc "c"(addr_count: C.int, eap: rawptr, forceit: bool, do_in: bool, do_out: bool) ---
 }
 
 // Set v:swapcommand for SwapExists autocommands ([+cmd] / newlnum "G").
@@ -733,4 +743,102 @@ do_ecmd :: proc "c"(fnum: C.int, ffname_in: cstring, sfname_in: cstring, eap: ra
 	}
 	xfree(free_fname)
 	return retval
+}
+
+// ── Batch 26: :file/:update/:write + rename_buffer ──────────────────────────
+
+// Rename the current buffer's file (BUFFILEPRE/POST autocmds, alt-file save).
+@(export)
+rename_buffer :: proc "c"(new_fname: cstring) -> C.int {
+	buf := curbuf
+	apply_autocmds(EVENT_BUFFILEPRE_O, nil, nil, false, curbuf)
+	// Buffer changed, don't change name now.
+	if buf != curbuf {
+		return FAIL
+	}
+	if aborting_r() { // autocmds may abort script processing
+		return FAIL
+	}
+	// The current buffer keeps its name in a new (unlisted) entry that
+	// becomes the alternate file — unless it never had a name.
+	fname := (^u8)((^rawptr)(uintptr(curbuf) + B_FFNAME)^)
+	sfname := (^u8)((^rawptr)(uintptr(curbuf) + B_SFNAME_OFF)^)
+	xfname := (^u8)((^rawptr)(uintptr(curbuf) + B_FNAME)^)
+	(^rawptr)(uintptr(curbuf) + B_FFNAME)^ = nil
+	(^rawptr)(uintptr(curbuf) + B_SFNAME_OFF)^ = nil
+	if setfname(curbuf, new_fname, nil, true) == FAIL {
+		(^rawptr)(uintptr(curbuf) + B_FFNAME)^ = transmute(rawptr)(fname)
+		(^rawptr)(uintptr(curbuf) + B_SFNAME_OFF)^ = transmute(rawptr)(sfname)
+		return FAIL
+	}
+	(^C.int)(uintptr(curbuf) + B_FLAGS_OFF)^ |= BF_NOTEDITED_O
+	if xfname != nil && ([^]u8)(xfname)[0] != 0 {
+		buf = buflist_new(cstring(fname), cstring(xfname),
+			(^C.int)(uintptr(curwin) + W_CURSOR_OFF)^, 0)
+		if buf != nil && (cmdmod_cmod_flags & CMOD_KEEPALT_O) == 0 {
+			(^C.int)(uintptr(curwin) + W_ALT_FNUM)^ =
+				(^C.int)(uintptr(buf) + B_FNUM_OFF)^
+		}
+	}
+	xfree(transmute(rawptr)(fname))
+	xfree(transmute(rawptr)(sfname))
+	apply_autocmds(EVENT_BUFFILEPOST_O, nil, nil, false, curbuf)
+	// Change directories when the 'acd' option is set.
+	do_autochdir()
+	return OK
+}
+
+// ":file" — rename buffer and/or show file info.
+@(export)
+ex_file :: proc "c"(eap: rawptr) {
+	arg := (^cstring)(uintptr(eap))^
+	// ":0file" removes the name; reject ":3file", "0file name", etc.
+	if (^C.int)(uintptr(eap) + EXARG_ADDR_COUNT_OFF)^ > 0 &&
+		(([^]u8)(transmute(^u8)(arg))[0] != 0 ||
+			(^C.int)(uintptr(eap) + EXARG_LINE2_OFF)^ > 0 ||
+			(^C.int)(uintptr(eap) + EXARG_ADDR_COUNT_OFF)^ > 1) {
+		emsg(cstring(e_invarg_s))
+		return
+	}
+
+	if ([^]u8)(transmute(^u8)(arg))[0] != 0 ||
+		(^C.int)(uintptr(eap) + EXARG_ADDR_COUNT_OFF)^ == 1 {
+		if rename_buffer(arg) == FAIL {
+			return
+		}
+		redraw_tabline_opt = true
+	}
+
+	// Print file name if no argument or 'F' not in 'shortmess'.
+	if ([^]u8)(transmute(^u8)(arg))[0] == 0 || !shortmess(SHM_FILEINFO_O) {
+		fileinfo(0, 0, (^C.int)(uintptr(eap) + EXARG_FORCEIT_OFF)^ != 0)
+	}
+}
+
+// ":update" — write only when changed (or file vanished).
+@(export)
+ex_update :: proc "c"(eap: rawptr) {
+	if curbufIsChanged() ||
+		(!bt_nofilename(curbuf) &&
+			(^rawptr)(uintptr(curbuf) + B_FFNAME)^ != nil &&
+			!os_path_exists(cstring((^u8)((^rawptr)(uintptr(curbuf) + B_FFNAME)^)))) {
+		do_write_r(eap)
+	}
+}
+
+// ":write" and ":saveas".
+@(export)
+ex_write :: proc "c"(eap: rawptr) {
+	if (^C.int)(uintptr(eap) + EXARG_CMDIDX_OFF)^ == CMD_SAVEAS_O {
+		// :saveas takes no range, uses all lines.
+		(^C.int)(uintptr(eap) + EXARG_LINE1_OFF)^ = 1
+		(^C.int)(uintptr(eap) + EXARG_LINE2_OFF)^ =
+			(^C.int)(uintptr(curbuf) + B_ML_LINE_COUNT_OFF)^
+	}
+
+	if (^bool)(uintptr(eap) + EXARG_USEFILTER_OFF)^ {
+		do_bang_r(1, eap, false, true, false) // input lines to shell cmd
+	} else {
+		do_write_r(eap)
+	}
 }

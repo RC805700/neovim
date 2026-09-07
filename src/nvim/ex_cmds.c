@@ -1765,6 +1765,8 @@ int rename_buffer(char *new_fname)
 }
 
 /// ":file[!] [fname]".
+#pragma weak rename_buffer
+#pragma weak ex_file
 void ex_file(exarg_T *eap)
 {
   // ":0file" removes the file name.  Check for illegal uses ":3file",
@@ -1791,6 +1793,7 @@ void ex_file(exarg_T *eap)
 }
 
 /// ":update".
+#pragma weak ex_update
 void ex_update(exarg_T *eap)
 {
   if (curbufIsChanged()
@@ -1801,6 +1804,7 @@ void ex_update(exarg_T *eap)
 }
 
 /// ":write" and ":saveas".
+#pragma weak ex_write
 void ex_write(exarg_T *eap)
 {
   if (eap->cmdidx == CMD_saveas) {
