@@ -3252,3 +3252,403 @@ ex_global :: proc "c"(eap: rawptr) {
 	}
 	vim_regfree(regmatch.regprog)
 }
+
+// ── Batch 35: :left/:right/:center (ex_align + linelen) ─────────────────────
+
+CMD_RIGHT_O :: 376
+CMD_LEFT_O :: 229
+CMD_CENTER_O :: 63
+B_P_WM_OFF :: 10728 // buf_T.b_p_wm (OptInt, cc-probed)
+W_P_RL_OFF :: 1024 // win_T.w_p_rl (int, cc-probed)
+
+foreign _ {
+	@(link_name = "linetabsize_col")
+	linetabsize_col_r :: proc "c"(startvcol: C.int, s: ^u8) -> C.int ---
+}
+
+// Line length excluding trailing white space (C static, plain).
+linelen_o :: proc "c"(has_tab: ^C.int) -> C.int {
+	// Empty line: bail early (may be empty for unloaded buffers).
+	line := get_cursor_line_ptr_r()
+	if ([^]u8)(line)[0] == 0 {
+		return 0
+	}
+	// First non-blank character.
+	first := transmute(^u8)(skipwhite(cstring(line)))
+
+	// Character after the last non-blank.
+	last := (^u8)(uintptr(first) + uintptr(libc.strlen(cstring(first))))
+	for uintptr(last) > uintptr(first) &&
+		ascii_iswhite(([^]u8)((^u8)(uintptr(last) - 1))[0]) {
+		last = (^u8)(uintptr(last) - 1)
+	}
+	savec := ([^]u8)(last)[0]
+	([^]u8)(last)[0] = 0
+	len := linetabsize_col_r(0, line) // line length
+	if has_tab != nil { // embedded TAB check
+		has_tab^ = vim_strchr(first, C.int('\t')) != nil ? 1 : 0
+	}
+	([^]u8)(last)[0] = savec
+
+	return len
+}
+
+// ":left", ":right", ":center" — align lines.
+@(export)
+ex_align :: proc "c"(eap: rawptr) {
+	cmdidx := (^C.int)(uintptr(eap) + EXARG_CMDIDX_OFF)^
+	indent: C.int = 0
+	new_indent: C.int = 0
+
+	if (^C.int)(uintptr(curwin) + W_P_RL_OFF)^ != 0 {
+		// Switch left and right aligning.
+		if cmdidx == CMD_RIGHT_O {
+			cmdidx = CMD_LEFT_O
+		} else if cmdidx == CMD_LEFT_O {
+			cmdidx = CMD_RIGHT_O
+		}
+		(^C.int)(uintptr(eap) + EXARG_CMDIDX_OFF)^ = cmdidx
+	}
+
+	width := C.int(libc.atol((^cstring)(uintptr(eap))^))
+	save_curpos := (^Pos_T)(uintptr(curwin) + W_CURSOR_OFF)^
+	if cmdidx == CMD_LEFT_O { // width is the new indent
+		if width >= 0 {
+			indent = width
+		}
+	} else {
+		// 'textwidth', then 'wrapmargin', else 80.
+		if width <= 0 {
+			width = C.int((^C.longlong)(uintptr(curbuf) + B_P_TW_OFF2)^)
+		}
+		if width == 0 &&
+			(^C.longlong)(uintptr(curbuf) + B_P_WM_OFF)^ > 0 {
+			width = (^C.int)(uintptr(curwin) + W_VIEW_WIDTH_OFF)^ -
+				C.int((^C.longlong)(uintptr(curbuf) + B_P_WM_OFF)^)
+		}
+		if width <= 0 {
+			width = 80
+		}
+	}
+
+	if u_save((^C.int)(uintptr(eap) + EXARG_LINE1_OFF)^ - 1,
+		(^C.int)(uintptr(eap) + EXARG_LINE2_OFF)^ + 1) == FAIL {
+		return
+	}
+
+	lnum := (^C.int)(uintptr(eap) + EXARG_LINE1_OFF)^
+	for lnum <= (^C.int)(uintptr(eap) + EXARG_LINE2_OFF)^ {
+		(^C.int)(uintptr(curwin) + W_CURSOR_OFF)^ = lnum
+		if cmdidx == CMD_LEFT_O { // left align
+			new_indent = indent
+		} else {
+			has_tab: C.int = 0 // avoid uninit warnings
+			len := linelen_o(cmdidx == CMD_RIGHT_O ? &has_tab : nil) -
+				get_indent_r()
+
+			if len <= 0 { // skip blank lines
+				lnum += 1
+				continue
+			}
+
+			if cmdidx == CMD_CENTER_O {
+				new_indent = (width - len) / 2
+			} else {
+				new_indent = width - len // right align
+
+				// Embedded TABs must not push text too far right.
+				if has_tab != 0 {
+					for new_indent > 0 {
+						set_indent_r(new_indent, 0)
+						if linelen_o(nil) <= width {
+							// Move right as far as possible, stop
+							// when too far.
+							for {
+								set_indent_r(new_indent + 1, 0)
+								new_indent += 1
+								if linelen_o(nil) > width {
+									break
+								}
+							}
+							new_indent -= 1
+							break
+						}
+						new_indent -= 1
+					}
+				}
+			}
+		}
+		new_indent = max(new_indent, 0)
+		set_indent_r(new_indent, 0) // set indent
+		lnum += 1
+	}
+	changed_lines_r(curbuf, (^C.int)(uintptr(eap) + EXARG_LINE1_OFF)^, 0,
+		(^C.int)(uintptr(eap) + EXARG_LINE2_OFF)^ + 1, 0, true)
+	(^Pos_T)(uintptr(curwin) + W_CURSOR_OFF)^ = save_curpos
+	beginline(BL_WHITE | BL_FIX)
+}
+
+// ── Batch 36: ga/g8 (do_ascii) ─────────────────────────────────────────────
+
+foreign _ {
+	@(link_name = "utf_ptr2len")
+	utf_ptr2len_o :: proc "c"(p: cstring) -> C.int ---
+	@(link_name = "transchar_nonprint")
+	transchar_nonprint_r :: proc "c"(buf: rawptr, charbuf: ^u8, c: C.int) ---
+}
+
+// ":ascii" and "ga": show char value, hex, octal, digraph.
+@(export)
+do_ascii :: proc "c"(eap: rawptr) {
+	data := get_cursor_pos_ptr_r()
+	len := C.size_t(utfc_ptr2len(cstring(data)))
+
+	if len == 0 {
+		msg_msg(cstring("NUL"), 0)
+		return
+	}
+
+	need_clear := true
+	msg_sb_eol()
+	msg_start()
+
+	c := utf_ptr2char(cstring(data))
+	off: C.size_t = 0
+
+	// TODO(bfredl): merge this with the main loop.
+	if c < 0x80 {
+		if c == C.int(NL) { // NUL is stored as NL.
+			c = C.int(NUL)
+		}
+		cval := c
+		if c == C.int(CAR) && get_fileformat(curbuf) == EOL_MAC_S {
+			cval = C.int(NL) // NL is stored as CR.
+		}
+		buf1: [20]u8
+		if vim_isprintc(c) && (c < ' ' || c > '~') {
+			buf3: [7]u8
+			transchar_nonprint_r(curbuf, &buf3[0], c)
+			libc.snprintf(&buf1[0], C.size_t(20), cstring("  <%s>"),
+				cstring(&buf3[0]))
+		} else {
+			buf1[0] = NUL
+		}
+		buf2: [20]u8
+		buf2[0] = NUL
+
+		dig := get_digraph_for_char(cval)
+		if dig != nil {
+			libc.snprintf(&IObuff[0], C.size_t(IOSIZE_O),
+				cstring("<%s>%s%s  %d,  Hex %02x,  Oct %03o, Digr %s"),
+				cstring(transchar_o(c)), cstring(&buf1[0]), cstring(&buf2[0]),
+				cval, cval, cval, cstring(dig))
+		} else {
+			libc.snprintf(&IObuff[0], C.size_t(IOSIZE_O),
+				cstring("<%s>%s%s  %d,  Hex %02x,  Octal %03o"),
+				cstring(transchar_o(c)), cstring(&buf1[0]), cstring(&buf2[0]),
+				cval, cval, cval)
+		}
+
+		msg_multiline(String{data = cstring(&IObuff[0]),
+			size = libc.strlen(cstring(&IObuff[0]))}, 0, true, false,
+			&need_clear)
+
+		off += C.size_t(utf_ptr2len_o(cstring(data))) // overlong ascii?
+	}
+
+	// Combining characters, then multibyte.
+	for off < len {
+		c = utf_ptr2char(cstring((^u8)(uintptr(data) + uintptr(off))))
+
+		iobuff_len: C.size_t = 0
+		// Every multi-byte char is assumed printable...
+		if off > 0 {
+			([^]u8)(&IObuff[0])[iobuff_len] = ' '
+			iobuff_len += 1
+		}
+		([^]u8)(&IObuff[0])[iobuff_len] = '<'
+		iobuff_len += 1
+		if utf_iscomposing_first(c) {
+			([^]u8)(&IObuff[0])[iobuff_len] = ' ' // composing on space
+			iobuff_len += 1
+		}
+		iobuff_len += C.size_t(utf_char2bytes(c,
+			(^u8)(uintptr(&IObuff[0]) + uintptr(iobuff_len))))
+
+		dig := get_digraph_for_char(c)
+		if dig != nil {
+			libc.snprintf((^u8)(uintptr(&IObuff[0]) + uintptr(iobuff_len)),
+				C.size_t(IOSIZE_O) - iobuff_len,
+				c < 0x10000 ? cstring("> %d, Hex %04x, Oct %o, Digr %s") :
+					cstring("> %d, Hex %08x, Oct %o, Digr %s"),
+				c, c, c, cstring(dig))
+		} else {
+			libc.snprintf((^u8)(uintptr(&IObuff[0]) + uintptr(iobuff_len)),
+				C.size_t(IOSIZE_O) - iobuff_len,
+				c < 0x10000 ? cstring("> %d, Hex %04x, Octal %o") :
+					cstring("> %d, Hex %08x, Octal %o"),
+				c, c, c)
+		}
+
+		msg_multiline(String{data = cstring(&IObuff[0]),
+			size = libc.strlen(cstring(&IObuff[0]))}, 0, true, false,
+			&need_clear)
+
+		off += C.size_t(utf_ptr2len_o(cstring(
+			(^u8)(uintptr(data) + uintptr(off)))))
+	}
+
+	if need_clear {
+		msg_clr_eos_r()
+	}
+	msg_end()
+}
+
+// ── Batch 37a: substitute types + small helpers ─────────────────────────────
+// (sub_joining_lines defers to the do_sub engine batch — it needs do_join,
+// ex_may_print, save_re_pat/add_to_history. linelen belongs to ex_align.)
+
+KSUB_HONOR_OPTIONS_O :: 0
+KSUB_IGNORE_CASE_O :: 1
+KSUB_MATCH_CASE_O :: 2
+
+// subflags_T mirrors C (ex_cmds.c:112): 7 bools + 4-byte enum = 12 bytes.
+Subflags_T :: struct {
+	do_all:    bool,
+	do_ask:    bool,
+	do_count:  bool,
+	do_error:  bool,
+	do_print:  bool,
+	do_list:   bool,
+	do_number: bool,
+	_pad:      u8,
+	do_ic:     C.int,
+}
+#assert(size_of(Subflags_T) == 12)
+
+// SubReplacementString mirrors C (ex_cmds_defs.h:202): 8+8+8 = 24 bytes.
+SubReplacementString :: struct {
+	sub:             ^u8,
+	timestamp:       u64,
+	additional_data: rawptr,
+}
+#assert(size_of(SubReplacementString) == 24)
+
+foreign _ {
+	@(link_name = "p_gd")
+	p_gd_g: C.int
+}
+
+// Previous substitute replacement string (C static, file-private).
+@(private="file")
+old_sub_f: SubReplacementString
+
+// Get/set old substitute replacement (DORMANT: C do_sub reads C's static
+// old_sub directly, so these stay _o until do_sub ports — exporting now
+// would split-brain shada writes vs do_sub reads. Verified by :~ probe.)
+sub_get_replacement_o :: proc "c"(ret_sub: ^SubReplacementString) {
+	ret_sub^ = old_sub_f
+}
+
+// Set substitute string and timestamp (takes ownership, no copy).
+sub_set_replacement_o :: proc "c"(sub: SubReplacementString) {
+	xfree(transmute(rawptr)(old_sub_f.sub))
+	if sub.additional_data != old_sub_f.additional_data {
+		xfree(transmute(rawptr)(old_sub_f.additional_data))
+	}
+	old_sub_f = sub
+}
+
+// Grow the substitution output buffer (C static, plain; dormant for do_sub).
+sub_grow_buf_o :: proc "c"(new_start: ^NvimString, new_start_size: ^C.size_t, needed_size_in: C.size_t) {
+	needed_size := needed_size_in
+	if new_start.data == nil {
+		// Fresh buffer with headroom against frequent reallocs.
+		new_start_size^ = needed_size + 50
+		new_start.data = transmute(cstring)(xcalloc(1, new_start_size^))
+		([^]u8)(transmute(^u8)(new_start.data))[0] = 0
+		new_start.size = 0
+	} else {
+		// Grow when too short (plus headroom).
+		needed_size += new_start.size
+		if needed_size > new_start_size^ {
+			prev_size := new_start_size^
+			new_start_size^ = needed_size + 50
+			added_len := new_start_size^ - prev_size
+			new_start.data = transmute(cstring)(xrealloc(
+				transmute(rawptr)(new_start.data), new_start_size^))
+			libc.memset(transmute(rawptr)((^u8)(uintptr(transmute(rawptr)(new_start.data)) + uintptr(prev_size))), 0, added_len)
+		}
+	}
+}
+
+// Parse :substitute {flags}, updating subflags (C static, plain).
+sub_parse_flags_o :: proc "c"(cmd_in: ^u8, subflags: ^Subflags_T, which_pat: ^C.int) -> ^u8 {
+	cmd := cmd_in
+	// Trailing options; '&' keeps old options.
+	if ([^]u8)(cmd)[0] == '&' {
+		cmd = (^u8)(uintptr(cmd) + 1)
+	} else {
+		subflags.do_all = p_gd_g != 0
+		subflags.do_ask = false
+		subflags.do_error = true
+		subflags.do_print = false
+		subflags.do_list = false
+		subflags.do_count = false
+		subflags.do_number = false
+		subflags.do_ic = KSUB_HONOR_OPTIONS_O
+	}
+	for ([^]u8)(cmd)[0] != 0 {
+		// 'g' and 'c' always invert; 'r' never inverts.
+		c := ([^]u8)(cmd)[0]
+		if c == 'g' {
+			subflags.do_all = !subflags.do_all
+		} else if c == 'c' {
+			subflags.do_ask = !subflags.do_ask
+		} else if c == 'n' {
+			subflags.do_count = true
+		} else if c == 'e' {
+			subflags.do_error = !subflags.do_error
+		} else if c == 'r' { // use last used regexp
+			which_pat^ = RE_LAST
+		} else if c == 'p' {
+			subflags.do_print = true
+		} else if c == '#' {
+			subflags.do_print = true
+			subflags.do_number = true
+		} else if c == 'l' {
+			subflags.do_print = true
+			subflags.do_list = true
+		} else if c == 'i' { // ignore case
+			subflags.do_ic = KSUB_IGNORE_CASE_O
+		} else if c == 'I' { // don't ignore case
+			subflags.do_ic = KSUB_MATCH_CASE_O
+		} else {
+			break
+		}
+		cmd = (^u8)(uintptr(cmd) + 1)
+	}
+	if subflags.do_count {
+		subflags.do_ask = false
+	}
+
+	return cmd
+}
+
+// Skip the "sub" part in :s/pat/sub/ (C static, plain).
+skip_substitute_o :: proc "c"(start: ^u8, delimiter: C.int) -> ^u8 {
+	p := start
+
+	for ([^]u8)(p)[0] != 0 {
+		if ([^]u8)(p)[0] == u8(delimiter) { // end delimiter found
+			([^]u8)(p)[0] = 0 // replace it with NUL
+			p = (^u8)(uintptr(p) + 1)
+			break
+		}
+		if ([^]u8)(p)[0] == '\\' && ([^]u8)(p)[1] != 0 { // skip escapes
+			p = (^u8)(uintptr(p) + 1)
+		}
+		p = (^u8)(uintptr(p) + uintptr(C.int(utfc_ptr2len(cstring(p)))))
+	}
+	return p
+}

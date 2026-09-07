@@ -140,6 +140,7 @@ static const char e_non_numeric_argument_to_z[]
   = N_("E144: Non-numeric argument to :z");
 
 /// ":ascii" and "ga" implementation
+#pragma weak do_ascii
 void do_ascii(exarg_T *eap)
 {
   char *data = get_cursor_pos_ptr();
@@ -234,6 +235,7 @@ void do_ascii(exarg_T *eap)
 }
 
 /// ":left", ":center" and ":right": align text.
+#pragma weak ex_align
 void ex_align(exarg_T *eap)
 {
   int indent = 0;
