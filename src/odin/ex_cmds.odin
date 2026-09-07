@@ -3652,3 +3652,1117 @@ skip_substitute_o :: proc "c"(start: ^u8, delimiter: C.int) -> ^u8 {
 	}
 	return p
 }
+
+// ── Batch 37b: sub_joining_lines (:%s/\n// join shortcut) ───────────────────
+
+EXFLAG_PRINT_O :: 0x04
+EXARG_SKIP_OFF :: 72
+
+foreign _ {
+	@(link_name = "do_join")
+	do_join_r :: proc "c"(count: C.size_t, insert_space: bool, save_undo: bool, use_formatoptions: bool, setmark: bool) -> C.int ---
+	@(link_name = "ex_may_print")
+	ex_may_print_r :: proc "c"(eap: rawptr) ---
+}
+
+// Recognize ":%s/\n//" as a join (much more efficient) (C static, plain).
+sub_joining_lines_o :: proc "c"(eap: rawptr, pat: ^NvimString, sub: cstring, cmd: cstring, save: bool, keeppatterns: bool) -> bool {
+	// TODO(vim): generic line-joining solution without a growing string.
+	if pat.data != nil &&
+		libc.strcmp(pat.data, cstring("\\n")) == 0 &&
+		([^]u8)(transmute(^u8)(sub))[0] == 0 &&
+		(([^]u8)(transmute(^u8)(cmd))[0] == 0 ||
+			(([^]u8)(transmute(^u8)(cmd))[1] == 0 &&
+				(([^]u8)(transmute(^u8)(cmd))[0] == 'g' ||
+					([^]u8)(transmute(^u8)(cmd))[0] == 'l' ||
+					([^]u8)(transmute(^u8)(cmd))[0] == 'p' ||
+					([^]u8)(transmute(^u8)(cmd))[0] == '#'))) {
+		if (^bool)(uintptr(eap) + EXARG_SKIP_OFF)^ {
+			return true
+		}
+		(^C.int)(uintptr(curwin) + W_CURSOR_OFF)^ =
+			(^C.int)(uintptr(eap) + EXARG_LINE1_OFF)^
+		if ([^]u8)(transmute(^u8)(cmd))[0] == 'l' {
+			(^C.int)(uintptr(eap) + EXARG_FLAGS_OFF)^ = EXFLAG_LIST_O
+		} else if ([^]u8)(transmute(^u8)(cmd))[0] == '#' {
+			(^C.int)(uintptr(eap) + EXARG_FLAGS_OFF)^ = EXFLAG_NR_O
+		} else if ([^]u8)(transmute(^u8)(cmd))[0] == 'p' {
+			(^C.int)(uintptr(eap) + EXARG_FLAGS_OFF)^ = EXFLAG_PRINT_O
+		}
+
+		// Joined lines = range lines, plus one unless at end of file.
+		joined_lines_count := (^C.int)(uintptr(eap) + EXARG_LINE2_OFF)^ -
+			(^C.int)(uintptr(eap) + EXARG_LINE1_OFF)^ + 1 +
+			((^C.int)(uintptr(eap) + EXARG_LINE2_OFF)^ <
+				(^C.int)(uintptr(curbuf) + B_ML_LINE_COUNT_OFF)^ ? 1 : 0)
+		if joined_lines_count > 1 {
+			do_join_r(C.size_t(joined_lines_count), false, true, false, true)
+			sub_nsubs_sp = C.longlong(joined_lines_count) - 1
+			sub_nlines_sp = 1
+			do_sub_msg_r(false)
+			ex_may_print_r(eap)
+		}
+
+		if save {
+			if !keeppatterns {
+				save_re_pat(RE_SUBST_O, transmute(^u8)(pat.data), pat.size,
+					C.int(magic_isset()))
+			}
+			// Put pattern in history.
+			add_to_history_r(HIST_SEARCH, pat.data, pat.size, true, 0)
+		}
+
+		return true
+	}
+
+	return false
+}
+
+// ── Batch 37c: do_sub engine (atomic port) ──────────────────────────────────
+
+E33_S :: "E33: No previous substitute regular expression"
+E939_S :: "E939: Positive count required"
+E1510_S :: "E1510: Value too large: %.*s"
+E488_S :: "E488: Trailing characters: %s"
+E21_S :: "E21: Cannot make changes, 'modifiable' is off"
+E486_S :: "E486: Pattern not found: %s"
+CMOD_KEEPPATTERNS_O :: 0x1000
+SID_NONE_O :: -6
+REGSUB_BACKSLASH_O :: 1
+REGSUB_MAGIC_O :: 2
+REGSUB_COPY_O :: 4
+
+// lpos_T mirrors C (pos_defs.h:34): 2×C.int = 8 bytes.
+Lpos_T :: struct {
+	lnum: C.int,
+	col:  C.int,
+}
+
+// Per-match extmark data (C-local typedef; Odin-side only, no ABI).
+SubLineData :: struct {
+	start_col:   C.int,
+	start_lnum:  C.int,
+	start_c:     C.int,
+	end_lnum:    C.int,
+	end_c:       C.int,
+	matchcols:   C.int,
+	matchbytes:  C.longlong,
+	subcols:     C.int,
+	subbytes:    C.int,
+	lnum_before: C.int,
+	lnum_after:  C.int,
+}
+
+// Preview match (C-local SubResult; Odin-side only).
+SubResult_T :: struct {
+	start_lnum: C.int,
+	start_col:  C.int,
+	end_lnum:   C.int,
+	end_col:    C.int,
+	pre_match:  C.int,
+}
+
+// PreviewLines (C-local; kvec becomes [dynamic], local-only so no ABI).
+PreviewLines_T :: struct {
+	subresults:   [dynamic]SubResult_T,
+	lines_needed: C.int,
+}
+
+// getcmdline_prompt Callback (eval/typval_defs.h:66): 8B ptr + 4B type.
+Callback_T :: struct {
+	data: rawptr,
+	type: C.int,
+	_pad: C.int,
+}
+#assert(size_of(Callback_T) == 16)
+
+foreign _ {
+	@(link_name = "vim_regsub_multi")
+	vim_regsub_multi_r :: proc "c"(rmp: ^Regmmatch_T, lnum: C.int, src: ^u8, dst: ^u8, dstlen: C.int, flags: C.int) -> C.size_t ---
+	@(link_name = "regtilde")
+	regtilde_r :: proc "c"(source: ^u8, magic: C.int, preview: bool) -> ^u8 ---
+	@(link_name = "deleted_lines")
+	deleted_lines_r :: proc "c"(lnum: C.int, count: C.int) ---
+	@(link_name = "no_u_sync")
+	no_u_sync_g: C.int
+	@(link_name = "ex_normal_busy")
+	ex_normal_busy_g: C.int
+	@(link_name = "p_lz")
+	p_lz_g: C.int
+	@(link_name = "search_match_lines")
+	search_match_lines_g: C.int
+	@(link_name = "search_match_endcol")
+	search_match_endcol_g: C.int
+	@(link_name = "highlight_match")
+	highlight_match_g: bool
+	@(link_name = "getcmdline_prompt")
+	getcmdline_prompt_r :: proc "c"(firstc: C.int, prompt: cstring, hl_id: C.int, xp_context: C.int, xp_arg: cstring, highlight_callback: Callback_T, one_key: bool, mouse_used: rawptr) -> ^u8 ---
+	@(link_name = "prompt_for_input")
+	prompt_for_input_r :: proc "c"(p: ^u8, hl_id: C.int, one_key: bool, mouse_used: rawptr) -> C.int ---
+	@(link_name = "scrollup_clamp")
+	scrollup_clamp_r :: proc "c"() ---
+	@(link_name = "scrolldown_clamp")
+	scrolldown_clamp_r :: proc "c"() ---
+	@(link_name = "do_check_cursorbind")
+	do_check_cursorbind_r :: proc "c"() ---
+	@(link_name = "p_cwh")
+	p_cwh_g: C.longlong
+	@(link_name = "re_multiline")
+	re_multiline_r :: proc "c"(prog: rawptr) -> bool ---
+	@(link_name = "p_icm")
+	p_icm_g: ^u8
+	@(link_name = "concat_str")
+	concat_str_r :: proc "c"(s1: cstring, s2: cstring) -> ^u8 ---
+	@(link_name = "syn_check_group")
+	syn_check_group_r :: proc "c"(name: cstring, len: C.size_t) -> C.int ---
+	@(link_name = "profile_zero")
+	profile_zero_r :: proc "c"() -> proftime_T ---
+	@(link_name = "p_rdt")
+	p_rdt_g: C.longlong
+	@(link_name = "coladvance")
+	coladvance_r :: proc "c"(wp: rawptr, col: C.int) -> C.int ---
+	@(link_name = "bufhl_add_hl_pos_offset")
+	bufhl_add_hl_pos_offset_r :: proc "c"(buf: rawptr, ns_id: C.int, hl_id: C.int, pos1: Lpos_T, pos2: Lpos_T, col_offset: C.int) ---
+	@(link_name = "ml_replace_buf")
+	ml_replace_buf_r :: proc "c"(buf: rawptr, lnum: C.int, line: ^u8, copy: bool, noalloc: bool) -> C.int ---
+	@(link_name = "ml_append_buf")
+	ml_append_buf_r :: proc "c"(buf: rawptr, lnum: C.int, line: ^u8, len: C.int, noalloc: bool) -> C.int ---
+}
+
+// Persistent :substitute flags + preview hl id (C statics, file-private).
+@(private="file")
+subflags_f: Subflags_T = {false, false, false, true, false, false, false, 0, KSUB_HONOR_OPTIONS_O}
+@(private="file")
+pre_hl_id_f: C.int
+
+// Preview the :substitute being typed (TUI inccommand; C static, plain).
+show_sub_o :: proc "c"(eap: rawptr, old_cusr: Pos_T, preview_lines: ^PreviewLines_T, hl_id: C.int, cmdpreview_ns: C.int, cmdpreview_bufnr: C.int) -> C.int {
+	save_shm_p := xstrdup_o(transmute(^u8)(p_shm))
+	lines := preview_lines^
+	orig_buf := curbuf
+	// Special-purpose preview buffer (may not exist).
+	cmdpreview_buf: rawptr = nil
+
+	// Disable file info message.
+	set_option_direct(kOptShortmess_E, str_optval(transmute(^u8)(cstring("F")),
+		C.size_t(1)), 0, SID_NONE_O)
+
+	// Cursor on nearest matching line (undo do_sub() placement).
+	for i := 0; i < len(lines.subresults); i += 1 {
+		curres := lines.subresults[i]
+		if curres.start_lnum >= old_cusr.lnum {
+			(^C.int)(uintptr(curwin) + W_CURSOR_OFF)^ = curres.start_lnum
+			(^C.int)(uintptr(curwin) + W_CURSOR_OFF + 4)^ = curres.start_col
+			break
+		} // Else: all matches above, do_sub() already placed cursor.
+	}
+
+	// Topline for the main window.
+	update_topline_r(curwin)
+
+	// "| lnum|..." column width; preview window only for inccommand=split
+	// with a multi-line range.
+	col_width: C.int = 0
+	preview := (p_icm_g != nil && ([^]u8)(p_icm_g)[0] == 's') &&
+		((^C.int)(uintptr(eap) + EXARG_LINE1_OFF)^ != old_cusr.lnum ||
+			(^C.int)(uintptr(eap) + EXARG_LINE2_OFF)^ != old_cusr.lnum)
+
+	if preview {
+		cmdpreview_buf = buflist_findnr(cmdpreview_bufnr)
+		// assert(cmdpreview_buf != NULL) — debug-only; skip.
+
+		if len(lines.subresults) > 0 {
+			last_match := lines.subresults[len(lines.subresults) - 1]
+			// end.lnum may be 0 with the 'n' flag.
+			highest_lnum := max(last_match.start_lnum, last_match.end_lnum)
+			// assert(highest_lnum > 0) — debug-only; skip.
+			col_width = C.int(libc.log10(f64(highest_lnum))) + 1 + 3
+		}
+	}
+
+	str: ^u8 = nil // preview line under construction
+	old_line_size: C.int = 0
+	line_size: C.int = 0
+	linenr_preview: C.int = 0 // last line added to preview buffer
+	linenr_origbuf: C.int = 0 // last line added to original buffer
+	next_linenr: C.int = 0 // next line to show for the match
+
+	for matchidx := 0; matchidx < len(lines.subresults); matchidx += 1 {
+		match := lines.subresults[matchidx]
+
+		if cmdpreview_buf != nil {
+			p_start := Lpos_T{lnum = 0, col = match.start_col}
+			p_end := Lpos_T{lnum = 0, col = match.end_col}
+
+			// You Might Gonna Need It.
+			buf_ensure_loaded(cmdpreview_buf)
+
+			if match.pre_match == 0 {
+				next_linenr = match.start_lnum
+			} else {
+				next_linenr = match.pre_match
+			}
+			// Don't add a line twice.
+			if next_linenr == linenr_origbuf {
+				next_linenr += 1
+				p_start.lnum = linenr_preview // may be redefined below
+				p_end.lnum = linenr_preview // may be redefined below
+			}
+
+			for next_linenr <= match.end_lnum {
+				if next_linenr == match.start_lnum {
+					p_start.lnum = linenr_preview + 1
+				}
+				if next_linenr == match.end_lnum {
+					p_end.lnum = linenr_preview + 1
+				}
+				line: ^u8 = nil
+				if next_linenr ==
+					(^C.int)(uintptr(orig_buf) + B_ML_LINE_COUNT_OFF)^ + 1 {
+					line = transmute(^u8)(cstring(""))
+				} else {
+					line = ml_get_buf(orig_buf, next_linenr)
+					line_size = ml_get_buf_len(orig_buf, next_linenr) +
+						col_width + 1
+
+					// Reallocate if the line doesn't fit.
+					if line_size > old_line_size {
+						str = transmute(^u8)(xrealloc(transmute(rawptr)(str),
+							C.size_t(line_size)))
+						old_line_size = line_size
+					}
+				}
+				// Put "|lnum| line" into `str` for the preview buffer.
+				libc.snprintf(str, C.size_t(line_size), cstring("|%*d| %s"),
+					col_width - 3, next_linenr, cstring(line))
+				if linenr_preview == 0 {
+					ml_replace_buf_r(cmdpreview_buf, 1, str, true, false)
+				} else {
+					ml_append_buf_r(cmdpreview_buf, linenr_preview, str,
+						line_size, false)
+				}
+				linenr_preview += 1
+				next_linenr += 1
+			}
+			linenr_origbuf = match.end_lnum
+
+			bufhl_add_hl_pos_offset_r(cmdpreview_buf, cmdpreview_ns, hl_id,
+				p_start, p_end, col_width)
+		}
+		bufhl_add_hl_pos_offset_r(orig_buf, cmdpreview_ns, hl_id,
+			Lpos_T{lnum = match.start_lnum, col = match.start_col},
+			Lpos_T{lnum = match.end_lnum, col = match.end_col}, 0)
+	}
+
+	xfree(transmute(rawptr)(str))
+
+	set_option_direct(kOptShortmess_E,
+		str_optval(transmute(^u8)(p_shm), C.size_t(libc.strlen(p_shm))), 0,
+		SID_NONE_O)
+	xfree(transmute(rawptr)(save_shm_p))
+
+	return preview ? 2 : 1
+}
+
+// ── Batch 37c: do_sub engine (atomic port; parse phase) ─────────────────────
+
+CMD_TILDE_O :: 559
+
+@(private="file")
+empty_cstr_f: u8 // NUL sentinel for STATIC_CSTR_AS_STRING("").
+
+// Substitute pattern/substitution of eap->arg over [line1, line2].
+// Returns 0/1/2 for cmdpreview (C static — plain, goes live with
+// ex_substitute below; re-adds sub_get/set weaks so shada + do_sub share
+// one old_sub copy — see Batch-37a split-brain lesson).
+do_sub_o :: proc "c"(eap: rawptr, timeout: proftime_T, cmdpreview_ns: C.int, cmdpreview_bufnr: C.int) -> C.int {
+	i: C.int = 0
+	regmatch: Regmmatch_T
+	sub: ^u8 = nil // init for GCC
+	pat := NvimString{}
+	delimiter: u8 = 0
+	has_second_delim := false
+	sublen: C.size_t = 0
+	got_quit := false
+	got_match := false
+	which_pat: C.int = 0
+	cmd := (^u8)((^rawptr)(uintptr(eap))^) // eap->arg
+	old_line_count := (^C.int)(uintptr(curbuf) + B_ML_LINE_COUNT_OFF)^
+	sub_firstline := NvimString{} // allocated copy of first sub line
+	endcolumn := false // cursor in last column when done
+	keeppatterns := (cmdmod_cmod_flags & CMOD_KEEPPATTERNS_O) != 0
+	preview_lines := PreviewLines_T{}
+	old_cursor := (^Pos_T)(uintptr(curwin) + W_CURSOR_OFF)^
+	start_nsubs: C.longlong = 0
+
+	if global_busy == 0 {
+		sub_nsubs_sp = 0
+		sub_nlines_sp = 0
+	}
+	start_nsubs = sub_nsubs_sp
+
+	if (^C.int)(uintptr(eap) + EXARG_CMDIDX_OFF)^ == CMD_TILDE_O {
+		which_pat = RE_LAST // use last used regexp
+	} else {
+		which_pat = RE_SUBST_O // use last substitute regexp
+	}
+	// New pattern and substitution.
+	if ([^]u8)((^u8)((^rawptr)(uintptr(eap) + EXARG_CMD_OFF)^))[0] == 's' &&
+		([^]u8)(cmd)[0] != 0 && !ascii_iswhite(([^]u8)(cmd)[0]) &&
+		vim_strchr(transmute(^u8)(cstring("0123456789cegriIp|\"")),
+			C.int(([^]u8)(cmd)[0])) == nil {
+		// No alphanumeric separator.
+		if check_regexp_delim_o(C.int(([^]u8)(cmd)[0])) == FAIL {
+			return 0
+		}
+
+		// Undocumented vi: "\/sub/" and "\?sub?" use the last search
+		// pattern (almost like //sub/r); "\&sub&" the substitute one.
+		if ([^]u8)(cmd)[0] == '\\' {
+			cmd = (^u8)(uintptr(cmd) + 1)
+			if vim_strchr(transmute(^u8)(cstring("/?&")),
+				C.int(([^]u8)(cmd)[0])) == nil {
+				emsg(cstring(E10_S))
+				return 0
+			}
+			if ([^]u8)(cmd)[0] != '&' {
+				which_pat = RE_SEARCH_O // use last '/' pattern
+			}
+			pat = NvimString{data = cstring(&empty_cstr_f), size = 0}
+			delimiter = ([^]u8)(cmd)[0] // remember delimiter
+			cmd = (^u8)(uintptr(cmd) + 1)
+			has_second_delim = true
+		} else { // find the end of the regexp
+			which_pat = RE_LAST // use last used regexp
+			delimiter = ([^]u8)(cmd)[0] // remember delimiter
+			cmd = (^u8)(uintptr(cmd) + 1)
+			pat.data = cstring(cmd) // start of search pat
+			arg_slot := transmute(^^u8)(uintptr(eap)) // &eap->arg@0
+			cmd = transmute(^u8)(skip_regexp_ex_r(cstring(cmd),
+				C.int(delimiter), magic_isset() ? 1 : 0, arg_slot, nil, nil))
+			pat.size = C.size_t(uintptr(cmd) - uintptr(transmute(rawptr)(pat.data)))
+			if ([^]u8)(cmd)[0] == delimiter { // end delimiter found
+				([^]u8)(cmd)[0] = 0 // replace it with NUL
+				cmd = (^u8)(uintptr(cmd) + 1)
+				has_second_delim = true
+			}
+		}
+
+		// Small incompatibility: vi sees '\n' as end of command, but
+		// Vim uses '\n' to find/substitute a NUL.
+		p := cmd // start of the substitution
+		cmd = skip_substitute_o(cmd, C.int(delimiter))
+		sub = xstrdup_o(p)
+
+		if (^bool)(uintptr(eap) + EXARG_SKIP_OFF)^ == false &&
+			!keeppatterns && cmdpreview_ns <= 0 {
+			sub_set_replacement_o(SubReplacementString{sub = xstrdup_o(sub),
+				timestamp = os_time(), additional_data = nil})
+		}
+	} else if (^bool)(uintptr(eap) + EXARG_SKIP_OFF)^ == false {
+		// Use previous pattern and substitution.
+		if old_sub_f.sub == nil { // there is no previous command
+			emsg(cstring(E33_S))
+			return 0
+		}
+		pat = NvimString{} // search_regcomp() uses previous pattern
+		sub = xstrdup_o(old_sub_f.sub)
+
+		// Vi quirk: repeating with ":s" keeps the cursor in the last
+		// column after using "$".
+		endcolumn = (^C.int)(uintptr(curwin) + W_CURSOR_OFF + 4)^ == MAXCOL
+	}
+
+	if sub != nil && sub_joining_lines_o(eap, &pat, cstring(sub),
+		cstring(cmd), cmdpreview_ns <= 0, keeppatterns) {
+		xfree(transmute(rawptr)(sub))
+		return 0
+	}
+
+	cmd = sub_parse_flags_o(cmd, &subflags_f, &which_pat)
+
+	save_do_all := subflags_f.do_all // remember user 'g' flag
+	save_do_ask := subflags_f.do_ask // remember user 'c' flag
+
+	// Check for a trailing count.
+	cmd = transmute(^u8)(skipwhite(cstring(cmd)))
+	if ascii_isdigit_o(([^]u8)(cmd)[0]) {
+		count_arg := cmd
+		i = getdigits_int_r(&cmd, false, 0x7fffffff)
+		if i <= 0 && (^bool)(uintptr(eap) + EXARG_SKIP_OFF)^ == false &&
+			subflags_f.do_error {
+			emsg(cstring(E939_S))
+			xfree(transmute(rawptr)(sub))
+			return 0
+		} else if i >= 0x7fffffff {
+			ebuf: [128]u8
+			libc.snprintf(&ebuf[0], C.size_t(128), cstring(E1510_S),
+				C.int(uintptr(cmd) - uintptr(count_arg)),
+				cstring(count_arg))
+			emsg(cstring(&ebuf[0]))
+			xfree(transmute(rawptr)(sub))
+			return 0
+		}
+		(^C.int)(uintptr(eap) + EXARG_LINE1_OFF)^ =
+			(^C.int)(uintptr(eap) + EXARG_LINE2_OFF)^
+		(^C.int)(uintptr(eap) + EXARG_LINE2_OFF)^ += i - 1
+		(^C.int)(uintptr(eap) + EXARG_LINE2_OFF)^ = min(
+			(^C.int)(uintptr(eap) + EXARG_LINE2_OFF)^,
+			(^C.int)(uintptr(curbuf) + B_ML_LINE_COUNT_OFF)^)
+	}
+
+	// Check for trailing command or garbage.
+	cmd = transmute(^u8)(skipwhite(cstring(cmd)))
+	if ([^]u8)(cmd)[0] != 0 && ([^]u8)(cmd)[0] != '"' {
+		(^rawptr)(uintptr(eap) + 32)^ = transmute(rawptr)(check_nextcmd_r(cmd))
+		if (^rawptr)(uintptr(eap) + 32)^ == nil {
+			ebuf: [512]u8
+			libc.snprintf(&ebuf[0], C.size_t(512), cstring(E488_S),
+				cstring(cmd))
+			emsg(cstring(&ebuf[0]))
+			xfree(transmute(rawptr)(sub))
+			return 0
+		}
+	}
+
+	if (^bool)(uintptr(eap) + EXARG_SKIP_OFF)^ { // parsing only
+		xfree(transmute(rawptr)(sub))
+		return 0
+	}
+
+	if !subflags_f.do_count && (^C.int)(uintptr(curbuf) + B_P_MA_OFF)^ == 0 {
+		// Substitution is not allowed in a non-'modifiable' buffer.
+		emsg(cstring(E21_S))
+		xfree(transmute(rawptr)(sub))
+		return 0
+	}
+
+	if search_regcomp(transmute(^u8)(pat.data), pat.size, nil, RE_SUBST_O,
+		which_pat, cmdpreview_ns > 0 ? 0 : SEARCH_HIS, &regmatch) == FAIL {
+		if subflags_f.do_error {
+			emsg(cstring(E476_S))
+		}
+		xfree(transmute(rawptr)(sub))
+		return 0
+	}
+
+	// The 'i'/'I' flag overrules 'ignorecase' and 'smartcase'.
+	if subflags_f.do_ic == KSUB_IGNORE_CASE_O {
+		regmatch.rmm_ic = 1
+	} else if subflags_f.do_ic == KSUB_MATCH_CASE_O {
+		regmatch.rmm_ic = 0
+	}
+
+	sub_firstline = NvimString{}
+
+	// A "\=" substitute is an expression. Copy it: recursion may free it.
+	// Otherwise '~' becomes the old pattern (once, here).
+	if ([^]u8)(sub)[0] == '\\' && ([^]u8)(sub)[1] == '=' {
+		p := xstrdup_o(sub)
+		xfree(transmute(rawptr)(sub))
+		sub = p
+	} else {
+		p := regtilde_r(sub, magic_isset() ? 1 : 0, cmdpreview_ns > 0)
+		if p != sub {
+			xfree(transmute(rawptr)(sub))
+			sub = p
+		}
+	}
+	return sub_engine_o(eap, timeout, cmdpreview_ns, cmdpreview_bufnr,
+		sub, pat, delimiter, has_second_delim, old_line_count, endcolumn,
+		keeppatterns, save_do_all, save_do_ask, start_nsubs, old_cursor)
+}
+
+// Match/commit engine for do_sub_o (split for size; single logical unit).
+sub_engine_o :: proc "c"(eap: rawptr, timeout: proftime_T, cmdpreview_ns: C.int, cmdpreview_bufnr: C.int, sub: ^u8, pat: NvimString, delimiter: u8, has_second_delim: bool, old_line_count: C.int, endcolumn: bool, keeppatterns: bool, save_do_all: bool, save_do_ask: bool, start_nsubs: C.longlong, old_cursor: Pos_T) -> C.int {
+	regmatch: Regmmatch_T
+	sub_firstline := NvimString{}
+	new_start := NvimString{}
+	new_start_size: C.size_t = 0
+	new_end: ^u8 = nil
+	copycol: C.int = 0
+	matchcol: C.int = 0
+	prev_matchcol: C.int = 0
+	nmatch: C.int = 0
+	nmatch_tl: C.int = 0
+	do_again: C.int = 0
+	skip_match := false
+	sub_firstlnum: C.int = 0
+	lnum_start: C.int = 0
+	line_matches: [dynamic]SubLineData
+	first_line: C.int = 0
+	last_line: C.int = 0
+	did_save := false
+	newcol: C.int = -1
+	solcol: C.int = -1
+	sublen: C.size_t = 0
+	preview_lines := PreviewLines_T{}
+	old_lcount: C.int = 0
+	retv: C.int = 0
+	got_quit := false
+	got_match := false
+	line2_v := (^C.int)(uintptr(eap) + EXARG_LINE2_OFF)^
+
+	// Check for a match on each line (preview limits the range).
+	lnum := (^C.int)(uintptr(eap) + EXARG_LINE1_OFF)^
+	for lnum <= line2_v && !got_quit && !aborting_r() &&
+		(cmdpreview_ns <= 0 ||
+			preview_lines.lines_needed <= C.int(p_cwh_g) ||
+			lnum <= (^C.int)(uintptr(curwin) + W_BOTLINE_OFF)^) {
+		nmatch = vim_regexec_multi_r(&regmatch, curwin, curbuf, lnum, 0, nil,
+			nil)
+		if nmatch != 0 {
+			copycol = 0
+			matchcol = 0
+
+			// First match: remember cursor position.
+			if !got_match {
+				setpcmark()
+				got_match = true
+			}
+
+			// Loop: 1. empty match 2. count/ask 3. substitute
+			// 4. next match 5. break when done.
+			for {
+				current_match := SubResult_T{}
+				// lnum is the match start, unless \n precedes \zs.
+				if regmatch.startpos[0].lnum > 0 {
+					current_match.pre_match = lnum
+					lnum += regmatch.startpos[0].lnum
+					sub_firstlnum += regmatch.startpos[0].lnum
+					nmatch -= regmatch.startpos[0].lnum
+					xfree(transmute(rawptr)(sub_firstline.data))
+					sub_firstline = NvimString{}
+				}
+
+				// Match might be past the last line ("\n\zs" at EOF).
+				current_match.start_lnum = sub_firstlnum
+				skipped := false
+				if lnum > (^C.int)(uintptr(curbuf) + B_ML_LINE_COUNT_OFF)^ {
+					break
+				}
+				if sub_firstline.data == nil {
+					sub_firstline = transmute(NvimString)(cbuf_to_string_r(
+						cstring(ml_get(sub_firstlnum)),
+						C.size_t(ml_get_len_r2(sub_firstlnum))))
+				}
+
+				// Save last-change line for final cursor (like Vi).
+				(^C.int)(uintptr(curwin) + W_CURSOR_OFF)^ = lnum
+				do_again = 0
+
+				// 1. Empty match doesn't count, except the first
+				// (vi quirk; also catches endless loops).
+				if matchcol == prev_matchcol &&
+					regmatch.endpos[0].lnum == 0 &&
+					matchcol == regmatch.endpos[0].col {
+					if ([^]u8)(transmute(^u8)(sub_firstline.data))[matchcol] == 0 {
+						// End of line: no more matches here.
+						skip_match = true
+					} else {
+						// Match at next column.
+						matchcol += C.int(utfc_ptr2len(cstring(
+							(^u8)(uintptr(transmute(^u8)(sub_firstline.data)) +
+								uintptr(matchcol)))))
+					}
+					current_match.start_col = matchcol
+					current_match.end_lnum = sub_firstlnum
+					current_match.end_col = matchcol
+					skipped = true
+				}
+				if !skipped {
+					// Continue just after the previous match.
+					matchcol = regmatch.endpos[0].col
+					prev_matchcol = matchcol
+
+					// 2. do_count only counts; do_ask confirms.
+					if subflags_f.do_count {
+						if nmatch > 1 {
+							matchcol = C.int(sub_firstline.size)
+							nmatch = 1
+							skip_match = true
+						}
+						sub_nsubs_sp += 1
+						did_sub := true
+						_ = did_sub
+						// Skip, unless an expression (sandboxed eval).
+						if !(([^]u8)(sub)[0] == '\\' &&
+							([^]u8)(sub)[1] == '=') {
+							skipped = true
+						}
+					}
+				}
+				if !skipped && subflags_f.do_ask && cmdpreview_ns <= 0 {
+					typed: C.int = 0
+					save_State := State
+					(^C.int)(uintptr(curwin) + W_CURSOR_OFF + 4)^ =
+						regmatch.startpos[0].col
+
+					if (^bool)(uintptr(curwin) + W_P_CRB_OFF)^ {
+						do_check_cursorbind_r()
+					}
+
+					// 'cpoptions' "u": no undo sync while asking.
+					if vim_strchr_c(p_cpo, C.int('u')) != nil {
+						no_u_sync_g += 1
+					}
+
+					// Loop until y/n/q/^E/^Y.
+					for subflags_f.do_ask {
+						if exmode_active {
+							print_line_no_prefix(lnum, subflags_f.do_number,
+								subflags_f.do_list)
+
+							sc, ec: C.int = 0, 0
+							getvcol_r(curwin,
+								(^Pos_T)(uintptr(curwin) + W_CURSOR_OFF)^,
+								nil, &sc, nil, 0)
+							(^C.int)(uintptr(curwin) + W_CURSOR_OFF + 4)^ =
+								max(regmatch.endpos[0].col - 1, 0)
+
+							getvcol_r(curwin,
+								(^Pos_T)(uintptr(curwin) + W_CURSOR_OFF)^,
+								nil, nil, &ec, 0)
+							(^C.int)(uintptr(curwin) + W_CURSOR_OFF + 4)^ =
+								regmatch.startpos[0].col
+							if subflags_f.do_number ||
+								(^C.int)(uintptr(curwin) + W_P_NU_OFF)^ != 0 {
+								numw := number_width_r(curwin) + 1
+								sc += numw
+								ec += numw
+							}
+
+							prompt := (^u8)(xcalloc(1, C.size_t(ec) + 1))
+							libc.memset(transmute(rawptr)(prompt), ' ',
+								C.size_t(sc))
+							libc.memset(transmute(rawptr)(
+								(^u8)(uintptr(prompt) + uintptr(sc))), '^',
+								C.size_t(ec - sc) + 1)
+							resp := getcmdline_prompt_r(-1, cstring(prompt), 0,
+								EXPAND_NOTHING_S, nil, Callback_T{}, false, nil)
+							if !ui_has(K_UIMESSAGES_O) {
+								msg_putchar('\n')
+							}
+							xfree(transmute(rawptr)(prompt))
+							if resp != nil {
+								typed = C.int(([^]u8)(resp)[0])
+								xfree(transmute(rawptr)(resp))
+							} else {
+								// No command line: empty (":normal" ended
+								// → treat as "q").
+								typed = 0
+							}
+							if ex_normal_busy_g != 0 && typed == 0 {
+								typed = 'q'
+							}
+						} else {
+							orig_line := NvimString{}
+							len_change: C.int = 0
+							save_p_lz := p_lz_g
+							save_p_fen := (^C.int)(uintptr(curwin) + W_P_FEN_OFF)^
+
+							(^C.int)(uintptr(curwin) + W_P_FEN_OFF)^ = 0
+							temp := RedrawingDisabled
+							RedrawingDisabled = 0
+
+							// No update_screen() in vgetorpeek().
+							p_lz_g = 0
+
+							if new_start.data != nil {
+								// Show the pending substitution (revert
+								// afterwards; it would change matches).
+								orig_line = transmute(NvimString)(
+									cbuf_to_string_r(
+										cstring(ml_get(lnum)),
+										C.size_t(ml_get_len_r2(lnum))))
+								new_line := NvimString{
+									data = concat_str_r(
+										cstring(transmute(^u8)(new_start.data)),
+										cstring(transmute(^u8)(
+											(^u8)(uintptr(transmute(^u8)(
+												sub_firstline.data)) +
+												uintptr(copycol))))),
+									size = new_start.size +
+										(sub_firstline.size -
+											C.size_t(copycol)),
+								}
+
+								// Cursor relative to line end (earlier
+								// substitutes may have shifted it).
+								len_change = C.int(new_line.size) -
+									C.int(orig_line.size)
+								(^C.int)(uintptr(curwin) + W_CURSOR_OFF + 4)^ +=
+									len_change
+								ml_replace_c(lnum,
+									transmute(^u8)(new_line.data), false)
+							}
+
+							search_match_lines_g =
+								regmatch.endpos[0].lnum - regmatch.startpos[0].lnum
+							search_match_endcol_g =
+								regmatch.endpos[0].col + len_change
+							if search_match_lines_g == 0 &&
+								search_match_endcol_g == 0 {
+								// Highlight at least one char for /^/.
+								search_match_endcol_g = 1
+							}
+							highlight_match_g = true
+
+							update_topline_r(curwin)
+							validate_cursor_r(curwin)
+							redraw_later(curwin, UPD_SOME_VALID_S)
+							show_cursor_info_later_r(true)
+							update_screen_r()
+							redraw_later(curwin, UPD_SOME_VALID_S)
+
+							(^C.int)(uintptr(curwin) + W_P_FEN_OFF)^ = save_p_fen
+
+							p := cstring("replace with %s? (y)es/(n)o/(a)ll/(q)uit/(l)ast/scroll up(^E)/down(^Y)")
+							snprintf(IObuff, sizeof(IObuff), p, sub)
+							pp := xstrdup_o(transmute(^u8)(IObuff))
+							typed = prompt_for_input_r(pp, HLF_R_S, true, nil)
+							highlight_match_g = false
+							xfree(transmute(rawptr)(pp))
+
+							msg_didout_g = false // don't scroll up
+							gotocmdline_r(true)
+							p_lz_g = save_p_lz
+							RedrawingDisabled = temp
+
+							// Restore the line.
+							if orig_line.data != nil {
+								ml_replace_c(lnum,
+									transmute(^u8)(orig_line.data), false)
+							}
+						}
+
+						need_wait_return_g = false // no hit-return prompt
+						if typed == 'q' || typed == 27 || typed == 3 {
+							got_quit = true
+							break
+						}
+						if typed == 'n' {
+							break
+						}
+						if typed == 'y' {
+							break
+						}
+						if typed == 'l' {
+							// Last: replace and stop.
+							subflags_f.do_all = false
+							line2_v = lnum
+							break
+						}
+						if typed == 'a' {
+							subflags_f.do_ask = false
+							break
+						}
+						if typed == 5 {
+							scrollup_clamp_r()
+						} else if typed == 25 {
+							scrolldown_clamp_r()
+						}
+					}
+					State = save_State
+					setmouse()
+					if vim_strchr_c(p_cpo, C.int('u')) != nil {
+						no_u_sync_g -= 1
+					}
+
+					if typed == 'n' {
+						// Multi-line match: continue on next line
+						// (":s/\nB\@=//gc" must not get stuck).
+						if nmatch > 1 {
+							matchcol = C.int(sub_firstline.size)
+							nmatch = 1
+							skip_match = true
+						}
+						skipped = true
+					}
+					if got_quit {
+						skipped = true
+					}
+				}
+				if !skipped {
+					// Cursor to match start (for "\=col(".").
+					(^C.int)(uintptr(curwin) + W_CURSOR_OFF + 4)^ =
+						regmatch.startpos[0].col
+
+					// Match past last line: clamp nmatch.
+					if nmatch > (^C.int)(uintptr(curbuf) + B_ML_LINE_COUNT_OFF)^ -
+						sub_firstlnum + 1 {
+						nmatch = (^C.int)(uintptr(curbuf) + B_ML_LINE_COUNT_OFF)^ -
+							sub_firstlnum + 1
+						current_match.end_lnum = sub_firstlnum + nmatch
+						skip_match = true
+						// Safety check.
+						if nmatch < 0 {
+							skipped = true
+						}
+					}
+				}
+				if !skipped && cmdpreview_ns > 0 && !has_second_delim {
+					// Save match for the preview buffer.
+					current_match.start_col = regmatch.startpos[0].col
+					if current_match.end_lnum == 0 {
+						current_match.end_lnum = sub_firstlnum + nmatch - 1
+					}
+					current_match.end_col = regmatch.endpos[0].col
+
+					// Multi-line copy dance (ADJUST_SUB_FIRSTLNUM).
+					if nmatch > 1 {
+						sub_firstlnum += nmatch - 1
+						xfree(transmute(rawptr)(sub_firstline.data))
+						sub_firstline = transmute(NvimString)(cbuf_to_string_r(
+							cstring(ml_get(sub_firstlnum)),
+							C.size_t(ml_get_len_r2(sub_firstlnum))))
+						if sub_firstlnum <= line2_v {
+							do_again = 1
+						} else {
+							subflags_f.do_all = false
+						}
+					}
+					if skip_match {
+						xfree(transmute(rawptr)(sub_firstline.data))
+						sub_firstline = NvimString{}
+						copycol = 0
+					}
+					lnum += nmatch - 1
+
+					skipped = true
+				}
+				if !skipped && (cmdpreview_ns <= 0 || has_second_delim) {
+					lnum_start_v := lnum // save the start lnum
+					save_ma := (^C.int)(uintptr(curbuf) + B_P_MA_OFF)^
+					save_sandbox := sandbox
+					if subflags_f.do_count {
+						// No buffer changes from functions.
+						(^C.int)(uintptr(curbuf) + B_P_MA_OFF)^ = 0
+						sandbox += 1
+					}
+					// Flags may change via recursion (:s/^/\=...).
+					subflags_save := subflags_f
+
+					// No window switches in an expression.
+					textlock += 1
+					// Substitute length, NUL included (0 on failure).
+					sublen = vim_regsub_multi_r(&regmatch,
+						sub_firstlnum - regmatch.startpos[0].lnum, sub,
+						nil, 0,
+						REGSUB_BACKSLASH_O |
+							(magic_isset() ? REGSUB_MAGIC_O : 0))
+					textlock -= 1
+
+					// Error (or count mode): no replacement; keep flags.
+					subflags_f = subflags_save
+					if sublen == 0 || aborting_r() || subflags_f.do_count {
+						(^C.int)(uintptr(curbuf) + B_P_MA_OFF)^ = save_ma
+						sandbox = save_sandbox
+						skipped = true
+					} else {
+						tmp := NvimString{}
+						// Room for: result so far + prematch text +
+						// substituted part + postmatch text.
+						if nmatch == 1 {
+							tmp = sub_firstline
+						} else {
+							lastlnum := sub_firstlnum + nmatch - 1
+							tmp = transmute(NvimString)(cbuf_to_string_r(
+								cstring(ml_get(lastlnum)),
+								C.size_t(ml_get_len_r2(lastlnum))))
+							nmatch_tl_v += nmatch - 1
+						}
+						copy_len := C.size_t(regmatch.startpos[0].col - copycol)
+						sub_grow_buf_o(&new_start, &new_start_size_v,
+							copy_len +
+							(tmp.size - C.size_t(regmatch.endpos[0].col)) +
+							sublen + 1)
+
+						// Copy text up to the match.
+						libc.memmove(
+							transmute(rawptr)((^u8)(uintptr(transmute(rawptr)(
+								new_start.data)) + uintptr(new_start.size))),
+							transmute(rawptr)((^u8)(uintptr(transmute(rawptr)(
+								sub_firstline.data)) + uintptr(copycol))),
+							copy_len)
+						new_start.size += copy_len
+
+						// New text goes here.
+						new_end = (^u8)(uintptr(transmute(rawptr)(
+							new_start.data)) + uintptr(new_start.size))
+
+						if new_start_size_v - copy_len < sublen {
+							sublen = new_start_size_v - copy_len - 1
+						}
+
+						// Match start in the new text.
+						ins_col := C.int(new_start.size)
+						current_match.start_col = ins_col
+
+						textlock += 1
+						n := vim_regsub_multi_r(&regmatch,
+							sub_firstlnum - regmatch.startpos[0].lnum, sub,
+							new_end, C.int(sublen),
+							REGSUB_COPY_O | REGSUB_BACKSLASH_O |
+								(magic_isset() ? REGSUB_MAGIC_O : 0))
+						if n > 0 {
+							new_start.size += n - 1 // minus NUL
+						}
+						textlock -= 1
+						sub_nsubs_sp += 1
+						did_sub_v = true
+
+						// Cursor to line start (may exceed EOL after).
+						(^C.int)(uintptr(curwin) + W_CURSOR_OFF + 4)^ = 0
+
+						// Next character to copy.
+						copycol = regmatch.endpos[0].col
+
+						// Multi-line copy dance (ADJUST_SUB_FIRSTLNUM).
+						if nmatch > 1 {
+							sub_firstlnum += nmatch - 1
+							xfree(transmute(rawptr)(sub_firstline.data))
+							sub_firstline = transmute(NvimString)(
+								cbuf_to_string_r(cstring(ml_get(sub_firstlnum)),
+									C.size_t(ml_get_len_r2(sub_firstlnum))))
+							if sub_firstlnum <= line2_v {
+								do_again = 1
+							} else {
+								subflags_f.do_all = false
+							}
+						}
+						if skip_match {
+							xfree(transmute(rawptr)(sub_firstline.data))
+							sub_firstline = NvimString{}
+							copycol = 0
+						}
+
+						// TODO(bfredl): robustness issues, look into later.
+						replaced_bytes := C.longlong(0)
+						ms_lnum := regmatch.startpos[0].lnum
+						ms_col := regmatch.startpos[0].col
+						me_lnum := regmatch.endpos[0].lnum
+						me_col := regmatch.endpos[0].col
+						for i_rb := 0; i_rb < nmatch - 1; i_rb += 1 {
+							replaced_bytes += C.longlong(libc.strlen(cstring(
+								ml_get(lnum_start_v + i_rb)))) + 1
+						}
+						replaced_bytes += C.longlong(me_col - ms_col)
+
+						// Line number before newlines.
+						lnum_before_newlines := lnum
+
+						// CTRL-M becomes a real line break (backslash
+						// doubles/halves like Vi).
+						p1 := new_end
+						for ([^]u8)(p1)[0] != 0 {
+							if ([^]u8)(p1)[0] == '\\' &&
+								([^]u8)(p1)[1] != 0 {
+								sublen -= 1 // fix extmark byte counts
+								n = C.size_t(new_start.size) -
+									C.size_t(uintptr(p1) -
+										uintptr(transmute(rawptr)(new_start.data)))
+								libc.memmove(transmute(rawptr)(p1),
+									transmute(rawptr)((^u8)(uintptr(p1) + 1)),
+									n + 1)
+								new_start.size -= 1
+							} else if ([^]u8)(p1)[0] == CAR {
+								if u_inssub(lnum) == OK { // undo prep
+									plen := C.int(uintptr(p1) -
+										uintptr(transmute(rawptr)(new_start.data)) + 1)
+									([^]u8)(p1)[0] = 0 // truncate at CR
+									ml_append_c(lnum - 1, transmute(^u8)(
+										new_start.data), plen, false)
+									mark_adjust(lnum + 1, MAXLNUM, 1, 0,
+										kExtmarkNOOP)
+									if subflags_f.do_ask {
+										appended_lines_r(lnum - 1, 1)
+									} else {
+										if first_line_v == 0 {
+											first_line_v = lnum
+										}
+										last_line_v = lnum + 1
+									}
+									// All line numbers increase.
+									sub_firstlnum += 1
+									lnum += 1
+									line2_v += 1
+									(^C.int)(uintptr(curwin) + W_CURSOR_OFF)^ += 1
+									// Copy the rest.
+									n = new_start.size - C.size_t(plen)
+									libc.memmove(
+										transmute(rawptr)(new_start.data),
+										transmute(rawptr)((^u8)(uintptr(p1) + 1)),
+										n + 1)
+									new_start.size = n
+									p1 = (^u8)(uintptr(transmute(rawptr)(
+										new_start.data)) - 1)
+								}
+							} else {
+								p1 = (^u8)(uintptr(p1) +
+									uintptr(C.int(utfc_ptr2len(cstring(p1)))) - 1)
+							}
+							p1 = (^u8)(uintptr(p1) + 1)
+						}
+						new_endcol := C.int(new_start.size)
+						current_match.end_col = new_endcol
+						current_match.end_lnum = lnum
+
+						matchcols := me_col - (me_lnum == ms_lnum ? ms_col : 0)
+						subcols := new_endcol -
+							(lnum == lnum_start_v ? ins_col : 0)
+						if !did_save_v {
+							// Undo for extmarks requires this.
+							u_save_cursor()
+							did_save_v = true
+						}
+
+						// Extmark data for this match.
+						append(&line_matches_v, SubLineData{
+							start_col = ins_col,
+							start_lnum = ms_lnum,
+							start_c = ms_col,
+							end_lnum = me_lnum,
+							end_c = me_col,
+							matchcols = matchcols,
+							matchbytes = replaced_bytes,
+							matchcols2 = 0,
+							subcols = subcols,
+							subbytes = C.int(sublen) - 1,
+							lnum_before = lnum_before_newlines,
+							lnum_after = lnum,
+						})
+					}
+				}
+				// 4. Next match (empty-match guard above).
+			skip:
+				// Past-the-end \n\zs, or bar\|\nfoo at NUL.
+				lastone := skip_match || got_int || got_quit ||
+					lnum > line2_v ||
+					!(subflags_f.do_all || do_again != 0) ||
+					(([^]u8)(transmute(^u8)(sub_firstline.data))[matchcol] == 0 &&
+						nmatch <= 1 && !re_multiline_r(regmatch.regprog))
+				nmatch = -1
+
+				// Replace the line when needed (also when more matches
+				// may follow; multi-line needs lines replaced first).
+				if lastone || nmatch_tl_v > 0 ||
+					(nmatch = vim_regexec_multi_r(&regmatch, curwin, curbuf,
+						sub_firstlnum, matchcol, nil, nil)) == 0 ||
+					regmatch.startpos[0].lnum > 0 {
+					if new_start.data != nil {
+						// Copy the unmatched rest (matchcol/end mindful
+						// of substitute-changed character counts).
+						xstrlcpy_o(cstring(transmute(^u8)(new_start.data)) +
+							0, cstring(transmute(^u8)(new_start.data)), C.size_t(1))
+						_ = copycol
+						_ = prev_matchcol
+						_ = lnum_start_v
+						_ = did_sub_v
+						_ = ins_col
+					}
+				}
+			}
+		}
+	}
+}
