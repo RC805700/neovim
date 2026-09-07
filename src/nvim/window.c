@@ -189,6 +189,9 @@ void nvim_odin_init_winopt(win_T *win);
 #pragma weak clear_float_config
 #pragma weak make_tabpages
 #pragma weak snapshot_windows_scroll_size
+#pragma weak winframe_restore
+#pragma weak check_split_disallowed
+#pragma weak win_alloc_aucmd_win
 #pragma weak win_splitmove
 #pragma weak merge_win_config
 #pragma weak win_set_buf

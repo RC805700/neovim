@@ -2204,8 +2204,6 @@ TAGGY_TAGNAME_OFF :: 0
 TAGGY_USERDATA_OFF :: 56
 
 foreign _ {
-	@(link_name = "check_split_disallowed")
-	check_split_disallowed_r :: proc "c" (wp: rawptr) -> C.int ---
 	@(link_name = "copy_loclist_stack")
 	copy_loclist_stack_r :: proc "c" (from: rawptr, to: rawptr) ---
 	@(link_name = "p_spk")
@@ -2219,7 +2217,7 @@ foreign _ {
 @(export)
 win_split :: proc "c"(size: C.int, flags_in: C.int) -> C.int {
 	flags := flags_in
-	if check_split_disallowed_r(curwin) == FAIL_S {
+	if check_split_disallowed(curwin) == FAIL_S {
 		return FAIL_S
 	}
 
@@ -6270,6 +6268,108 @@ make_windows :: proc "c"(count_in: C.int, vertical: bool) -> C.int {
 	return count - todo
 }
 
+// ── Batch 40: frame restore + split guard + aucmd window ─────────────────────
+// aucmdwin_T 16B {auc_win@0}; kvec {size,capacity: size_t, items@16}.
+
+Aucmdwin_T :: struct {
+	win:  rawptr,
+	used: bool,
+	_pad: [7]u8,
+}
+#assert(size_of(Aucmdwin_T) == 16)
+
+Aucmdwin_Kvec :: struct {
+	size:     C.size_t,
+	capacity: C.size_t,
+	items:    rawptr,
+}
+
+WCFG_REL_HIDE :: 470
+
+foreign _ {
+	@(link_name = "aucmd_win_vec")
+	aucmd_win_vec_g: Aucmdwin_Kvec
+	@(link_name = "win_new_float")
+	win_new_float_r :: proc "c" (wp: rawptr, last: bool, fconfig: WinConfig_Opaque, err: rawptr) -> rawptr ---
+}
+
+// Put "wp"'s frame back where it was (undo of winframe_remove).
+@(export)
+winframe_restore :: proc "c"(wp: rawptr, dir: C.int, unflat_altfr: rawptr) {
+	frp := (^rawptr)(uintptr(wp) + W_FRAME_OFF)^
+	// Put "wp"'s frame back where it was.
+	if (^rawptr)(uintptr(frp) + FR_PREV_OFF)^ != nil {
+		frame_append_o((^rawptr)(uintptr(frp) + FR_PREV_OFF)^, frp)
+	} else {
+		frame_insert_o((^rawptr)(uintptr(frp) + FR_NEXT_OFF)^, frp)
+	}
+	// Vertical separators to the left may have been lost. Restore them.
+	if (^C.int)(uintptr(wp) + W_VSEP_WIDTH_OFF)^ == 0 &&
+		b_at((^u8)(uintptr((^rawptr)(uintptr(frp) + FR_PARENT_OFF)^) + FR_LAYOUT_OFF), 0) == FR_ROW_O &&
+		(^rawptr)(uintptr(frp) + FR_PREV_OFF)^ != nil {
+		frame_set_vsep_o((^rawptr)(uintptr(frp) + FR_PREV_OFF)^, true)
+	}
+	// Statuslines or horizontal separators above may have been lost.
+	if b_at((^u8)(uintptr((^rawptr)(uintptr(frp) + FR_PARENT_OFF)^) + FR_LAYOUT_OFF), 0) == FR_COL_O &&
+		(^rawptr)(uintptr(frp) + FR_PREV_OFF)^ != nil {
+		if global_stl_height() == 0 && (^C.int)(uintptr(wp) + W_STATUS_HEIGHT_OFF)^ == 0 {
+			frame_add_statusline_o((^rawptr)(uintptr(frp) + FR_PREV_OFF)^)
+		} else if global_stl_height() > 0 && (^C.int)(uintptr(wp) + W_HSEP_HEIGHT_OFF)^ == 0 {
+			frame_add_hsep_o((^rawptr)(uintptr(frp) + FR_PREV_OFF)^)
+		}
+	}
+	// Restore the lost room redistributed to the altframe.
+	if dir == 'v' {
+		frame_new_height(unflat_altfr,
+			(^C.int)(uintptr(unflat_altfr) + FR_HEIGHT_OFF)^ -
+			(^C.int)(uintptr(frp) + FR_HEIGHT_OFF)^,
+			unflat_altfr == (^rawptr)(uintptr(frp) + FR_NEXT_OFF)^, false, false)
+	} else if dir == 'h' {
+		frame_new_width(unflat_altfr,
+			(^C.int)(uintptr(unflat_altfr) + FR_WIDTH_OFF)^ -
+			(^C.int)(uintptr(frp) + FR_WIDTH_OFF)^,
+			unflat_altfr == (^rawptr)(uintptr(frp) + FR_NEXT_OFF)^, false)
+	}
+	// Recompute positions within the parent frame (unchanged if the
+	// altframe was adjacent and left/above).
+	if unflat_altfr != (^rawptr)(uintptr(frp) + FR_PREV_OFF)^ {
+		topleft := frame2win((^rawptr)(uintptr(frp) + FR_PARENT_OFF)^)
+		row := (^C.int)(uintptr(topleft) + W_WINROW_OFF)^
+		col := (^C.int)(uintptr(topleft) + W_WINCOL_OFF)^
+		frame_comp_pos_o((^rawptr)(uintptr(frp) + FR_PARENT_OFF)^, &row, &col)
+	}
+}
+
+// True when splitting is allowed (false + emsg otherwise).
+@(export)
+check_split_disallowed :: proc "c"(wp: rawptr) -> C.int {
+	err: Api_Error = {typ = -1, msg = nil} // ERROR_INIT
+	ok := check_split_disallowed_err(wp, transmute(rawptr)(&err))
+	if ERROR_SET(transmute(rawptr)(&err)) {
+		emsg(transmute(cstring)(err.msg))
+		api_clear_error_r(&err)
+	}
+	return ok ? OK : FAIL
+}
+
+// Allocate the floating window used for autocommands at index "idx".
+@(export)
+win_alloc_aucmd_win :: proc "c"(idx: C.int) {
+	err: Api_Error = {typ = -1, msg = nil} // ERROR_INIT
+	fc: WinConfig_Opaque
+	win_config_init_assign_o(&fc)
+	([^]C.int)(&fc)[4] = Columns // width@16
+	([^]C.int)(&fc)[3] = 5 // height@12
+	([^]u8)(&fc)[49] = 0 // focusable = false
+	([^]u8)(&fc)[50] = 0 // mouse = false
+	([^]u8)(&fc)[470] = 1 // hide = true
+	auw := &([^]Aucmdwin_T)(aucmd_win_vec_g.items)[idx]
+	auw.win = win_new_float_r(nil, true, fc, transmute(rawptr)(&err))
+	(^C.int)(uintptr((^rawptr)(uintptr(auw.win) + W_BUFFER_OFF)^) + B_NWINDOWS_OFF)^ -= 1
+	(^bool)(uintptr(auw.win) + W_P_SCB_OFF)^ = false // RESET_BINDING
+	(^bool)(uintptr(auw.win) + W_P_CRB_OFF)^ = false
+}
+
 // ── Batch 37: win_set_buf + merge_win_config ─────────────────────────────────
 // WinConfig.title_chunks@400/footer_chunks@440 (Kvec_VT.items@16) cc-probed.
 
@@ -6434,7 +6534,7 @@ win_splitmove :: proc "c"(wp: rawptr, size: C.int, flags: C.int) -> C.int {
 	if one_window(wp, nil) {
 		return OK // nothing to do
 	}
-	if is_aucmd_win_r(wp) || check_split_disallowed_r(wp) == FAIL {
+	if is_aucmd_win_r(wp) || check_split_disallowed(wp) == FAIL {
 		return FAIL
 	}
 	unflat_altfr: rawptr = nil
