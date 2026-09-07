@@ -180,8 +180,7 @@ foreign _ {
 	vim_tempname :: proc "c" () -> cstring ---
 	@(link_name = "check_secure")
 	check_secure :: proc "c" () -> bool ---
-	@(link_name = "make_filter_cmd")
-	make_filter_cmd :: proc "c" (cmd: cstring, itmp: cstring, otmp: cstring, do_in: bool) -> cstring ---
+	// make_filter_cmd now defined in ex_cmds.odin — call directly.
 	@(link_name = "tag_freematch")
 	tag_freematch :: proc "c" () ---
 	@(link_name = "restore_env_var")
@@ -1293,7 +1292,8 @@ write_output :: proc(output: ^u8, remaining: c.size_t, eof: bool) -> c.size_t {
 	for off < rem {
 		if ([^]u8)(o)[off] == CAR && ([^]u8)(o)[off+1] == NL && !curbuf_bin(curbuf) {
 			([^]u8)(o)[off] = NUL
-			ml_append(curwin_lnum(curwin) + 1, o, c.int(off) + 1, false)
+			// C: ml_append(w_cursor.lnum++, ...) — append at CURRENT lnum.
+			ml_append(curwin_lnum(curwin), o, c.int(off) + 1, false)
 			skip := off + 2
 			o = (^u8)(uintptr(o) + uintptr(skip))
 			rem -= skip
@@ -1302,7 +1302,7 @@ write_output :: proc(output: ^u8, remaining: c.size_t, eof: bool) -> c.size_t {
 			continue
 		} else if (([^]u8)(o)[off] == CAR && !curbuf_bin(curbuf)) || ([^]u8)(o)[off] == NL {
 			([^]u8)(o)[off] = NUL
-			ml_append(curwin_lnum(curwin) + 1, o, c.int(off) + 1, false)
+			ml_append(curwin_lnum(curwin), o, c.int(off) + 1, false)
 			skip := off + 1
 			o = (^u8)(uintptr(o) + uintptr(skip))
 			rem -= skip
@@ -1318,7 +1318,7 @@ write_output :: proc(output: ^u8, remaining: c.size_t, eof: bool) -> c.size_t {
 
 	if eof {
 		if rem != 0 {
-			ml_append(curwin_lnum(curwin) + 1, o, 0, false)
+			ml_append(curwin_lnum(curwin), o, 0, false)
 			set_curbuf_no_eol(curbuf, curwin_lnum(curwin) + 1)
 			o = (^u8)(uintptr(o) + uintptr(rem))
 		} else {

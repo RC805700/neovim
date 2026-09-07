@@ -64,8 +64,7 @@ foreign _ {
 	msg_scrolled_ign_g: bool
 	@(link_name = "do_write")
 	do_write_r :: proc "c"(eap: rawptr) -> C.int ---
-	@(link_name = "do_bang")
-	do_bang_r :: proc "c"(addr_count: C.int, eap: rawptr, forceit: bool, do_in: bool, do_out: bool) ---
+	// do_bang now defined below (Batch 31b) — call directly.
 }
 
 // Set v:swapcommand for SwapExists autocommands ([+cmd] / newlnum "G").
@@ -837,7 +836,7 @@ ex_write :: proc "c"(eap: rawptr) {
 	}
 
 	if (^bool)(uintptr(eap) + EXARG_USEFILTER_OFF)^ {
-		do_bang_r(1, eap, false, true, false) // input lines to shell cmd
+		do_bang(1, eap, false, true, false) // input lines to shell cmd
 	} else {
 		do_write_r(eap)
 	}
@@ -1126,4 +1125,1906 @@ getfile :: proc "c"(fnum: C.int, ffname_arg: cstring, sfname_arg: cstring, setpm
 
 	xfree(free_me)
 	return retval
+}
+
+// ── Batch 29: :sort/:uniq + sort statics ────────────────────────────────────
+// (linelen() belongs to ex_align, not sort — skipped.)
+
+STR2NR_BIN_O :: 1
+STR2NR_OCT_O :: 2
+STR2NR_HEX_O :: 4
+STR2NR_FORCE_O :: 128
+E_INTERR_S :: "Interrupted"
+
+// sorti_T mirrors C (ex_cmds.c:362): lnum@0 + 16-byte union @8 = 24 bytes.
+// Odin has no union: byte overlay with typed accessors (Batch-16 class).
+Sorti_T :: struct {
+	lnum: C.int,
+	_pad: C.int,
+	u:    [16]u8,
+}
+#assert(size_of(Sorti_T) == 24)
+
+foreign _ {
+	@(link_name = "check_nextcmd")
+	check_nextcmd_r :: proc "c"(p: ^u8) -> ^u8 ---
+	@(link_name = "skip_regexp_err")
+	skip_regexp_err_r :: proc "c"(startp: ^u8, delim: C.int, magic: C.int) -> ^u8 ---
+	@(link_name = "skiptohex")
+	skiptohex_r :: proc "c"(q: ^u8) -> ^u8 ---
+	@(link_name = "skiptobin")
+	skiptobin_r :: proc "c"(q: ^u8) -> ^u8 ---
+	@(link_name = "skiptodigit")
+	skiptodigit_r :: proc "c"(q: ^u8) -> ^u8 ---
+	@(link_name = "strcoll")
+	strcoll_r :: proc "c"(s1: cstring, s2: cstring) -> C.int ---
+	// p_ic already in search.odin — reuse.
+}
+
+@(private="file")
+sort_lc_f, sort_ic_f, sort_rx_f, sort_nr_f, sort_flt_f, sort_abort_f: bool
+@(private="file")
+sortbuf1_f, sortbuf2_f: ^u8
+
+// ASCII_ISALPHA is a plain (context) proc in os_lang.odin — uncallable from
+// proc "c". Trivial local copy (same body).
+ascii_isalpha_o :: proc "c"(c: u8) -> bool {
+	return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')
+}
+
+// Compare two NUL-terminated strings (locale/case/byte per flags).
+string_compare_o :: proc "c"(s1: rawptr, s2: rawptr) -> C.int {
+	c1 := cstring(transmute(^u8)(s1))
+	c2 := cstring(transmute(^u8)(s2))
+	if sort_lc_f {
+		return strcoll_r(c1, c2)
+	}
+	if sort_ic_f {
+		return _mb_stricmp(c1, c2)
+	}
+	return libc.strcmp(c1, c2)
+}
+
+// qsort comparator over Sorti_T (stable via lnum tiebreak; abort-safe).
+sort_compare_o :: proc "c"(s1: rawptr, s2: rawptr) -> C.int {
+	l1 := (^Sorti_T)(s1)^
+	l2 := (^Sorti_T)(s2)^
+	result: C.int = 0
+
+	// No way to stop qsort(); returning 0 ends it quickly.
+	if sort_abort_f {
+		return 0
+	}
+	fast_breakcheck()
+	if got_int {
+		sort_abort_f = true
+	}
+
+	// Number-sort reads the number, not the column.
+	if sort_nr_f {
+		n1 := (^bool)(&l1.u[8])^
+		n2 := (^bool)(&l2.u[8])^
+		if n1 != n2 {
+			result = n1 ? 1 : -1
+		} else {
+			v1 := (^C.longlong)(&l1.u[0])^
+			v2 := (^C.longlong)(&l2.u[0])^
+			if v1 != v2 {
+				result = v1 > v2 ? 1 : -1
+			}
+		}
+	} else if sort_flt_f {
+		f1 := (^f64)(&l1.u[0])^
+		f2 := (^f64)(&l2.u[0])^
+		if f1 != f2 {
+			result = f1 > f2 ? 1 : -1
+		}
+	} else {
+		// Copy via sortbuf (ml_get pointers may invalidate each other).
+		l1s := (^C.longlong)(&l1.u[0])^
+		l1e := (^C.longlong)(&l1.u[8])^
+		libc.memcpy(transmute(rawptr)(sortbuf1_f),
+			transmute(rawptr)((^u8)(uintptr(ml_get(l1.lnum)) + uintptr(l1s))),
+			C.size_t(l1e - l1s + 1))
+		([^]u8)(sortbuf1_f)[l1e - l1s] = 0
+		l2s := (^C.longlong)(&l2.u[0])^
+		l2e := (^C.longlong)(&l2.u[8])^
+		libc.memcpy(transmute(rawptr)(sortbuf2_f),
+			transmute(rawptr)((^u8)(uintptr(ml_get(l2.lnum)) + uintptr(l2s))),
+			C.size_t(l2e - l2s + 1))
+		([^]u8)(sortbuf2_f)[l2e - l2s] = 0
+
+		result = string_compare_o(transmute(rawptr)(sortbuf1_f),
+			transmute(rawptr)(sortbuf2_f))
+	}
+
+	// Same value: preserve original line order.
+	if result == 0 {
+		return l1.lnum - l2.lnum
+	}
+	return result
+}
+
+// ":sort" — sort lines (string/number/float/regex, unique, reverse).
+@(export)
+ex_sort :: proc "c"(eap: rawptr) {
+	regmatch: Regmatch_T
+	maxlen: C.int = 0
+	count := C.size_t((^C.int)(uintptr(eap) + EXARG_LINE2_OFF)^ -
+		(^C.int)(uintptr(eap) + EXARG_LINE1_OFF)^) + 1
+	unique := false
+	sort_what: C.int = 0
+
+	// Sorting one line is really quick!
+	if count <= 1 {
+		return
+	}
+
+	if u_save((^C.int)(uintptr(eap) + EXARG_LINE1_OFF)^ - 1,
+		(^C.int)(uintptr(eap) + EXARG_LINE2_OFF)^ + 1) == FAIL {
+		return
+	}
+	sortbuf1_f = nil
+	sortbuf2_f = nil
+	regmatch.regprog = nil
+	nrs := ([^]Sorti_T)(xmalloc(C.size_t(count) * 24))
+
+	sort_abort_f = false
+	sort_ic_f = false
+	sort_lc_f = false
+	sort_rx_f = false
+	sort_nr_f = false
+	sort_flt_f = false
+	format_found: C.int = 0
+	change_occurred := false // buffer contents changed
+	done := false
+
+	arg := (^cstring)(uintptr(eap))^
+	p := transmute(^u8)(arg)
+	for ([^]u8)(p)[0] != 0 {
+		c := ([^]u8)(p)[0]
+		if ascii_iswhite(c) {
+			// Skip
+		} else if c == 'i' {
+			sort_ic_f = true
+		} else if c == 'l' {
+			sort_lc_f = true
+		} else if c == 'r' {
+			sort_rx_f = true
+		} else if c == 'n' {
+			sort_nr_f = true
+			format_found += 1
+		} else if c == 'f' {
+			sort_flt_f = true
+			format_found += 1
+		} else if c == 'b' {
+			sort_what = STR2NR_BIN_O + STR2NR_FORCE_O
+			format_found += 1
+		} else if c == 'o' {
+			sort_what = STR2NR_OCT_O + STR2NR_FORCE_O
+			format_found += 1
+		} else if c == 'x' {
+			sort_what = STR2NR_HEX_O + STR2NR_FORCE_O
+			format_found += 1
+		} else if c == 'u' {
+			unique = true
+		} else if c == '"' { // comment start
+			break
+		} else {
+			nc := check_nextcmd_r(p)
+			if nc != nil {
+				(^rawptr)(uintptr(eap) + 32)^ = transmute(rawptr)(nc)
+				break
+			} else if !ascii_isalpha_o(c) && regmatch.regprog == nil {
+				s := skip_regexp_err_r((^u8)(uintptr(p) + 1), C.int(c), 1)
+				if s == nil {
+					done = true
+					break
+				}
+				([^]u8)(s)[0] = 0
+				// Empty pattern: use last search pattern.
+				if uintptr(s) == uintptr(p) + 1 {
+					if last_search_pat() == nil {
+						emsg(e_noprevre)
+						done = true
+						break
+					}
+					regmatch.regprog = vim_regcomp(
+						cstring(last_search_pat()), RE_MAGIC)
+				} else {
+					regmatch.regprog = vim_regcomp(
+						cstring((^u8)(uintptr(p) + 1)), RE_MAGIC)
+				}
+				if regmatch.regprog == nil {
+					done = true
+					break
+				}
+				p = s // continue after the regexp
+				regmatch.rm_ic = p_ic
+			} else {
+				semsg_safe(cstring(e_invarg2), transmute(rawptr)(p))
+				done = true
+				break
+			}
+		}
+		p = (^u8)(uintptr(p) + 1)
+	}
+
+	// Can only have one of 'n', 'b', 'o' and 'x'.
+	if !done && format_found > 1 {
+		emsg(cstring(e_invarg_s))
+		done = true
+	}
+
+	// From here on sort_nr flags any integer-number sorting
+	// (C: sort_nr |= sort_what — bool conversion).
+	if !done && sort_what != 0 {
+		sort_nr_f = true
+	}
+
+	// One pass per line: match pattern, convert numbers, track maxlen.
+	// (Pattern/number work happens once per line, not per comparison.)
+	line1 := (^C.int)(uintptr(eap) + EXARG_LINE1_OFF)^
+	line2 := (^C.int)(uintptr(eap) + EXARG_LINE2_OFF)^
+	if !done {
+		lnum := line1
+		for lnum <= line2 {
+			s := ml_get(lnum)
+			len := ml_get_len_r2(lnum)
+			if len > maxlen {
+				maxlen = len
+			}
+
+			start_col: C.int = 0
+			end_col: C.int = len
+			if regmatch.regprog != nil &&
+				vim_regexec_r(&regmatch, s, 0) != 0 {
+				if sort_rx_f {
+					start_col = C.int(uintptr(regmatch.startp[0]) - uintptr(s))
+					end_col = C.int(uintptr(regmatch.endp[0]) - uintptr(s))
+				} else {
+					start_col = C.int(uintptr(regmatch.endp[0]) - uintptr(s))
+				}
+			} else if regmatch.regprog != nil {
+				end_col = 0
+			}
+
+			nr := &nrs[lnum - line1]
+			if sort_nr_f || sort_flt_f {
+				// NUL-terminate at the match end for vim_str2nr().
+				s2 := (^u8)(uintptr(s) + uintptr(end_col))
+				savec := ([^]u8)(s2)[0]
+				([^]u8)(s2)[0] = 0
+				pp := (^u8)(uintptr(s) + uintptr(start_col))
+				if sort_nr_f {
+					if (sort_what & STR2NR_HEX_O) != 0 {
+						s = skiptohex_r(pp)
+					} else if (sort_what & STR2NR_BIN_O) != 0 {
+						s = skiptobin_r(pp)
+					} else {
+						s = skiptodigit_r(pp)
+					}
+					if uintptr(s) > uintptr(pp) &&
+						([^]u8)((^u8)(uintptr(s) - 1))[0] == '-' {
+						s = (^u8)(uintptr(s) - 1) // preceding minus
+					}
+					if ([^]u8)(s)[0] == 0 {
+						// No number: sorts before any number.
+						(^bool)(&nr.u[8])^ = false
+						(^C.longlong)(&nr.u[0])^ = 0
+					} else {
+						(^bool)(&nr.u[8])^ = true
+						vim_str2nr_r(cstring(s), nil, nil, sort_what,
+							(^C.longlong)(&nr.u[0]), nil, 0, false, nil)
+					}
+				} else {
+					s = transmute(^u8)(skipwhite(cstring(pp)))
+					if ([^]u8)(s)[0] == '+' {
+						s = transmute(^u8)(skipwhite(cstring(
+							(^u8)(uintptr(s) + 1))))
+					}
+
+					if ([^]u8)(s)[0] == 0 {
+						// Empty: sorts before any number.
+						(^f64)(&nr.u[0])^ = -1.7976931348623157e308
+					} else {
+						(^f64)(&nr.u[0])^ = libc.strtod(cstring(s), nil)
+					}
+				}
+				([^]u8)(s2)[0] = savec
+			} else {
+				// Store the column to sort at.
+				(^C.longlong)(&nr.u[0])^ = C.longlong(start_col)
+				(^C.longlong)(&nr.u[8])^ = C.longlong(end_col)
+			}
+
+			nr.lnum = lnum
+
+			if regmatch.regprog != nil {
+				fast_breakcheck()
+			}
+			if got_int {
+				done = true
+				break
+			}
+			lnum += 1
+		}
+	}
+
+	if !done {
+		// Longest-line buffers for the comparator.
+		sortbuf1_f = (^u8)(xmalloc(C.size_t(maxlen) + 1))
+		sortbuf2_f = (^u8)(xmalloc(C.size_t(maxlen) + 1))
+
+		// Sort the line-number array (can't be interrupted).
+		qsort_r(nrs, count, 24, sort_compare_o)
+
+		if sort_abort_f {
+			done = true
+		}
+	}
+
+	old_count: C.longlong = 0
+	new_count: C.longlong = 0
+	if !done {
+		// Insert lines in sorted order below the last one.
+		lnum := line2
+		i: C.size_t = 0
+		for i < count {
+			forceit := (^C.int)(uintptr(eap) + EXARG_FORCEIT_OFF)^ != 0
+			get_lnum := nrs[forceit ? count - i - 1 : i].lnum
+
+			// Placed line differs (with offset): buffer changed.
+			if get_lnum + C.int(count) - 1 != lnum {
+				change_occurred = true
+			}
+
+			s := ml_get(get_lnum)
+			bytelen := ml_get_len_r2(get_lnum) + 1 // include EOL
+			old_count += C.longlong(bytelen)
+			if !unique || i == 0 ||
+				string_compare_o(transmute(rawptr)(s),
+					transmute(rawptr)(sortbuf1_f)) != 0 {
+				// Copy: may invalidate in ml_append(); needed for unique.
+				xstrlcpy_o(cstring(sortbuf1_f), cstring(s),
+					C.size_t(maxlen) + 1)
+				if !ml_append_c(lnum, sortbuf1_f, 0, false) {
+					break
+				}
+				lnum += 1
+				new_count += C.longlong(bytelen)
+			}
+			fast_breakcheck()
+			if got_int {
+				done = true
+				break
+			}
+			i += 1
+		}
+
+		if !done {
+			// Delete the original lines if appending worked.
+			if i == count {
+				j: C.size_t = 0
+				for j < count {
+					ml_delete_r(line1)
+					j += 1
+				}
+			} else {
+				count = 0
+			}
+
+			// Adjust marks, prepare for display.
+			deleted := C.int(count) - (lnum - line2)
+			if deleted > 0 {
+				mark_adjust(line2 - deleted, line2, MAXLNUM, -deleted,
+					kExtmarkNOOP)
+				msgmore_r(-deleted)
+			} else if deleted < 0 {
+				mark_adjust(line2, MAXLNUM, -deleted, 0, kExtmarkNOOP)
+			}
+
+			if change_occurred || deleted != 0 {
+				extmark_splice_r(curbuf, line1 - 1, 0, C.int(count), 0,
+					i64(old_count), lnum - line2, 0, i64(new_count),
+					kExtmarkUndo)
+				changed_lines_r(curbuf, line1, 0, line2 + 1, -deleted, true)
+			}
+
+			(^C.int)(uintptr(curwin) + W_CURSOR_OFF)^ = line1
+			beginline(BL_WHITE | BL_FIX)
+		}
+	}
+
+	// sortend: always free, report interrupts.
+	xfree(nrs)
+	xfree(transmute(rawptr)(sortbuf1_f))
+	xfree(transmute(rawptr)(sortbuf2_f))
+	vim_regfree(regmatch.regprog)
+	if got_int {
+		emsg(cstring(E_INTERR_S))
+	}
+}
+
+// ":uniq" — delete duplicate (adjacent, post-match) lines.
+@(export)
+ex_uniq :: proc "c"(eap: rawptr) {
+	regmatch: Regmatch_T
+	maxlen: C.int = 0
+	line1 := (^C.int)(uintptr(eap) + EXARG_LINE1_OFF)^
+	line2 := (^C.int)(uintptr(eap) + EXARG_LINE2_OFF)^
+	count: C.int = line2 - line1 + 1
+	keep_only_unique := false
+	keep_only_not_unique := (^C.int)(uintptr(eap) + EXARG_FORCEIT_OFF)^ != 0
+	deleted: C.int = 0
+
+	// Uniq one line is really quick!
+	if count <= 1 {
+		return
+	}
+
+	if u_save(line1 - 1, line2 + 1) == FAIL {
+		return
+	}
+	sortbuf1_f = nil
+	regmatch.regprog = nil
+
+	sort_abort_f = false
+	sort_ic_f = false
+	sort_lc_f = false
+	sort_rx_f = false
+	sort_nr_f = false
+	sort_flt_f = false
+	change_occurred := false // buffer contents changed
+	done := false
+
+	arg := (^cstring)(uintptr(eap))^
+	p := transmute(^u8)(arg)
+	for ([^]u8)(p)[0] != 0 {
+		c := ([^]u8)(p)[0]
+		if ascii_iswhite(c) {
+			// Skip
+		} else if c == 'i' {
+			sort_ic_f = true
+		} else if c == 'l' {
+			sort_lc_f = true
+		} else if c == 'r' {
+			sort_rx_f = true
+		} else if c == 'u' {
+			// 'u' is only valid when '!' is not given.
+			if !keep_only_not_unique {
+				keep_only_unique = true
+			}
+		} else if c == '"' { // comment start
+			break
+		} else {
+			nc := check_nextcmd_r(p)
+			if (^rawptr)(uintptr(eap) + 32)^ == nil && nc != nil {
+				(^rawptr)(uintptr(eap) + 32)^ = transmute(rawptr)(nc)
+				break
+			} else if !ascii_isalpha_o(c) && regmatch.regprog == nil {
+				s := skip_regexp_err_r((^u8)(uintptr(p) + 1), C.int(c), 1)
+				if s == nil {
+					done = true
+					break
+				}
+				([^]u8)(s)[0] = 0
+				// Empty pattern: use last search pattern.
+				if uintptr(s) == uintptr(p) + 1 {
+					if last_search_pat() == nil {
+						emsg(e_noprevre)
+						done = true
+						break
+					}
+					regmatch.regprog = vim_regcomp(
+						cstring(last_search_pat()), RE_MAGIC)
+				} else {
+					regmatch.regprog = vim_regcomp(
+						cstring((^u8)(uintptr(p) + 1)), RE_MAGIC)
+				}
+				if regmatch.regprog == nil {
+					done = true
+					break
+				}
+				p = s // continue after the regexp
+				regmatch.rm_ic = p_ic
+			} else {
+				semsg_safe(cstring(e_invarg2), transmute(rawptr)(p))
+				done = true
+				break
+			}
+		}
+		p = (^u8)(uintptr(p) + 1)
+	}
+
+	// Find the length of the longest line.
+	if !done {
+		lnum := line1
+		for lnum <= line2 {
+			len := ml_get_len_r2(lnum)
+			if maxlen < len {
+				maxlen = len
+			}
+
+			if got_int {
+				done = true
+				break
+			}
+			lnum += 1
+		}
+	}
+
+	if !done {
+		// Buffer that can hold the longest line.
+		sortbuf1_f = (^u8)(xmalloc(C.size_t(maxlen) + 1))
+
+		// Delete lines according to options.
+		match_continue := false
+		next_is_unmatch := false
+		done_lnum := line1 - 1
+		delete_lnum: C.int = 0
+		i: C.int = 0
+		for i < count {
+			get_lnum := line1 + i
+
+			s := ml_get(get_lnum)
+			len := ml_get_len_r2(get_lnum)
+
+			start_col: C.int = 0
+			end_col: C.int = len
+			if regmatch.regprog != nil &&
+				vim_regexec_r(&regmatch, s, 0) != 0 {
+				if sort_rx_f {
+					start_col = C.int(uintptr(regmatch.startp[0]) - uintptr(s))
+					end_col = C.int(uintptr(regmatch.endp[0]) - uintptr(s))
+				} else {
+					start_col = C.int(uintptr(regmatch.endp[0]) - uintptr(s))
+				}
+			} else if regmatch.regprog != nil {
+				end_col = 0
+			}
+			save_c: u8 = 0 // temporary character storage
+			if end_col > 0 {
+				save_c = ([^]u8)(s)[end_col]
+				([^]u8)(s)[end_col] = 0
+			}
+
+			is_match := false
+			if i > 0 {
+				is_match = string_compare_o(
+					transmute(rawptr)((^u8)(uintptr(s) + uintptr(start_col))),
+					transmute(rawptr)(sortbuf1_f)) == 0
+			}
+			delete_lnum = 0
+			if next_is_unmatch {
+				is_match = false
+				next_is_unmatch = false
+			}
+
+			if !keep_only_unique && !keep_only_not_unique {
+				if is_match {
+					delete_lnum = get_lnum
+				} else {
+					xstrlcpy_o(cstring(sortbuf1_f),
+						cstring((^u8)(uintptr(s) + uintptr(start_col))),
+						C.size_t(maxlen) + 1)
+				}
+			} else if keep_only_not_unique {
+				if is_match {
+					done_lnum = get_lnum - 1
+					delete_lnum = get_lnum
+					match_continue = true
+				} else {
+					if i > 0 && !match_continue &&
+						get_lnum - 1 > done_lnum {
+						delete_lnum = get_lnum - 1
+						next_is_unmatch = true
+					} else if i >= count - 1 {
+						delete_lnum = get_lnum
+					}
+					match_continue = false
+					xstrlcpy_o(cstring(sortbuf1_f),
+						cstring((^u8)(uintptr(s) + uintptr(start_col))),
+						C.size_t(maxlen) + 1)
+				}
+			} else { // keep_only_unique
+				if is_match {
+					if !match_continue {
+						delete_lnum = get_lnum - 1
+					} else {
+						delete_lnum = get_lnum
+					}
+					match_continue = true
+				} else {
+					if i == 0 && match_continue {
+						delete_lnum = get_lnum
+					}
+					match_continue = false
+					xstrlcpy_o(cstring(sortbuf1_f),
+						cstring((^u8)(uintptr(s) + uintptr(start_col))),
+						C.size_t(maxlen) + 1)
+				}
+			}
+
+			if end_col > 0 {
+				([^]u8)(s)[end_col] = save_c
+			}
+
+			if delete_lnum > 0 {
+				ml_delete_r(delete_lnum)
+				i -= get_lnum - delete_lnum + 1
+				count -= 1
+				deleted += 1
+				change_occurred = true
+			}
+
+			fast_breakcheck()
+			if got_int {
+				done = true
+				break
+			}
+			i += 1
+		}
+
+		if !done {
+			// Adjust marks, prepare for display.
+			mark_adjust(line2 - deleted, line2, MAXLNUM, -deleted,
+				change_occurred ? kExtmarkUndo : kExtmarkNOOP)
+			msgmore_r(-deleted)
+
+			if change_occurred {
+				changed_lines_r(curbuf, line1, 0, line2 + 1, -deleted, true)
+			}
+
+			(^C.int)(uintptr(curwin) + W_CURSOR_OFF)^ = line1
+			beginline(BL_WHITE | BL_FIX)
+		}
+	}
+
+	// uniqend: always free, report interrupts.
+	xfree(transmute(rawptr)(sortbuf1_f))
+	vim_regfree(regmatch.regprog)
+	if got_int {
+		emsg(cstring(E_INTERR_S))
+	}
+}
+
+// ── Batch 30: do_move/ex_copy (:move/:copy line mover) ──────────────────────
+
+ML_DEL_MESSAGE_O :: 1
+CMOD_LOCKMARKS_O :: 0x0800
+E134_S :: "E134: Cannot move a range of lines into itself"
+
+foreign _ {
+	@(link_name = "ml_find_line_or_offset")
+	ml_find_line_or_offset_r :: proc "c"(buf: rawptr, lnum: C.int, offp: rawptr, no_ff: bool) -> C.longlong ---
+	@(link_name = "appended_lines_mark")
+	appended_lines_mark_r :: proc "c"(lnum: C.int, count: C.int) ---
+	@(link_name = "extmark_move_region")
+	extmark_move_region_r :: proc "c"(buf: rawptr, start_row: C.int, start_col: C.int, start_byte: C.longlong, extent_row: C.int, extent_col: C.int, extent_byte: C.longlong, new_row: C.int, new_col: C.int, new_byte: C.longlong, undo: C.int) ---
+	@(link_name = "ml_delete_flags")
+	ml_delete_flags_r :: proc "c"(lnum: C.int, flags: C.int) -> C.int ---
+	// disable_fold_update (fold.odin), p_report (register.odin) — reuse.
+}
+
+// :move command — move lines line1-line2 to after line dest.
+@(export)
+do_move :: proc "c"(line1: C.int, line2: C.int, dest: C.int) -> C.int {
+	if dest >= line1 && dest < line2 {
+		emsg(cstring(E134_S))
+		return FAIL
+	}
+
+	// No-op move: no 'modified' flag, but move cursor compatibly.
+	if dest == line1 - 1 || dest == line2 {
+		if dest >= line1 {
+			(^C.int)(uintptr(curwin) + W_CURSOR_OFF)^ = dest
+		} else {
+			(^C.int)(uintptr(curwin) + W_CURSOR_OFF)^ = dest + (line2 - line1) + 1
+		}
+		return OK
+	}
+
+	start_byte := ml_find_line_or_offset_r(curbuf, line1, nil, true)
+	end_byte := ml_find_line_or_offset_r(curbuf, line2 + 1, nil, true)
+	extent_byte := end_byte - start_byte
+	dest_byte := ml_find_line_or_offset_r(curbuf, dest + 1, nil, true)
+
+	num_lines := line2 - line1 + 1 // lines moved
+
+	// Copy old text to its new location (plus :global flag).
+	if u_save(dest, dest + 1) == FAIL {
+		return FAIL
+	}
+
+	extra: C.int = 0 // lines added before line1
+	l := line1
+	for l <= line2 {
+		str := xstrnsave_c(cstring(ml_get(l + extra)),
+			C.size_t(ml_get_len_r2(l + extra)))
+		ml_append_c(dest + l - line1, str, 0, false)
+		xfree(transmute(rawptr)(str))
+		if dest < line1 {
+			extra += 1
+		}
+		l += 1
+	}
+
+	// Adjust marks in stages (old text to end-of-file, middle range,
+	// then back to destination) to avoid overlapping adjustments.
+	last_line := (^C.int)(uintptr(curbuf) + B_ML_LINE_COUNT_OFF)^
+	mark_adjust_nofold(line1, line2, last_line - line2, 0, kExtmarkNOOP)
+
+	disable_fold_update += 1
+	changed_lines_r(curbuf, last_line - num_lines + 1, 0, last_line + 1,
+		num_lines, false)
+	disable_fold_update -= 1
+
+	line_off: C.int = 0
+	byte_off: C.longlong = 0
+	if dest >= line2 {
+		mark_adjust_nofold(line2 + 1, dest, -num_lines, 0, kExtmarkNOOP)
+		tp := first_tabpage
+		for tp != nil {
+			wp := tp == curtab ? firstwin :
+				(^rawptr)(uintptr(tp) + TP_FIRSTWIN_OFF)^
+			for wp != nil {
+				if (^rawptr)(uintptr(wp) + W_BUFFER_OFF)^ == curbuf {
+					foldMoveRange(wp, (^Garray)(uintptr(wp) + W_FOLDS_OFF),
+						line1, line2, dest)
+				}
+				wp = (^rawptr)(uintptr(wp) + W_NEXT_OFF)^
+			}
+			tp = (^rawptr)(uintptr(tp) + TP_NEXT_OFF)^
+		}
+		if (cmdmod_cmod_flags & CMOD_LOCKMARKS_O) == 0 {
+			(^C.int)(uintptr(curbuf) + B_OP_START)^ = dest - num_lines + 1
+			(^C.int)(uintptr(curbuf) + B_OP_END)^ = dest
+		}
+		line_off = -num_lines
+		byte_off = -extent_byte
+	} else {
+		mark_adjust_nofold(dest + 1, line1 - 1, num_lines, 0, kExtmarkNOOP)
+		tp := first_tabpage
+		for tp != nil {
+			wp := tp == curtab ? firstwin :
+				(^rawptr)(uintptr(tp) + TP_FIRSTWIN_OFF)^
+			for wp != nil {
+				if (^rawptr)(uintptr(wp) + W_BUFFER_OFF)^ == curbuf {
+					foldMoveRange(wp, (^Garray)(uintptr(wp) + W_FOLDS_OFF),
+						dest + 1, line1 - 1, line2)
+				}
+				wp = (^rawptr)(uintptr(wp) + W_NEXT_OFF)^
+			}
+			tp = (^rawptr)(uintptr(tp) + TP_NEXT_OFF)^
+		}
+		if (cmdmod_cmod_flags & CMOD_LOCKMARKS_O) == 0 {
+			(^C.int)(uintptr(curbuf) + B_OP_START)^ = dest + 1
+			(^C.int)(uintptr(curbuf) + B_OP_END)^ = dest + num_lines
+		}
+	}
+	if (cmdmod_cmod_flags & CMOD_LOCKMARKS_O) == 0 {
+		(^C.int)(uintptr(curbuf) + B_OP_START + 4)^ = 0
+		(^C.int)(uintptr(curbuf) + B_OP_END + 4)^ = 0
+	}
+	mark_adjust_nofold(last_line - num_lines + 1, last_line,
+		-(last_line - dest - extra), 0, kExtmarkNOOP)
+
+	disable_fold_update += 1
+	changed_lines_r(curbuf, last_line - num_lines + 1, 0, last_line + 1,
+		-extra, false)
+	disable_fold_update -= 1
+
+	// New-lines update event.
+	buf_updates_send_changes_r(curbuf, dest + 1, i64(num_lines), 0)
+
+	// Now delete the original text.
+	if u_save(line1 + extra - 1, line2 + extra + 1) == FAIL {
+		return FAIL
+	}
+
+	l = line1
+	for l <= line2 {
+		ml_delete_flags_r(line1 + extra, ML_DEL_MESSAGE_O)
+		l += 1
+	}
+	if global_busy == 0 && i64(num_lines) > p_report {
+		smsg(0, cstring(num_lines == 1 ? "%ld line moved" : "%ld lines moved"),
+			C.longlong(num_lines))
+	}
+
+	extmark_move_region_r(curbuf, line1 - 1, 0, start_byte,
+		line2 - line1 + 1, 0, extent_byte,
+		dest + line_off, 0, dest_byte + byte_off,
+		kExtmarkUndo)
+
+	// Cursor on the last of the moved lines.
+	if dest >= line1 {
+		(^C.int)(uintptr(curwin) + W_CURSOR_OFF)^ = dest
+	} else {
+		(^C.int)(uintptr(curwin) + W_CURSOR_OFF)^ = dest + (line2 - line1) + 1
+	}
+
+	if line1 < dest {
+		dest_v := dest + num_lines + 1
+		last_line_v := (^C.int)(uintptr(curbuf) + B_ML_LINE_COUNT_OFF)^
+		if dest_v > last_line_v + 1 {
+			dest_v = last_line_v + 1
+		}
+		changed_lines_r(curbuf, line1, 0, dest_v, 0, false)
+	} else {
+		changed_lines_r(curbuf, dest + 1, 0, line1 + num_lines, 0, false)
+	}
+
+	// Deleted-lines event.
+	buf_updates_send_changes_r(curbuf, line1 + extra, 0,
+		i64(num_lines))
+
+	return OK
+}
+
+// ":copy" — copy lines line1-line2 to after line n.
+@(export)
+ex_copy :: proc "c"(line1_in: C.int, line2_in: C.int, n: C.int) {
+	line1 := line1_in
+	line2 := line2_in
+	count := line2 - line1 + 1
+	if (cmdmod_cmod_flags & CMOD_LOCKMARKS_O) == 0 {
+		(^C.int)(uintptr(curbuf) + B_OP_START)^ = n + 1
+		(^C.int)(uintptr(curbuf) + B_OP_END)^ = n + count
+		(^C.int)(uintptr(curbuf) + B_OP_START + 4)^ = 0
+		(^C.int)(uintptr(curbuf) + B_OP_END + 4)^ = 0
+	}
+
+	// n = destination (start); w_cursor.lnum = destination (copying);
+	// line1/line2 = source range (shifting as lines are added).
+	if u_save(n, n + 1) == FAIL {
+		return
+	}
+
+	(^C.int)(uintptr(curwin) + W_CURSOR_OFF)^ = n
+	for line1 <= line2 {
+		// Copy: the line is unlocked within ml_append().
+		p := xstrnsave_c(cstring(ml_get(line1)),
+			C.size_t(ml_get_len_r2(line1)))
+		ml_append_c((^C.int)(uintptr(curwin) + W_CURSOR_OFF)^, p, 0, false)
+		xfree(transmute(rawptr)(p))
+
+		// Situation 2: skip already copied lines.
+		if line1 == n {
+			line1 = (^C.int)(uintptr(curwin) + W_CURSOR_OFF)^
+		}
+		line1 += 1
+		if (^C.int)(uintptr(curwin) + W_CURSOR_OFF)^ < line1 {
+			line1 += 1
+		}
+		if (^C.int)(uintptr(curwin) + W_CURSOR_OFF)^ < line2 {
+			line2 += 1
+		}
+		(^C.int)(uintptr(curwin) + W_CURSOR_OFF)^ += 1
+	}
+
+	appended_lines_mark_r(n, count)
+	if VIsual_active {
+		check_pos_r(curbuf, &VIsual_g)
+	}
+
+	msgmore_r(count)
+}
+
+// ── Batch 31a: shell-filter builders (make_filter_cmd/append_redir) ────────
+// (find_pipe is #ifndef UNIX — skipped on Linux like completeslash.)
+
+EVENT_SHELLFILTERPOST_O :: 102
+CPO_REMMARK_O :: C.int('R')
+KSHELLOPT_FILTER_O :: 1
+KSHELLOPT_DOOUT_O :: 4
+KSHELLOPT_READ_O :: 16
+KSHELLOPT_WRITE_O :: 32
+READ_FILTER_O :: 0x02
+CMOD_KEEPMARKS_O :: 0x0200
+MSG_BUF_LEN_O :: 480
+E482_S :: "E482: Can't create file %s"
+E135_S :: "E135: *Filter* Autocommands must not change current buffer"
+E483_S :: "E483: Can't get temp file name"
+E485_S :: "E485: Can't read file %s"
+
+foreign _ {
+	// p_sh already in shell.odin — reuse.
+	@(link_name = "p_shq")
+	p_shq_g: ^u8
+	@(link_name = "p_srr")
+	p_srr_g: ^u8
+	@(link_name = "p_stmp")
+	p_stmp_g: C.int
+	@(link_name = "msg_buf")
+	msg_buf_g: [480]u8
+	@(link_name = "ui_cursor_goto")
+	ui_cursor_goto_r :: proc "c"(row: C.int, col: C.int) ---
+	@(link_name = "did_check_timestamps")
+	did_check_timestamps_g: bool
+	@(link_name = "need_check_timestamps")
+	need_check_timestamps_g: bool
+	@(link_name = "buf_write")
+	buf_write_r :: proc "c"(buf: rawptr, fname: cstring, sfname: cstring, start: C.int, end: C.int, eap: rawptr, append: bool, forceit: bool, reset_changed: bool, filtering: bool) -> C.int ---
+	@(link_name = "del_lines")
+	del_lines_r :: proc "c"(nlines: C.int, undo: bool) ---
+	@(link_name = "write_lnum_adjust")
+	write_lnum_adjust_r :: proc "c"(offset: C.int) ---
+	@(link_name = "foldUpdate")
+	foldUpdate_r :: proc "c"(wp: rawptr, top: C.int, bot: C.int) ---
+	@(link_name = "wait_return")
+	wait_return_r :: proc "c"(redraw: C.int) ---
+}
+
+// Append output redirection for "fname" to "buf" (" %s %s" or opt-as-format).
+@(export)
+append_redir :: proc "c"(buf: ^u8, buflen: C.size_t, opt: cstring, fname: cstring) {
+	end := (^u8)(uintptr(buf) + uintptr(libc.strlen(cstring(buf))))
+	// Find "%s" (skipping "%%"). core strchr returns [^]u8.
+	found: rawptr = nil
+	cur := opt
+	for {
+		q := libc.strchr(cur, '%')
+		if q == nil {
+			break
+		}
+		if q[1] == 's' {
+			found = rawptr(&q[0])
+			break
+		}
+		np := (^u8)(uintptr(&q[0]) + 1)
+		if q[1] == '%' {
+			np = (^u8)(uintptr(&q[0]) + 2)
+		}
+		cur = cstring(np)
+	}
+	if found != nil {
+		([^]u8)(end)[0] = ' ' // not really needed? not with sh/ksh/bash
+		// The user option IS the format string here (validity is checked
+		// in did_set_shellpipe_redir, same fire profile as C).
+		libc.snprintf((^u8)(uintptr(end) + 1),
+			C.size_t(buflen) - C.size_t(uintptr(end) + 1 - uintptr(buf)),
+			opt, fname)
+	} else {
+		libc.snprintf(end,
+			C.size_t(buflen) - C.size_t(uintptr(end) - uintptr(buf)),
+			cstring(" %s %s"), opt, fname)
+	}
+}
+
+// Build a shell command from cmd + input/output redirections (allocated).
+// Build a shell command from cmd + input/output redirections (allocated).
+@(export)
+make_filter_cmd :: proc "c"(cmd: cstring, itmp: cstring, otmp: cstring, do_in: bool) -> cstring {
+	sh_tail := invocation_path_tail(p_sh, nil)
+	is_fish_shell := libc.strncmp(sh_tail, cstring("fish"), 4) == 0
+	is_pwsh := libc.strncmp(sh_tail, cstring("pwsh"), 4) == 0 ||
+		libc.strncmp(sh_tail, cstring("powershell"), 10) == 0
+
+	total := C.size_t(libc.strlen(cmd)) + 1 // cmd + NUL
+
+	if is_fish_shell {
+		total += 12 // "begin; ; end"
+	} else if !is_pwsh {
+		total += 2 // "()"
+	}
+
+	if itmp != nil {
+		if is_pwsh {
+			// "& { Get-Content  | &   }" (24) + #20530's 6.
+			total += C.size_t(libc.strlen(itmp)) + 24 + 6
+		} else {
+			// " {  <   } " (9).
+			total += C.size_t(libc.strlen(itmp)) + 9
+		}
+	}
+
+	if do_in && is_pwsh {
+		total += 11 // sizeof(" $input | ") keeps the NUL
+	}
+
+	if otmp != nil {
+		total += C.size_t(libc.strlen(otmp)) +
+			C.size_t(libc.strlen(cstring(p_srr_g))) + 2 // two spaces
+	}
+
+	buf := (^u8)(xmalloc(total))
+
+	if is_pwsh {
+		if itmp != nil {
+			xstrlcpy_o(cstring(buf), cstring("& { Get-Content "), total - 1)
+			_xstrlcat(cstring(buf), itmp, total - 1)
+			_xstrlcat(cstring(buf), cstring(" | & "), total - 1)
+			_xstrlcat(cstring(buf), cmd, total - 1)
+			_xstrlcat(cstring(buf), cstring(" }"), total - 1)
+		} else if do_in {
+			xstrlcpy_o(cstring(buf), cstring(" $input | "), total - 1)
+			_xstrlcat(cstring(buf), cmd, total)
+		} else {
+			xstrlcpy_o(cstring(buf), cmd, total)
+		}
+	} else {
+		// Delimiters for concatenated commands with redirections.
+		if itmp != nil || otmp != nil {
+			if is_fish_shell {
+				libc.snprintf(buf, total, cstring("begin; %s; end"), cmd)
+			} else {
+				libc.snprintf(buf, total, cstring("(%s)"), cmd)
+			}
+		} else {
+			xstrlcpy_o(cstring(buf), cmd, total)
+		}
+
+		if itmp != nil {
+			_xstrlcat(cstring(buf), cstring(" < "), total - 1)
+			_xstrlcat(cstring(buf), itmp, total - 1)
+		}
+		// MSWIN pipe branch dropped (Linux-only port).
+	}
+	if otmp != nil {
+		append_redir(buf, total, cstring(p_srr_g), otmp)
+	}
+	return transmute(cstring)(buf)
+}
+
+// ":w !cmd" error helper: restore cursor, no wait-return (C "error:" block).
+do_filter_error_o :: proc "c"(cursor_save: Pos_T) {
+	(^Pos_T)(uintptr(curwin) + W_CURSOR_OFF)^ = cursor_save
+	no_wait_return -= 1
+	if !ui_has(K_UIMESSAGES_O) {
+		wait_return(0)
+	}
+}
+
+// Filter lines [line1, line2] through shell command "cmd" (C static).
+// do_in: write lines to stdin; do_out: replace lines with stdout.
+do_filter_o :: proc "c"(line1: C.int, line2: C.int, eap: rawptr, cmd: ^u8, do_in: bool, do_out: bool) {
+	itmp: ^u8 = nil
+	otmp: ^u8 = nil
+	old_curbuf := curbuf
+	shell_flags: C.int = 0
+	orig_start := (^Pos_T)(uintptr(curbuf) + B_OP_START)^
+	orig_end := (^Pos_T)(uintptr(curbuf) + B_OP_END)^
+	stmp := p_stmp_g
+
+	if ([^]u8)(cmd)[0] == 0 { // no filter command
+		return
+	}
+
+	save_cmod_flags := cmdmod_cmod_flags
+	// Disable lockmarks: needed to propagate changed regions for
+	// foldUpdate(), linecount, etc.
+	cmdmod_cmod_flags &= ~C.int(CMOD_KEEPMARKS_O)
+
+	cursor_save := (^Pos_T)(uintptr(curwin) + W_CURSOR_OFF)^
+	linecount := line2 - line1 + 1
+	(^C.int)(uintptr(curwin) + W_CURSOR_OFF)^ = line1
+	(^C.int)(uintptr(curwin) + W_CURSOR_OFF + 4)^ = 0
+	changed_line_abv_curs_r()
+	invalidate_botline_win_r(curwin)
+
+	// Temp files: 1. names 2. write lines 3. run filter 4. read output
+	// 5. delete originals 6. remove temps. Pipes skip the temp steps.
+	// (Steps 1-2 write input; steps 4-5 replace with output.)
+
+	if do_out {
+		shell_flags |= KSHELLOPT_DOOUT_O
+	}
+
+	fend := false // jump to filterend tail
+	if !do_in && do_out && stmp == 0 {
+		// Pipe for stdout, no temp file.
+		shell_flags |= KSHELLOPT_READ_O
+		(^C.int)(uintptr(curwin) + W_CURSOR_OFF)^ = line2
+	} else if do_in && !do_out && stmp == 0 {
+		// Pipe for stdin, no temp file.
+		shell_flags |= KSHELLOPT_WRITE_O
+		(^C.int)(uintptr(curbuf) + B_OP_START)^ = line1
+		(^C.int)(uintptr(curbuf) + B_OP_END)^ = line2
+	} else if do_in && do_out && stmp == 0 {
+		// Pipes both ways, no temp files.
+		shell_flags |= KSHELLOPT_READ_O | KSHELLOPT_WRITE_O
+		(^C.int)(uintptr(curbuf) + B_OP_START)^ = line1
+		(^C.int)(uintptr(curbuf) + B_OP_END)^ = line2
+		(^C.int)(uintptr(curwin) + W_CURSOR_OFF)^ = line2
+	} else {
+		if do_in {
+			itmp = transmute(^u8)(vim_tempname())
+			if itmp == nil {
+				emsg(cstring(E483_S))
+				fend = true
+			}
+		}
+		if !fend && do_out {
+			otmp = transmute(^u8)(vim_tempname())
+			if otmp == nil {
+				emsg(cstring(E483_S))
+				fend = true
+			}
+		}
+	}
+
+	// Temp-file messages are not shown (uninformative, unlike Vi).
+	no_wait_return += 1 // don't call wait_return() while busy
+	if !fend && itmp != nil &&
+		buf_write_r(curbuf, cstring(itmp), nil, line1, line2, eap, false,
+			false, false, true) == FAIL {
+		if !ui_has(K_UIMESSAGES_O) {
+			msg_putchar('\n') // keep message from buf_write()
+		}
+		no_wait_return -= 1
+		if !aborting_r() {
+			// Will call wait_return().
+			semsg_safe(cstring(E482_S), transmute(rawptr)(itmp))
+		}
+		fend = true
+	}
+	if !fend && curbuf != old_curbuf {
+		fend = true
+	}
+
+	if !fend {
+		if !do_out && !ui_has(K_UIMESSAGES_O) {
+			msg_putchar('\n')
+		}
+
+		// Shell command in allocated memory.
+		cmd_buf := make_filter_cmd(cstring(cmd), cstring(itmp), cstring(otmp),
+			do_in)
+		ui_cursor_goto_r(Rows - 1, 0)
+
+		if do_out {
+			if u_save(line2, line2 + 1) == FAIL {
+				xfree(transmute(rawptr)(cmd_buf))
+				fend = true
+			} else {
+				redraw_curbuf_later_r(UPD_VALID_O)
+			}
+		}
+		if !fend {
+			read_linecount := (^C.int)(uintptr(curbuf) + B_ML_LINE_COUNT_OFF)^
+
+			// kShellOptDoOut flag: output is being redirected.
+			call_shell(transmute(^u8)(cmd_buf), KSHELLOPT_FILTER_O | shell_flags, nil)
+			xfree(transmute(rawptr)(cmd_buf))
+
+			did_check_timestamps_g = false
+			need_check_timestamps_g = true
+
+			// Useful output may exist despite interrupt: reset got_int
+			// so readfile() won't cancel reading.
+			os_breakcheck()
+			got_int = false
+
+			if do_out {
+				if otmp != nil {
+					if readfile_r(cstring(otmp), nil, line2, 0, MAXLNUM,
+						eap, READ_FILTER_O, false) != OK {
+						if !aborting_r() {
+							msg_putchar('\n')
+							semsg_safe(cstring(E485_S),
+								transmute(rawptr)(otmp))
+						}
+						do_filter_error_o(cursor_save)
+						fend = true
+					} else if curbuf != old_curbuf {
+						fend = true
+					}
+				}
+				if !fend {
+					read_linecount = (^C.int)(uintptr(curbuf) + B_ML_LINE_COUNT_OFF)^ -
+						read_linecount
+
+					if (shell_flags & KSHELLOPT_READ_O) != 0 {
+						(^C.int)(uintptr(curbuf) + B_OP_START)^ = line2 + 1
+						(^C.int)(uintptr(curbuf) + B_OP_END)^ =
+							(^C.int)(uintptr(curwin) + W_CURSOR_OFF)^
+						appended_lines_mark_r(line2, read_linecount)
+					}
+
+					if do_in {
+						if (cmdmod_cmod_flags & CMOD_KEEPMARKS_O) != 0 ||
+							vim_strchr_c(p_cpo, C.int('R')) == nil {
+							// TODO(bfredl): extmarks inactive here. Columns
+							// mismatch: assume end-of-line changes.
+							if read_linecount >= linecount {
+								// Marks from old lines to new lines.
+								mark_adjust(line1, line2, linecount, 0,
+									kExtmarkNOOP)
+							} else {
+								// Marks to new lines; deleted-line marks
+								// are deleted.
+								mark_adjust(line1, line1 + read_linecount - 1,
+									linecount, 0, kExtmarkNOOP)
+								mark_adjust(line1 + read_linecount, line2,
+									MAXLNUM, 0, kExtmarkNOOP)
+							}
+						}
+
+						// Cursor on first filtered line (":range!cmd").
+						// Adjust '[ and '] (set by buf_write()).
+						(^C.int)(uintptr(curwin) + W_CURSOR_OFF)^ = line1
+						del_lines_r(linecount, true)
+						if read_linecount == 0 {
+							// No output: clamp '[ and '] to a valid line.
+							op_lnum := min(line1,
+								(^C.int)(uintptr(curbuf) + B_ML_LINE_COUNT_OFF)^)
+							(^C.int)(uintptr(curbuf) + B_OP_START)^ = op_lnum
+							(^C.int)(uintptr(curbuf) + B_OP_END)^ = op_lnum
+							(^C.int)(uintptr(curbuf) + B_OP_START + 4)^ = 0
+							(^C.int)(uintptr(curbuf) + B_OP_END + 4)^ = 0
+						} else {
+							(^C.int)(uintptr(curbuf) + B_OP_START)^ -= linecount
+							(^C.int)(uintptr(curbuf) + B_OP_END)^ -= linecount
+						}
+						write_lnum_adjust_r(-linecount)
+						foldUpdate_r(curwin,
+							(^C.int)(uintptr(curbuf) + B_OP_START)^,
+							(^C.int)(uintptr(curbuf) + B_OP_END)^)
+					} else {
+						// Cursor on last new line (":r !cmd").
+						linecount = (^C.int)(uintptr(curbuf) + B_OP_END)^ -
+							(^C.int)(uintptr(curbuf) + B_OP_START)^ + 1
+						(^C.int)(uintptr(curwin) + W_CURSOR_OFF)^ =
+							(^C.int)(uintptr(curbuf) + B_OP_END)^
+					}
+
+					beginline(BL_WHITE | BL_FIX) // first non-blank
+					no_wait_return -= 1
+
+					if i64(linecount) > p_report {
+						if do_in {
+							filt_fmt := cstring("%ld lines filtered")
+							if linecount == 1 {
+								filt_fmt = cstring("%ld line filtered")
+							}
+							libc.snprintf(&msg_buf_g[0],
+								C.size_t(MSG_BUF_LEN_O), filt_fmt,
+								C.longlong(linecount))
+							if msg_msg(cstring(&msg_buf_g[0]), 0) &&
+								!msg_scroll {
+								// Save message for after redraw.
+								set_keep_msg_r(cstring(&msg_buf_g[0]), 0)
+							}
+						} else {
+							msgmore_r(linecount)
+						}
+					}
+				}
+			} else {
+				do_filter_error_o(cursor_save)
+			}
+		}
+	}
+
+	// filterend: always runs.
+	cmdmod_cmod_flags = save_cmod_flags
+	if curbuf != old_curbuf {
+		no_wait_return -= 1
+		emsg(cstring(E135_S))
+	} else if (cmdmod_cmod_flags & CMOD_LOCKMARKS_O) != 0 {
+		(^Pos_T)(uintptr(curbuf) + B_OP_START)^ = orig_start
+		(^Pos_T)(uintptr(curbuf) + B_OP_END)^ = orig_end
+	}
+
+	if itmp != nil {
+		os_remove(cstring(itmp))
+	}
+	if otmp != nil {
+		os_remove(cstring(otmp))
+	}
+	xfree(transmute(rawptr)(itmp))
+	xfree(transmute(rawptr)(otmp))
+}
+
+// ── Batch 31b: do_bang/do_shell + prevcmd (activates do_filter_o) ───────────
+// (free_prev_shellcmd is #ifdef EXITFREE — skipped like free_titles.)
+
+EVENT_SHELLCMDPOST_O :: 101
+E34_S :: "E34: No previous command"
+
+foreign _ {
+	@(link_name = "AppendToRedobuff")
+	AppendToRedobuff_r :: proc "c"(s: cstring) ---
+	@(link_name = "AppendToRedobuffLit")
+	AppendToRedobuffLit_r :: proc "c"(str: cstring, len: C.int) ---
+	@(link_name = "p_warn")
+	p_warn_g: C.int
+	@(link_name = "msg_didout")
+	msg_didout_g: bool
+	@(link_name = "bangredo")
+	bangredo_g: bool
+}
+
+@(private="file")
+prevcmd_f: ^u8
+
+// Bangs in the argument are replaced with the previous command (C static).
+prevcmd_is_set_o :: proc "c"() -> bool {	if prevcmd_f == nil {
+		emsg(cstring(E34_S))
+		return false
+	}
+	return true
+}
+
+// Remember the argument with ! replaced (:!/:range!).
+@(export)
+do_bang :: proc "c"(addr_count: C.int, eap: rawptr, forceit: bool, do_in: bool, do_out: bool) {
+	arg := (^cstring)(uintptr(eap))^ // command
+	line1 := (^C.int)(uintptr(eap) + EXARG_LINE1_OFF)^
+	line2 := (^C.int)(uintptr(eap) + EXARG_LINE2_OFF)^
+	newcmd: ^u8 = nil
+	free_newcmd := false
+	scroll_save := msg_scroll
+
+	// Disallow shell commands in secure mode.
+	if check_secure() {
+		return
+	}
+
+	if addr_count == 0 { // :!
+		msg_scroll = false // don't scroll here
+		autowrite_all()
+		msg_scroll = scroll_save
+	}
+
+	// Embedded bang (":!<cmd> ! [args]"); ":!!" via forceit.
+	ins_prevcmd := forceit
+
+	// Skip leading white space (strange errors with some shells).
+	trailarg := skipwhite(arg)
+	for trailarg != nil {
+		l := C.size_t(libc.strlen(trailarg)) + 1
+		if newcmd != nil {
+			l += C.size_t(libc.strlen(cstring(newcmd)))
+		}
+		if ins_prevcmd {
+			if !prevcmd_is_set_o() {
+				xfree(transmute(rawptr)(newcmd))
+				return
+			}
+			l += C.size_t(libc.strlen(cstring(prevcmd_f)))
+		}
+		t := (^u8)(xmalloc(l))
+		([^]u8)(t)[0] = 0
+		if newcmd != nil {
+			libc.strcat(([^]u8)(t), cstring(newcmd))
+		}
+		if ins_prevcmd {
+			libc.strcat(([^]u8)(t), cstring(prevcmd_f))
+		}
+		p := (^u8)(uintptr(t) + uintptr(libc.strlen(cstring(t))))
+		libc.strcat(([^]u8)(t), trailarg)
+		xfree(transmute(rawptr)(newcmd))
+		newcmd = t
+
+		// Scan for '!' (previous command); "\!" becomes "!".
+		trailarg = nil
+		for ([^]u8)(p)[0] != 0 {
+			if ([^]u8)(p)[0] == '!' {
+				if uintptr(p) > uintptr(newcmd) &&
+					([^]u8)((^u8)(uintptr(p) - 1))[0] == '\\' {
+					libc.memmove(transmute(rawptr)((^u8)(uintptr(p) - 1)),
+						transmute(rawptr)(p),
+						C.size_t(libc.strlen(cstring(p))) + 1)
+				} else {
+					trailarg = cstring((^u8)(uintptr(p) + 1))
+					([^]u8)(p)[0] = 0
+					ins_prevcmd = true
+					break
+				}
+			}
+			p = (^u8)(uintptr(p) + 1)
+		}
+	}
+
+	// Only set prevcmd with a command to run, otherwise keep it.
+	if libc.strlen(cstring(newcmd)) > 0 {
+		xfree(transmute(rawptr)(prevcmd_f))
+		prevcmd_f = newcmd
+	} else {
+		free_newcmd = true
+	}
+
+	done := false
+	if bangredo_g { // put cmd in redo buffer for ! command
+		if !prevcmd_is_set_o() {
+			done = true
+		} else {
+			// Reescape %/# so redo doesn't substitute the buffer name.
+			cmd_esc := vim_strsave_escaped_c(prevcmd_f,
+				transmute(^u8)(cstring("%#")))
+			AppendToRedobuffLit_r(cstring(cmd_esc), -1)
+			xfree(transmute(rawptr)(cmd_esc))
+			AppendToRedobuff_r(cstring("\n"))
+			bangredo_g = false
+		}
+	}
+	if !done {
+		// Quotes around the command, for shells that need them.
+		if ([^]u8)(p_shq_g)[0] != 0 {
+			if free_newcmd {
+				xfree(transmute(rawptr)(newcmd))
+			}
+			newcmd = (^u8)(xmalloc(C.size_t(libc.strlen(cstring(prevcmd_f))) +
+				2 * C.size_t(libc.strlen(cstring(p_shq_g))) + 1))
+			xstrlcpy_o(cstring(newcmd), cstring(p_shq_g),
+				C.size_t(libc.strlen(cstring(prevcmd_f))) +
+				2 * C.size_t(libc.strlen(cstring(p_shq_g))) + 1)
+			_xstrlcat(cstring(newcmd), cstring(prevcmd_f),
+				C.size_t(libc.strlen(cstring(prevcmd_f))) +
+				2 * C.size_t(libc.strlen(cstring(p_shq_g))) + 1)
+			_xstrlcat(cstring(newcmd), cstring(p_shq_g),
+				C.size_t(libc.strlen(cstring(prevcmd_f))) +
+				2 * C.size_t(libc.strlen(cstring(p_shq_g))) + 1)
+			free_newcmd = true
+		}
+		if addr_count == 0 { // :!
+			// Echo the command.
+			msg_start()
+			msg_ext_no_fast()
+			msg_ext_set_kind(cstring("shell_cmd"))
+			msg_putchar(':')
+			msg_putchar('!')
+			msg_outtrans(cstring(newcmd), 0, false)
+			msg_clr_eos_r()
+			ui_cursor_goto_r(msg_row, msg_col)
+
+			do_shell(newcmd, 0)
+		} else { // :range!
+			// May recurse into do_bang() via autocommands.
+			do_filter_o(line1, line2, eap, newcmd, do_in, do_out)
+			apply_autocmds(EVENT_SHELLFILTERPOST_O, nil, nil, false, curbuf)
+		}
+	}
+
+	// theend:
+	if free_newcmd {
+		xfree(transmute(rawptr)(newcmd))
+	}
+}
+
+// Call a shell to execute a command (NULL: interactive shell).
+@(export)
+do_shell :: proc "c"(cmd: ^u8, flags: C.int) {
+	// Disallow shell commands in secure mode.
+	if check_secure() {
+		msg_end()
+		return
+	}
+
+	// Autocommand output on the current screen (no type-return below).
+	msg_putchar('\r') // start of line
+	msg_putchar('\n') // may shift screen one line up
+
+	// Warning before calling the shell.
+	if p_warn_g != 0 && !autocmd_busy_g && msg_silent == 0 {
+		buf := firstbuf
+		for buf != nil {
+			if bufIsChanged(buf) {
+				msg_puts(cstring("[No write since last change]\n"))
+				break
+			}
+			buf = (^rawptr)(uintptr(buf) + B_NEXT_OFF)^
+		}
+	}
+
+	// Required when '\n' issued a terminal "delete line 1".
+	ui_cursor_goto_r(msg_row, msg_col)
+	call_shell(cmd, flags, nil)
+	if msg_silent == 0 {
+		msg_didout_g = true
+	}
+	did_check_timestamps_g = false
+	need_check_timestamps_g = true
+
+	// End of screen: avoids wait_return() overwriting command output.
+	msg_row = Rows - 1
+	msg_col = 0
+
+	apply_autocmds(EVENT_SHELLCMDPOST_O, nil, nil, false, curbuf)
+}
+
+// ── Batch 32: :print/:list/:number (print_line/print_line_no_prefix) ────────
+
+foreign _ {
+	@(link_name = "number_width")
+	number_width_r :: proc "c"(wp: rawptr) -> C.int ---
+	// silent_mode already in main.odin; info_message in option.odin — reuse.
+}
+
+// Start a new message only once during :global (C static).
+@(private="file")
+global_need_msg_kind_f: bool
+
+// Print line "lnum" with optional number prefix.
+@(export)
+print_line_no_prefix :: proc "c"(lnum: C.int, use_number: bool, list: bool) {
+	numbuf: [30]u8
+
+	if (^C.int)(uintptr(curwin) + W_P_NU_OFF)^ != 0 || use_number {
+		libc.snprintf(&numbuf[0], C.size_t(30), cstring("%*d "),
+			number_width_r(curwin), lnum)
+		msg_puts_hl_r(cstring(&numbuf[0]), HLF_N_S + 1, false)
+	}
+	msg_prt_line_r(ml_get(lnum), list)
+}
+
+// Print a text line (also in silent/batch mode).
+@(export)
+print_line :: proc "c"(lnum: C.int, use_number: bool, list: bool, first: bool) {
+	save_silent := silent_mode
+
+	// Apply :filter /pat/.
+	if message_filtered(cstring(ml_get(lnum))) {
+		return
+	}
+
+	silent_mode = false
+	info_message_g2 = true // use stdout, not stderr
+	if ((global_busy == 0 || global_need_msg_kind_f) && first) {
+		msg_start()
+		msg_ext_set_kind(cstring("list_cmd"))
+		global_need_msg_kind_f = false
+	} else if !save_silent {
+		msg_putchar('\n') // no trailing newline with regular messaging
+	}
+	print_line_no_prefix(lnum, use_number, list)
+	if save_silent {
+		msg_putchar('\n') // batch message always ends in newline
+		silent_mode = save_silent
+	}
+	info_message_g2 = false
+}
+
+// ── Batch 33: :append/:insert/:change/:z ────────────────────────────────────
+
+EXARG_FLAGS_OFF :: 96
+EXFLAG_LIST_O :: 0x01
+EXFLAG_NR_O :: 0x02
+W_P_SCR_ABS :: 1040 // win_T.w_p_scr (cc-probed)
+CMD_CHANGE_O :: 43
+CMD_APPEND_O :: 0
+E144_S :: "E144: Non-numeric argument to :z"
+
+foreign _ {
+	@(link_name = "get_indent_lnum")
+	get_indent_lnum_r :: proc "c"(lnum: C.int) -> C.int ---
+	@(link_name = "appended_lines")
+	appended_lines_r :: proc "c"(lnum: C.int, count: C.int) ---
+	// p_window_g already in window.odin — reuse.
+}
+
+@(private="file")
+append_indent_f: C.int
+
+// ":insert" and ":append", also used by ":change".
+@(export)
+ex_append :: proc "c"(eap: rawptr) {
+	theline: ^u8 = nil
+	did_undo := false
+	lnum := (^C.int)(uintptr(eap) + EXARG_LINE2_OFF)^
+	indent: C.int = 0
+	p: ^u8 = nil
+	empty := ((^C.int)(uintptr(curbuf) + B_ML_FLAGS_OFF)^ & ML_EMPTY_O) != 0
+	arg := (^cstring)(uintptr(eap))^
+
+	// The ! flag toggles autoindent.
+	if (^C.int)(uintptr(eap) + EXARG_FORCEIT_OFF)^ != 0 {
+		ai := (^C.int)(uintptr(curbuf) + B_P_AI_OFF)^
+		(^C.int)(uintptr(curbuf) + B_P_AI_OFF)^ = ai == 0 ? 1 : 0
+	}
+
+	// First autoindent comes from the line we start on.
+	if (^C.int)(uintptr(eap) + EXARG_CMDIDX_OFF)^ != CMD_CHANGE_O &&
+		(^C.int)(uintptr(curbuf) + B_P_AI_OFF)^ != 0 && lnum > 0 {
+		append_indent_f = get_indent_lnum_r(lnum)
+	}
+
+	if (^C.int)(uintptr(eap) + EXARG_CMDIDX_OFF)^ != CMD_APPEND_O {
+		lnum -= 1
+	}
+
+	// Empty buffer: delete the dummy line.
+	if empty && lnum == 1 {
+		lnum = 0
+	}
+
+	State = MODE_INSERT // behave like in Insert mode
+	if (^C.longlong)(uintptr(curbuf) + B_P_IMINSERT_OFF)^ == B_IMODE_LMAP {
+		State |= MODE_LANGMAP
+	}
+
+	for {
+		msg_scroll = true
+		need_wait_return_g = false
+		if (^C.int)(uintptr(curbuf) + B_P_AI_OFF)^ != 0 {
+			if append_indent_f >= 0 {
+				indent = append_indent_f
+				append_indent_f = -1
+			} else if lnum > 0 {
+				indent = get_indent_lnum_r(lnum)
+			}
+		}
+		if ([^]u8)(transmute(^u8)(arg))[0] == '|' {
+			// Text after the trailing bar.
+			theline = xstrdup_o((^u8)(uintptr(transmute(^u8)(arg)) + 1))
+			([^]u8)(transmute(^u8)(arg))[0] = 0
+		} else {
+			getline_fn_raw := (^rawptr)(uintptr(eap) + 168)^
+			if getline_fn_raw == nil {
+				// No getline(): use the following lines (ends at end).
+				nextcmd := (^rawptr)(uintptr(eap) + 32)^
+				if nextcmd == nil {
+					break
+				}
+				nc := (^u8)(nextcmd)
+				p = vim_strchr(nc, C.int('\n'))
+				if p == nil {
+					p = (^u8)(uintptr(nc) + uintptr(libc.strlen(cstring(nc))))
+				}
+				theline = xmemdupz_o2(nc, C.size_t(uintptr(p) - uintptr(nc)))
+				if ([^]u8)(p)[0] != 0 {
+					p = (^u8)(uintptr(p) + 1)
+				} else {
+					p = nil
+				}
+				(^rawptr)(uintptr(eap) + 32)^ = rawptr(p)
+			} else {
+				save_State := State
+				// Avoid MODE_INSERT cursor shape from getline().
+				State = MODE_CMDLINE_O
+				cstack := (^rawptr)(uintptr(eap) + 184)^
+				llevel: C.int = 0
+				if cstack != nil {
+					llevel = (^C.int)(uintptr(cstack) + 1260)^
+				}
+				getline_fn := transmute(proc "c"(c: C.int, cookie: rawptr,
+					ind: C.int, b: bool) -> ^u8)(getline_fn_raw)
+				theline = getline_fn(llevel > 0 ? -1 : 0,
+					(^rawptr)(uintptr(eap) + 176)^, indent, true)
+				State = save_State
+			}
+		}
+		lines_left = Rows - 1
+		if theline == nil {
+			break
+		}
+
+		// Look for "." after automatic indent.
+		vcol: C.int = 0
+		p = theline
+		for vcol < indent {
+			if ([^]u8)(p)[0] == ' ' {
+				vcol += 1
+			} else if ([^]u8)(p)[0] == '\t' {
+				vcol += 8 - vcol % 8
+			} else {
+				break
+			}
+			p = (^u8)(uintptr(p) + 1)
+		}
+		if (([^]u8)(p)[0] == '.' && ([^]u8)(p)[1] == 0) ||
+			(!did_undo && u_save(lnum, lnum + 1 + (empty ? 1 : 0)) == FAIL) {
+			xfree(transmute(rawptr)(theline))
+			break
+		}
+
+		// No autoindent when nothing was typed.
+		if ([^]u8)(p)[0] == 0 {
+			([^]u8)(theline)[0] = 0
+		}
+
+		did_undo = true
+		ml_append_c(lnum, theline, 0, false)
+		if empty {
+			// No marks below the inserted lines.
+			appended_lines_r(lnum, 1)
+		} else {
+			appended_lines_mark_r(lnum, 1)
+		}
+
+		xfree(transmute(rawptr)(theline))
+		lnum += 1
+
+		if empty {
+			ml_delete_r(2)
+			empty = false
+		}
+	}
+	State = MODE_NORMAL_O
+	ui_cursor_shape_r()
+
+	if (^C.int)(uintptr(eap) + EXARG_FORCEIT_OFF)^ != 0 {
+		ai := (^C.int)(uintptr(curbuf) + B_P_AI_OFF)^
+		(^C.int)(uintptr(curbuf) + B_P_AI_OFF)^ = ai == 0 ? 1 : 0
+	}
+
+	// "start" is eap->line2+1 unless invalid (line2 at end, nothing
+	// appended); "end" is lnum when appended, else same as "start".
+	if (cmdmod_cmod_flags & CMOD_LOCKMARKS_O) == 0 {
+		if (^C.int)(uintptr(eap) + EXARG_LINE2_OFF)^ <
+			(^C.int)(uintptr(curbuf) + B_ML_LINE_COUNT_OFF)^ {
+			(^C.int)(uintptr(curbuf) + B_OP_START)^ =
+				(^C.int)(uintptr(eap) + EXARG_LINE2_OFF)^ + 1
+		} else {
+			(^C.int)(uintptr(curbuf) + B_OP_START)^ =
+				(^C.int)(uintptr(curbuf) + B_ML_LINE_COUNT_OFF)^
+		}
+		if (^C.int)(uintptr(eap) + EXARG_CMDIDX_OFF)^ != CMD_APPEND_O {
+			(^C.int)(uintptr(curbuf) + B_OP_START)^ -= 1
+		}
+		if (^C.int)(uintptr(eap) + EXARG_LINE2_OFF)^ < lnum {
+			(^C.int)(uintptr(curbuf) + B_OP_END)^ = lnum
+		} else {
+			(^C.int)(uintptr(curbuf) + B_OP_END)^ =
+				(^C.int)(uintptr(curbuf) + B_OP_START)^
+		}
+		(^C.int)(uintptr(curbuf) + B_OP_START + 4)^ = 0
+		(^C.int)(uintptr(curbuf) + B_OP_END + 4)^ = 0
+	}
+	(^C.int)(uintptr(curwin) + W_CURSOR_OFF)^ = lnum
+	check_cursor_lnum_r(curwin)
+	beginline(BL_SOL | BL_FIX)
+}
+
+// ":change" — delete lines, then append.
+@(export)
+ex_change :: proc "c"(eap: rawptr) {
+	line1 := (^C.int)(uintptr(eap) + EXARG_LINE1_OFF)^
+	line2 := (^C.int)(uintptr(eap) + EXARG_LINE2_OFF)^
+
+	if line2 >= line1 && u_save(line1 - 1, line2 + 1) == FAIL {
+		return
+	}
+
+	// The ! flag toggles autoindent.
+	fi := (^C.int)(uintptr(eap) + EXARG_FORCEIT_OFF)^ != 0
+	ai := (^C.int)(uintptr(curbuf) + B_P_AI_OFF)^ != 0
+	if (fi && !ai) || (!fi && ai) {
+		append_indent_f = get_indent_lnum_r(line1)
+	}
+
+	lnum := line2
+	for lnum >= line1 {
+		if ((^C.int)(uintptr(curbuf) + B_ML_FLAGS_OFF)^ & ML_EMPTY_O) != 0 {
+			break // nothing to delete
+		}
+		ml_delete_r(line1)
+		lnum -= 1
+	}
+
+	// Cursor must not be beyond end of file now.
+	check_cursor_lnum_r(curwin)
+	deleted_lines_mark_r(line1, line2 - lnum)
+
+	// ":append" on the line above the deleted lines.
+	(^C.int)(uintptr(eap) + EXARG_LINE2_OFF)^ = line1
+	ex_append(eap)
+}
+
+// ":z" — print a window of lines around line2.
+@(export)
+ex_z :: proc "c"(eap: rawptr) {
+	bigness: C.longlong = 0
+	minus := 0
+	start, end, curs: C.int = 0, 0, 0
+	lnum := (^C.int)(uintptr(eap) + EXARG_LINE2_OFF)^
+
+	// Vi compatible: ":z!" uses display height, no count uses 'scroll'.
+	if (^C.int)(uintptr(eap) + EXARG_FORCEIT_OFF)^ != 0 {
+		bigness = C.longlong(Rows) - 1
+	} else if firstwin == lastwin_g {
+		bigness = C.longlong((^C.longlong)(uintptr(curwin) + W_P_SCR_ABS)^) * 2
+	} else {
+		bigness = C.longlong((^C.int)(uintptr(curwin) + W_VIEW_HEIGHT_OFF)^) - 3
+	}
+	if bigness < 1 {
+		bigness = 1
+	}
+
+	arg := (^cstring)(uintptr(eap))^
+	x := transmute(^u8)(arg)
+	kind := x
+	if ([^]u8)(x)[0] == '-' || ([^]u8)(x)[0] == '+' ||
+		([^]u8)(x)[0] == '=' || ([^]u8)(x)[0] == '^' ||
+		([^]u8)(x)[0] == '.' {
+		x = (^u8)(uintptr(x) + 1)
+	}
+	for ([^]u8)(x)[0] == '-' || ([^]u8)(x)[0] == '+' {
+		x = (^u8)(uintptr(x) + 1)
+	}
+
+	if ([^]u8)(x)[0] != 0 {
+		if !ascii_isdigit_o(([^]u8)(x)[0]) {
+			emsg(cstring(E144_S))
+			return
+		}
+		bigness = C.longlong(libc.atol(cstring(x)))
+
+		// bigness could be < 0 on atol() overflow.
+		if bigness > 2 * C.longlong((^C.int)(uintptr(curbuf) + B_ML_LINE_COUNT_OFF)^) ||
+			bigness < 0 {
+			bigness = 2 * C.longlong((^C.int)(uintptr(curbuf) + B_ML_LINE_COUNT_OFF)^)
+		}
+
+		p_window_g = bigness
+		if ([^]u8)(kind)[0] == '=' {
+			bigness += 2
+		}
+	}
+
+	// '-'/' '+' count multiplies the distance.
+	if ([^]u8)(kind)[0] == '-' || ([^]u8)(kind)[0] == '+' {
+		for x = (^u8)(uintptr(kind) + 1); ([^]u8)(x)[0] == ([^]u8)(kind)[0]; {
+			x = (^u8)(uintptr(x) + 1)
+		}
+	}
+
+	k := ([^]u8)(kind)[0]
+	if k == '-' {
+		start = lnum - C.int(bigness) * C.int(uintptr(x) - uintptr(kind)) + 1
+		end = start + C.int(bigness) - 1
+		curs = end
+	} else if k == '=' {
+		start = lnum - (C.int(bigness) + 1) / 2 + 1
+		end = lnum + (C.int(bigness) + 1) / 2 - 1
+		curs = lnum
+		minus = 1
+	} else if k == '^' {
+		start = lnum - C.int(bigness) * 2
+		end = lnum - C.int(bigness)
+		curs = lnum - C.int(bigness)
+	} else if k == '.' {
+		start = lnum - (C.int(bigness) + 1) / 2 + 1
+		end = lnum + (C.int(bigness) + 1) / 2 - 1
+		curs = end
+	} else { // '+'
+		start = lnum
+		if k == '+' {
+			start += C.int(bigness) * C.int(uintptr(x) - uintptr(kind) - 1) + 1
+		} else if (^C.int)(uintptr(eap) + EXARG_ADDR_COUNT_OFF)^ == 0 {
+			start += 1
+		}
+		end = start + C.int(bigness) - 1
+		curs = end
+	}
+
+	start = max(start, 1)
+	end = min(end, (^C.int)(uintptr(curbuf) + B_ML_LINE_COUNT_OFF)^)
+	curs = min(max(curs, 1), (^C.int)(uintptr(curbuf) + B_ML_LINE_COUNT_OFF)^)
+
+	i := start
+	for i <= end {
+		if minus != 0 && i == lnum {
+			msg_putchar('\n')
+
+			j: C.int = 1
+			for j < Columns {
+				msg_putchar('-')
+				j += 1
+			}
+		}
+
+		print_line(i, ((^C.int)(uintptr(eap) + EXARG_FLAGS_OFF)^ & EXFLAG_NR_O) != 0,
+			((^C.int)(uintptr(eap) + EXARG_FLAGS_OFF)^ & EXFLAG_LIST_O) != 0, i == start)
+
+		if minus != 0 && i == lnum {
+			msg_putchar('\n')
+
+			j: C.int = 1
+			for j < Columns {
+				msg_putchar('-')
+				j += 1
+			}
+		}
+		i += 1
+	}
+
+	if (^C.int)(uintptr(curwin) + W_CURSOR_OFF)^ != curs {
+		(^C.int)(uintptr(curwin) + W_CURSOR_OFF)^ = curs
+		(^C.int)(uintptr(curwin) + W_CURSOR_OFF + 4)^ = 0
+	}
+	ex_no_reprint_g = true
 }

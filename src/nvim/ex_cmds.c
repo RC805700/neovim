@@ -435,6 +435,7 @@ static int sort_compare(const void *s1, const void *s2)
 }
 
 /// ":sort".
+#pragma weak ex_sort
 void ex_sort(exarg_T *eap)
 {
   regmatch_T regmatch;
@@ -693,6 +694,7 @@ sortend:
 }
 
 /// ":uniq".
+#pragma weak ex_uniq
 void ex_uniq(exarg_T *eap)
 {
   regmatch_T regmatch;
@@ -892,6 +894,7 @@ uniqend:
 /// :move command - move lines line1-line2 to line dest
 ///
 /// @return  FAIL for failure, OK otherwise
+#pragma weak do_move
 int do_move(linenr_T line1, linenr_T line2, linenr_T dest)
 {
   if (dest >= line1 && dest < line2) {
@@ -1036,6 +1039,7 @@ int do_move(linenr_T line1, linenr_T line2, linenr_T dest)
 }
 
 /// ":copy"
+#pragma weak ex_copy
 void ex_copy(linenr_T line1, linenr_T line2, linenr_T n)
 {
   linenr_T count = line2 - line1 + 1;
@@ -1111,6 +1115,7 @@ static int prevcmd_is_set(void)
 /// Handle the ":!cmd" command.  Also for ":r !cmd" and ":w !cmd"
 /// Bangs in the argument are replaced with the previously entered command.
 /// Remember the argument.
+#pragma weak do_bang
 void do_bang(int addr_count, exarg_T *eap, bool forceit, bool do_in, bool do_out)
   FUNC_ATTR_NONNULL_ALL
 {
@@ -1482,6 +1487,7 @@ filterend:
 /// When "cmd" is NULL start an interactive shell.
 ///
 /// @param flags  may be SHELL_DOOUT when output is redirected
+#pragma weak do_shell
 void do_shell(char *cmd, int flags)
 {
   // Disallow shell commands in secure mode
@@ -1552,6 +1558,7 @@ static char *find_pipe(const char *cmd)
 /// @param otmp NULL or the output file.
 /// @param do_in true if stdin is needed.
 /// @returns an allocated string with the shell command.
+#pragma weak make_filter_cmd
 char *make_filter_cmd(char *cmd, char *itmp, char *otmp, bool do_in)
 {
   bool is_fish_shell =
@@ -1655,6 +1662,7 @@ char *make_filter_cmd(char *cmd, char *itmp, char *otmp, bool do_in)
 ///                  a space, opt, a space and then fname if `%s` is not found
 ///                  there.
 /// @param[in]  fname  File name to append.
+#pragma weak append_redir
 void append_redir(char *const buf, const size_t buflen, const char *const opt,
                   const char *const fname)
 {
@@ -1682,10 +1690,10 @@ void append_redir(char *const buf, const size_t buflen, const char *const opt,
   }
 }
 
+#pragma weak print_line_no_prefix
 void print_line_no_prefix(linenr_T lnum, bool use_number, bool list)
 {
   char numbuf[30];
-
   if (curwin->w_p_nu || use_number) {
     vim_snprintf(numbuf, sizeof(numbuf), "%*" PRIdLINENR " ",
                  number_width(curwin), lnum);
@@ -1697,6 +1705,7 @@ void print_line_no_prefix(linenr_T lnum, bool use_number, bool list)
 static bool global_need_msg_kind = false;  // Start new message only once during :global.
 
 /// Print a text line.  Also in silent mode ("ex -s").
+#pragma weak print_line
 void print_line(linenr_T lnum, bool use_number, bool list, bool first)
 {
   bool save_silent = silent_mode;
@@ -2981,6 +2990,7 @@ static void delbuf_msg(char *name)
 static int append_indent = 0;       // autoindent for first line
 
 /// ":insert" and ":append", also used by ":change"
+#pragma weak ex_append
 void ex_append(exarg_T *eap)
 {
   char *theline;
@@ -3129,6 +3139,7 @@ void ex_append(exarg_T *eap)
 }
 
 /// ":change"
+#pragma weak ex_change
 void ex_change(exarg_T *eap)
 {
   linenr_T lnum;
@@ -3159,6 +3170,7 @@ void ex_change(exarg_T *eap)
   ex_append(eap);
 }
 
+#pragma weak ex_z
 void ex_z(exarg_T *eap)
 {
   int64_t bigness;
