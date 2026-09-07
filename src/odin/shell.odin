@@ -1034,9 +1034,9 @@ do_os_system :: proc(argv: ^^u8, input: ^u8, len: c.size_t, output: ^^u8, nread:
 		out_data_ring(nil, c.size_t(SIZE_MAX))
 	}
 	if forward_output {
-		no_wait_return = true
+		no_wait_return = 1
 		msg_end()
-		no_wait_return = false
+		no_wait_return = 0
 		msg_no_more = 0
 	}
 

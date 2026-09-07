@@ -2098,6 +2098,7 @@ int check_overwrite(exarg_T *eap, buf_T *buf, char *fname, char *ffname, bool ot
 }
 
 /// Handle ":wnext", ":wNext" and ":wprevious" commands.
+#pragma weak ex_wnext
 void ex_wnext(exarg_T *eap)
 {
   int i;
@@ -2115,6 +2116,7 @@ void ex_wnext(exarg_T *eap)
 }
 
 /// ":wall", ":wqall" and ":xall": Write all changed files (and exit).
+#pragma weak do_wqall
 void do_wqall(exarg_T *eap)
 {
   int error = 0;
@@ -2242,6 +2244,7 @@ static int check_readonly(int *forceit, buf_T *buf)
 ///           GETFILE_NOT_WRITTEN for "not written" error,
 ///           GETFILE_SAME_FILE for success
 ///           GETFILE_OPEN_OTHER for successfully opening another file.
+#pragma weak getfile
 int getfile(int fnum, char *ffname_arg, char *sfname_arg, bool setpm, linenr_T lnum, bool forceit)
 {
   if (!check_can_set_curbuf_forceit(forceit)) {

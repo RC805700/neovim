@@ -1212,8 +1212,7 @@ foreign _ {
 
 	@(link_name = "prepare_tagpreview")
 	prepare_tagpreview :: proc "c" (keep_help: bool) ---
-	@(link_name = "getfile")
-	getfile_r :: proc "c" (fnum: C.int, ffname: ^u8, sfname: ^u8, setpm: bool, lnum: C.int, forceit: bool) -> C.int ---
+	// getfile now defined in ex_cmds.odin — call directly (cstring args).
 	@(link_name = "validate_cursor")
 	validate_cursor_r :: proc "c" (wp: rawptr) ---
 
@@ -3481,7 +3480,7 @@ find_pattern_in_path :: proc "c"(
 										outer_break = true
 										break
 									}
-									if getfile_r(buf_fnum_of(buf_of_curwin()), nil, nil, true, lnum, forceit) > 0 {
+									if getfile(buf_fnum_of(buf_of_curwin()), nil, nil, true, lnum, forceit) > 0 {
 										outer_break = true
 										break
 									}
@@ -3491,7 +3490,7 @@ find_pattern_in_path :: proc "c"(
 								win_cursor_r(curwin)^.lnum = lnum
 								check_cursor_r(curwin)
 							} else {
-								if getfile_r(0, files[depth].name, nil, true, files[depth].lnum, forceit) > 0 {
+								if getfile(0, cstring(files[depth].name), nil, true, files[depth].lnum, forceit) > 0 {
 									outer_break = true
 									break
 								}

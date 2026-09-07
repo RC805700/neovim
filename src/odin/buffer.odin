@@ -1036,7 +1036,7 @@ buflist_getfile :: proc "c"(n: C.int, lnum_in: C.int, options: C.int, forceit: C
 	}
 	RedrawingDisabled += 1
 	// GETFILE_SUCCESS(x) is ((x) <= 0): getfile returns 0/-ve on success.
-	if getfile_r((^C.int)(uintptr(buf) + B_FNUM_OFF)^, nil, nil,
+	if getfile((^C.int)(uintptr(buf) + B_FNUM_OFF)^, nil, nil,
 		(options & GETF_SETMARK) != 0, lnum, forceit != 0) <= 0 {
 		RedrawingDisabled -= 1
 		// cursor is at to BOL and w_cursor.lnum is checked due to getfile()

@@ -2696,9 +2696,9 @@ do_set :: proc "c"(arg_in: ^u8, opt_flags: C.int) -> C.int {
 					}
 					trans_characters_o(&IObuff[0], 1025)
 
-					no_wait_return = true
+					no_wait_return = 1
 					emsg(transmute(cstring)(&IObuff[0]))
-					no_wait_return = false
+					no_wait_return = 0
 
 					return 0 // FAIL
 				}

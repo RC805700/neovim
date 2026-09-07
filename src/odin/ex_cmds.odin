@@ -842,3 +842,288 @@ ex_write :: proc "c"(eap: rawptr) {
 		do_write_r(eap)
 	}
 }
+
+// ── Batch 27: :wnext/:wNext + :wall/:wqall/:xall ────────────────────────────
+
+CMD_WALL_O :: 528
+CMD_WQALL_O :: 537
+CMD_XALL_O :: 542
+// EXARG_CMD_OFF already in buffer.odin — reuse.
+GETFILE_ERROR_O :: 1
+GETFILE_NOT_WRITTEN_O :: 2
+GETFILE_SAME_FILE_O :: 0
+GETFILE_OPEN_OTHER_O :: -1
+EXARG_MKDIR_P_OFF :: 140
+VIM_QUESTION_O :: 4
+VIM_YES_O :: 2
+DIALOG_MSG_SIZE_O :: 1000
+E141_S :: "E141: No file name for buffer %ld"
+E142_S :: "E142: File not written: Writing is disabled by 'write' option"
+E45_S :: "E45: 'readonly' option is set (add ! to override)"
+E505_S :: "E505: \"%s\" is read-only (add ! to override)"
+
+foreign _ {
+	@(link_name = "do_argfile")
+	do_argfile_r :: proc "c"(eap: rawptr, argn: C.int) ---
+	@(link_name = "before_quit_all")
+	before_quit_all_r :: proc "c"(eap: rawptr) -> C.int ---
+	@(link_name = "check_overwrite")
+	check_overwrite_r :: proc "c"(eap: rawptr, buf: rawptr, fname: cstring, ffname: cstring, other: bool) -> C.int ---
+	@(link_name = "buf_write_all")
+	buf_write_all_r :: proc "c"(buf: rawptr, forceit: bool) -> C.int ---
+	@(link_name = "not_exiting")
+	not_exiting_r :: proc "c"(save_exiting: bool) ---
+	@(link_name = "vim_dialog_yesno")
+	vim_dialog_yesno_r :: proc "c"(typ: C.int, title: cstring, message: cstring, dflt: C.int) -> C.int ---
+	// p_confirm_g/p_write_g already in buffer.odin — reuse.
+}
+
+// Check the 'write' option (C static).
+not_writing_o :: proc "c"() -> bool {
+	if p_write_g != 0 {
+		return false
+	}
+	emsg(cstring(E142_S))
+	return true
+}
+
+// Read-only buffer check with confirm-dialog support (C static).
+// Returns true (and errors) when the buffer is readonly.
+check_readonly_o :: proc "c"(forceit: ^C.int, buf: rawptr) -> bool {
+	// 'readonly' set, or file exists and is not writable.
+	if forceit^ == 0 &&
+		((^C.int)(uintptr(buf) + B_P_RO_OFF)^ != 0 ||
+			(os_path_exists(cstring((^u8)((^rawptr)(uintptr(buf) + B_FFNAME)^))) &&
+				os_file_is_writable(cstring((^u8)((^rawptr)(uintptr(buf) + B_FFNAME)^))) == 0)) {
+		fname := (^u8)((^rawptr)(uintptr(buf) + B_FNAME)^)
+		if (p_confirm_g != 0 ||
+			(cmdmod_cmod_flags & CMOD_CONFIRM_O) != 0) && fname != nil {
+			buff: [DIALOG_MSG_SIZE_O]u8
+			if (^C.int)(uintptr(buf) + B_P_RO_OFF)^ != 0 {
+				libc.snprintf(&buff[0], C.size_t(DIALOG_MSG_SIZE_O),
+					cstring("'readonly' option is set for \"%s\".\nDo you wish to write anyway?"),
+					cstring(fname))
+			} else {
+				libc.snprintf(&buff[0], C.size_t(DIALOG_MSG_SIZE_O),
+					cstring("File permissions of \"%s\" are read-only.\nIt may still be possible to write it.\nDo you wish to try?"),
+					cstring(fname))
+			}
+
+			if vim_dialog_yesno_r(VIM_QUESTION_O, nil, cstring(&buff[0]), 2) ==
+				VIM_YES_O {
+				forceit^ = 1 // force writing of a readonly file
+				return false
+			}
+			return true
+		} else if (^C.int)(uintptr(buf) + B_P_RO_OFF)^ != 0 {
+			emsg(cstring(E45_S))
+		} else {
+			emsg_ro_file(cstring(fname))
+		}
+		return true
+	}
+
+	return false
+}
+
+// E505 with a possibly-NULL file name (split for single-line snprintf).
+emsg_ro_file :: proc "c"(fname: cstring) {
+	msg: [256]u8
+	if fname == nil {
+		libc.snprintf(&msg[0], C.size_t(256), cstring(E505_S), cstring(""))
+	} else {
+		libc.snprintf(&msg[0], C.size_t(256), cstring(E505_S), fname)
+	}
+	emsg(cstring(&msg[0]))
+}
+
+// ":wall", ":wqall", ":xall": write all changed files (and exit).
+@(export)
+do_wqall :: proc "c"(eap: rawptr) {
+	error := 0
+	save_forceit := (^C.int)(uintptr(eap) + EXARG_FORCEIT_OFF)^
+	save_exiting := exiting
+
+	cmdidx := (^C.int)(uintptr(eap) + EXARG_CMDIDX_OFF)^
+	if cmdidx == CMD_XALL_O || cmdidx == CMD_WQALL_O {
+		if before_quit_all_r(eap) == FAIL {
+			return
+		}
+		exiting = true
+	}
+
+	buf := firstbuf
+	for buf != nil {
+		if exiting && (^C.int)(uintptr(eap) + EXARG_FORCEIT_OFF)^ == 0 &&
+			(^rawptr)(uintptr(buf) + B_TERMINAL_OFF)^ != nil &&
+			// TODO(zeertzjq): always false for nvim_open_term() terminals;
+			// use terminal_running() instead?
+			channel_job_running_r((^u64)(uintptr(buf) + B_P_CHANNEL_OFF)^) {
+			no_write_message_buf(buf)
+			error += 1
+		} else if !bufIsChanged(buf) || bt_dontwrite(buf) {
+			// Skip unchanged/unwritable buffers (no continue: if/else).
+		} else if not_writing_o() {
+			// 'write' option reason (breaks the loop in C).
+			error += 1
+			break
+		} else {
+			// Check writability: 'write' option(above), file name,
+			// readonly, overwrite permission.
+			fname := (^u8)((^rawptr)(uintptr(buf) + B_FNAME)^)
+			ffname := (^u8)((^rawptr)(uintptr(buf) + B_FFNAME)^)
+			if ffname == nil {
+				msg: [128]u8
+				libc.snprintf(&msg[0], C.size_t(128), cstring(E141_S),
+					C.longlong((^C.int)(uintptr(buf) + B_FNUM_OFF)^))
+				emsg(cstring(&msg[0]))
+				error += 1
+			} else {
+				forceit := (^C.int)(uintptr(eap) + EXARG_FORCEIT_OFF)^
+				ro_failed := check_readonly_o(&forceit, buf)
+				(^C.int)(uintptr(eap) + EXARG_FORCEIT_OFF)^ = forceit
+				if ro_failed ||
+					check_overwrite_r(eap, buf, cstring(fname), cstring(ffname),
+						false) == FAIL {
+					error += 1
+				} else {
+					bufref: Bufref_T
+					set_bufref(&bufref, buf)
+					mkdir_p := (^C.int)(uintptr(eap) + EXARG_MKDIR_P_OFF)^ != 0
+					w_ok := true
+					if mkdir_p {
+						mk_fname := fname
+						if mk_fname == nil {
+							mk_fname = transmute(^u8)(cstring(""))
+						}
+						if handle_mkdir_p_arg_o(eap, cstring(mk_fname)) == FAIL {
+							w_ok = false
+						}
+					}
+					if w_ok &&
+						buf_write_all_r(buf,
+							(^C.int)(uintptr(eap) + EXARG_FORCEIT_OFF)^ != 0) == FAIL {
+						error += 1
+					}
+					// An autocommand may have deleted the buffer.
+					if !bufref_valid(&bufref) {
+						buf = firstbuf
+					}
+				}
+			}
+			(^C.int)(uintptr(eap) + EXARG_FORCEIT_OFF)^ = save_forceit
+		}
+		buf = (^rawptr)(uintptr(buf) + B_NEXT_OFF)^
+	}
+	if exiting {
+		if error == 0 {
+			getout(0) // exit Vim
+		}
+		not_exiting_r(save_exiting)
+	}
+}
+
+// "++p" argument: create directories for "fname" (C static).
+handle_mkdir_p_arg_o :: proc "c"(eap: rawptr, fname: cstring) -> C.int {
+	if (^C.int)(uintptr(eap) + EXARG_MKDIR_P_OFF)^ != 0 &&
+		os_file_mkdir(fname, 0o755) < 0 {
+		return FAIL
+	}
+
+	return OK
+}
+
+// Handle ":wnext", ":wNext" and ":wprevious" commands.
+@(export)
+ex_wnext :: proc "c"(eap: rawptr) {
+	i: C.int
+	cmd := (^cstring)(uintptr(eap) + EXARG_CMD_OFF)^
+	if ([^]u8)(transmute(^u8)(cmd))[1] == 'n' {
+		i = (^C.int)(uintptr(curwin) + W_ARG_IDX_OFF)^ +
+			(^C.int)(uintptr(eap) + EXARG_LINE2_OFF)^
+	} else {
+		i = (^C.int)(uintptr(curwin) + W_ARG_IDX_OFF)^ -
+			(^C.int)(uintptr(eap) + EXARG_LINE2_OFF)^
+	}
+	(^C.int)(uintptr(eap) + EXARG_LINE1_OFF)^ = 1
+	(^C.int)(uintptr(eap) + EXARG_LINE2_OFF)^ =
+		(^C.int)(uintptr(curbuf) + B_ML_LINE_COUNT_OFF)^
+	if do_write_r(eap) != FAIL {
+		do_argfile_r(eap, i)
+	}
+}
+
+// ── Batch 28: getfile (try to abandon current file, edit new/existing) ─────
+
+// Try to abandon the current file and edit a new or existing file.
+//
+// @return GETFILE_ERROR/NOT_WRITTEN/SAME_FILE/OPEN_OTHER.
+@(export)
+getfile :: proc "c"(fnum: C.int, ffname_arg: cstring, sfname_arg: cstring, setpm: bool, lnum: C.int, forceit: bool) -> C.int {
+	if !check_can_set_curbuf_forceit(forceit ? 1 : 0) {
+		return GETFILE_ERROR_O
+	}
+
+	ffname := ffname_arg
+	sfname := sfname_arg
+	other := false
+	retval: C.int = GETFILE_ERROR_O
+	free_me: ^u8 = nil
+
+	if text_locked_r() {
+		return GETFILE_ERROR_O
+	}
+	if curbuf_locked_r() {
+		return GETFILE_ERROR_O
+	}
+
+	if fnum == 0 {
+		// Make ffname full path, set sfname.
+		fname_expand(curbuf, &ffname, &sfname)
+		other = otherfile(ffname)
+		free_me = transmute(^u8)(ffname) // allocated, free() later
+	} else {
+		other = fnum != (^C.int)(uintptr(curbuf) + B_FNUM_OFF)^
+	}
+
+	if other {
+		no_wait_return += 1 // don't wait for autowrite message
+	}
+	if other && !forceit &&
+		(^C.int)(uintptr(curbuf) + B_NWINDOWS_OFF)^ == 1 &&
+		!buf_hide(curbuf) && curbufIsChanged() &&
+		autowrite_r(curbuf, forceit) == FAIL {
+		if p_confirm_g != 0 && p_write_g != 0 {
+			dialog_changed_r(curbuf, false)
+		}
+		if curbufIsChanged() {
+			no_wait_return -= 1
+			no_write_message()
+			xfree(free_me)
+			return GETFILE_NOT_WRITTEN_O // file has been changed
+		}
+	}
+	if other {
+		no_wait_return -= 1
+	}
+	if setpm {
+		setpcmark()
+	}
+	if !other {
+		if lnum != 0 {
+			(^C.int)(uintptr(curwin) + W_CURSOR_OFF)^ = lnum
+		}
+		check_cursor_lnum_r(curwin)
+		beginline(BL_SOL | BL_FIX)
+		retval = GETFILE_SAME_FILE_O // it's in the same file
+	} else if do_ecmd(fnum, ffname, sfname, nil, lnum,
+		(buf_hide(curbuf) ? ECMD_HIDE_O : 0) +
+		(forceit ? ECMD_FORCEIT_O : 0), curwin) == OK {
+		retval = GETFILE_OPEN_OTHER_O // opened another file
+	} else {
+		retval = GETFILE_ERROR_O // error encountered
+	}
+
+	xfree(free_me)
+	return retval
+}

@@ -96,7 +96,7 @@ do_exedit :: proc "c"(eap: rawptr, old_curwin: rawptr) {
 				save_rd := RedrawingDisabled
 				RedrawingDisabled = 0
 				save_nwr := no_wait_return
-				no_wait_return = false
+				no_wait_return = 0
 				need_wait_return_g = false
 				save_ms := msg_scroll
 				msg_scroll = false

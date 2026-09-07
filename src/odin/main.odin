@@ -162,7 +162,7 @@ foreign nvim {
   Rows: c.int
   Columns: c.int
   msg_scroll: bool
-  no_wait_return: bool
+  no_wait_return: c.int // C EXTERN int (globals.h:191), NOT bool
   debug_break_level: c.int
   starting: c.int
   scriptout: rawptr
@@ -774,7 +774,7 @@ main :: proc() {
   set_init_2(headless_mode)
 
   msg_scroll = true
-  no_wait_return = true
+  no_wait_return = 1
   init_highlight(true, false)
   ui_comp_syn_init()
 
@@ -877,7 +877,7 @@ main :: proc() {
 
   // ── Step 31: prepare screen ──
   starting = NO_BUFFERS
-  no_wait_return = false
+  no_wait_return = 0
   if !exmode_active {
     msg_scroll = false
   }
@@ -888,7 +888,7 @@ main :: proc() {
 
   setmouse()
   redraw_later(curwin, 10) // UPD_VALID = 10
-  no_wait_return = true
+  no_wait_return = 1
 
   // ── Step 32: create_windows ──
   create_windows(&params)
@@ -923,7 +923,7 @@ main :: proc() {
   starting = 0
   RedrawingDisabled = 0
   redraw_all_later(UPD_NOT_VALID)
-  no_wait_return = false
+  no_wait_return = 0
   do_autochdir()
   set_vim_var_nr(VV_VIM_DID_ENTER, 1)
   _ = apply_autocmds(EVENT_VIMENTER, nil, nil, false, curbuf)
