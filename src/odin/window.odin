@@ -2141,6 +2141,7 @@ win_enter_ext_o :: proc "c"(wp: rawptr, flags: C.int) {
 
 WSP_ROOM_O :: 0x01
 WSP_VERT_O :: 0x02
+WSP_HOR_O :: 0x04
 WSP_TOP_O :: 0x08
 WSP_BOT_O :: 0x10
 WSP_HELP_O :: 0x20
@@ -7052,4 +7053,474 @@ win_rotate_o :: proc "c"(upwards: bool, count_in: C.int) {
 	(^bool)(uintptr(wp1) + W_POS_CHANGED_OFF)^ = true
 	(^bool)(uintptr(wp2) + W_POS_CHANGED_OFF)^ = true
 	redraw_all_later_r(UPD_NOT_VALID_O)
+}
+
+// ── Batch 44: do_window dispatcher ───────────────────────────────────────────
+// Key codes: Ctrl_* are control chars; K_* probed via offkeys
+// (DOWN -25707/UP -30059/LEFT -27755/RIGHT -29291/BS -25195/KENTER -16715/
+// TAB -14077).
+
+Ctrl_S_O :: 19
+Ctrl_Q_O :: 17
+Ctrl_Z_O :: 26
+Ctrl_O_O :: 15
+Ctrl_N_O :: 14
+Ctrl_HAT_O :: 30
+Ctrl_J_O :: 10
+Ctrl_K_O :: 11
+Ctrl_T_O :: 20
+Ctrl_B_O :: 2
+Ctrl_X_O :: 24
+Ctrl_I_O :: 9
+Ctrl_D_O :: 4
+Ctrl_G_O :: 7
+Ctrl__O :: 31
+Ctrl_RSB_O :: 29
+K_DOWN_O :: -25707
+K_UP_O :: -30059
+K_LEFT_O :: -27755
+K_RIGHT_O :: -29291
+K_KENTER_O :: -16715
+K_TAB_O :: -14077
+TAB_O :: 9
+CAR_O :: 13
+FIND_DEFINE_O :: 2
+FIND_ANY_O :: 1
+ACTION_SPLIT_O :: 3
+ECMD_LASTL_O :: 0
+ECMD_HIDE_O :: 0x01
+KOPT_SWB_USEOPEN_O :: 0x01
+KOPT_SWB_USETAB_O :: 0x02
+E441_S :: "E441: There is no preview window"
+
+foreign _ {
+	@(link_name = "curbuf_locked")
+	curbuf_locked_r :: proc "c" () -> bool ---
+	@(link_name = "postponed_split")
+	postponed_split_g: C.int
+	@(link_name = "p_pvh")
+	p_pvh_g: C.longlong
+	@(link_name = "do_nv_ident")
+	do_nv_ident_r :: proc "c" (c1: C.int, c2: C.int) ---
+	@(link_name = "check_text_or_curbuf_locked")
+	check_text_or_curbuf_locked_r :: proc "c" (oap: rawptr) -> bool ---
+	@(link_name = "grab_file_name")
+	grab_file_name_r :: proc "c" (count: C.int, file_lnum: ^C.int) -> ^u8 ---
+	@(link_name = "qf_view_result")
+	qf_view_result_r :: proc "c" (split: bool) ---
+	@(link_name = "p_langmap")
+	p_langmap_g: ^u8
+	@(link_name = "p_lrm")
+	p_lrm_g: C.int
+	@(link_name = "vgetc_busy")
+	vgetc_busy_g: C.int
+	@(link_name = "typebuf_maplen")
+	typebuf_maplen_r :: proc "c" () -> C.int ---
+	@(link_name = "langmap_mapchar")
+	langmap_mapchar_g: [256]u8
+	@(link_name = "langmap_adjust_mb")
+	langmap_adjust_mb_r :: proc "c" (c: C.int) -> C.int ---
+	@(link_name = "find_pattern_in_path")
+	find_pattern_in_path_r :: proc "c" (ptr: ^u8, dir: C.int, len: C.size_t, whole: bool, skip_comments: bool, type: C.int, count: C.int, action: C.int, start_lnum: C.int, end_lnum: C.int, forceit: bool, silent: bool) ---
+}
+
+// "gf" body shared by CTRL-W f/F and CTRL-W gf/gF (C: wingotofile label).
+wingotofile_o :: proc "c"(nchar: C.int, prenum: C.int, prenum1: C.int) {
+	if check_text_or_curbuf_locked_r(nil) {
+		return
+	}
+	lnum: C.int = -1
+	ptr := grab_file_name_r(prenum1, &lnum)
+	if ptr != nil {
+		oldtab := curtab
+		oldwin := curwin
+		setpcmark()
+		// If 'switchbuf' is set to 'useopen'/'usetab' and the file is
+		// already opened in a window, then jump to it.
+		wp: rawptr = nil
+		if (swb_flags_g & (KOPT_SWB_USEOPEN_O | KOPT_SWB_USETAB_O)) != 0 &&
+			(^C.int)(uintptr(transmute(rawptr)(&cmdmod_cmod_flags)) + CMOD_TAB_OFF)^ == 0 {
+			wp = swbuf_goto_win_with_buf_r(buflist_findname_exp(transmute(cstring)(ptr)))
+		}
+		if wp == nil && win_split(0, 0) == OK {
+			(^bool)(uintptr(curwin) + W_P_SCB_OFF)^ = false // RESET_BINDING
+			(^bool)(uintptr(curwin) + W_P_CRB_OFF)^ = false
+			if do_ecmd_r(0, transmute(cstring)(ptr), nil, nil, ECMD_LASTL_O, ECMD_HIDE_O, nil) == FAIL {
+				// Failed to open the file, close the window opened for
+				// it. Save/restore got_int around win_close (which fails
+				// unconditionally when got_int is set).
+				old_got_int := got_int
+				got_int = false
+				win_close(curwin, false, false)
+				got_int = got_int || old_got_int
+				goto_tabpage_win(oldtab, oldwin)
+			} else {
+				wp = curwin
+			}
+		}
+		if wp != nil && nchar == 'F' && lnum >= 0 {
+			(^C.int)(uintptr(curwin) + W_CURSOR_OFF)^ = lnum
+			check_cursor_lnum_r(curwin)
+			beginline(BL_SOL | BL_FIX)
+		}
+		xfree(transmute(rawptr)(ptr))
+	}
+}
+
+// All CTRL-W window commands, called from normal_cmd().
+@(export)
+do_window :: proc "c"(nchar: C.int, prenum_in: C.int, xchar_in: C.int) {
+	prenum := prenum_in
+	xchar := xchar_in
+	type: C.int = FIND_DEFINE_O
+	cbuf: [40]u8
+	prenum1 := prenum == 0 ? 1 : prenum
+	switch nchar {
+	// split current window in two parts, horizontally
+	case 'S', Ctrl_S_O, 's':
+		reset_VIsual_and_resel_r() // stop Visual mode
+		// When splitting the quickfix window open a new buffer in it,
+		// don't replicate the quickfix buffer (C: goto newwindow).
+		if bt_quickfix_r(curbuf) {
+			do_window_newwindow(nchar, prenum)
+		} else {
+			win_split(prenum, 0)
+		}
+	// split current window in two parts, vertically
+	case Ctrl_V, 'v':
+		reset_VIsual_and_resel_r() // stop Visual mode
+		if bt_quickfix_r(curbuf) {
+			do_window_newwindow(nchar, prenum)
+		} else {
+			win_split(prenum, WSP_VERT_O)
+		}
+	// split current window and edit alternate file
+	case Ctrl_HAT_O, '^':
+		reset_VIsual_and_resel_r() // stop Visual mode
+		alt := prenum == 0 ? (^C.int)(uintptr(curwin) + W_ALT_FNUM)^ : prenum
+		if buflist_findnr(alt) == nil {
+			if prenum == 0 {
+				emsg(cstring(E_NOALT_S))
+			} else {
+				semsg_int_o(cstring(E_BUFNOTFOUND_S), prenum)
+			}
+			break
+		}
+		if !curbuf_locked_r() && win_split(0, 0) == OK {
+			buflist_getfile(alt, 0, GETF_ALT_O, 0)
+		}
+	// open new window (C: newwindow label)
+	case Ctrl_N_O, 'n':
+		reset_VIsual_and_resel_r() // stop Visual mode
+		do_window_newwindow(nchar, prenum)
+	// quit current window
+	case Ctrl_Q_O, 'q':
+		reset_VIsual_and_resel_r() // stop Visual mode
+		cmd_with_count_o(cstring("quit"), &cbuf[0], size_of(cbuf), C.longlong(prenum))
+		do_cmdline_cmd_r(transmute(cstring)(&cbuf[0]))
+	// close current window
+	case Ctrl_C, 'c':
+		reset_VIsual_and_resel_r() // stop Visual mode
+		cmd_with_count_o(cstring("close"), &cbuf[0], size_of(cbuf), C.longlong(prenum))
+		do_cmdline_cmd_r(transmute(cstring)(&cbuf[0]))
+	// close preview window
+	case Ctrl_Z_O, 'z':
+		reset_VIsual_and_resel_r() // stop Visual mode
+		do_cmdline_cmd_r(cstring("pclose"))
+	// cursor to preview window
+	case 'P':
+		wp: rawptr = nil
+		walk := firstwin // FOR_ALL_WINDOWS_IN_TAB(wp2, curtab)
+		for walk != nil {
+			if (^C.int)(uintptr(walk) + W_P_PVW_OFF)^ != 0 {
+				wp = walk
+				break
+			}
+			walk = (^rawptr)(uintptr(walk) + W_NEXT_OFF)^
+		}
+		if wp == nil {
+			emsg(cstring(E441_S))
+		} else {
+			win_goto(wp)
+		}
+	// close all but current window
+	case Ctrl_O_O, 'o':
+		reset_VIsual_and_resel_r() // stop Visual mode
+		cmd_with_count_o(cstring("only"), &cbuf[0], size_of(cbuf), C.longlong(prenum))
+		do_cmdline_cmd_r(transmute(cstring)(&cbuf[0]))
+	// cursor to next/previous window with wrap around
+	case Ctrl_W, 'w', 'W':
+		if firstwin == lastwin_g && prenum != 1 { // just one window
+			beep_flush_r()
+		} else {
+			wp: rawptr
+			if prenum != 0 { // go to specified window
+				last_focusable := firstwin
+				wp = firstwin
+				pn := prenum
+				for wp != nil && pn - 1 > 0 {
+					if !(^bool)(uintptr(wp) + W_FLOATING_OFF)^ ||
+						(!(^bool)(uintptr(wp) + WCFG_HIDE_OFF)^ &&
+							(^bool)(uintptr(wp) + WCFG_FOCUSABLE_OFF)^) {
+						last_focusable = wp
+					}
+					if (^rawptr)(uintptr(wp) + W_NEXT_OFF)^ == nil {
+						break
+					}
+					wp = (^rawptr)(uintptr(wp) + W_NEXT_OFF)^
+					pn -= 1
+				}
+				for wp != nil && (^bool)(uintptr(wp) + W_FLOATING_OFF)^ &&
+					((^bool)(uintptr(wp) + WCFG_HIDE_OFF)^ ||
+						!(^bool)(uintptr(wp) + WCFG_FOCUSABLE_OFF)^) {
+					wp = (^rawptr)(uintptr(wp) + W_NEXT_OFF)^
+				}
+				if wp == nil { // went past the last focusable window
+					wp = last_focusable
+				}
+			} else {
+				if nchar == 'W' { // go to previous window
+					wp = (^rawptr)(uintptr(curwin) + W_PREV_OFF)^
+					if wp == nil {
+						wp = lastwin_g // wrap around
+					}
+					for wp != nil && (^bool)(uintptr(wp) + W_FLOATING_OFF)^ &&
+						((^bool)(uintptr(wp) + WCFG_HIDE_OFF)^ ||
+							!(^bool)(uintptr(wp) + WCFG_FOCUSABLE_OFF)^) {
+						wp = (^rawptr)(uintptr(wp) + W_PREV_OFF)^
+					}
+				} else { // go to next window
+					wp = (^rawptr)(uintptr(curwin) + W_NEXT_OFF)^
+					for wp != nil && (^bool)(uintptr(wp) + W_FLOATING_OFF)^ &&
+						((^bool)(uintptr(wp) + WCFG_HIDE_OFF)^ ||
+							!(^bool)(uintptr(wp) + WCFG_FOCUSABLE_OFF)^) {
+						wp = (^rawptr)(uintptr(wp) + W_NEXT_OFF)^
+					}
+					if wp == nil {
+						wp = firstwin // wrap around
+					}
+				}
+			}
+			win_goto(wp)
+		}
+	// cursor to window below/above/left/right
+	case 'j', K_DOWN_O, Ctrl_J_O, 'k', K_UP_O, Ctrl_K_O,
+		'h', K_LEFT_O, Ctrl_H, K_BS, 'l', K_RIGHT_O, Ctrl_L:
+		if nchar == 'j' || nchar == K_DOWN_O || nchar == Ctrl_J_O {
+			win_goto_ver_o(false, prenum1)
+		} else if nchar == 'k' || nchar == K_UP_O || nchar == Ctrl_K_O {
+			win_goto_ver_o(true, prenum1)
+		} else if nchar == 'h' || nchar == K_LEFT_O || nchar == Ctrl_H || nchar == K_BS {
+			win_goto_hor_o(true, prenum1)
+		} else {
+			win_goto_hor_o(false, prenum1)
+		}
+	// move window to new tab page
+	case 'T':
+		if one_window(curwin, nil) {
+			msg_r(cstring(M_ONLYONE_S), 0)
+		} else {
+			oldtab := curtab
+			// First create a new tab with the window, then go back to
+			// the old tab and close the window there.
+			wp := curwin
+			if win_new_tabpage(prenum, nil, true, nil) != nil && valid_tabpage(oldtab) {
+				newtab := curtab
+				goto_tabpage_tp(oldtab, true, true)
+				if curwin == wp {
+					win_close(curwin, false, false)
+				}
+				if valid_tabpage(newtab) {
+					goto_tabpage_tp(newtab, true, true)
+					apply_autocmds(EVENT_TABNEWENTERED_O, nil, nil, false, curbuf)
+				}
+			}
+		}
+	// cursor to top-left / bottom-right / last-accessed window
+	case 't', Ctrl_T_O:
+		win_goto(firstwin)
+	case 'b', Ctrl_B_O:
+		win_goto(lastwin_nofloating(nil))
+	case 'p', Ctrl_P:
+		if !win_valid(prevwin_g) || (^bool)(uintptr(prevwin_g) + WCFG_HIDE_OFF)^ ||
+			!(^bool)(uintptr(prevwin_g) + WCFG_FOCUSABLE_OFF)^ {
+			beep_flush_r()
+		} else {
+			win_goto(prevwin_g)
+		}
+	// exchange current and next window
+	case 'x', Ctrl_X_O:
+		win_exchange_o(prenum)
+	// rotate windows downwards/upwards
+	case Ctrl_R, 'r':
+		reset_VIsual_and_resel_r() // stop Visual mode
+		win_rotate_o(false, prenum1) // downwards
+	case 'R':
+		reset_VIsual_and_resel_r() // stop Visual mode
+		win_rotate_o(true, prenum1) // upwards
+	// move window to the very top/bottom/left/right
+	case 'K', 'J', 'H', 'L':
+		if one_window(curwin, nil) {
+			beep_flush_r()
+		} else {
+			dir: C.int = ((nchar == 'H' || nchar == 'L') ? WSP_VERT_O : 0) |
+				((nchar == 'H' || nchar == 'K') ? WSP_TOP_O : WSP_BOT_O)
+
+			win_splitmove(curwin, prenum, dir)
+		}
+	// make all windows the same width and/or height
+	case '=':
+		mod := (^C.int)(uintptr(transmute(rawptr)(&cmdmod_cmod_flags)) + CMOD_SPLIT_OFF)^ &
+			(WSP_VERT_O | WSP_HOR_O)
+		win_equal(nil, false, mod == WSP_VERT_O ? 'v' : mod == WSP_HOR_O ? 'h' : 'b')
+	// increase/decrease/set height/width
+	case '+':
+		win_setheight((^C.int)(uintptr(curwin) + W_HEIGHT_OFF)^ + prenum1)
+	case '-':
+		win_setheight((^C.int)(uintptr(curwin) + W_HEIGHT_OFF)^ - prenum1)
+	case Ctrl__O, '_':
+		win_setheight(prenum != 0 ? prenum : Rows - C.int(nvim_odin_get_min_set_ch_r()))
+	case '>':
+		win_setwidth((^C.int)(uintptr(curwin) + W_WIDTH_OFF)^ + prenum1)
+	case '<':
+		win_setwidth((^C.int)(uintptr(curwin) + W_WIDTH_OFF)^ - prenum1)
+	case '|':
+		win_setwidth(prenum != 0 ? prenum : Columns)
+	// jump to tag in preview window / split
+	case '}':
+		if prenum != 0 {
+			g_do_tagpreview = prenum
+		} else {
+			g_do_tagpreview = C.int(p_pvh_g)
+		}
+		fallthrough
+	case ']', Ctrl_RSB_O:
+		// Keep visual mode, can select words to use as a tag.
+		if prenum != 0 {
+			postponed_split_g = prenum
+		} else {
+			postponed_split_g = -1
+		}
+		if nchar != '}' {
+			g_do_tagpreview = 0
+		}
+		// Execute the command right here, required when
+		// "wincmd ]" was used in a function.
+		do_nv_ident_r(Ctrl_RSB_O, 0)
+		postponed_split_g = 0
+	// edit file name under cursor in a new window
+	case 'f', 'F', Ctrl_F:
+		wingotofile_o(nchar, prenum, prenum1)
+	// identifier search in a new window
+	case 'i', Ctrl_I_O:
+		type = FIND_ANY_O
+		fallthrough
+	case 'd', Ctrl_D_O:
+		ptr: ^u8
+		length := find_ident_under_cursor_r(&ptr, FIND_IDENT, nil)
+		if length == 0 {
+			break
+		}
+		// Make a copy, if the line was changed it will be freed.
+		ptr = xmemdupz_o2(ptr, length)
+		find_pattern_in_path_r(ptr, 0, length, true, prenum == 0, type,
+			prenum1, ACTION_SPLIT_O, 1, MAXLNUM, false, false)
+		xfree(transmute(rawptr)(ptr))
+		(^bool)(uintptr(curwin) + W_SET_CURSWANT_OFF)^ = true
+	// Quickfix window only: view result in a new split
+	case K_KENTER_O, CAR_O:
+		if bt_quickfix_r(curbuf) {
+			qf_view_result_r(true)
+		}
+	// CTRL-W g extended commands
+	case 'g', Ctrl_G_O:
+		no_mapping += 1
+		allow_keys += 1 // no mapping for xchar, but allow key codes
+		if xchar == 0 {
+			xchar = plain_vgetc()
+		}
+		// LANGMAP_ADJUST(xchar, true), expanded (mapping.h).
+		if p_langmap_g != nil && b_at(p_langmap_g, 0) != 0 &&
+			(p_lrm_g != 0 || (vgetc_busy_g != 0 ?
+				typebuf_maplen_r() == 0 : KeyTyped)) &&
+			!KeyStuffed && xchar >= 0 {
+			if xchar < 256 {
+				xchar = C.int(langmap_mapchar_g[u8(xchar)])
+			} else {
+				xchar = langmap_adjust_mb_r(xchar)
+			}
+		}
+		no_mapping -= 1
+		allow_keys -= 1
+		add_to_showcmd(xchar)
+		switch xchar {
+		case '}':
+			xchar = Ctrl_RSB_O
+			if prenum != 0 {
+				g_do_tagpreview = prenum
+			} else {
+				g_do_tagpreview = C.int(p_pvh_g)
+			}
+			fallthrough
+		case ']', Ctrl_RSB_O:
+			// Keep visual mode, can select words to use as a tag.
+			if prenum != 0 {
+				postponed_split_g = prenum
+			} else {
+				postponed_split_g = -1
+			}
+			// Execute the command right here, required when
+			// "wincmd g}" was used in a function.
+			do_nv_ident_r('g', xchar)
+			postponed_split_g = 0
+		case 'f', 'F': // CTRL-W gf: "gf" in a new tab page
+			(^C.int)(uintptr(transmute(rawptr)(&cmdmod_cmod_flags)) + CMOD_TAB_OFF)^ =
+				tabpage_index(curtab) + 1
+			wingotofile_o(xchar, prenum, prenum1)
+		case 't': // CTRL-W gt: go to next tab page
+			goto_tabpage(0)
+		case 'T': // CTRL-W gT: go to previous tab page
+			goto_tabpage(-prenum1)
+		case TAB_O: // CTRL-W g<Tab>: go to last used tab page
+			if !goto_tabpage_lastused() {
+				beep_flush_r()
+			}
+		case 'e':
+			if (^bool)(uintptr(curwin) + W_FLOATING_OFF)^ || !ui_has(K_UIMULTIGRID_O) {
+				beep_flush_r()
+				break
+			}
+			fc: WinConfig_Opaque
+			win_config_init_assign_o(&fc)
+			([^]C.int)(&fc)[4] = (^C.int)(uintptr(curwin) + W_WIDTH_OFF)^
+			([^]C.int)(&fc)[3] = (^C.int)(uintptr(curwin) + W_HEIGHT_OFF)^
+			([^]u8)(&fc)[48] = 1 // external = true
+			err: Api_Error = {typ = -1, msg = nil}
+			if win_new_float_r(curwin, false, fc, transmute(rawptr)(&err)) == nil {
+				emsg(transmute(cstring)(err.msg))
+				api_clear_error_r(&err)
+				beep_flush_r()
+			}
+		case:
+			beep_flush_r()
+		}
+	case:
+		beep_flush_r()
+	}
+}
+
+// ":new [height]" body shared by CTRL-W s/v/n (C: newwindow label).
+do_window_newwindow :: proc "c"(nchar: C.int, prenum: C.int) {
+	cbuf: [40]u8
+	if prenum != 0 {
+		// window height
+		libc.snprintf(&cbuf[0], size_of(cbuf) - 5, cstring("%ld"), C.longlong(prenum))
+	} else {
+		cbuf[0] = 0
+	}
+	if nchar == 'v' || nchar == Ctrl_V {
+		xstrlcat(&cbuf[0], transmute(^u8)(cstring("v")), size_of(cbuf))
+	}
+	xstrlcat(&cbuf[0], transmute(^u8)(cstring("new")), size_of(cbuf))
+	do_cmdline_cmd_r(transmute(cstring)(&cbuf[0]))
 }

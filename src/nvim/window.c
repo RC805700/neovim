@@ -198,6 +198,7 @@ void nvim_odin_init_winopt(win_T *win);
 #pragma weak win_drag_status_line
 #pragma weak win_drag_vsep_line
 #pragma weak win_splitmove
+#pragma weak do_window
 #pragma weak merge_win_config
 #pragma weak win_set_buf
 #pragma weak check_lnums
