@@ -3028,3 +3028,227 @@ ex_z :: proc "c"(eap: rawptr) {
 	}
 	ex_no_reprint_g = true
 }
+
+// ── Batch 34: :global engine (ex_global/global_exe + statics) ───────────────
+
+RE_SUBST_O :: 1
+RE_SEARCH_O :: 0
+DOCMD_NOWAIT_O :: 0x02
+E147_S :: "E147: Cannot do :global recursive with a range"
+E148_S :: "E148: Regular expression missing from global"
+E10_S :: "E10: \\ should be followed by /, ? or &"
+E476_S :: "E476: Invalid command"
+E146_S :: "E146: Regular expressions can't be delimited by letters"
+
+foreign _ {
+	@(link_name = "ml_setmarked")
+	ml_setmarked_r :: proc "c"(lnum: C.int) ---
+	@(link_name = "ml_firstmarked")
+	ml_firstmarked_r :: proc "c"() -> C.int ---
+	@(link_name = "ml_clearmarked")
+	ml_clearmarked_r :: proc "c"() ---
+	@(link_name = "do_sub_msg")
+	do_sub_msg_r :: proc "c"(count_only: bool) -> bool ---
+	// sub_nsubs/sub_nlines/msg_didout already bound (spell.odin C.longlong,
+	// Batch-31b bool) — reuse; C sees consistent zero values here.
+}
+
+// call beginline() after ":g" (C static, file-private).
+@(private="file")
+global_need_beginline_f: bool
+
+// Check for a valid :global delimiter (C static, plain).
+check_regexp_delim_o :: proc "c"(c: C.int) -> C.int {
+	if ascii_isalpha_o(u8(c)) {
+		emsg(cstring(E146_S))
+		return FAIL
+	}
+	return OK
+}
+
+// Execute one :global command on line "lnum" (C static, plain).
+global_exe_one_o :: proc "c"(cmd: cstring, lnum: C.int) {
+	(^C.int)(uintptr(curwin) + W_CURSOR_OFF)^ = lnum
+	(^C.int)(uintptr(curwin) + W_CURSOR_OFF + 4)^ = 0
+	if cmd == nil || ([^]u8)(transmute(^u8)(cmd))[0] == 0 ||
+		([^]u8)(transmute(^u8)(cmd))[0] == '\n' {
+		do_cmdline_r(cstring("p"), nil, nil, DOCMD_NOWAIT_O)
+	} else {
+		do_cmdline_r(cmd, nil, nil, DOCMD_NOWAIT_O)
+	}
+}
+
+// Execute "cmd" on lines marked with ml_setmarked().
+@(export)
+global_exe :: proc "c"(cmd: cstring) {
+	old_lcount := (^C.int)(uintptr(curbuf) + B_ML_LINE_COUNT_OFF)^
+	old_buf := curbuf
+	lnum: C.int = 0
+
+	// Position once for a global command (setpcmark no-ops when busy;
+	// global_busy increments on error).
+	setpcmark()
+
+	// Don't overwrite the command with written-message reports.
+	msg_didout_g = true
+
+	sub_nsubs_sp = 0
+	sub_nlines_sp = 0
+	global_need_msg_kind_f = true
+	global_need_beginline_f = false
+	global_busy = 1
+	old_lcount = (^C.int)(uintptr(curbuf) + B_ML_LINE_COUNT_OFF)^
+
+	for got_int == false && global_busy == 1 {
+		lnum = ml_firstmarked_r()
+		if lnum == 0 {
+			break
+		}
+		global_exe_one_o(cmd, lnum)
+		os_breakcheck()
+	}
+
+	global_busy = 0
+	if global_need_beginline_f {
+		beginline(BL_WHITE | BL_FIX)
+	} else {
+		check_cursor(curwin) // cursor may be beyond end of line
+	}
+
+	// Text unchanged on screen, but an earlier line changed: move cursor.
+	changed_line_abv_curs_r()
+
+	// No message written: allow overwriting the command with the
+	// change-count report.
+	if msg_col == 0 && msg_scrolled == 0 {
+		msg_didout_g = false
+	}
+
+	// Substitutes report their count, else report added/deleted lines
+	// (not when the buffer changed mid-execution).
+	if !do_sub_msg_r(false) && curbuf == old_buf {
+		msgmore_r((^C.int)(uintptr(curbuf) + B_ML_LINE_COUNT_OFF)^ - old_lcount)
+	}
+}
+
+// g/pattern/X: execute X on all lines where pattern matches (v: not).
+@(export)
+ex_global :: proc "c"(eap: rawptr) {
+	lnum: C.int = 0
+	type: u8 = 0 // first char of cmd: 'v' or 'g'
+	cmd := (^u8)((^rawptr)(uintptr(eap))^) // eap->arg
+
+	delim: u8 = 0 // delimiter, normally '/'
+	pat: ^u8 = nil
+	patlen: C.size_t = 0
+	regmatch: Regmmatch_T
+
+	// Nested :global works on one line (":g/found/v/notfound/command").
+	if global_busy != 0 &&
+		((^C.int)(uintptr(eap) + EXARG_LINE1_OFF)^ != 1 ||
+			(^C.int)(uintptr(eap) + EXARG_LINE2_OFF)^ !=
+			(^C.int)(uintptr(curbuf) + B_ML_LINE_COUNT_OFF)^) {
+		// global_busy increments to break out of the loop.
+		emsg(cstring(E147_S))
+		return
+	}
+
+	if (^C.int)(uintptr(eap) + EXARG_FORCEIT_OFF)^ != 0 {
+		type = 'v' // ":global!" is like ":vglobal"
+	} else {
+		type = ([^]u8)((^u8)((^rawptr)(uintptr(eap) + EXARG_CMD_OFF)^))[0]
+	}
+	cmd = transmute(^u8)((^cstring)(uintptr(eap))^)
+	which_pat: C.int = RE_LAST // default: last used regexp
+
+	// Undocumented vi: "\/" and "\?" use the previous search pattern,
+	// "\&" the previous substitute pattern.
+	if ([^]u8)(cmd)[0] == '\\' {
+		cmd = (^u8)(uintptr(cmd) + 1)
+		if vim_strchr(transmute(^u8)(cstring("/?&")),
+			C.int(([^]u8)(cmd)[0])) == nil {
+			emsg(cstring(E10_S))
+			return
+		}
+		if ([^]u8)(cmd)[0] == '&' {
+			which_pat = RE_SUBST_O // previous substitute pattern
+		} else {
+			which_pat = RE_SEARCH_O // previous search pattern
+		}
+		cmd = (^u8)(uintptr(cmd) + 1)
+		pat = transmute(^u8)(cstring(""))
+		patlen = 0
+	} else if ([^]u8)(cmd)[0] == 0 {
+		emsg(cstring(E148_S))
+		return
+	} else if check_regexp_delim_o(C.int(([^]u8)(cmd)[0])) == FAIL {
+		return
+	} else {
+		delim = ([^]u8)(cmd)[0] // the delimiter
+		cmd = (^u8)(uintptr(cmd) + 1) // skip it if there is one
+		pat = cmd // remember start of pattern
+		arg_slot := transmute(^^u8)(uintptr(eap)) // &eap->arg@0
+		cmd = skip_regexp_ex_r(cstring(cmd), C.int(delim),
+			magic_isset() ? 1 : 0, arg_slot, nil, nil)
+		if ([^]u8)(cmd)[0] == delim { // end delimiter found
+			([^]u8)(cmd)[0] = 0 // replace it with NUL
+			cmd = (^u8)(uintptr(cmd) + 1)
+		}
+		patlen = C.size_t(libc.strlen(cstring(pat)))
+	}
+
+	used_pat: ^u8 = nil
+	if search_regcomp(pat, patlen, &used_pat, RE_BOTH, which_pat,
+		SEARCH_HIS, &regmatch) == FAIL {
+		emsg(cstring(E476_S))
+		return
+	}
+
+	if global_busy != 0 {
+		lnum = (^C.int)(uintptr(curwin) + W_CURSOR_OFF)^
+		match := vim_regexec_multi_r(&regmatch, curwin, curbuf, lnum, 0, nil,
+			nil)
+		if (type == 'g' && match != 0) || (type == 'v' && match == 0) {
+			global_exe_one_o(cstring(cmd), lnum)
+		}
+	} else {
+		ndone: C.int = 0
+		// Pass 1: mark each (not) matching line.
+		lnum = (^C.int)(uintptr(eap) + EXARG_LINE1_OFF)^
+		for lnum <= (^C.int)(uintptr(eap) + EXARG_LINE2_OFF)^ && !got_int {
+			// Match on this line?
+			match := vim_regexec_multi_r(&regmatch, curwin, curbuf, lnum, 0,
+				nil, nil)
+			if regmatch.regprog == nil {
+				break // re-compiling regprog failed
+			}
+			if (type == 'g' && match != 0) || (type == 'v' && match == 0) {
+				ml_setmarked_r(lnum)
+				ndone += 1
+			}
+			line_breakcheck()
+			lnum += 1
+		}
+
+		// Pass 2: execute the command for each marked line.
+		if got_int {
+			msg_msg(cstring(E_INTERR_S), 0)
+		} else if ndone == 0 {
+			// C uses smsg (plain message, NOT an error like semsg).
+			nmbuf: [512]u8
+			if type == 'v' {
+				libc.snprintf(&nmbuf[0], C.size_t(512),
+					cstring("Pattern found in every line: %s"),
+					cstring(used_pat))
+			} else {
+				libc.snprintf(&nmbuf[0], C.size_t(512),
+					cstring("Pattern not found: %s"), cstring(used_pat))
+			}
+			msg_msg(cstring(&nmbuf[0]), 0)
+		} else {
+			global_exe(cstring(cmd))
+		}
+		ml_clearmarked_r() // clear rest of the marks
+	}
+	vim_regfree(regmatch.regprog)
+}

@@ -4661,6 +4661,7 @@ static void global_exe_one(char *const cmd, const linenr_T lnum)
 /// set a mark for each line that (not) matches. Secondly we execute the command
 /// for each line that has a mark. This is required because after deleting
 /// lines we do not know where to search for the next match.
+#pragma weak ex_global
 void ex_global(exarg_T *eap)
 {
   linenr_T lnum;                // line number according to old situation
@@ -4769,6 +4770,7 @@ void ex_global(exarg_T *eap)
 }
 
 /// Execute `cmd` on lines marked with ml_setmarked().
+#pragma weak global_exe
 void global_exe(char *cmd)
 {
   linenr_T old_lcount;      // b_ml.ml_line_count before the command
