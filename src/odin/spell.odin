@@ -3592,7 +3592,7 @@ ex_spelldump :: proc "c"(eap: rawptr) {
 	xfree(spl_copy)
 	do_cmdline_cmd_r(transmute(cstring)(&setcmd[0]))
 
-	if !buf_is_empty_r(curbuf) {
+	if !buf_is_empty(curbuf) {
 		return
 	}
 

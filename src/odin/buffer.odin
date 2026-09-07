@@ -490,8 +490,6 @@ foreign _ {
 	fname_expand_r :: proc "c" (buf: rawptr, ffname: ^cstring, sfname: ^cstring) ---
 	@(link_name = "buflist_setfpos")
 	buflist_setfpos_r :: proc "c" (buf: rawptr, win: rawptr, lnum: C.int, col: C.int, copy_options: bool) ---
-	@(link_name = "buf_clear_file")
-	buf_clear_file_r :: proc "c" (buf: rawptr) ---
 	@(link_name = "in_assert_fails")
 	in_assert_fails_g: bool
 	@(link_name = "msg_delay")
@@ -655,7 +653,7 @@ curbuf_reusable :: proc "c"() -> bool {
 		(^rawptr)(uintptr(curbuf) + B_FFNAME)^ == nil &&
 		(^C.int)(uintptr(curbuf) + B_NWINDOWS_OFF)^ <= 1 &&
 		(^rawptr)(uintptr(curbuf) + B_TERMINAL_OFF)^ == nil &&
-		((^rawptr)(uintptr(curbuf) + B_ML_MFP_OFF)^ == nil || buf_is_empty_r(curbuf)) &&
+		((^rawptr)(uintptr(curbuf) + B_ML_MFP_OFF)^ == nil || buf_is_empty(curbuf)) &&
 		!bt_quickfix(curbuf) &&
 		!curbufIsChanged()
 }
@@ -800,7 +798,7 @@ buflist_new :: proc "c"(ffname_arg: cstring, sfname_arg: cstring, lnum: C.int, f
 	if (flags & BLN_DUMMY_O) != 0 {
 		(^C.int)(uintptr(buf) + B_FLAGS_OFF)^ |= BF_DUMMY_O
 	}
-	buf_clear_file_r(buf)
+	buf_clear_file(buf)
 	clrallmarks(buf, 0) // clear marks
 	fmarks_check_names(buf) // check file marks for this file
 	(^bool)(uintptr(buf) + B_P_BL_OFF)^ =
@@ -1030,7 +1028,7 @@ buflist_getfile :: proc "c"(n: C.int, lnum_in: C.int, options: C.int, forceit: C
 		// current buffer isn't empty: open new tab or window
 		if wp == nil &&
 			(swb_flags_g & (KOPT_SWB_VSPLIT_O | KOPT_SWB_SPLIT_O | KOPT_SWB_NEWTAB_O)) != 0 &&
-			!buf_is_empty_r(curbuf) {
+			!buf_is_empty(curbuf) {
 			if (swb_flags_g & KOPT_SWB_NEWTAB_O) != 0 {
 				tabpage_new_r()
 			} else if win_split(0, (swb_flags_g & KOPT_SWB_VSPLIT_O) != 0 ? WSP_VERT_O : 0) == FAIL {
@@ -2245,7 +2243,7 @@ read_buffer_o :: proc "c"(read_stdin: bool, eap: rawptr, flags: C.int) -> C.int 
 	if read_stdin {
 		// Set or reset 'modified' before executing autocommands, so that
 		// it can be changed there.
-		if !readonlymode_g && !buf_is_empty_r(curbuf) {
+		if !readonlymode_g && !buf_is_empty(curbuf) {
 			changed_r(curbuf)
 		} else if retval != FAIL {
 			unchanged_r(curbuf, false, true)
@@ -2668,4 +2666,298 @@ buf_hide :: proc "c"(buf: rawptr) -> bool {
 		return true // "hide"
 	}
 	return p_hid_g != 0 || (cmdmod_cmod_flags & CMOD_HIDE_O) != 0
+}
+
+// ── Batch 17: small leaves (buf_clear_file/clear, spname/get_fname,
+// set_buflisted, contents_changed, wipe_buffer, is_empty, changedtick x2,
+// read_buffer_into) ──────────────────────────────────────────────────────
+
+B_ML_FLAGS_OFF :: 40 // b_ml@8 + ml_flags@32 (cc-probed)
+B_NO_EOL_LNUM_OFF :: 11100
+B_P_EOF_OFF :: 10376
+B_START_EOF_OFF :: 11104
+B_P_EOL_OFF :: 10380
+B_START_EOL_OFF :: 11108
+B_START_BOMB_OFF :: 11132
+DICT_WATCHERS_OFF :: 336 // dict_T.watchers (QUEUE, cc-probed)
+ML_EMPTY_O :: 0x01
+READ_DUMMY_O :: 0x10
+EXARG_SIZE_O :: 192 // sizeof(exarg_T), cc-probed
+
+foreign _ {
+	@(link_name = "deleted_lines_mark")
+	deleted_lines_mark_r :: proc "c" (lnum: C.int, count: C.int) ---
+	@(link_name = "prep_exarg")
+	prep_exarg_r :: proc "c" (eap: rawptr, buf: rawptr) ---
+	@(link_name = "qf_stack_get_bufnr")
+	qf_stack_get_bufnr_r :: proc "c" () -> C.int ---
+	@(link_name = "tv_dict_watcher_notify")
+	tv_dict_watcher_notify_r :: proc "c" (dict: rawptr, key: cstring, newtv: ^Typval_T, oldtv: ^Typval_T) ---
+	@(link_name = "msg_qflist")
+	msg_qflist_g: ^u8
+	@(link_name = "msg_loclist")
+	msg_loclist_g: ^u8
+}
+
+// StringBuilder append helpers (proc "c" so exports can use them; shell.odin's
+// kv_push/kv_concat_len are plain procs with fixed context — uncallable here).
+sb_grow_o :: proc "c"(sb: ^StringBuilder, need: C.size_t) {
+	newcap := sb.capacity
+	if newcap == 0 {
+		newcap = 16
+	}
+	for newcap < need {
+		newcap *= 2
+	}
+	sb.items = (^u8)(xrealloc(sb.items, newcap))
+	sb.capacity = newcap
+}
+sb_push_o :: proc "c"(sb: ^StringBuilder, ch: u8) {
+	if sb.size + 1 > sb.capacity {
+		sb_grow_o(sb, sb.size + 1)
+	}
+	([^]u8)(sb.items)[sb.size] = ch
+	sb.size += 1
+}
+sb_concat_o :: proc "c"(sb: ^StringBuilder, s: ^u8, len: C.size_t) {
+	if len == 0 {
+		return
+	}
+	if sb.size + len > sb.capacity {
+		sb_grow_o(sb, sb.size + len)
+	}
+	libc.memcpy(rawptr(uintptr(sb.items) + uintptr(sb.size)), s, len)
+	sb.size += len
+}
+// tv_dict_is_watched is a C static inline (eval/typval.h:223):
+// d && !QUEUE_EMPTY(&d->watchers); QUEUE is void*[2], NEXT at [0].
+tv_dict_is_watched_o :: proc "c"(d: rawptr) -> bool {
+	if d == nil {
+		return false
+	}
+	w := uintptr(d) + DICT_WATCHERS_OFF
+	return (^rawptr)(w)^ != rawptr(w)
+}
+
+// Reset buffer to a single empty line (used when re-reading a file).
+@(export)
+buf_clear_file :: proc "c"(buf: rawptr) {
+	(^C.int)(uintptr(buf) + B_ML_LINE_COUNT_OFF)^ = 1
+	unchanged_r(buf, true, true)
+	(^C.int)(uintptr(buf) + B_P_EOF_OFF)^ = 0
+	(^C.int)(uintptr(buf) + B_START_EOF_OFF)^ = 0
+	(^C.int)(uintptr(buf) + B_P_EOL_OFF)^ = 1
+	(^C.int)(uintptr(buf) + B_START_EOL_OFF)^ = 1
+	(^C.int)(uintptr(buf) + B_P_BOMB_OFF)^ = 0
+	(^C.int)(uintptr(buf) + B_START_BOMB_OFF)^ = 0
+	(^rawptr)(uintptr(buf) + B_ML_MFP_OFF)^ = nil
+	(^C.int)(uintptr(buf) + B_ML_FLAGS_OFF)^ = ML_EMPTY_O // empty buffer
+}
+
+// Clear the current buffer contents.
+@(export)
+buf_clear :: proc "c"() {
+	line_count := (^C.int)(uintptr(curbuf) + B_ML_LINE_COUNT_OFF)^
+	extmark_free_all_r(curbuf) // delete any extmarks
+	for (^C.int)(uintptr(curbuf) + B_ML_FLAGS_OFF)^ & ML_EMPTY_O == 0 {
+		ml_delete_r(1)
+	}
+	deleted_lines_mark_r(1, line_count) // prepare for display
+}
+
+// Special buffer name, or NULL for a normal file name.
+@(export)
+buf_spname :: proc "c"(buf: rawptr) -> ^u8 {
+	if bt_quickfix(buf) {
+		// Differentiate quickfix vs location list via the global qf stack.
+		if (^C.int)(uintptr(buf) + B_FNUM_OFF)^ == qf_stack_get_bufnr_r() {
+			return msg_qflist_g
+		}
+		return msg_loclist_g
+	}
+	// No _file_ for "nofile": b_sfname holds the user-given name.
+	if bt_nofilename(buf) {
+		if (^rawptr)(uintptr(buf) + B_FNAME)^ != nil {
+			return (^u8)((^rawptr)(uintptr(buf) + B_FNAME)^)
+		}
+		if bt_cmdwin(buf) {
+			return transmute(^u8)(cstring("[Command Line]"))
+		}
+		if bt_prompt(buf) {
+			return transmute(^u8)(cstring("[Prompt]"))
+		}
+		return transmute(^u8)(cstring("[Scratch]"))
+	}
+	if (^rawptr)(uintptr(buf) + B_FNAME)^ == nil {
+		return buf_get_fname(buf)
+	}
+	return nil
+}
+
+// "buf->b_fname", or "[No Name]" when NULL.
+@(export)
+buf_get_fname :: proc "c"(buf: rawptr) -> ^u8 {
+	if (^rawptr)(uintptr(buf) + B_FNAME)^ == nil {
+		return transmute(^u8)(cstring("[No Name]"))
+	}
+	return (^u8)((^rawptr)(uintptr(buf) + B_FNAME)^)
+}
+
+// Set 'buflisted' for curbuf, triggering autocommands on change.
+@(export)
+set_buflisted :: proc "c"(on: C.int) {
+	if on == (^C.int)(uintptr(curbuf) + B_P_BL_OFF)^ {
+		return
+	}
+	(^C.int)(uintptr(curbuf) + B_P_BL_OFF)^ = on
+	if on != 0 {
+		apply_autocmds(EVENT_BUFADD_O, nil, nil, false, curbuf)
+	} else {
+		apply_autocmds(EVENT_BUFDELETE_O, nil, nil, false, curbuf)
+	}
+}
+
+// Re-read "buf" from disk into a dummy buffer and compare line by line.
+// Returns true when the contents changed (or could not be checked).
+@(export)
+buf_contents_changed :: proc "c"(buf: rawptr) -> bool {
+	differ := true
+	// Allocate a buffer without putting it in the buffer list.
+	newbuf := buflist_new(nil, nil, 1, BLN_DUMMY_O)
+	if newbuf == nil {
+		return true
+	}
+	// Force 'fileencoding' and 'fileformat' to be equal.
+	ea: [EXARG_SIZE_O]u8
+	prep_exarg_r(&ea[0], buf)
+	// Set curwin/curbuf to buf and save a few things.
+	aco: [56]u8
+	aucmd_prepbuf_r(&aco[0], newbuf)
+	// Don't trigger autocommands now (nasty side-effects like wiping).
+	block_autocmds_r()
+	if ml_open_r(curbuf) == OK &&
+		readfile_r((^cstring)(uintptr(buf) + B_FFNAME)^,
+			(^cstring)(uintptr(buf) + B_FNAME)^,
+			0, 0, MAXLNUM, &ea[0], READ_NEW_O | READ_DUMMY_O, false) == OK {
+		// Compare the two files line by line.
+		if (^C.int)(uintptr(buf) + B_ML_LINE_COUNT_OFF)^ ==
+			(^C.int)(uintptr(curbuf) + B_ML_LINE_COUNT_OFF)^ {
+			differ = false
+			lnum: C.int = 1
+			for lnum <= (^C.int)(uintptr(curbuf) + B_ML_LINE_COUNT_OFF)^ {
+				if libc.strcmp(cstring(ml_get_buf(buf, lnum)),
+					cstring(ml_get(lnum))) != 0 {
+					differ = true
+					break
+				}
+				lnum += 1
+			}
+		}
+	}
+	xfree((^rawptr)(uintptr(&ea[0]) + 40)^) // exarg_T.cmd@40
+	// Restore curwin/curbuf and a few other things.
+	aucmd_restbuf_r(&aco[0])
+	if curbuf != newbuf { // safety check
+		wipe_buffer(newbuf, false)
+	}
+	unblock_autocmds_r()
+	return differ
+}
+
+// Wipe out a (typically temporary) buffer.
+@(export)
+wipe_buffer :: proc "c"(buf: rawptr, aucmd: bool) {
+	if !aucmd {
+		// Don't trigger BufDelete autocommands here.
+		block_autocmds_r()
+	}
+	close_buffer_r(nil, buf, DOBUF_WIPE_O, false, true, false)
+	if !aucmd {
+		unblock_autocmds_r()
+	}
+}
+
+// True when the buffer holds a single empty line.
+@(export)
+buf_is_empty :: proc "c"(buf: rawptr) -> bool {
+	return (^C.int)(uintptr(buf) + B_ML_LINE_COUNT_OFF)^ == 1 &&
+		ml_get_buf(buf, 1)^ == 0
+}
+
+// Increment b:changedtick.
+@(export)
+buf_inc_changedtick :: proc "c"(buf: rawptr) {
+	buf_set_changedtick(buf, buf_changedtick_inline(buf) + 1)
+}
+
+// Set b:changedtick (notifying dict watchers, like C).
+@(export)
+buf_set_changedtick :: proc "c"(buf: rawptr, changedtick: C.longlong) {
+	old_val: Typval_T
+	libc.memcpy(&old_val, rawptr(uintptr(buf) + B_CHANGEDTICK_DI_OFF),
+		C.size_t(size_of(Typval_T)))
+	(^C.longlong)(uintptr(buf) + B_CHANGEDTICK_DI_OFF + 8)^ = changedtick
+	if tv_dict_is_watched_o((^rawptr)(uintptr(buf) + B_VARS_OFF)^) {
+		(^C.int)(uintptr(buf) + B_LOCKED_OFF)^ += 1
+		tv_dict_watcher_notify_r((^rawptr)(uintptr(buf) + B_VARS_OFF)^,
+			cstring(rawptr(uintptr(buf) + B_CHANGEDTICK_DI_OFF + 17)),
+			transmute(^Typval_T)(uintptr(buf) + B_CHANGEDTICK_DI_OFF), &old_val)
+		(^C.int)(uintptr(buf) + B_LOCKED_OFF)^ -= 1
+	}
+}
+
+// Read buffer lines [start, end] into a StringBuilder (NL-joined).
+@(export)
+read_buffer_into :: proc "c"(buf: rawptr, start: C.int, end: C.int, sb: rawptr) {
+	if buf == nil || sb == nil {
+		return
+	}
+	if (^C.int)(uintptr(buf) + B_ML_FLAGS_OFF)^ & ML_EMPTY_O != 0 {
+		return
+	}
+	SB := transmute(^StringBuilder)(sb)
+	written: C.size_t = 0
+	lnum := start
+	lp := ml_get_buf(buf, lnum)
+	lplen := C.size_t(ml_get_buf_len(buf, lnum))
+	for {
+		len: C.size_t = 0
+		if lplen == 0 {
+			len = 0
+		} else if ([^]u8)(lp)[written] == NL {
+			// NL -> NUL translation
+			len = 1
+			sb_push_o(SB, NUL)
+		} else {
+			s := vim_strchr((^u8)(uintptr(lp) + uintptr(written)), C.int(NL))
+			if s == nil {
+				len = lplen - written
+			} else {
+				len = C.size_t(uintptr(s) - (uintptr(lp) + uintptr(written)))
+			}
+			sb_concat_o(SB, (^u8)(uintptr(lp) + uintptr(written)), len)
+		}
+		if len == lplen - written {
+			// Finished a line: add NL unless this line should not have one.
+			// (Odin && / || need explicit grouping — NOT C precedence.)
+			no_eol := lnum != end
+			bin_fix := (^C.int)(uintptr(buf) + B_P_BIN_OFF)^ == 0 &&
+				(^C.int)(uintptr(buf) + B_P_FIXEOL_OFF)^ != 0
+			last_line := lnum != (^C.int)(uintptr(buf) + B_ML_LINE_COUNT_OFF)^ ||
+				(^C.int)(uintptr(buf) + B_P_EOL_OFF)^ != 0
+			if no_eol || bin_fix ||
+				(lnum != (^C.int)(uintptr(buf) + B_NO_EOL_LNUM_OFF)^ && last_line) {
+				sb_push_o(SB, NL)
+			}
+			lnum += 1
+			if lnum > end {
+				break
+			}
+			lp = ml_get_buf(buf, lnum)
+			lplen = C.size_t(ml_get_buf_len(buf, lnum))
+			written = 0
+		} else if len > 0 {
+			written += len
+		}
+	}
 }

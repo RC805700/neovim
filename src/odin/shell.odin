@@ -184,8 +184,6 @@ foreign _ {
 	make_filter_cmd :: proc "c" (cmd: cstring, itmp: cstring, otmp: cstring, do_in: bool) -> cstring ---
 	@(link_name = "tag_freematch")
 	tag_freematch :: proc "c" () ---
-	@(link_name = "read_buffer_into")
-	read_buffer_into :: proc "c" (buf: rawptr, start: c.int, end: c.int, sb: ^StringBuilder) ---
 	@(link_name = "restore_env_var")
 	restore_env_var :: proc "c" (name: cstring, old_value: cstring, must_free: bool) ---
 	@(link_name = "verbose_enter")

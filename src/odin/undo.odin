@@ -2253,7 +2253,7 @@ u_undoredo :: proc "c" (undo: bool, do_buf_event: bool) {
 
 	curhead.uh_entry = newlist
 	curhead.uh_flags = new_flags
-	if (old_flags & UH_EMPTYBUF) != 0 && buf_is_empty_r(curbuf) {
+	if (old_flags & UH_EMPTYBUF) != 0 && buf_is_empty(curbuf) {
 		buf_set_i32(curbuf, B_ML_FLAGS, buf_i32_at(curbuf, B_ML_FLAGS) | ML_EMPTY)
 	}
 	if (old_flags & UH_CHANGED) != 0 {

@@ -1689,8 +1689,6 @@ foreign _ {
 	beep_flush_r2 :: proc "c" () ---
 	@(link_name = "get_last_insert_save")
 	get_last_insert_save_r2 :: proc "c" () -> ^u8 ---
-	@(link_name = "buf_is_empty")
-	buf_is_empty_r :: proc "c" (buf: rawptr) -> bool ---
 	@(link_name = "ml_get_len")
 	ml_get_len_r2 :: proc "c" (lnum: C.int) -> C.int ---
 }
@@ -1988,7 +1986,7 @@ do_put :: proc "c" (regname: C.int, reg_arg: ^Yankreg_T, dir_arg: C.int, count_a
 					lnum += 1
 				}
 				// In an empty buffer the empty line is replaced; include it.
-				if (buf_is_empty_r(curbuf) ? u_save(0, 2) : u_save(lnum - 1, lnum)) == FAIL_R {
+				if (buf_is_empty(curbuf) ? u_save(0, 2) : u_save(lnum - 1, lnum)) == FAIL_R {
 					break Block
 				}
 				if dir == FORWARD_DIR {

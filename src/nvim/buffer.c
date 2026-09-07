@@ -166,6 +166,17 @@
 #pragma weak bt_prompt
 #pragma weak bt_cmdwin
 #pragma weak buf_hide
+#pragma weak buf_clear_file
+#pragma weak buf_clear
+#pragma weak buf_spname
+#pragma weak buf_get_fname
+#pragma weak set_buflisted
+#pragma weak buf_contents_changed
+#pragma weak wipe_buffer
+#pragma weak buf_is_empty
+#pragma weak buf_inc_changedtick
+#pragma weak buf_set_changedtick
+#pragma weak read_buffer_into
 
 #ifdef ABORT_ON_INTERNAL_ERROR
 # define CHECK_CURBUF \
