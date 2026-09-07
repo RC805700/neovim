@@ -3109,8 +3109,6 @@ foreign _ {
 }
 
 foreign _ {
-	@(link_name = "bt_prompt")
-	bt_prompt_r :: proc "c" (buf: rawptr) -> bool ---
 	@(link_name = "p_bs")
 	p_bs_g: ^u8
 	@(link_name = "bkc_flags")
@@ -3178,7 +3176,7 @@ fill_culopt_flags :: proc "c"(val: ^u8, wp: rawptr) -> C.int {
 
 @(export)
 can_bs :: proc "c"(what: C.int) -> bool {
-	if what == BS_START_S && bt_prompt_r(curbuf) {
+	if what == BS_START_S && bt_prompt(curbuf) {
 		return false
 	}
 	if b_at(p_bs_g, 0) == '2' {

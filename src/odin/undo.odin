@@ -260,8 +260,6 @@ foreign _ {
 	tv_dict_alloc_ret_r :: proc "c" (ret_tv: ^Typval) ---
 	@(link_name = "tv_get_string")
 	tv_get_string_r :: proc "c" (tv: ^Typval) -> ^u8 ---
-	@(link_name = "bt_dontwrite")
-	bt_dontwrite_r :: proc "c" (buf: rawptr) -> bool ---
 	@(link_name = "file_ff_differs")
 	file_ff_differs_r :: proc "c" (buf: rawptr, ignore_empty: bool) -> bool ---
 	@(link_name = "extmark_apply_undo")
@@ -2893,7 +2891,7 @@ u_undoline :: proc "c" () {
 @(export)
 bufIsChanged :: proc "c" (buf: rawptr) -> bool {
 	return bt_prompt(buf) ? buf_bool_at(buf, B_MODIFIED_WAS_SET) :
-		(!bt_dontwrite_r(buf) && (buf_bool_at(buf, B_CHANGED) || file_ff_differs_r(buf, true)))
+		(!bt_dontwrite(buf) && (buf_bool_at(buf, B_CHANGED) || file_ff_differs_r(buf, true)))
 }
 
 @(export)

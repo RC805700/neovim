@@ -155,6 +155,17 @@
 #pragma weak buf_ensure_loaded
 #pragma weak open_buffer
 #pragma weak do_bufdel
+#pragma weak bt_help
+#pragma weak bt_normal
+#pragma weak bt_quickfix
+#pragma weak bt_terminal
+#pragma weak bt_nofilename
+#pragma weak bt_nofile
+#pragma weak bt_dontwrite
+#pragma weak bt_dontwrite_msg
+#pragma weak bt_prompt
+#pragma weak bt_cmdwin
+#pragma weak buf_hide
 
 #ifdef ABORT_ON_INTERNAL_ERROR
 # define CHECK_CURBUF \

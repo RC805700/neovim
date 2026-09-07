@@ -3343,8 +3343,6 @@ do_autocmd_winclosed_busy: bool = false
 foreign _ {
 	@(link_name = "reset_synblock")
 	reset_synblock_r :: proc "c" (wp: rawptr) ---
-	@(link_name = "bt_quickfix")
-	bt_quickfix_r :: proc "c" (buf: rawptr) -> bool ---
 	@(link_name = "close_buffer")
 	close_buffer_r :: proc "c" (win: rawptr, buf: rawptr, action: C.int, abort_if_last: bool, ignore_abort: bool, set_context: bool) -> bool ---
 	@(link_name = "has_event")
@@ -3397,7 +3395,7 @@ win_close_buffer_o :: proc "c"(win: rawptr, action: C.int, abort_if_last: bool) 
 	// When a quickfix/location list window is closed and the buffer is
 	// displayed in only one window, then unlist the buffer.
 	buf := (^rawptr)(uintptr(win) + W_BUFFER_OFF)^
-	if buf != nil && bt_quickfix_r(buf) && (^C.int)(uintptr(buf) + B_NWINDOWS_OFF)^ == 1 {
+	if buf != nil && bt_quickfix(buf) && (^C.int)(uintptr(buf) + B_NWINDOWS_OFF)^ == 1 {
 		(^bool)(uintptr(buf) + B_P_BL_OFF)^ = false
 	}
 	retval := false
@@ -3469,12 +3467,8 @@ E_AUCMD_ONLY_S :: "E814: Cannot close window, only autocmd window would remain"
 trigger_tabclosedpre_busy: bool = false
 
 foreign _ {
-	@(link_name = "buf_hide")
-	buf_hide_r :: proc "c" (buf: rawptr) -> bool ---
 	@(link_name = "win_float_find_altwin")
 	win_float_find_altwin_r :: proc "c" (win: rawptr, tp: rawptr) -> rawptr ---
- 	@(link_name = "bt_help")
- 	bt_help_r :: proc "c" (buf: rawptr) -> bool ---
  	@(link_name = "diffopt_closeoff")
 	diffopt_closeoff_r :: proc "c" () -> bool ---
 	@(link_name = "ui_call_win_close")
@@ -3496,7 +3490,7 @@ can_close_floating_windows_o :: proc "c"(tp: rawptr) -> bool {
 		wp = (^rawptr)(uintptr(wp) + W_PREV_OFF)^ {
 		buf := (^rawptr)(uintptr(wp) + W_BUFFER_OFF)^
 		need_hide := bufIsChanged(buf) && (^C.int)(uintptr(buf) + B_NWINDOWS_OFF)^ <= 1
-		if need_hide && !buf_hide_r(buf) {
+		if need_hide && !buf_hide(buf) {
 			return false
 		}
 	}
@@ -3583,7 +3577,7 @@ win_close_othertab :: proc "c"(win: rawptr, free_buf: C.int, tp: rawptr, force: 
 			for (^bool)(uintptr((^rawptr)(uintptr(tp) + TP_LASTWIN_OFF)^) + W_FLOATING_OFF)^ && !leave_open {
 				// `force` flag isn't actually used when closing a floating window.
 				lastw := (^rawptr)(uintptr(tp) + TP_LASTWIN_OFF)^
-				hide: C.int = buf_hide_r((^rawptr)(uintptr(lastw) + W_BUFFER_OFF)^) ? 0 : 1
+				hide: C.int = buf_hide((^rawptr)(uintptr(lastw) + W_BUFFER_OFF)^) ? 0 : 1
 				if !win_close_othertab(lastw, hide, tp, true) {
 					// If closing the window fails give up, to avoid looping forever.
 					leave_open = true
@@ -3759,7 +3753,7 @@ win_close :: proc "c"(win: rawptr, free_buf: bool, force: bool) -> C.int {
 			// close the last window until the there are no floating windows
 			for (^bool)(uintptr(lastwin_g) + W_FLOATING_OFF)^ {
 				// `force` flag isn't actually used when closing a floating window.
-				hide := buf_hide_r((^rawptr)(uintptr(lastwin_g) + W_BUFFER_OFF)^) ? 0 : 1
+				hide := buf_hide((^rawptr)(uintptr(lastwin_g) + W_BUFFER_OFF)^) ? 0 : 1
 				if win_close(lastwin_g, hide != 0, true) == FAIL {
 					// If closing the window fails give up, to avoid looping forever.
 					return FAIL
@@ -3788,12 +3782,12 @@ win_close :: proc "c"(win: rawptr, free_buf: bool, force: bool) -> C.int {
 	quickfix_window := false
 	// When closing the help window, try restoring a snapshot after closing
 	// the window. Otherwise clear the snapshot, it's now invalid.
-	if bt_help_r((^rawptr)(uintptr(win) + W_BUFFER_OFF)^) {
+	if bt_help((^rawptr)(uintptr(win) + W_BUFFER_OFF)^) {
 		help_window = true
 	} else {
 		clear_snapshot_o(curtab, SNAP_HELP_IDX_O)
 	}
-	if bt_quickfix_r((^rawptr)(uintptr(win) + W_BUFFER_OFF)^) {
+	if bt_quickfix((^rawptr)(uintptr(win) + W_BUFFER_OFF)^) {
 		quickfix_window = true
 	} else {
 		clear_snapshot_o(curtab, SNAP_QUICKFIX_IDX_O)
@@ -3935,7 +3929,7 @@ win_close :: proc "c"(win: rawptr, free_buf: bool, force: bool) -> C.int {
 	if win == curwin {
 		curwin = wp
 		if (^C.int)(uintptr(wp) + W_P_PVW_OFF)^ != 0 ||
-			bt_quickfix_r((^rawptr)(uintptr(wp) + W_BUFFER_OFF)^) {
+			bt_quickfix((^rawptr)(uintptr(wp) + W_BUFFER_OFF)^) {
 			// If the cursor goes to the preview or the quickfix window, try
 			// finding another window to go to.
 			for {
@@ -3948,7 +3942,7 @@ win_close :: proc "c"(win: rawptr, free_buf: bool, force: bool) -> C.int {
 					break
 				}
 				if (^C.int)(uintptr(wp) + W_P_PVW_OFF)^ == 0 &&
-					!bt_quickfix_r((^rawptr)(uintptr(wp) + W_BUFFER_OFF)^) &&
+					!bt_quickfix((^rawptr)(uintptr(wp) + W_BUFFER_OFF)^) &&
 					!((^bool)(uintptr(wp) + W_FLOATING_OFF)^ &&
 						((^bool)(uintptr(wp) + WCFG_HIDE_OFF)^ ||
 							!(^bool)(uintptr(wp) + WCFG_FOCUSABLE_OFF)^)) {
@@ -4805,7 +4799,7 @@ close_others :: proc "c"(message: C.int, forceit: C.int, ignore_pinned: bool) {
 				continue
 			}
 		}
-		win_close(wp, !(buf_hide_r((^rawptr)(uintptr(wp) + W_BUFFER_OFF)^)) &&
+		win_close(wp, !(buf_hide((^rawptr)(uintptr(wp) + W_BUFFER_OFF)^)) &&
 			!bufIsChanged((^rawptr)(uintptr(wp) + W_BUFFER_OFF)^), false)
 		wp = nextwp
 	}
@@ -4838,8 +4832,8 @@ only_one_window :: proc "c"() -> bool {
 	wp := firstwin
 	for wp != nil {
 		if (^rawptr)(uintptr(wp) + W_BUFFER_OFF)^ != nil &&
-			(!((bt_help_r((^rawptr)(uintptr(wp) + W_BUFFER_OFF)^) &&
-				!bt_help_r(curbuf)) ||
+			(!((bt_help((^rawptr)(uintptr(wp) + W_BUFFER_OFF)^) &&
+				!bt_help(curbuf)) ||
 				(^bool)(uintptr(wp) + W_FLOATING_OFF)^ ||
 				(^C.int)(uintptr(wp) + W_P_PVW_OFF)^ != 0) || wp == curwin) &&
 			!is_aucmd_win_r(wp) {
@@ -7181,7 +7175,7 @@ do_window :: proc "c"(nchar: C.int, prenum_in: C.int, xchar_in: C.int) {
 		reset_VIsual_and_resel_r() // stop Visual mode
 		// When splitting the quickfix window open a new buffer in it,
 		// don't replicate the quickfix buffer (C: goto newwindow).
-		if bt_quickfix_r(curbuf) {
+		if bt_quickfix(curbuf) {
 			do_window_newwindow(nchar, prenum)
 		} else {
 			win_split(prenum, 0)
@@ -7189,7 +7183,7 @@ do_window :: proc "c"(nchar: C.int, prenum_in: C.int, xchar_in: C.int) {
 	// split current window in two parts, vertically
 	case Ctrl_V, 'v':
 		reset_VIsual_and_resel_r() // stop Visual mode
-		if bt_quickfix_r(curbuf) {
+		if bt_quickfix(curbuf) {
 			do_window_newwindow(nchar, prenum)
 		} else {
 			win_split(prenum, WSP_VERT_O)
@@ -7429,7 +7423,7 @@ do_window :: proc "c"(nchar: C.int, prenum_in: C.int, xchar_in: C.int) {
 		(^bool)(uintptr(curwin) + W_SET_CURSWANT_OFF)^ = true
 	// Quickfix window only: view result in a new split
 	case K_KENTER_O, CAR_O:
-		if bt_quickfix_r(curbuf) {
+		if bt_quickfix(curbuf) {
 			qf_view_result_r(true)
 		}
 	// CTRL-W g extended commands

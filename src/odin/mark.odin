@@ -282,8 +282,6 @@ foreign _ {
 
 foreign _ {
 	buflist_nr2name :: proc "c" (n: C.int, fullname: C.int, helptail: C.int) -> ^u8 ---
-
-	bt_prompt :: proc "c" (buf: rawptr) -> bool ---
 	path_shorten_fname :: proc "c" (full_path: ^u8, dir_name: ^u8) -> ^u8 ---
 	vim_ispathsep_nocolon :: proc "c" (c: C.int) -> bool ---
 

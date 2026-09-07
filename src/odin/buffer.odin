@@ -656,7 +656,7 @@ curbuf_reusable :: proc "c"() -> bool {
 		(^C.int)(uintptr(curbuf) + B_NWINDOWS_OFF)^ <= 1 &&
 		(^rawptr)(uintptr(curbuf) + B_TERMINAL_OFF)^ == nil &&
 		((^rawptr)(uintptr(curbuf) + B_ML_MFP_OFF)^ == nil || buf_is_empty_r(curbuf)) &&
-		!bt_quickfix_r(curbuf) &&
+		!bt_quickfix(curbuf) &&
 		!curbufIsChanged()
 }
 
@@ -863,8 +863,6 @@ foreign _ {
 	end_visual_mode_r :: proc "c" () ---
 	@(link_name = "diff_buf_delete")
 	diff_buf_delete_r :: proc "c" (buf: rawptr) ---
-	@(link_name = "bt_nofilename")
-	bt_nofilename_r :: proc "c" (buf: rawptr) -> bool ---
 	@(link_name = "syntax_clear")
 	syntax_clear_r :: proc "c" (block: rawptr) ---
 }
@@ -959,7 +957,7 @@ buf_freeall :: proc "c"(buf: rawptr, flags: C.int) -> bool {
 	(^C.int)(uintptr(buf) + B_ML_LINE_COUNT_OFF)^ = 0 // no lines in buffer
 	// Ensure marks are adjusted for cleared buffer in case buffer not on
 	// disk: if it is reloaded the buffer will be empty.
-	if bt_nofilename_r(buf) && !exiting {
+	if bt_nofilename(buf) && !exiting {
 		mark_adjust_buf(buf, 1, count, MAXLNUM, -count, false,
 			kMarkAdjustNormal, KEXTMARK_NO_UNDO_O)
 	}
@@ -1559,7 +1557,7 @@ do_buffer_ext :: proc "c"(action: C.int, start: C.int, dir: C.int, count_in: C.i
 						// Skip current and unlisted bufs. Also skip a
 						// quickfix or closing buffer (may be deleted soon).
 						if buf == curbuf || !(^bool)(uintptr(buf) + B_P_BL_OFF)^ ||
-							bt_quickfix_r(buf) ||
+							bt_quickfix(buf) ||
 							(^C.int)(uintptr(buf) + B_LOCKED_SPLIT_OFF)^ != 0 {
 							buf = nil
 						} else if (^rawptr)(uintptr(buf) + B_ML_MFP_OFF)^ == nil {
@@ -1609,7 +1607,7 @@ do_buffer_ext :: proc "c"(action: C.int, start: C.int, dir: C.int, count_in: C.i
 				if (^bool)(uintptr(buf) + B_HELP_OFF)^ ==
 					(^bool)(uintptr(curbuf) + B_HELP_OFF)^ &&
 					(^bool)(uintptr(buf) + B_P_BL_OFF)^ &&
-					!bt_quickfix_r(buf) &&
+					!bt_quickfix(buf) &&
 					(^C.int)(uintptr(buf) + B_LOCKED_SPLIT_OFF)^ == 0 {
 					if (^rawptr)(uintptr(buf) + B_ML_MFP_OFF)^ != nil { // loaded
 						break
@@ -1629,7 +1627,7 @@ do_buffer_ext :: proc "c"(action: C.int, start: C.int, dir: C.int, count_in: C.i
 			buf2 := firstbuf
 			for buf2 != nil {
 				if (^bool)(uintptr(buf2) + B_P_BL_OFF)^ && buf2 != curbuf &&
-					!bt_quickfix_r(buf2) &&
+					!bt_quickfix(buf2) &&
 					(^C.int)(uintptr(buf2) + B_LOCKED_SPLIT_OFF)^ == 0 {
 					buf = buf2
 					break
@@ -1644,7 +1642,7 @@ do_buffer_ext :: proc "c"(action: C.int, start: C.int, dir: C.int, count_in: C.i
 			} else {
 				buf = (^rawptr)(uintptr(curbuf) + B_PREV_OFF)^
 			}
-			if bt_quickfix_r(buf) ||
+			if bt_quickfix(buf) ||
 				(buf != curbuf &&
 					(^C.int)(uintptr(buf) + B_LOCKED_SPLIT_OFF)^ != 0) {
 				buf = nil
@@ -1760,7 +1758,7 @@ set_curbuf :: proc "c"(buf: rawptr, action: C.int, update_jumplist: bool) {
 			}
 			close_buffer_r(curwin, prevbuf,
 				unload ? action :
-				(action == DOBUF_GOTO_O && !buf_hide_r((^rawptr)(uintptr(curwin) + W_BUFFER_OFF)^) &&
+				(action == DOBUF_GOTO_O && !buf_hide(prevbuf) &&
 					!bufIsChanged(prevbuf)) ? DOBUF_UNLOAD_O : 0,
 				false, false, true)
 		}
@@ -2351,7 +2349,7 @@ open_buffer :: proc "c"(read_stdin: bool, eap: rawptr, flags_arg: C.int) -> C.in
 			}
 		}
 		// Help buffer: populate *local-additions* in help.txt
-		if bt_help_r((^rawptr)(uintptr(curbuf) + B_FNAME)^) {
+		if bt_help(curbuf) {
 			get_local_additions_r()
 		}
 	} else if read_stdin {
@@ -2527,4 +2525,147 @@ do_bufdel :: proc "c"(command: C.int, arg_in: cstring, addr_count: C.int, start_
 // ascii_isdigit is a C static inline: exact equivalent.
 ascii_isdigit_o :: proc "c"(c: u8) -> bool {
 	return c >= '0' && c <= '9'
+}
+
+// ── Batch 48: bt_* family + buf_hide ─────────────────────────────────────────
+
+CMOD_HIDE_O :: 0x0020
+E382_S :: "E382: Cannot write, 'buftype' option is set"
+
+foreign _ {
+	@(link_name = "p_hid")
+	p_hid_g: C.int
+	@(link_name = "cmdwin_buf")
+	cmdwin_buf_g: rawptr
+}
+
+// Buftype predicates (all pure one-liners over b_p_bt/b_help/terminal).
+@(export)
+bt_help :: proc "c"(buf: rawptr) -> bool {
+	return buf != nil && (^bool)(uintptr(buf) + B_HELP_OFF)^
+}
+
+@(export)
+bt_normal :: proc "c"(buf: rawptr) -> bool {
+	if buf == nil {
+		return false
+	}
+	bt := (^u8)((^rawptr)(uintptr(buf) + B_P_BT_OFF)^)
+	if bt == nil {
+		return true
+	}
+	return b_at(bt, 0) == 0
+}
+
+@(export)
+bt_quickfix :: proc "c"(buf: rawptr) -> bool {
+	if buf == nil {
+		return false
+	}
+	bt := (^u8)((^rawptr)(uintptr(buf) + B_P_BT_OFF)^)
+	if bt == nil {
+		return false
+	}
+	return b_at(bt, 0) == 'q'
+}
+
+@(export)
+bt_terminal :: proc "c"(buf: rawptr) -> bool {
+	if buf == nil {
+		return false
+	}
+	bt := (^u8)((^rawptr)(uintptr(buf) + B_P_BT_OFF)^)
+	if bt == nil {
+		return false
+	}
+	return b_at(bt, 0) == 't'
+}
+
+@(export)
+bt_nofilename :: proc "c"(buf: rawptr) -> bool {
+	if buf == nil {
+		return false
+	}
+	bt := (^u8)((^rawptr)(uintptr(buf) + B_P_BT_OFF)^)
+	if bt == nil {
+		return false
+	}
+	// NOTE: C also accepts "acwrite" ('a'); terminal covered explicitly.
+	return (b_at(bt, 0) == 'n' && b_at(bt, 2) == 'f') ||
+		b_at(bt, 0) == 'a' ||
+		(^rawptr)(uintptr(buf) + B_TERMINAL_OFF)^ != nil ||
+		b_at(bt, 0) == 'p'
+}
+
+@(export)
+bt_nofile :: proc "c"(buf: rawptr) -> bool {
+	if buf == nil {
+		return false
+	}
+	bt := (^u8)((^rawptr)(uintptr(buf) + B_P_BT_OFF)^)
+	if bt == nil {
+		return false
+	}
+	return b_at(bt, 0) == 'n' && b_at(bt, 2) == 'f'
+}
+
+@(export)
+bt_dontwrite :: proc "c"(buf: rawptr) -> bool {
+	if buf == nil {
+		return false
+	}
+	bt := (^u8)((^rawptr)(uintptr(buf) + B_P_BT_OFF)^)
+	if bt == nil {
+		return false
+	}
+	return b_at(bt, 0) == 'n' ||
+		(^rawptr)(uintptr(buf) + B_TERMINAL_OFF)^ != nil ||
+		b_at(bt, 0) == 'p'
+}
+
+@(export)
+bt_dontwrite_msg :: proc "c"(buf: rawptr) -> bool {
+	if bt_dontwrite(buf) {
+		emsg(cstring(E382_S))
+		return true
+	}
+	return false
+}
+
+@(export)
+bt_prompt :: proc "c"(buf: rawptr) -> bool {
+	if buf == nil {
+		return false
+	}
+	bt := (^u8)((^rawptr)(uintptr(buf) + B_P_BT_OFF)^)
+	if bt == nil {
+		return false
+	}
+	return b_at(bt, 0) == 'p'
+}
+
+@(export)
+bt_cmdwin :: proc "c"(buf: rawptr) -> bool {
+	return buf != nil && buf == cmdwin_buf_g
+}
+
+// True when buffer "buf" should be hidden (per 'hidden'/":hide"/'bufhidden').
+@(export)
+buf_hide :: proc "c"(buf: rawptr) -> bool {
+	if buf == nil {
+		return false
+	}
+	// 'bufhidden' overrules 'hidden' and ":hide", check it first.
+	bh := (^u8)((^rawptr)(uintptr(buf) + B_P_BH_OFF)^)
+	c0: u8 = 0
+	if bh != nil {
+		c0 = b_at(bh, 0)
+	}
+	if c0 == 'u' || c0 == 'w' || c0 == 'd' {
+		return false // "unload"/"wipe"/"delete"
+	}
+	if c0 == 'h' {
+		return true // "hide"
+	}
+	return p_hid_g != 0 || (cmdmod_cmod_flags & CMOD_HIDE_O) != 0
 }
