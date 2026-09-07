@@ -6873,3 +6873,183 @@ win_splitmove :: proc "c"(wp: rawptr, size: C.int, flags: C.int) -> C.int {
 	}
 	return OK
 }
+
+// ── Batch 43a: do_window helpers (dormant; dispatcher ports next) ────────────
+
+E5602_S :: "E5602: Cannot exchange or rotate float"
+E443_S :: "E443: Cannot rotate when another window is split"
+
+// Build ":cmd [count]" string (C static: no export/weak).
+cmd_with_count_o :: proc "c"(cmd: cstring, bufp: rawptr, bufsize: C.size_t, prenum: C.longlong) {
+	length := xstrlcpy(transmute(cstring)(bufp), cmd, bufsize)
+	if prenum > 0 && C.size_t(length) < bufsize {
+		libc.snprintf(transmute([^]u8)(uintptr(bufp) + uintptr(length)),
+			bufsize - C.size_t(length), cstring("%ld"), prenum)
+	}
+}
+
+// Exchange current and next window (C static: no export/weak).
+win_exchange_o :: proc "c"(prenum_in: C.int) {
+	prenum := prenum_in
+	if (^bool)(uintptr(curwin) + W_FLOATING_OFF)^ {
+		emsg(cstring(E5602_S))
+		return
+	}
+	if one_window(curwin, nil) {
+		// just one window
+		beep_flush_r()
+		return
+	}
+	if text_or_buf_locked_r() {
+		beep_flush_r()
+		return
+	}
+	frp: rawptr
+	// find window to exchange with
+	if prenum != 0 {
+		frp = (^rawptr)(uintptr((^rawptr)(uintptr((^rawptr)(uintptr(curwin) + W_FRAME_OFF)^) + FR_PARENT_OFF)^) + FR_CHILD_OFF)^
+		for frp != nil && prenum - 1 > 0 {
+			prenum -= 1
+			frp = (^rawptr)(uintptr(frp) + FR_NEXT_OFF)^
+		}
+	} else if (^rawptr)(uintptr((^rawptr)(uintptr(curwin) + W_FRAME_OFF)^) + FR_NEXT_OFF)^ != nil {
+		frp = (^rawptr)(uintptr((^rawptr)(uintptr(curwin) + W_FRAME_OFF)^) + FR_NEXT_OFF)^
+	} else { // Swap last window in row/col with previous
+		frp = (^rawptr)(uintptr((^rawptr)(uintptr(curwin) + W_FRAME_OFF)^) + FR_PREV_OFF)^
+	}
+	// We can only exchange a window with another window, not with a frame
+	// containing windows.
+	if frp == nil || (^rawptr)(uintptr(frp) + FR_WIN_OFF)^ == nil ||
+		(^rawptr)(uintptr(frp) + FR_WIN_OFF)^ == curwin {
+		return
+	}
+	wp := (^rawptr)(uintptr(frp) + FR_WIN_OFF)^
+	// 1. remove curwin from the list. Remember after which window it was.
+	// 2. insert curwin before wp in the list; if wp != wp2:
+	// 3. remove wp, 4. insert wp after wp2.
+	// 5. exchange heights/separators.
+	wp2 := (^rawptr)(uintptr(curwin) + W_PREV_OFF)^
+	frp2 := (^rawptr)(uintptr((^rawptr)(uintptr(curwin) + W_FRAME_OFF)^) + FR_PREV_OFF)^
+	if (^rawptr)(uintptr(wp) + W_PREV_OFF)^ != curwin {
+		win_remove(curwin, nil)
+		frame_remove_o((^rawptr)(uintptr(curwin) + W_FRAME_OFF)^)
+		win_append((^rawptr)(uintptr(wp) + W_PREV_OFF)^, curwin, nil)
+		frame_insert_o(frp, (^rawptr)(uintptr(curwin) + W_FRAME_OFF)^)
+	}
+	if wp != wp2 {
+		win_remove(wp, nil)
+		frame_remove_o((^rawptr)(uintptr(wp) + W_FRAME_OFF)^)
+		win_append(wp2, wp, nil)
+		if frp2 == nil {
+			parent := (^rawptr)(uintptr((^rawptr)(uintptr(wp) + W_FRAME_OFF)^) + FR_PARENT_OFF)^
+			frame_insert_o((^rawptr)(uintptr(parent) + FR_CHILD_OFF)^,
+				(^rawptr)(uintptr(wp) + W_FRAME_OFF)^)
+		} else {
+			frame_append_o(frp2, (^rawptr)(uintptr(wp) + W_FRAME_OFF)^)
+		}
+	}
+	temp := (^C.int)(uintptr(curwin) + W_STATUS_HEIGHT_OFF)^
+	(^C.int)(uintptr(curwin) + W_STATUS_HEIGHT_OFF)^ =
+		(^C.int)(uintptr(wp) + W_STATUS_HEIGHT_OFF)^
+	(^C.int)(uintptr(wp) + W_STATUS_HEIGHT_OFF)^ = temp
+	temp = (^C.int)(uintptr(curwin) + W_VSEP_WIDTH_OFF)^
+	(^C.int)(uintptr(curwin) + W_VSEP_WIDTH_OFF)^ =
+		(^C.int)(uintptr(wp) + W_VSEP_WIDTH_OFF)^
+	(^C.int)(uintptr(wp) + W_VSEP_WIDTH_OFF)^ = temp
+	temp = (^C.int)(uintptr(curwin) + W_HSEP_HEIGHT_OFF)^
+	(^C.int)(uintptr(curwin) + W_HSEP_HEIGHT_OFF)^ =
+		(^C.int)(uintptr(wp) + W_HSEP_HEIGHT_OFF)^
+	(^C.int)(uintptr(wp) + W_HSEP_HEIGHT_OFF)^ = temp
+	frame_fix_height_o(curwin)
+	frame_fix_height_o(wp)
+	frame_fix_width_o(curwin)
+	frame_fix_width_o(wp)
+	win_comp_pos() // recompute window positions
+	if (^rawptr)(uintptr(wp) + W_BUFFER_OFF)^ != curbuf {
+		reset_VIsual_and_resel_r()
+	} else if VIsual_active {
+		libc.memcpy(transmute(rawptr)(uintptr(wp) + W_CURSOR_OFF),
+			transmute(rawptr)(uintptr(curwin) + W_CURSOR_OFF), 12)
+	}
+	win_enter(wp, true)
+	redraw_later(curwin, UPD_NOT_VALID_O)
+	redraw_later(wp, UPD_NOT_VALID_O)
+}
+
+// Rotate windows up/down (C static: no export/weak).
+win_rotate_o :: proc "c"(upwards: bool, count_in: C.int) {
+	count := count_in
+	if (^bool)(uintptr(curwin) + W_FLOATING_OFF)^ {
+		emsg(cstring(E5602_S))
+		return
+	}
+	if count <= 0 || one_window(curwin, nil) {
+		// nothing to do
+		beep_flush_r()
+		return
+	}
+	// Check if all frames in this row/col have one window.
+	frp := (^rawptr)(uintptr((^rawptr)(uintptr(curwin) + W_FRAME_OFF)^) + FR_PARENT_OFF)^
+	frp = (^rawptr)(uintptr(frp) + FR_CHILD_OFF)^
+	for frp != nil {
+		if (^rawptr)(uintptr(frp) + FR_WIN_OFF)^ == nil {
+			emsg(cstring(E443_S))
+			return
+		}
+		frp = (^rawptr)(uintptr(frp) + FR_NEXT_OFF)^
+	}
+	wp1: rawptr
+	wp2: rawptr
+	for count > 0 {
+		count -= 1
+		if upwards { // first window becomes last window
+			// remove first window/frame from the list
+			frp = (^rawptr)(uintptr((^rawptr)(uintptr(curwin) + W_FRAME_OFF)^) + FR_PARENT_OFF)^
+			frp = (^rawptr)(uintptr(frp) + FR_CHILD_OFF)^
+			wp1 = (^rawptr)(uintptr(frp) + FR_WIN_OFF)^
+			win_remove(wp1, nil)
+			frame_remove_o(frp)
+			// find last frame and append removed window/frame after it
+			for (^rawptr)(uintptr(frp) + FR_NEXT_OFF)^ != nil {
+				frp = (^rawptr)(uintptr(frp) + FR_NEXT_OFF)^
+			}
+			win_append((^rawptr)(uintptr(frp) + FR_WIN_OFF)^, wp1, nil)
+			frame_append_o(frp, (^rawptr)(uintptr(wp1) + W_FRAME_OFF)^)
+			wp2 = (^rawptr)(uintptr(frp) + FR_WIN_OFF)^ // previously last window
+		} else { // last window becomes first window
+			// find last window/frame in the list and remove it
+			frp = (^rawptr)(uintptr(curwin) + W_FRAME_OFF)^
+			for (^rawptr)(uintptr(frp) + FR_NEXT_OFF)^ != nil {
+				frp = (^rawptr)(uintptr(frp) + FR_NEXT_OFF)^
+			}
+			wp1 = (^rawptr)(uintptr(frp) + FR_WIN_OFF)^
+			wp2 = (^rawptr)(uintptr(wp1) + W_PREV_OFF)^ // will become last window
+			win_remove(wp1, nil)
+			frame_remove_o(frp)
+			// append the removed window/frame before the first in the list
+			parent := (^rawptr)(uintptr(frp) + FR_PARENT_OFF)^
+			first_child := (^rawptr)(uintptr(parent) + FR_CHILD_OFF)^
+			win_append((^rawptr)(uintptr((^rawptr)(uintptr(first_child) + FR_WIN_OFF)^) + W_PREV_OFF)^, wp1, nil)
+			frame_insert_o(first_child, frp)
+		}
+		// exchange status/winbar/hsep heights and vsep width of old/new last
+		n := (^C.int)(uintptr(wp2) + W_STATUS_HEIGHT_OFF)^
+		(^C.int)(uintptr(wp2) + W_STATUS_HEIGHT_OFF)^ = (^C.int)(uintptr(wp1) + W_STATUS_HEIGHT_OFF)^
+		(^C.int)(uintptr(wp1) + W_STATUS_HEIGHT_OFF)^ = n
+		n = (^C.int)(uintptr(wp2) + W_HSEP_HEIGHT_OFF)^
+		(^C.int)(uintptr(wp2) + W_HSEP_HEIGHT_OFF)^ = (^C.int)(uintptr(wp1) + W_HSEP_HEIGHT_OFF)^
+		(^C.int)(uintptr(wp1) + W_HSEP_HEIGHT_OFF)^ = n
+		frame_fix_height_o(wp1)
+		frame_fix_height_o(wp2)
+		n = (^C.int)(uintptr(wp2) + W_VSEP_WIDTH_OFF)^
+		(^C.int)(uintptr(wp2) + W_VSEP_WIDTH_OFF)^ = (^C.int)(uintptr(wp1) + W_VSEP_WIDTH_OFF)^
+		(^C.int)(uintptr(wp1) + W_VSEP_WIDTH_OFF)^ = n
+		frame_fix_width_o(wp1)
+		frame_fix_width_o(wp2)
+		// recompute w_winrow and w_wincol for all windows
+		win_comp_pos()
+	}
+	(^bool)(uintptr(wp1) + W_POS_CHANGED_OFF)^ = true
+	(^bool)(uintptr(wp2) + W_POS_CHANGED_OFF)^ = true
+	redraw_all_later_r(UPD_NOT_VALID_O)
+}
