@@ -486,10 +486,7 @@ CHANGEDTICK_S :: "changedtick"
 foreign _ {
 	@(link_name = "nvim_odin_set_top_file_num")
 	nvim_odin_set_top_file_num_r :: proc "c" (v: C.int) ---
-	@(link_name = "fname_expand")
-	fname_expand_r :: proc "c" (buf: rawptr, ffname: ^cstring, sfname: ^cstring) ---
-	@(link_name = "buflist_setfpos")
-	buflist_setfpos_r :: proc "c" (buf: rawptr, win: rawptr, lnum: C.int, col: C.int, copy_options: bool) ---
+	// fname_expand/buflist_setfpos now defined below — call directly.
 	@(link_name = "in_assert_fails")
 	in_assert_fails_g: bool
 	@(link_name = "msg_delay")
@@ -664,7 +661,7 @@ curbuf_reusable :: proc "c"() -> bool {
 buflist_new :: proc "c"(ffname_arg: cstring, sfname_arg: cstring, lnum: C.int, flags: C.int) -> rawptr {
 	ffname := ffname_arg
 	sfname := sfname_arg
-	fname_expand_r(curbuf, &ffname, &sfname) // will allocate ffname
+	fname_expand(curbuf, &ffname, &sfname) // will allocate ffname
 	// If the file name already exists in the list, update the entry.
 	// We can use inode numbers when the file exists. Works better for
 	// hard links.
@@ -677,7 +674,7 @@ buflist_new :: proc "c"(ffname_arg: cstring, sfname_arg: cstring, lnum: C.int, f
 	if buf != nil {
 		xfree(transmute(rawptr)(ffname))
 		if lnum != 0 {
-			buflist_setfpos_r(buf, (flags & BLN_NOCURWIN_O) != 0 ? nil : curwin,
+			buflist_setfpos(buf, (flags & BLN_NOCURWIN_O) != 0 ? nil : curwin,
 				lnum, 0, false)
 		}
 		if (flags & BLN_NOOPT_O) == 0 {
@@ -855,8 +852,7 @@ EVENT_BUFWIPEOUT_O :: 17
 KEXTMARK_NO_UNDO_O :: 2
 
 foreign _ {
-	@(link_name = "buf_close_terminal")
-	buf_close_terminal_r :: proc "c" (buf: rawptr) ---
+	// buf_close_terminal now defined below — call directly.
 	@(link_name = "end_visual_mode")
 	end_visual_mode_r :: proc "c" () ---
 	@(link_name = "diff_buf_delete")
@@ -879,7 +875,7 @@ buf_freeall :: proc "c"(buf: rawptr, flags: C.int) -> bool {
 	bref: Bufref_T
 	set_bufref(&bref, buf)
 	if (^rawptr)(uintptr(buf) + B_TERMINAL_OFF)^ != nil {
-		buf_close_terminal_r(buf)
+		buf_close_terminal(buf)
 	}
 	buf_updates_unload_r(buf, false)
 	if (^rawptr)(uintptr(buf) + B_ML_MFP_OFF)^ != nil &&
@@ -947,7 +943,7 @@ buf_freeall :: proc "c"(buf: rawptr, flags: C.int) -> bool {
 	// Autocommands may have opened another terminal. Block them this time.
 	if (^rawptr)(uintptr(buf) + B_TERMINAL_OFF)^ != nil {
 		block_autocmds_r()
-		buf_close_terminal_r(buf)
+		buf_close_terminal(buf)
 		unblock_autocmds_r()
 	}
 	count := (^C.int)(uintptr(buf) + B_ML_LINE_COUNT_OFF)^
@@ -1079,7 +1075,7 @@ setaltfname :: proc "c"(ffname: cstring, sfname: cstring, lnum: C.int) -> rawptr
 getaltfname :: proc "c"(errmsg: bool) -> cstring {
 	aname: ^u8 = nil
 	dummy: C.int = 0
-	if buflist_name_nr_r(0, &aname, &dummy) == FAIL {
+	if buflist_name_nr(0, &aname, &dummy) == FAIL {
 		if errmsg {
 			emsg(cstring(E_NOALT_S))
 		}
@@ -1101,7 +1097,7 @@ buflist_add :: proc "c"(fname: cstring, flags: C.int) -> C.int {
 // Set alternate cursor position for the current buffer and window "win".
 @(export)
 buflist_altfpos :: proc "c"(win: rawptr) {
-	buflist_setfpos_r(curbuf, win, (^C.int)(uintptr(win) + W_CURSOR_OFF)^,
+	buflist_setfpos(curbuf, win, (^C.int)(uintptr(win) + W_CURSOR_OFF)^,
 		(^C.int)(uintptr(win) + W_CURSOR_OFF + 4)^, true)
 }
 
@@ -1166,7 +1162,7 @@ setfname :: proc "c"(buf: rawptr, ffname_arg: cstring, sfname_arg: cstring, mess
 		xfree((^rawptr)(uintptr(buf) + B_FFNAME)^)
 		(^rawptr)(uintptr(buf) + B_FFNAME)^ = nil
 	} else {
-		fname_expand_r(buf, &ffname, &sfname) // will allocate ffname
+		fname_expand(buf, &ffname, &sfname) // will allocate ffname
 		if ffname == nil { // out of memory
 			return FAIL
 		}
@@ -1201,7 +1197,7 @@ setfname :: proc "c"(buf: rawptr, ffname_arg: cstring, sfname_arg: cstring, mess
 				return FAIL
 			}
 			// delete from the list
-			close_buffer_r(nil, obuf, DOBUF_WIPE_O, false, false, false)
+			close_buffer(nil, obuf, DOBUF_WIPE_O, false, false, false)
 		}
 		sfname = transmute(cstring)(xstrdup_o(transmute(^u8)(sfname)))
 		if (^rawptr)(uintptr(buf) + B_SFNAME_OFF)^ != (^rawptr)(uintptr(buf) + B_FFNAME)^ {
@@ -1236,7 +1232,7 @@ buf_set_name :: proc "c"(fnum: C.int, name: cstring) {
 	(^rawptr)(uintptr(buf) + B_FFNAME)^ = transmute(rawptr)(xstrdup_o(transmute(^u8)(name)))
 	(^rawptr)(uintptr(buf) + B_SFNAME_OFF)^ = nil
 	// Allocate ffname and expand into full path.
-	fname_expand_r(buf, transmute(^cstring)(uintptr(buf) + B_FFNAME),
+	fname_expand(buf, transmute(^cstring)(uintptr(buf) + B_FFNAME),
 		transmute(^cstring)(uintptr(buf) + B_SFNAME_OFF))
 	(^rawptr)(uintptr(buf) + B_FNAME)^ = (^rawptr)(uintptr(buf) + B_SFNAME_OFF)^
 }
@@ -1251,7 +1247,7 @@ buf_name_changed :: proc "c"(buf: rawptr) {
 	if (^rawptr)(uintptr(curwin) + W_BUFFER_OFF)^ == buf {
 		check_arg_idx_r(curwin) // check file name for arg list
 	}
-	maketitle_r() // set window title
+	maketitle() // set window title
 	status_redraw_all_r() // status lines need to be redrawn
 	fmarks_check_names(buf) // check named file marks
 	ml_timestamp_r(buf) // reset timestamp
@@ -1517,7 +1513,7 @@ do_buffer_ext :: proc "c"(action: C.int, start: C.int, dir: C.int, count_in: C.i
 			}
 			if buf != curbuf && bufref_valid(&bref) &&
 				(^C.int)(uintptr(buf) + B_NWINDOWS_OFF)^ <= 0 {
-				close_buffer_r(nil, buf, action, false, false, false)
+				close_buffer(nil, buf, action, false, false, false)
 			}
 			return OK
 		}
@@ -1754,7 +1750,7 @@ set_curbuf :: proc "c"(buf: rawptr, action: C.int, update_jumplist: bool) {
 				((State & MODE_INSERT) == 0 || (^C.int)(uintptr(curbuf) + B_NWINDOWS_OFF)^ <= 1) {
 				u_sync(false)
 			}
-			close_buffer_r(curwin, prevbuf,
+			close_buffer(curwin, prevbuf,
 				unload ? action :
 				(action == DOBUF_GOTO_O && !buf_hide(prevbuf) &&
 					!bufIsChanged(prevbuf)) ? DOBUF_UNLOAD_O : 0,
@@ -1841,7 +1837,7 @@ enter_buffer_o :: proc "c"(buf: rawptr) {
 		buflist_getfpos_o()
 	}
 	check_arg_idx_r(curwin) // check for valid arg_idx
-	maketitle_r()
+	maketitle()
 	// when autocmds didn't change it
 	if (^C.int)(uintptr(curwin) + W_TOPLINE_OFF)^ == 1 &&
 		!(^bool)(uintptr(curwin) + W_TOPLINE_WAS_SET_OFF)^ {
@@ -1878,8 +1874,7 @@ E937_S :: "E937: Attempt to delete a buffer that is in use: %s"
 foreign _ {
 	@(link_name = "updating_screen")
 	updating_screen_g: bool
-	@(link_name = "do_ecmd")
-	do_ecmd_r :: proc "c" (fnum: C.int, ffname: cstring, sfname: cstring, eap: rawptr, newlnum: C.int, flags: C.int, oldwin: rawptr) -> C.int ---
+	// do_ecmd now defined in ex_cmds.odin — call directly.
 }
 
 // Can buffer "buf" be unloaded? (C static: no export/weak.)
@@ -1943,13 +1938,13 @@ empty_curbuf_o :: proc "c"(close_others: bool, forceit: C.int, action: C.int) ->
 		close_windows(buf, can_close_all_others)
 	}
 	setpcmark()
-	retval := do_ecmd_r(0, nil, nil, nil, ECMD_ONE_O, forceit != 0 ? ECMD_FORCEIT_O : 0, curwin)
+	retval := do_ecmd(0, nil, nil, nil, ECMD_ONE_O, forceit != 0 ? ECMD_FORCEIT_O : 0, curwin)
 	// do_ecmd() may create a new buffer, then we have to delete the old
 	// one. But do_ecmd() may have done that already: check if the buffer
 	// still exists.
 	if buf != curbuf && bufref_valid(&bref) &&
 		(^C.int)(uintptr(buf) + B_NWINDOWS_OFF)^ == 0 {
-		close_buffer_r(nil, buf, action, false, false, false)
+		close_buffer(nil, buf, action, false, false, false)
 	}
 	if !close_others {
 		need_fileinfo_g = false
@@ -1985,8 +1980,7 @@ foreign _ {
 	leave_cleanup_r :: proc "c" (csp: rawptr) ---
 	@(link_name = "ml_recover")
 	ml_recover_r :: proc "c" (checkext: bool) ---
-	@(link_name = "do_modelines")
-	do_modelines_r :: proc "c" (flags: C.int) ---
+	// do_modelines now defined below — call directly.
 	@(link_name = "swap_exists_action")
 	swap_exists_action_g: C.int
 	@(link_name = "swap_exists_did_quit")
@@ -2045,7 +2039,7 @@ handle_swap_exists :: proc "c"(old_curbuf: ^Bufref_T) {
 		// open a new, empty buffer.
 		swap_exists_action_g = SEA_NONE_O // don't want it again
 		swap_exists_did_quit_g = true
-		close_buffer_r(curwin, curbuf, DOBUF_UNLOAD_O, false, false, true)
+		close_buffer(curwin, curbuf, DOBUF_UNLOAD_O, false, false, true)
 		if old_curbuf == nil || !bufref_valid(old_curbuf) || old_curbuf.br_buf == curbuf {
 			// Block autocommands here because curwin->w_buffer may be NULL.
 			block_autocmds_r()
@@ -2074,7 +2068,7 @@ handle_swap_exists :: proc "c"(old_curbuf: ^Bufref_T) {
 		ml_recover_r(false)
 		msg_puts(cstring("\n")) // don't overwrite the last message
 		cmdline_row = msg_row
-		do_modelines_r(0)
+		do_modelines(0)
 		// Restore the error/interrupt/exception state if not discarded by a
 		// new aborting error, interrupt, or uncaught exception.
 		leave_cleanup_r(&cs[0])
@@ -2284,7 +2278,7 @@ open_buffer :: proc "c"(read_stdin: bool, eap: rawptr, flags_arg: C.int) -> C.in
 	}
 	if ml_open_r(curbuf) == FAIL {
 		// There MUST be a memfile, otherwise we can't do anything.
-		close_buffer_r(curwin, curbuf, 0, false, false, false)
+		close_buffer(curwin, curbuf, 0, false, false, false)
 		curbuf = nil
 		bf := firstbuf
 		for bf != nil {
@@ -2411,7 +2405,7 @@ open_buffer :: proc "c"(read_stdin: bool, eap: rawptr, flags_arg: C.int) -> C.in
 		aco: [56]u8
 		// Go to the buffer that was opened, make sure it is in a window.
 		aucmd_prepbuf_r(&aco[0], old_curbuf.br_buf)
-		do_modelines_r(0)
+		do_modelines(0)
 		(^C.int)(uintptr(curbuf) + B_FLAGS_OFF)^ &= ~(C.int(BF_CHECK_RO_O) | C.int(BF_NEVERLOADED_O))
 		if (flags & READ_NOWINENTER_O) == 0 {
 			apply_autocmds_retval_r(EVENT_BUFWINENTER_O, nil, nil, false, curbuf, &retval)
@@ -2481,7 +2475,7 @@ do_bufdel :: proc "c"(command: C.int, arg_in: cstring, addr_count: C.int, start_
 				}
 				if !ascii_isdigit_o(b_at(transmute(^u8)(arg), 0)) {
 					p := skiptowhite_esc_r(arg)
-					bnr = buflist_findpat_r(arg, p, command == DOBUF_WIPE_O, false, false)
+					bnr = buflist_findpat(arg, p, command == DOBUF_WIPE_O, false, false)
 					if bnr < 0 { // failed
 						break
 					}
@@ -2871,7 +2865,7 @@ wipe_buffer :: proc "c"(buf: rawptr, aucmd: bool) {
 		// Don't trigger BufDelete autocommands here.
 		block_autocmds_r()
 	}
-	close_buffer_r(nil, buf, DOBUF_WIPE_O, false, true, false)
+	close_buffer(nil, buf, DOBUF_WIPE_O, false, true, false)
 	if !aucmd {
 		unblock_autocmds_r()
 	}
@@ -2960,4 +2954,1733 @@ read_buffer_into :: proc "c"(buf: rawptr, start: C.int, end: C.int, sb: rawptr) 
 			written += len
 		}
 	}
+}
+
+// ── Batch 18: close_buffer (unload/delete/wipe engine) ──────────────────────
+
+EVENT_BUFWINLEAVE_O :: 16
+EVENT_BUFHIDDEN_O :: 6
+E855_S :: "E855: Autocommands caused command to abort"
+
+foreign _ {
+	@(link_name = "diffopt_hiddenoff")
+	diffopt_hiddenoff_r :: proc "c" () -> bool ---
+}
+
+// Close/unload/delete/wipe buffer "buf" shown in window "win".
+// Returns true when we got to the end and unloaded "buf".
+@(export)
+close_buffer :: proc "c"(win: rawptr, buf: rawptr, action: C.int, abort_if_last: bool, ignore_abort: bool, set_context: bool) -> bool {
+	unload_buf := action != 0
+	del_buf := action == DOBUF_DEL_O || action == DOBUF_WIPE_O
+	wipe_buf := action == DOBUF_WIPE_O
+
+	is_curwin := curwin != nil && curwin == win &&
+		(^rawptr)(uintptr(curwin) + W_BUFFER_OFF)^ == buf
+	the_curtab := curtab
+
+	// CHECK_CURBUF is a no-op (no ABORT_ON_INTERNAL_ERROR in this build).
+
+	// Force unloading/deleting when 'bufhidden' says so, but not for
+	// terminal buffers ('bufhidden'=="hide" must NOT free — the caller
+	// takes care of that, otherwise we could never free a buffer).
+	if (^rawptr)(uintptr(buf) + B_TERMINAL_OFF)^ == nil {
+		bh := (^u8)((^rawptr)(uintptr(buf) + B_P_BH_OFF)^)
+		c0: u8 = 0
+		if bh != nil {
+			c0 = b_at(bh, 0)
+		}
+		if c0 == 'd' { // 'bufhidden' == "delete"
+			del_buf = true
+			unload_buf = true
+		} else if c0 == 'w' { // 'bufhidden' == "wipe"
+			del_buf = true
+			unload_buf = true
+			wipe_buf = true
+		} else if c0 == 'u' { // 'bufhidden' == "unload"
+			unload_buf = true
+		}
+	}
+	if (^rawptr)(uintptr(buf) + B_TERMINAL_OFF)^ != nil &&
+		(unload_buf || del_buf || wipe_buf) {
+		// Terminal buffers can only be wiped.
+		unload_buf = true
+		del_buf = true
+		wipe_buf = true
+	}
+
+	// Disallow deleting a locked buffer (already closing). Unloading is OK.
+	if (del_buf || wipe_buf) && !can_unload_buffer_o(buf) {
+		return false
+	}
+
+	win_valid := win_valid_any_tab(win)
+	if set_context && win_valid && (^rawptr)(uintptr(win) + W_BUFFER_OFF)^ == buf {
+		// Remember last cursor + window options when closing the last
+		// window for the buffer (used to be curwin-only; ":only" would
+		// otherwise lose options like 'foldmethod').
+		if (^C.int)(uintptr(buf) + B_NWINDOWS_OFF)^ == 1 {
+			set_last_cursor(win)
+		}
+		lnum := (^C.int)(uintptr(win) + W_CURSOR_OFF)^
+		buflist_setfpos(buf, win, lnum == 1 ? 0 : lnum,
+			(^C.int)(uintptr(win) + W_CURSOR_OFF + 4)^, true)
+	}
+
+	bufref: Bufref_T
+	set_bufref(&bufref, buf)
+
+	// When the buffer is no longer in a window, trigger BufWinLeave.
+	if win_valid && (^rawptr)(uintptr(win) + W_BUFFER_OFF)^ == buf &&
+		(^C.int)(uintptr(buf) + B_NWINDOWS_OFF)^ == 1 {
+		(^C.int)(uintptr(buf) + B_LOCKED_OFF)^ += 1
+		(^C.int)(uintptr(buf) + B_LOCKED_SPLIT_OFF)^ += 1
+		if apply_autocmds(EVENT_BUFWINLEAVE_O,
+			(^cstring)(uintptr(buf) + B_FNAME)^,
+			(^cstring)(uintptr(buf) + B_FNAME)^, false, buf) &&
+			!bufref_valid(&bufref) {
+			// Autocommands deleted the buffer.
+			emsg(cstring(E855_S))
+			return false
+		}
+		(^C.int)(uintptr(buf) + B_LOCKED_OFF)^ -= 1
+		(^C.int)(uintptr(buf) + B_LOCKED_SPLIT_OFF)^ -= 1
+		if abort_if_last && one_window(win, nil) {
+			// Autocommands made this the only window.
+			emsg(cstring(E855_S))
+			return false
+		}
+
+		// Hidden but not unloaded: trigger BufHidden.
+		if !unload_buf {
+			(^C.int)(uintptr(buf) + B_LOCKED_OFF)^ += 1
+			(^C.int)(uintptr(buf) + B_LOCKED_SPLIT_OFF)^ += 1
+			if apply_autocmds(EVENT_BUFHIDDEN_O,
+				(^cstring)(uintptr(buf) + B_FNAME)^,
+				(^cstring)(uintptr(buf) + B_FNAME)^, false, buf) &&
+				!bufref_valid(&bufref) {
+				// Autocommands deleted the buffer.
+				emsg(cstring(E855_S))
+				return false
+			}
+			(^C.int)(uintptr(buf) + B_LOCKED_OFF)^ -= 1
+			(^C.int)(uintptr(buf) + B_LOCKED_SPLIT_OFF)^ -= 1
+			if abort_if_last && one_window(win, nil) {
+				// Autocommands made this the only window.
+				emsg(cstring(E855_S))
+				return false
+			}
+		}
+		// Autocmds may abort script processing.
+		if !ignore_abort && aborting_r() {
+			return false
+		}
+		win_valid = win_valid && win_valid_any_tab(win)
+	}
+
+	// If the buffer was in curwin and the window changed, go back to that
+	// window if it still exists (avoids ":edit x" + "tabnext" BufUnload
+	// autocmd leaving a window behind without a buffer).
+	if is_curwin && curwin != win && win_valid {
+		block_autocmds_r()
+		goto_tabpage_win(the_curtab, win)
+		unblock_autocmds_r()
+	}
+
+	// A deleted quickfix window loses its 'winfixheight'.
+	if bt_quickfix(buf) && win_valid &&
+		(^rawptr)(uintptr(win) + W_BUFFER_OFF)^ == buf {
+		(^C.int)(uintptr(win) + W_P_WFH_OFF)^ = 0
+	}
+
+	// Remember if the buffer may be hidden soon, or is already hidden.
+	hiding_buf := (^C.int)(uintptr(buf) + B_NWINDOWS_OFF)^ <= 0 ||
+		(win_valid && (^rawptr)(uintptr(win) + W_BUFFER_OFF)^ == buf &&
+			(^C.int)(uintptr(buf) + B_NWINDOWS_OFF)^ == 1)
+
+	if diffopt_hiddenoff_r() && !unload_buf && hiding_buf {
+		diff_buf_delete_r(buf) // clear 'diff' for hidden buffer
+	}
+
+	// Another window shows the buffer, or not unloading: done.
+	if !hiding_buf || !unload_buf {
+		return false
+	}
+
+	// Always remove the buffer when there is no file name.
+	if (^rawptr)(uintptr(buf) + B_FFNAME)^ == nil {
+		del_buf = true
+	}
+
+	// Free everything file-related (fires BufDelete autocmds when del_buf).
+	// Abort when nothing was freed or autocmds deleted the buffer.
+	bfa: C.int = (del_buf ? BFA_DEL_O : 0) + (wipe_buf ? BFA_WIPE_O : 0) +
+		(ignore_abort ? BFA_IGNORE_ABORT_O : 0)
+	if !buf_freeall(buf, bfa) {
+		return false
+	}
+
+	clear_w_buf := false
+	win_valid = win_valid && win_valid_any_tab(win)
+	if win_valid && (^rawptr)(uintptr(win) + W_BUFFER_OFF)^ == buf {
+		// Autocmds may have opened/closed windows for this buffer despite
+		// b_locked_split. Decrement for the close we do here; defer
+		// clearing w_buffer until after dict-watcher operations (.
+		// buf_clear_file()) so tabpagebuflist() never sees a window
+		// with a NULL buffer.
+		(^C.int)(uintptr(buf) + B_NWINDOWS_OFF)^ -= 1
+		clear_w_buf = true
+	}
+
+	// Remove the buffer from the list. Don't wipe while it is used in a
+	// window (unless free_all_mem, which has no EXITFREE in this build —
+	// the entered_free_all_mem clause is dropped to match compiled C).
+	if wipe_buf && (^C.int)(uintptr(buf) + B_NWINDOWS_OFF)^ <= 0 &&
+		((^rawptr)(uintptr(buf) + B_PREV_OFF)^ != nil ||
+			(^rawptr)(uintptr(buf) + B_NEXT_OFF)^ != nil) {
+		if clear_w_buf {
+			(^rawptr)(uintptr(win) + W_BUFFER_OFF)^ = nil
+		}
+		tp := first_tabpage
+		for tp != nil {
+			wp := tp == curtab ? firstwin :
+				(^rawptr)(uintptr(tp) + TP_FIRSTWIN_OFF)^
+			for wp != nil {
+				mark_forget_file(wp, (^C.int)(uintptr(buf) + B_FNUM_OFF)^)
+				wp = (^rawptr)(uintptr(wp) + W_NEXT_OFF)^
+			}
+			tp = (^rawptr)(uintptr(tp) + TP_NEXT_OFF)^
+		}
+		if (^rawptr)(uintptr(buf) + B_SFNAME_OFF)^ !=
+			(^rawptr)(uintptr(buf) + B_FFNAME)^ {
+			xfree((^rawptr)(uintptr(buf) + B_SFNAME_OFF)^)
+			(^rawptr)(uintptr(buf) + B_SFNAME_OFF)^ = nil
+		} else {
+			(^rawptr)(uintptr(buf) + B_SFNAME_OFF)^ = nil
+		}
+		xfree((^rawptr)(uintptr(buf) + B_FFNAME)^)
+		(^rawptr)(uintptr(buf) + B_FFNAME)^ = nil
+		if (^rawptr)(uintptr(buf) + B_PREV_OFF)^ == nil {
+			firstbuf = (^rawptr)(uintptr(buf) + B_NEXT_OFF)^
+		} else {
+			(^rawptr)(uintptr((^rawptr)(uintptr(buf) + B_PREV_OFF)^) + B_NEXT_OFF)^ =
+				(^rawptr)(uintptr(buf) + B_NEXT_OFF)^
+		}
+		if (^rawptr)(uintptr(buf) + B_NEXT_OFF)^ == nil {
+			lastbuf_g = (^rawptr)(uintptr(buf) + B_PREV_OFF)^
+		} else {
+			(^rawptr)(uintptr((^rawptr)(uintptr(buf) + B_NEXT_OFF)^) + B_PREV_OFF)^ =
+				(^rawptr)(uintptr(buf) + B_PREV_OFF)^
+		}
+		free_buffer_o(buf)
+	} else {
+		if del_buf {
+			// Free internals + reset options (":bdel" ~= Vim 5.7).
+			free_buffer_stuff_o(buf, KBFF_CLEAR_WININFO_O | KBFF_INIT_CHANGEDTICK_O)
+			// Make it look like a new buffer.
+			(^C.int)(uintptr(buf) + B_FLAGS_OFF)^ = BF_CHECK_RO_O | BF_NEVERLOADED_O
+			// Init the options when loaded again.
+			(^bool)(uintptr(buf) + B_P_INITIALIZED_OFF)^ = false
+		}
+		// Dict watchers set b_locked; keep them away from windows here.
+		textlock += 1
+		buf_clear_file(buf)
+		textlock -= 1
+		if clear_w_buf {
+			(^rawptr)(uintptr(win) + W_BUFFER_OFF)^ = nil
+		}
+		if del_buf {
+			(^C.int)(uintptr(buf) + B_P_BL_OFF)^ = 0
+		}
+	}
+	// NOTE: at this point "curbuf" may be invalid!
+	return true
+}
+
+// ── Batch 19: buffer-pattern cluster (buflist_findpat + buflist_match/
+// fname_match statics, ExpandBufnames + buf_time_compare) ─────────────────
+
+BUF_DIFF_FILTER_O :: 0x2000
+WILD_HOME_REPLACE_O :: 0x02
+WILD_BUFLASTUSED_O :: 0x1000
+FUZZY_SCORE_NONE_O :: C.int(-2147483648) // INT_MIN
+E93_S :: "E93: More than one match for %s"
+E94_S :: "E94: No matching buffer for %s"
+
+foreign _ {
+	@(link_name = "file_pat_to_reg_pat")
+	file_pat_to_reg_pat_r :: proc "c"(pat: cstring, pat_end: cstring, allow_dirs: cstring, no_bslash: bool) -> ^u8 ---
+	@(link_name = "diff_mode_buf")
+	diff_mode_buf_r :: proc "c"(buf: rawptr) -> bool ---
+	@(link_name = "p_fic")
+	p_fic_g: C.int
+	@(link_name = "p_wic")
+	p_wic_g: C.int
+	@(link_name = "qsort")
+	qsort_r :: proc "c"(base: rawptr, nmemb: C.size_t, size: C.size_t, compar: proc "c"(s1: rawptr, s2: rawptr) -> C.int) ---
+}
+
+// qsort comparator on b_last_used (C static in buffer.c).
+buf_time_compare_o :: proc "c"(s1: rawptr, s2: rawptr) -> C.int {
+	buf1 := (^rawptr)(s1)^
+	buf2 := (^rawptr)(s2)^
+	t1 := (^C.longlong)(uintptr(buf1) + B_LAST_USED_OFF)^
+	t2 := (^C.longlong)(uintptr(buf2) + B_LAST_USED_OFF)^
+	if t1 == t2 {
+		return 0
+	}
+	return t1 > t2 ? -1 : 1
+}
+
+// Match regprog against short name, then full name (C static).
+buflist_match_o :: proc "c"(rmp: ^Regmatch_T, buf: rawptr, ignore_case: bool) -> ^u8 {
+	// First try the short file name, then the long file name.
+	match := fname_match_o(rmp, (^u8)((^rawptr)(uintptr(buf) + B_SFNAME_OFF)^),
+		ignore_case)
+	if match == nil && rmp.regprog != nil {
+		match = fname_match_o(rmp, (^u8)((^rawptr)(uintptr(buf) + B_FFNAME)^),
+			ignore_case)
+	}
+	return match
+}
+
+// Match regprog against one file name; ~/ expansion retry (C static).
+fname_match_o :: proc "c"(rmp: ^Regmatch_T, name: ^u8, ignore_case: bool) -> ^u8 {
+	// Extra check for valid arguments.
+	if name == nil || rmp.regprog == nil {
+		return nil
+	}
+	// Ignore case when 'fileignorecase' or the argument is set.
+	rmp.rm_ic = (p_fic_g != 0 || ignore_case) ? 1 : 0
+	if vim_regexec_r(rmp, name, 0) != 0 {
+		return name
+	}
+	if rmp.regprog != nil {
+		// Replace $(HOME) with '~' and try matching again.
+		p := home_replace_save(nil, cstring(name))
+		hit := vim_regexec_r(rmp, transmute(^u8)(p), 0) != 0
+		xfree(transmute(rawptr)(p))
+		if hit {
+			return name
+		}
+	}
+	return nil
+}
+
+// Find buffer matching "pattern" (%=current, #=alternate, else 4 anchoring
+// attempts over listed then unlisted buffers). Returns fnum, -2 if ambiguous.
+@(export)
+buflist_findpat :: proc "c"(pattern: cstring, pattern_end: cstring, unlisted: bool, diffmode: bool, curtab_only: bool) -> C.int {
+	match: C.int = -1
+
+	pat0 := (^u8)(pattern)
+	if uintptr(transmute(rawptr)(pattern_end)) == uintptr(transmute(rawptr)(pat0)) + 1 &&
+		(([^]u8)(pat0)[0] == '%' || ([^]u8)(pat0)[0] == '#') {
+		match = ([^]u8)(pat0)[0] == '%' ? (^C.int)(uintptr(curbuf) + B_FNUM_OFF)^ :
+			(^C.int)(uintptr(curwin) + W_ALT_FNUM)^
+		found_buf := buflist_findnr(match)
+		if diffmode && (found_buf == nil || !diff_mode_buf_r(found_buf)) {
+			match = -1
+		}
+	} else {
+		// Four anchoring attempts: 0=none, 1='^', 2='$', 3=both; listed
+		// first, then unlisted if requested and nothing matched.
+		pat := file_pat_to_reg_pat_r(pattern, pattern_end, nil, false)
+		if pat == nil {
+			return -1
+		}
+		patlen := libc.strlen(cstring(pat))
+		toggledollar := patlen >= 2 && ([^]u8)(pat)[patlen - 1] == '$'
+
+		find_listed := true
+		for {
+			for attempt: C.int = 0; attempt <= 3; attempt += 1 {
+				// May add '^' and '$'.
+				if toggledollar {
+					([^]u8)(pat)[patlen - 1] = attempt < 2 ? 0 : '$'
+				}
+				p := pat
+				if ([^]u8)(p)[0] == '^' && (attempt & 1) == 0 { // add/remove '^'
+					p = (^u8)(uintptr(p) + 1)
+				}
+
+				regmatch: Regmatch_T
+				regmatch.regprog = vim_regcomp(cstring(p),
+					magic_isset() ? RE_MAGIC : 0)
+
+				buf := lastbuf_g
+				for buf != nil {
+					if regmatch.regprog == nil {
+						// Invalid pattern, possibly after switching engine.
+						xfree(transmute(rawptr)(pat))
+						return -1
+					}
+					if (^C.int)(uintptr(buf) + B_P_BL_OFF)^ ==
+						(find_listed ? 1 : 0) &&
+						(!diffmode || diff_mode_buf_r(buf)) &&
+						buflist_match_o(&regmatch, buf, false) != nil {
+						if curtab_only {
+							// Ignore matches not open in the current tab
+							// (tp == curtab here, so walk firstwin).
+							found_window := false
+							wp := firstwin
+							for wp != nil {
+								if (^rawptr)(uintptr(wp) + W_BUFFER_OFF)^ == buf {
+									found_window = true
+									break
+								}
+								wp = (^rawptr)(uintptr(wp) + W_NEXT_OFF)^
+							}
+							if !found_window {
+								buf = (^rawptr)(uintptr(buf) + B_PREV_OFF)^
+								continue
+							}
+						}
+						if match >= 0 { // already found a match
+							match = -2
+							break
+						}
+						match = (^C.int)(uintptr(buf) + B_FNUM_OFF)^
+					}
+					buf = (^rawptr)(uintptr(buf) + B_PREV_OFF)^
+				}
+
+				vim_regfree(regmatch.regprog)
+				if match >= 0 { // found one match
+					break
+				}
+			}
+
+			// Only search unlisted buffers if no listed buffer matched.
+			if !unlisted || !find_listed || match != -1 {
+				break
+			}
+			find_listed = false
+		}
+
+		xfree(transmute(rawptr)(pat))
+	}
+
+	if match == -2 {
+		semsg_safe(cstring(E93_S), transmute(rawptr)(pattern))
+	} else if match < 0 {
+		semsg_safe(cstring(E94_S), transmute(rawptr)(pattern))
+	}
+	return match
+}
+
+// Find all listed buffer names matching "pat" (":buf"/":sbuf" expansion).
+// Returns OK when matches are found, FAIL otherwise.
+@(export)
+ExpandBufnames :: proc "c"(pat: ^u8, num_file: ^C.int, file: ^^^u8, options: C.int) -> C.int {
+	matches: rawptr = nil
+	to_free := false
+
+	num_file^ = 0 // return values in case of FAIL
+	file^ = nil
+
+	if (options & BUF_DIFF_FILTER_O) != 0 &&
+		(^C.int)(uintptr(curwin) + W_P_DIFF_OFF)^ == 0 {
+		return FAIL
+	}
+
+	fuzzy := cmdline_fuzzy_complete_c(pat)
+
+	patc: ^u8 = nil
+	fuzmatch: rawptr = nil
+	regmatch: Regmatch_T
+
+	// Copy "pat", turning a leading "^" into "\(^\|[\/]\)" for regex matching.
+	if !fuzzy {
+		if ([^]u8)(pat)[0] == '^' && ([^]u8)(pat)[1] != 0 {
+			patc = xstrdup_o((^u8)(uintptr(pat) + 1))
+			to_free = true
+		} else if ([^]u8)(pat)[0] == '^' {
+			patc = transmute(^u8)(cstring(""))
+		} else {
+			patc = pat
+		}
+		regmatch.regprog = vim_regcomp(cstring(patc), RE_MAGIC)
+	}
+
+	count: C.int = 0
+	score: C.int = 0
+	// round 1: count the matches. round 2: build the match array.
+	for round: C.int = 1; round <= 2; round += 1 {
+		count = 0
+		buf := firstbuf
+		for buf != nil {
+			if (^C.int)(uintptr(buf) + B_P_BL_OFF)^ == 0 { // skip unlisted
+				buf = (^rawptr)(uintptr(buf) + B_NEXT_OFF)^
+				continue
+			}
+			if (options & BUF_DIFF_FILTER_O) != 0 {
+				// Skip buffers not suitable for :diffget/:diffput.
+				if buf == curbuf || !diff_mode_buf_r(buf) {
+					buf = (^rawptr)(uintptr(buf) + B_NEXT_OFF)^
+					continue
+				}
+			}
+
+			p: ^u8 = nil
+			if !fuzzy {
+				if regmatch.regprog == nil {
+					// Invalid pattern, possibly after recompiling.
+					if to_free {
+						xfree(transmute(rawptr)(patc))
+					}
+					return FAIL
+				}
+				p = buflist_match_o(&regmatch, buf, p_wic_g != 0)
+			} else {
+				p = nil
+				// First try the short file name.
+				score = fuzzy_match_str_c(
+					(^u8)((^rawptr)(uintptr(buf) + B_SFNAME_OFF)^), pat)
+				if score != FUZZY_SCORE_NONE_O {
+					p = (^u8)((^rawptr)(uintptr(buf) + B_SFNAME_OFF)^)
+				}
+				if p == nil {
+					// Then the full path file name.
+					score = fuzzy_match_str_c(
+						(^u8)((^rawptr)(uintptr(buf) + B_FFNAME)^), pat)
+					if score != FUZZY_SCORE_NONE_O {
+						p = (^u8)((^rawptr)(uintptr(buf) + B_FFNAME)^)
+					}
+				}
+			}
+
+			if p == nil {
+				buf = (^rawptr)(uintptr(buf) + B_NEXT_OFF)^
+				continue
+			}
+
+			if round == 1 {
+				count += 1
+				buf = (^rawptr)(uintptr(buf) + B_NEXT_OFF)^
+				continue
+			}
+
+			if (options & WILD_HOME_REPLACE_O) != 0 {
+				p = (^u8)(home_replace_save(buf, cstring(p)))
+			} else {
+				p = xstrdup_o(p)
+			}
+
+			if !fuzzy {
+				if matches != nil {
+					// bufmatch_T is 16 bytes: buf@0, match@8.
+					(^rawptr)(uintptr(matches) + uintptr(count * 16))^ = buf
+					(^rawptr)(uintptr(matches) + uintptr(count * 16) + 8)^ =
+						rawptr(p)
+					count += 1
+				} else {
+					([^]^u8)(file^)[count] = p
+					count += 1
+				}
+			} else {
+				// fuzmatch_str_T is 24 bytes: idx@0, str@8, score@16.
+				(^C.int)(uintptr(fuzmatch) + uintptr(count * 24))^ = count
+				(^rawptr)(uintptr(fuzmatch) + uintptr(count * 24) + 8)^ =
+					rawptr(p)
+				(^C.int)(uintptr(fuzmatch) + uintptr(count * 24) + 16)^ = score
+				count += 1
+			}
+			buf = (^rawptr)(uintptr(buf) + B_NEXT_OFF)^
+		}
+		if count == 0 { // no match found, break here
+			break
+		}
+		if round == 1 {
+			if !fuzzy {
+				file^ = ([^]^u8)(xmalloc(C.size_t(count) * 8))
+				if (options & WILD_BUFLASTUSED_O) != 0 {
+					matches = xmalloc(C.size_t(count) * 16)
+				}
+			} else {
+				fuzmatch = xmalloc(C.size_t(count) * 24)
+			}
+		}
+	}
+
+	if !fuzzy {
+		vim_regfree(regmatch.regprog)
+		if to_free {
+			xfree(transmute(rawptr)(patc))
+		}
+	}
+
+	if !fuzzy {
+		if matches != nil {
+			if count > 1 {
+				qsort_r(matches, C.size_t(count), 16, buf_time_compare_o)
+			}
+
+			// If the current buffer is first, place it at the end.
+			if (^rawptr)(uintptr(matches))^ == curbuf {
+				for i: C.int = 1; i < count; i += 1 {
+					([^]^u8)(file^)[i - 1] =
+						(^u8)((^rawptr)(uintptr(matches) + uintptr(i * 16) + 8)^)
+				}
+				([^]^u8)(file^)[count - 1] =
+					(^u8)((^rawptr)(uintptr(matches) + 8)^)
+			} else {
+				for i: C.int = 0; i < count; i += 1 {
+					([^]^u8)(file^)[i] =
+						(^u8)((^rawptr)(uintptr(matches) + uintptr(i * 16) + 8)^)
+				}
+			}
+			xfree(matches)
+		}
+	} else {
+		fuzzymatches_to_strmatches_c(fuzmatch, transmute(rawptr)(file), count,
+			false)
+	}
+
+	num_file^ = count
+	return count == 0 ? FAIL : OK
+}
+
+// ── Batch 20: :ls/:file display (buflist_list, fileinfo, col_print,
+// append_arg_number) ─────────────────────────────────────────────────────
+
+BF_NOTEDITED_O :: 0x08
+BF_NEW_O :: 0x10
+BF_WRITE_MASK_O :: 0x58 // NOTEDITED+NEW+READERR
+SHM_MOD_O :: C.int('m')
+SHM_RO_O :: C.int('r')
+W_ARG_IDX_INVALID_OFF :: 796
+K_UIMESSAGES_O :: C.int(4) // ui_defs.h; NOTE: shell.odin's kUIMessages=1 is
+// WRONG (that's kUIPopupmenu) — pre-existing, out of scope; use this here.
+NO_LINES_MSG_S :: "--No lines in buffer--"
+
+foreign _ {
+	@(link_name = "need_wait_return")
+	need_wait_return_g: bool
+}
+
+// List all known file names (":files"/":buffers" command).
+@(export)
+buflist_list :: proc "c"(eap: rawptr) {
+	buf := firstbuf
+	buflist: Garray
+	buflist_data: rawptr = nil
+
+	msg_ext_set_kind(cstring("list_cmd"))
+	arg := (^cstring)(uintptr(eap))^
+	if vim_strchr(transmute(^u8)(arg), 't') != nil {
+		ga_init_o(&buflist, 8, 50)
+		b := firstbuf
+		for b != nil {
+			ga_grow_o(&buflist, 1)
+			([^]rawptr)(buflist.ga_data)[buflist.ga_len] = b
+			buflist.ga_len += 1
+			b = (^rawptr)(uintptr(b) + B_NEXT_OFF)^
+		}
+
+		qsort_r(buflist.ga_data, C.size_t(buflist.ga_len), 8,
+			buf_time_compare_o)
+
+		buflist_data = buflist.ga_data
+		buf = ([^]rawptr)(buflist_data)[0]
+	}
+	p_idx: C.int = 0
+
+	for buf != nil && !got_int {
+		is_terminal := (^rawptr)(uintptr(buf) + B_TERMINAL_OFF)^ != nil
+		job_running := is_terminal &&
+			terminal_running_r((^rawptr)(uintptr(buf) + B_TERMINAL_OFF)^)
+
+		// Skip unspecified buffers (each clause mirrors C exactly).
+		b_bl := (^C.int)(uintptr(buf) + B_P_BL_OFF)^
+		b_flags := (^C.int)(uintptr(buf) + B_FLAGS_OFF)^
+		skip := (b_bl == 0 && (^C.int)(uintptr(eap) + 76)^ == 0 &&
+				vim_strchr(transmute(^u8)(arg), 'u') == nil) ||
+			(vim_strchr(transmute(^u8)(arg), 'u') != nil && b_bl != 0)
+		skip = skip ||
+			(vim_strchr(transmute(^u8)(arg), '+') != nil &&
+				((b_flags & BF_READERR_O) != 0 || !bufIsChanged(buf)))
+		skip = skip ||
+			(vim_strchr(transmute(^u8)(arg), 'a') != nil &&
+				((^rawptr)(uintptr(buf) + B_ML_MFP_OFF)^ == nil ||
+					(^C.int)(uintptr(buf) + B_NWINDOWS_OFF)^ == 0))
+		skip = skip ||
+			(vim_strchr(transmute(^u8)(arg), 'h') != nil &&
+				((^rawptr)(uintptr(buf) + B_ML_MFP_OFF)^ == nil ||
+					(^C.int)(uintptr(buf) + B_NWINDOWS_OFF)^ != 0))
+		skip = skip ||
+			(vim_strchr(transmute(^u8)(arg), 'R') != nil &&
+				(!is_terminal || !job_running))
+		skip = skip ||
+			(vim_strchr(transmute(^u8)(arg), 'F') != nil &&
+				(!is_terminal || job_running))
+		skip = skip ||
+			(vim_strchr(transmute(^u8)(arg), '-') != nil &&
+				(^C.int)(uintptr(buf) + B_P_MA_OFF)^ != 0)
+		skip = skip ||
+			(vim_strchr(transmute(^u8)(arg), '=') != nil &&
+				(^C.int)(uintptr(buf) + B_P_RO_OFF)^ == 0)
+		skip = skip ||
+			(vim_strchr(transmute(^u8)(arg), 'x') != nil &&
+				(b_flags & BF_READERR_O) == 0)
+		skip = skip ||
+			(vim_strchr(transmute(^u8)(arg), '%') != nil && buf != curbuf)
+		skip = skip ||
+			(vim_strchr(transmute(^u8)(arg), '#') != nil &&
+				(buf == curbuf ||
+					(^C.int)(uintptr(curwin) + W_ALT_FNUM)^ !=
+					(^C.int)(uintptr(buf) + B_FNUM_OFF)^))
+		if !skip {
+			name := buf_spname(buf)
+			if name != nil {
+				xstrlcpy_o(cstring(&name_buff[0]), cstring(name), MAXPATHL)
+			} else {
+				home_replace(buf,
+					cstring((^u8)((^rawptr)(uintptr(buf) + B_FNAME)^)),
+					cstring(&name_buff[0]), MAXPATHL, true)
+			}
+
+			if !message_filtered(cstring(&name_buff[0])) {
+				changed_char := C.int(' ')
+				if (b_flags & BF_READERR_O) != 0 {
+					changed_char = C.int('x')
+				} else if bufIsChanged(buf) {
+					changed_char = C.int('+')
+				}
+				ro_char := C.int(' ')
+				if (^C.int)(uintptr(buf) + B_P_MA_OFF)^ == 0 {
+					ro_char = C.int('-')
+				} else if (^C.int)(uintptr(buf) + B_P_RO_OFF)^ != 0 {
+					ro_char = C.int('=')
+				}
+				if is_terminal {
+					ro_char = C.int(terminal_running_r(
+						(^rawptr)(uintptr(buf) + B_TERMINAL_OFF)^) ? 'R' : 'F')
+				}
+
+				if !ui_has(K_UIMESSAGES_O) || msg_col > 0 {
+					msg_putchar('\n')
+				}
+				alt_char := C.int(' ')
+				if buf == curbuf {
+					alt_char = C.int('%')
+				} else if (^C.int)(uintptr(curwin) + W_ALT_FNUM)^ ==
+					(^C.int)(uintptr(buf) + B_FNUM_OFF)^ {
+					alt_char = C.int('#')
+				}
+				mfp_char := C.int(' ')
+				if (^rawptr)(uintptr(buf) + B_ML_MFP_OFF)^ != nil {
+					if (^C.int)(uintptr(buf) + B_NWINDOWS_OFF)^ == 0 {
+						mfp_char = C.int('h')
+					} else {
+						mfp_char = C.int('a')
+					}
+				}
+				len := libc.snprintf(&IObuff[0], C.size_t(IOSIZE_O - 20),
+					cstring("%3d%c%c%c%c%c \"%s\""),
+					(^C.int)(uintptr(buf) + B_FNUM_OFF)^,
+					b_bl != 0 ? C.int(' ') : C.int('u'),
+					alt_char, mfp_char,
+					ro_char, changed_char, cstring(&name_buff[0]))
+
+				if len > IOSIZE_O - 20 {
+					len = IOSIZE_O - 20
+				}
+
+				// Put "line 999" in column 40 or after the file name.
+				i := 40 - vim_strsize_r(cstring(&IObuff[0]))
+				for {
+					([^]u8)(&IObuff[0])[len] = ' '
+					len += 1
+					i -= 1
+					if !(i > 0 && len < IOSIZE_O - 18) {
+						break
+					}
+				}
+				if vim_strchr(transmute(^u8)(arg), 't') != nil &&
+					(^C.longlong)(uintptr(buf) + B_LAST_USED_OFF)^ != 0 {
+					undo_fmt_time(
+						([^]u8)((^u8)(uintptr(&IObuff[0]) + uintptr(len))),
+						C.size_t(C.int(IOSIZE_O) - len),
+						C.long((^C.longlong)(uintptr(buf) + B_LAST_USED_OFF)^))
+				} else {
+					ln := C.longlong(buflist_findlnum(buf))
+					if buf == curbuf {
+						ln = C.longlong((^C.int)(uintptr(curwin) + W_CURSOR_OFF)^)
+					}
+					len += libc.snprintf(
+						(^u8)(uintptr(&IObuff[0]) + uintptr(len)),
+						C.size_t(C.int(IOSIZE_O) - len), cstring("line %ld"),
+						ln)
+				}
+
+				msg_outtrans(cstring(&IObuff[0]), 0, false)
+				line_breakcheck()
+			}
+		}
+		// Advance (== C for-increment).
+		if buflist_data != nil {
+			p_idx += 1
+			if p_idx < buflist.ga_len {
+				buf = ([^]rawptr)(buflist_data)[p_idx]
+			} else {
+				buf = nil
+			}
+		} else {
+			buf = (^rawptr)(uintptr(buf) + B_NEXT_OFF)^
+		}
+	}
+
+	if buflist_data != nil {
+		ga_clear_r(&buflist)
+	}
+}
+
+// Show file info for the current buffer (":file"/CTRL-G).
+@(export)
+fileinfo :: proc "c"(fullname: C.int, shorthelp: C.int, dont_truncate: bool) {
+	buffer := (^u8)(xmalloc(C.size_t(IOSIZE_O)))
+	bufferlen: C.size_t = 0
+	bptr := (^u8)(uintptr(buffer) + uintptr(bufferlen))
+	vrem := C.size_t(C.int(IOSIZE_O)) - bufferlen
+
+	if fullname > 1 { // 2 CTRL-G: include buffer number
+		bufferlen += C.size_t(libc.snprintf(bptr, vrem, cstring("buf %d: "),
+			(^C.int)(uintptr(curbuf) + B_FNUM_OFF)^))
+		bptr = (^u8)(uintptr(buffer) + uintptr(bufferlen))
+		vrem = C.size_t(C.int(IOSIZE_O)) - bufferlen
+	}
+
+	([^]u8)(buffer)[bufferlen] = '"'
+	bufferlen += 1
+
+	name := buf_spname(curbuf)
+	if name != nil {
+		bptr = (^u8)(uintptr(buffer) + uintptr(bufferlen))
+		vrem = C.size_t(C.int(IOSIZE_O)) - bufferlen
+		bufferlen += C.size_t(libc.snprintf(bptr, vrem, cstring("%s"),
+			cstring(name)))
+	} else {
+		fname := (^u8)((^rawptr)(uintptr(curbuf) + B_FNAME)^)
+		ffname := (^u8)((^rawptr)(uintptr(curbuf) + B_FFNAME)^)
+		src := (fullname == 0 && fname != nil) ? fname : ffname
+		bptr = (^u8)(uintptr(buffer) + uintptr(bufferlen))
+		vrem = C.size_t(C.int(IOSIZE_O)) - bufferlen
+		bufferlen += home_replace(shorthelp != 0 ? curbuf : nil, cstring(src),
+			cstring(bptr), vrem, true)
+	}
+
+	dontwrite := bt_dontwrite(curbuf)
+	mod_str := cstring(" ")
+	if curbufIsChanged() {
+		mod_str = shortmess(SHM_MOD_O) ? cstring(" [+]") :
+			cstring(" [Modified]")
+	}
+	bptr = (^u8)(uintptr(buffer) + uintptr(bufferlen))
+	vrem = C.size_t(C.int(IOSIZE_O)) - bufferlen
+	bflags := (^C.int)(uintptr(curbuf) + B_FLAGS_OFF)^
+	notedited_str := cstring("")
+	if (bflags & BF_NOTEDITED_O) != 0 && !dontwrite {
+		notedited_str = cstring("[Not edited]")
+	}
+	new_str := cstring("")
+	if (bflags & BF_NEW_O) != 0 && !dontwrite {
+		new_str = cstring("[New]")
+	}
+	readerr_str := cstring("")
+	if (bflags & BF_READERR_O) != 0 {
+		readerr_str = cstring("[Read errors]")
+	}
+	ro_str := cstring("")
+	if (^C.int)(uintptr(curbuf) + B_P_RO_OFF)^ != 0 {
+		ro_str = shortmess(SHM_RO_O) ? cstring("[RO]") : cstring("[readonly]")
+	}
+	trail_str := cstring("")
+	if curbufIsChanged() || (bflags & BF_WRITE_MASK_O) != 0 ||
+		(^C.int)(uintptr(curbuf) + B_P_RO_OFF)^ != 0 {
+		trail_str = cstring(" ")
+	}
+	bufferlen += C.size_t(libc.snprintf(bptr, vrem,
+		cstring("\"%s%s%s%s%s%s"), mod_str, notedited_str, new_str,
+		readerr_str, ro_str, trail_str))
+
+	if (^C.int)(uintptr(curbuf) + B_ML_FLAGS_OFF)^ & ML_EMPTY_O != 0 {
+		bptr = (^u8)(uintptr(buffer) + uintptr(bufferlen))
+		vrem = C.size_t(C.int(IOSIZE_O)) - bufferlen
+		bufferlen += C.size_t(libc.snprintf(bptr, vrem, cstring("%s"),
+			cstring(NO_LINES_MSG_S)))
+	} else if p_ru_g != 0 {
+		// Current line/column already on screen.
+		bptr = (^u8)(uintptr(buffer) + uintptr(bufferlen))
+		vrem = C.size_t(C.int(IOSIZE_O)) - bufferlen
+		ml_count := (^C.int)(uintptr(curbuf) + B_ML_LINE_COUNT_OFF)^
+		line_fmt := cstring("%ld lines --%d%%--")
+		if ml_count == 1 {
+			line_fmt = cstring("%ld line --%d%%--")
+		}
+		bufferlen += C.size_t(libc.snprintf(bptr, vrem, line_fmt,
+			C.longlong(ml_count),
+			calc_percentage(i64((^C.int)(uintptr(curwin) + W_CURSOR_OFF)^),
+				i64(ml_count))))
+	} else {
+		bptr = (^u8)(uintptr(buffer) + uintptr(bufferlen))
+		vrem = C.size_t(C.int(IOSIZE_O)) - bufferlen
+		ml_count := (^C.int)(uintptr(curbuf) + B_ML_LINE_COUNT_OFF)^
+		bufferlen += C.size_t(libc.snprintf(bptr, vrem,
+			cstring("line %ld of %ld --%d%%-- col "),
+			C.longlong((^C.int)(uintptr(curwin) + W_CURSOR_OFF)^),
+			C.longlong(ml_count),
+			calc_percentage(i64((^C.int)(uintptr(curwin) + W_CURSOR_OFF)^),
+				i64(ml_count))))
+		validate_virtcol_r(curwin)
+		bptr = (^u8)(uintptr(buffer) + uintptr(bufferlen))
+		vrem = C.size_t(C.int(IOSIZE_O)) - bufferlen
+		bufferlen += C.size_t(col_print(bptr, vrem,
+			(^C.int)(uintptr(curwin) + W_CURSOR_OFF + 4)^ + 1,
+			(^C.int)(uintptr(curwin) + W_VIRTCOL_OFF)^ + 1))
+	}
+
+	bptr = (^u8)(uintptr(buffer) + uintptr(bufferlen))
+	vrem = C.size_t(C.int(IOSIZE_O)) - bufferlen
+	append_arg_number(curwin, bptr, vrem)
+
+	if dont_truncate {
+		// Temporarily set msg_scroll to avoid truncation.
+		msg_start()
+		n := msg_scroll
+		msg_scroll = true
+		msg_msg(cstring(buffer), 0)
+		msg_scroll = n
+	} else {
+		p := msg_trunc_r(buffer, false, 0)
+		if restart_edit != 0 || (msg_scrolled != 0 && !need_wait_return_g) {
+			// Repeat the message after redraw when restart_edit is set
+			// or the screen scrolled without a wait-return prompt.
+			set_keep_msg_r(cstring(p), 0)
+		}
+	}
+
+	xfree(buffer)
+}
+
+// Format "col" (or "col-vcol") into "buf".
+@(export)
+col_print :: proc "c"(buf: ^u8, buflen: C.size_t, col: C.int, vcol: C.int) -> C.int {
+	if col == vcol {
+		return libc.snprintf(buf, buflen, cstring("%d"), col)
+	}
+	return libc.snprintf(buf, buflen, cstring("%d-%d"), col, vcol)
+}
+
+// Append "(2 of 8)" to "buf" when editing more than one file.
+@(export)
+append_arg_number :: proc "c"(wp: rawptr, buf: ^u8, buflen: C.size_t) -> C.int {
+	// ALIST(curwin) is a POINTER (alist_T *w_alist) — double deref.
+	// Nothing to do when there is at most one file.
+	if (^C.int)(uintptr((^rawptr)(uintptr(curwin) + W_ALIST_OFF)^))^ <= 1 {
+		return 0
+	}
+
+	msg := cstring(" (%d of %d)")
+	if (^bool)(uintptr(wp) + W_ARG_IDX_INVALID_OFF)^ {
+		msg = cstring(" ((%d) of %d)")
+	}
+
+	return libc.snprintf(buf, buflen, msg,
+		(^C.int)(uintptr(wp) + W_ARG_IDX_OFF)^ + 1,
+		(^C.int)(uintptr((^rawptr)(uintptr(curwin) + W_ALIST_OFF)^))^)
+}
+
+// ── Batch 21: ex_buffer_all (:ball/:sball/:unhide — open a window for a
+// number of buffers) ─────────────────────────────────────────────────────
+
+EXARG_ADDR_COUNT_OFF :: 80
+EXARG_LINE2_OFF :: 88
+CMD_UNHIDE_O :: 499
+CMD_SUNHIDE_O :: 441
+
+foreign _ {
+	@(link_name = "autocmd_no_enter")
+	autocmd_no_enter_g: C.int
+	@(link_name = "autocmd_no_leave")
+	autocmd_no_leave_g: C.int
+	@(link_name = "autowrite")
+	autowrite_r :: proc "c"(buf: rawptr, forceit: bool) -> C.int ---
+	@(link_name = "vgetc")
+	vgetc_r :: proc "c"() -> C.int ---
+}
+
+// Open a window for a number of buffers (:ball, :sball, :unhide, ...).
+@(export)
+ex_buffer_all :: proc "c"(eap: rawptr) {
+	split_ret: C.int = OK
+	open_wins: C.int = 0
+	had_tab := cmdmod_tab_o()
+
+	// Maximum number of windows to open.
+	count: C.int = 9999 // as many as possible
+	if (^C.int)(uintptr(eap) + EXARG_ADDR_COUNT_OFF)^ != 0 {
+		count = (^C.int)(uintptr(eap) + EXARG_LINE2_OFF)^
+	}
+
+	// Also load inactive buffers (not for :unhide/:sunhide).
+	cmdidx := (^C.int)(uintptr(eap) + EXARG_CMDIDX_OFF)^
+	all := cmdidx != CMD_UNHIDE_O && cmdidx != CMD_SUNHIDE_O
+
+	// Stop Visual mode (cursor/"VIsual" may be invalid after switching).
+	reset_VIsual_and_resel_r()
+
+	setpcmark()
+
+	// Close superfluous windows (two for the same buffer, non-full-width).
+	if had_tab > 0 {
+		goto_tabpage_tp(first_tabpage, true, true)
+	}
+	for {
+		tpnext := (^rawptr)(uintptr(curtab) + TP_NEXT_OFF)^
+		// Try to close floating windows first.
+		wp := (^bool)(uintptr(lastwin_g) + W_FLOATING_OFF)^ ? lastwin_g :
+			firstwin
+		for wp != nil {
+			wpnext: rawptr = nil
+			if (^bool)(uintptr(wp) + W_FLOATING_OFF)^ {
+				wprev := (^rawptr)(uintptr(wp) + W_PREV_OFF)^
+				if (^bool)(uintptr(wprev) + W_FLOATING_OFF)^ {
+					wpnext = wprev
+				} else {
+					wpnext = firstwin
+				}
+			} else {
+				wnext := (^rawptr)(uintptr(wp) + W_NEXT_OFF)^
+				if wnext == nil ||
+					(^bool)(uintptr(wnext) + W_FLOATING_OFF)^ {
+					wpnext = nil
+				} else {
+					wpnext = wnext
+				}
+			}
+			wbuf := (^rawptr)(uintptr(wp) + W_BUFFER_OFF)^
+			dup_win := (^C.int)(uintptr(wbuf) + B_NWINDOWS_OFF)^ > 1 ||
+				(^bool)(uintptr(wp) + W_FLOATING_OFF)^
+			narrow: bool
+			if (cmdmod_split_o() & WSP_VERT_O) != 0 {
+				narrow = (^C.int)(uintptr(wp) + W_HEIGHT_OFF)^ +
+					(^C.int)(uintptr(wp) + W_HSEP_HEIGHT_OFF)^ +
+					(^C.int)(uintptr(wp) + W_STATUS_HEIGHT_OFF)^ <
+					Rows - C.int(p_ch) - tabline_height() - global_stl_height()
+			} else {
+				narrow = (^C.int)(uintptr(wp) + W_WIDTH_OFF)^ != Columns
+			}
+			extra := had_tab > 0 && wp != firstwin
+			if (dup_win || narrow || extra) && firstwin != lastwin_g &&
+				!(win_locked(wp) != 0 ||
+					(^C.int)(uintptr(wbuf) + B_LOCKED_OFF)^ > 0) &&
+				!is_aucmd_win_r(wp) {
+				if win_close(wp, false, false) == FAIL {
+					break
+				}
+				// An autocommand may do something strange: start over.
+				if (^bool)(uintptr(lastwin_g) + W_FLOATING_OFF)^ {
+					wpnext = lastwin_g
+				} else {
+					wpnext = firstwin
+				}
+				tpnext = first_tabpage
+				open_wins = 0
+			} else {
+				open_wins += 1
+			}
+			wp = wpnext
+		}
+
+		// Without ":tab" only do the current tab page.
+		if had_tab == 0 || tpnext == nil {
+			break
+		}
+		goto_tabpage_tp(tpnext, true, true)
+	}
+
+	// Go through the buffer list. Open a window where missing, move the
+	// window to the right position otherwise. Watch out for autocommands
+	// deleting buffers or windows! No Win/Buf Enter/Leave autocmds here.
+	autocmd_no_enter_g += 1
+	// lastwin may be aucmd_win.
+	win_enter(lastwin_nofloating(nil), false)
+	autocmd_no_leave_g += 1
+	buf := firstbuf
+	for buf != nil && open_wins < count {
+		// Check if this buffer needs a window.
+		if ((!all && (^rawptr)(uintptr(buf) + B_ML_MFP_OFF)^ == nil) ||
+			(^C.int)(uintptr(buf) + B_P_BL_OFF)^ == 0) {
+			buf = (^rawptr)(uintptr(buf) + B_NEXT_OFF)^
+			continue
+		}
+
+		nwp: rawptr = nil
+		if had_tab != 0 {
+			// With ":tab" don't move the window.
+			if (^C.int)(uintptr(buf) + B_NWINDOWS_OFF)^ > 0 {
+				nwp = lastwin_g // buffer has a window, skip it
+			} else {
+				nwp = nil
+			}
+		} else {
+			// Check if this buffer already has a window.
+			nwp = firstwin
+			for nwp != nil {
+				if !(^bool)(uintptr(nwp) + W_FLOATING_OFF)^ &&
+					(^rawptr)(uintptr(nwp) + W_BUFFER_OFF)^ == buf {
+					break
+				}
+				nwp = (^rawptr)(uintptr(nwp) + W_NEXT_OFF)^
+			}
+			// If the buffer already has a window, move it.
+			if nwp != nil {
+				win_move_after(nwp, curwin)
+			}
+		}
+
+		if nwp == nil && split_ret == OK {
+			bufref: Bufref_T
+			set_bufref(&bufref, buf)
+			// Split the window and put the buffer in it.
+			p_ea_save := p_ea_g
+			p_ea_g = 1 // use space from all windows
+			split_ret = win_split(0, WSP_ROOM_O | WSP_BELOW_O)
+			open_wins += 1
+			p_ea_g = p_ea_save
+			if split_ret == FAIL {
+				buf = (^rawptr)(uintptr(buf) + B_NEXT_OFF)^
+				continue
+			}
+
+			// Open the buffer in this window.
+			swap_exists_action_g = SEA_DIALOG_O
+			set_curbuf(buf, DOBUF_GOTO_O, (jop_flags & KOPT_JOP_CLEAN_O) == 0)
+			if !bufref_valid(&bufref) {
+				// Autocommands deleted the buffer.
+				swap_exists_action_g = SEA_NONE_O
+				break
+			}
+			if swap_exists_action_g == SEA_QUIT_O {
+				cs: [16]u8
+
+				// Reset error/interrupt state so aborting() is false
+				// when closing the window.
+				enter_cleanup_r(&cs[0])
+
+				// User selected Quit at ATTENTION prompt: close window.
+				win_close(curwin, true, false)
+				open_wins -= 1
+				swap_exists_action_g = SEA_NONE_O
+				swap_exists_did_quit_g = true
+
+				// Restore error/interrupt state unless discarded.
+				leave_cleanup_r(&cs[0])
+			} else {
+				handle_swap_exists(nil)
+			}
+		}
+
+		os_breakcheck()
+		if got_int {
+			vgetc_r() // only break file loading, not the rest
+			break
+		}
+		// Autocommands deleted the buffer or aborted script processing!
+		if aborting_r() {
+			break
+		}
+		// With ":tab" open a new tab for a new window repeatedly.
+		if had_tab > 0 && tabpage_index(nil) <= C.int(p_tpm_g) {
+			set_cmdmod_tab_o(9999)
+		}
+		buf = (^rawptr)(uintptr(buf) + B_NEXT_OFF)^
+	}
+	autocmd_no_enter_g -= 1
+	win_enter(firstwin, false) // back to first window
+	autocmd_no_leave_g -= 1
+
+	// Close superfluous windows.
+	wp := lastwin_g
+	for open_wins > count {
+		wbuf := (^rawptr)(uintptr(wp) + W_BUFFER_OFF)^
+		r := (buf_hide(wbuf) || !bufIsChanged(wbuf) ||
+			autowrite_r(wbuf, false) == OK) && !is_aucmd_win_r(wp)
+		if !win_valid(wp) {
+			// BufWrite autocommands made the window invalid: start over.
+			wp = lastwin_g
+		} else if r {
+			win_close(wp, !buf_hide(wbuf), false)
+			open_wins -= 1
+			wp = lastwin_g
+		} else {
+			wp = (^rawptr)(uintptr(wp) + W_PREV_OFF)^
+			if wp == nil {
+				break
+			}
+		}
+	}
+}
+
+// ── Batch 22: title cluster (maketitle/resettitle/value_change) +
+// modelines (do_modelines/chk_modeline) ──────────────────────────────────
+// NOTE: free_titles() is #ifdef EXITFREE in C — this build has no EXITFREE,
+// so the symbol doesn't exist here (same reason win_free_all stays C).
+
+STL_IN_ICON_O :: 1
+STL_IN_TITLE_O :: 2
+SID_MODELINE_O :: -1
+ETYPE_MODELINE_O :: 4
+
+// CharBoundsOff mirrors C (mbyte_defs.h:71): two int8, 2 bytes total.
+CharBoundsOff :: struct {
+	begin_off: i8,
+	end_off:   i8,
+}
+#assert(size_of(CharBoundsOff) == 2)
+
+foreign _ {
+	@(link_name = "redrawing")
+	redrawing_r :: proc "c"() -> bool ---
+	@(link_name = "p_titlelen")
+	p_titlelen_g: C.longlong
+	@(link_name = "p_titlestring")
+	p_titlestring_g: ^u8
+	@(link_name = "p_iconstring")
+	p_iconstring_g: ^u8
+	@(link_name = "build_stl_str_hl")
+	build_stl_str_hl_r :: proc "c"(wp: rawptr, out: ^u8, outlen: C.size_t, fmt: cstring, opt_idx: C.int, opt_scope: C.int, fillchar: C.int, maxwidth: C.int, hltab: rawptr, hltab_len: rawptr, tabtab: rawptr, stcp: rawptr) -> C.int ---
+	@(link_name = "ui_call_set_icon")
+	ui_call_set_icon_r :: proc "c"(icon: NvimString) ---
+	@(link_name = "ui_call_set_title")
+	ui_call_set_title_r :: proc "c"(title: NvimString) ---
+	@(link_name = "utf_cp_bounds")
+	utf_cp_bounds_r :: proc "c"(base: ^u8, p: ^u8) -> CharBoundsOff ---
+	@(link_name = "p_mls")
+	p_mls_g: C.longlong
+	@(link_name = "min_vim_version")
+	min_vim_version_r :: proc "c"() -> C.int ---
+	@(link_name = "estack_push")
+	estack_push_r :: proc "c"(etype: C.int, name: cstring, lnum: C.int) -> rawptr ---
+	@(link_name = "estack_pop")
+	estack_pop_r :: proc "c"() ---
+}
+
+// NvimString from a C string (cstr_as_string logic: NULL-safe, no alloc).
+nvim_str_o :: proc "c"(s: ^u8) -> NvimString {
+	if s == nil {
+		return NvimString{}
+	}
+	return NvimString{data = cstring(s), size = libc.strlen(cstring(s))}
+}
+
+@(private="file")
+lasttitle_f: ^u8
+@(private="file")
+lasticon_f: ^u8
+
+// Put the title/icon name in the window title bar and icon.
+@(export)
+maketitle :: proc "c"() {
+	title_str: ^u8 = nil
+	icon_str: ^u8 = nil
+	buf: [IOSIZE_O]u8
+
+	if !redrawing_r() {
+		// Postpone updating the title when 'lazyredraw' is set.
+		need_maketitle_opt = true
+		return
+	}
+
+	need_maketitle_opt = false
+	if p_title_g == 0 && p_icon_g == 0 && lasttitle_f == nil &&
+		lasticon_f == nil {
+		return // nothing to do
+	}
+
+	if p_title_g != 0 {
+		maxlen: C.int = 0
+
+		if p_titlelen_g > 0 {
+			maxlen = C.int(max(p_titlelen_g * C.longlong(Columns) / 100, 10))
+		}
+
+		if p_titlestring_g != nil && p_titlestring_g^ != 0 {
+			if (stl_syntax_g & STL_IN_TITLE_O) != 0 {
+				build_stl_str_hl_r(curwin, &buf[0], C.size_t(IOSIZE_O),
+					cstring(p_titlestring_g), kOptTitlestring_E, 0, 0, maxlen,
+					nil, nil, nil, nil)
+				title_str = &buf[0]
+			} else {
+				title_str = p_titlestring_g
+			}
+		} else {
+			// Format: "fname + (path) (1 of 2) - Nvim".
+			build_stl_str_hl_r(curwin, &buf[0], C.size_t(IOSIZE_O),
+				cstring("%t%( %M%)%( (%{expand('%:p:~:h')})%)%a - Nvim"),
+				kOptTitlestring_E, 0, 0, maxlen, nil, nil, nil, nil)
+			title_str = &buf[0]
+		}
+	}
+	mustset := value_change_o(title_str, &lasttitle_f)
+
+	if p_icon_g != 0 {
+		icon_str = &buf[0]
+		if p_iconstring_g != nil && p_iconstring_g^ != 0 {
+			if (stl_syntax_g & STL_IN_ICON_O) != 0 {
+				build_stl_str_hl_r(curwin, &buf[0], C.size_t(IOSIZE_O),
+					cstring(p_iconstring_g), kOptIconstring_E, 0, 0, 0,
+					nil, nil, nil, nil)
+			} else {
+				icon_str = p_iconstring_g
+			}
+		} else {
+			name := buf_spname(curbuf)
+			if name == nil {
+				name = transmute(^u8)(path_tail(cstring(
+					(^u8)((^rawptr)(uintptr(curbuf) + B_FNAME)^))))
+			}
+			// Truncate name at 100 bytes (on a character boundary).
+			namelen := C.int(libc.strlen(cstring(name)))
+			if namelen > 100 {
+				namelen -= 100
+				namelen += C.int(utf_cp_bounds_r(name,
+					(^u8)(uintptr(name) + uintptr(namelen))).end_off)
+				name = (^u8)(uintptr(name) + uintptr(namelen))
+			}
+			xstrlcpy_o(cstring(&buf[0]), cstring(name), IOSIZE_O)
+			trans_characters_o(&buf[0], IOSIZE_O)
+		}
+	}
+
+	if value_change_o(icon_str, &lasticon_f) {
+		mustset = true
+	}
+
+	if mustset {
+		resettitle()
+	}
+}
+
+// Title/icon helper: store "str" into "*last" when different.
+// Returns true when resettitle() is to be called (C static).
+value_change_o :: proc "c"(str: ^u8, last: ^^u8) -> bool {
+	diff := (str == nil) != (last^ == nil)
+	if !diff && str != nil && last^ != nil {
+		diff = libc.strcmp(cstring(str), cstring(last^)) != 0
+	}
+	if diff {
+		xfree(transmute(rawptr)(last^))
+		if str == nil {
+			last^ = nil
+			resettitle()
+		} else {
+			last^ = xstrdup_o(str)
+			return true
+		}
+	}
+	return false
+}
+
+// Set current window title/icon on the UI.
+@(export)
+resettitle :: proc "c"() {
+	ui_call_set_icon_r(nvim_str_o(lasticon_f))
+	ui_call_set_title_r(nvim_str_o(lasttitle_f))
+}
+
+// ascii_isspace (ascii_defs.h:165, static inline): \t\n\v\f\r + space.
+ascii_isspace_o :: proc "c"(c: C.int) -> bool {
+	return (c >= 9 && c <= 13) || c == ' '
+}
+
+@(private="file")
+do_modelines_entered: bool
+
+// Process modelines for the current file (top/bottom "mls" lines).
+@(export)
+do_modelines :: proc "c"(flags: C.int) {
+	if (^C.int)(uintptr(curbuf) + B_P_ML_OFF2)^ == 0 ||
+		C.int(p_mls_g) == 0 {
+		return
+	}
+
+	// Disallow recursive entry (a modeline autocmd reloading via ":do").
+	if do_modelines_entered {
+		return
+	}
+
+	do_modelines_entered = true
+	nmlines := C.int(p_mls_g)
+	lnum: C.int = 1
+	for (^C.int)(uintptr(curbuf) + B_P_ML_OFF2)^ != 0 &&
+		lnum <= (^C.int)(uintptr(curbuf) + B_ML_LINE_COUNT_OFF)^ &&
+		lnum <= nmlines {
+		if chk_modeline_o(lnum, flags) == FAIL {
+			nmlines = 0
+		}
+		lnum += 1
+	}
+
+	lnum = (^C.int)(uintptr(curbuf) + B_ML_LINE_COUNT_OFF)^
+	for (^C.int)(uintptr(curbuf) + B_P_ML_OFF2)^ != 0 && lnum > 0 &&
+		lnum > nmlines &&
+		lnum > (^C.int)(uintptr(curbuf) + B_ML_LINE_COUNT_OFF)^ - nmlines {
+		if chk_modeline_o(lnum, flags) == FAIL {
+			nmlines = 0
+		}
+		lnum -= 1
+	}
+	do_modelines_entered = false
+}
+
+// Check a single line for a mode string (C static).
+// Returns FAIL when an error is encountered.
+chk_modeline_o :: proc "c"(lnum: C.int, flags: C.int) -> C.int {
+	retval: C.int = OK
+	// ESTACK_CHECK_DECLARATION is a no-op (no ABORT_ON_INTERNAL_ERROR).
+
+	prev: C.int = -1
+	s := ml_get(lnum)
+	line_end := (^u8)(uintptr(s) + uintptr(C.int(ml_get_len_r2(lnum))))
+	for ([^]u8)(s)[0] != 0 {
+		if prev == -1 || ascii_isspace_o(prev) {
+			if (prev != -1 &&
+				libc.strncmp(cstring(s), cstring("ex:"), 3) == 0) ||
+				libc.strncmp(cstring(s), cstring("vi:"), 3) == 0 {
+				break
+			}
+			// Accept both "vim" and "Vim".
+			if (([^]u8)(s)[0] == 'v' || ([^]u8)(s)[0] == 'V') &&
+				([^]u8)(s)[1] == 'i' && ([^]u8)(s)[2] == 'm' {
+				e: ^u8 = nil
+				if ([^]u8)(s)[3] == '<' || ([^]u8)(s)[3] == '=' ||
+					([^]u8)(s)[3] == '>' {
+					e = (^u8)(uintptr(s) + 4)
+				} else {
+					e = (^u8)(uintptr(s) + 3)
+				}
+				vers: i64 = 0
+				if !_try_getdigits(&e, &vers) {
+					prev = C.int(([^]u8)(s)[0])
+					s = (^u8)(uintptr(s) + 1)
+					continue
+				}
+
+				vim_version := min_vim_version_r()
+				set_like := libc.strncmp(skipwhite(cstring(
+					(^u8)(uintptr(e) + 1))), cstring("set"), 3) == 0
+				s3 := ([^]u8)(s)[3]
+				version_ok := s3 == ':' ||
+					(i64(vim_version) >= vers && ascii_isdigit_o(s3)) ||
+					(i64(vim_version) < vers && s3 == '<') ||
+					(i64(vim_version) > vers && s3 == '>') ||
+					(i64(vim_version) == vers && s3 == '=')
+				if ([^]u8)(e)[0] == ':' && (([^]u8)(s)[0] != 'V' || set_like) &&
+					version_ok {
+					break
+				}
+			}
+		}
+		prev = C.int(([^]u8)(s)[0])
+		s = (^u8)(uintptr(s) + 1)
+	}
+
+	if ([^]u8)(s)[0] == 0 {
+		return retval
+	}
+
+	// Skip over "ex:", "vi:" or "vim...:".
+	for ([^]u8)(s)[0] != ':' {
+		s = (^u8)(uintptr(s) + 1)
+	}
+	s = (^u8)(uintptr(s) + 1)
+
+	line_len := C.size_t(uintptr(line_end) - uintptr(s))
+	linecopy := xstrnsave_c(cstring(s), line_len) // copy; it will change
+	s = linecopy
+	line_end = (^u8)(uintptr(s) + uintptr(line_len))
+
+	// Prepare for emsg().
+	estack_push_r(ETYPE_MODELINE_O, cstring("modelines"), lnum)
+	// ESTACK_CHECK_SETUP is a no-op.
+
+	end := false
+	for !end {
+		s = transmute(^u8)(skipwhite(cstring(s)))
+		if ([^]u8)(s)[0] == 0 {
+			break
+		}
+
+		// Find end of set command (':' or EOL), unescaping "\:".
+		e := s
+		for ([^]u8)(e)[0] != ':' && ([^]u8)(e)[0] != 0 {
+			if ([^]u8)(e)[0] == '\\' && ([^]u8)(e)[1] == ':' {
+				libc.memmove(transmute(rawptr)(e),
+					transmute(rawptr)((^u8)(uintptr(e) + 1)),
+					C.size_t(uintptr(line_end) - (uintptr(e) + 1)) + 1)
+				line_end = (^u8)(uintptr(line_end) - 1)
+			}
+			e = (^u8)(uintptr(e) + 1)
+		}
+		if ([^]u8)(e)[0] == 0 {
+			end = true
+		}
+
+		// A "set"/"se" command requires a terminating ':'; text after it
+		// is ignored ("vi:set opt: foo" — foo not interpreted).
+		if libc.strncmp(cstring(s), cstring("set "), 4) == 0 ||
+			libc.strncmp(cstring(s), cstring("se "), 3) == 0 {
+			if ([^]u8)(e)[0] != ':' { // no terminating ':'?
+				break
+			}
+			end = true
+			if ([^]u8)(s)[2] == ' ' {
+				s = (^u8)(uintptr(s) + 3)
+			} else {
+				s = (^u8)(uintptr(s) + 4)
+			}
+		}
+		([^]u8)(e)[0] = 0 // truncate the set command
+
+		if ([^]u8)(s)[0] != 0 { // skip over an empty "::"
+			secure_save := secure
+			save_sid := (^C.int)(uintptr(&current_sctx_buf[0]))^
+			save_seq := (^C.int)(uintptr(&current_sctx_buf[0]) + 4)^
+			save_lnum := (^C.int)(uintptr(&current_sctx_buf[0]) + 8)^
+			(^C.int)(uintptr(&current_sctx_buf[0]))^ = SID_MODELINE_O
+			(^C.int)(uintptr(&current_sctx_buf[0]) + 4)^ = 0
+			(^C.int)(uintptr(&current_sctx_buf[0]) + 8)^ = lnum
+			// Make sure no risky things run as a side effect.
+			secure = true
+
+			retval = do_set(s, OPT_MODELINE_S | OPT_LOCAL_S | flags)
+
+			secure = secure_save
+			(^C.int)(uintptr(&current_sctx_buf[0]))^ = save_sid
+			(^C.int)(uintptr(&current_sctx_buf[0]) + 4)^ = save_seq
+			(^C.int)(uintptr(&current_sctx_buf[0]) + 8)^ = save_lnum
+			if retval == FAIL { // stop if error found
+				break
+			}
+		}
+		// Advance to next part (careful not to go off the end).
+		if uintptr(e) == uintptr(line_end) {
+			s = e
+		} else {
+			s = (^u8)(uintptr(e) + 1)
+		}
+	}
+
+	// ESTACK_CHECK_NOW is a no-op.
+	estack_pop_r()
+	xfree(transmute(rawptr)(linecopy))
+
+	return retval
+}
+
+// ── Batch 23: final buffer.c leaves (buf_close_terminal, buflist_nr2name,
+// buflist_setfpos, buflist_name_nr, fname_expand, do_autochdir, get_rel_pos)
+// NOTE: buflist_slash_adjust is #ifdef BACKSLASH_IN_FILENAME (Windows-only),
+// like completeslash — skipped on Linux. ──────────────────────────────────
+
+KCDCAUSE_AUTO_O :: 2 // CdCause.kCdCauseAuto (vim_defs.h:53)
+
+foreign _ {
+	@(link_name = "terminal_close")
+	terminal_close_r :: proc "c"(termpp: rawptr, status: C.int) ---
+	@(link_name = "fix_fname")
+	fix_fname_r :: proc "c"(fname: cstring) -> ^u8 ---
+	@(link_name = "vim_chdirfile")
+	vim_chdirfile_r :: proc "c"(fname: cstring, cause: C.int) -> C.int ---
+	@(link_name = "win_get_fill")
+	win_get_fill_r :: proc "c"(wp: rawptr, lnum: C.int) -> C.int ---
+}
+
+// Close the terminal link of buffer "buf".
+@(export)
+buf_close_terminal :: proc "c"(buf: rawptr) {
+	// assert(buf->terminal) is debug-only (no assert in Odin).
+	(^C.int)(uintptr(buf) + B_LOCKED_OFF)^ += 1
+	terminal_close_r(rawptr(uintptr(buf) + B_TERMINAL_OFF), -1)
+	(^C.int)(uintptr(buf) + B_LOCKED_OFF)^ -= 1
+}
+
+// Name of file 'n' in the buffer list (home-shortened, allocated or NULL).
+@(export)
+buflist_nr2name :: proc "c"(n: C.int, fullname: C.int, helptail: C.int) -> ^u8 {
+	buf := buflist_findnr(n)
+	if buf == nil {
+		return nil
+	}
+	src := (^u8)((^rawptr)(uintptr(buf) + B_FNAME)^)
+	if fullname != 0 {
+		src = (^u8)((^rawptr)(uintptr(buf) + B_FFNAME)^)
+	}
+	ctx: rawptr = nil
+	if helptail != 0 {
+		ctx = buf
+	}
+	return (^u8)(home_replace_save(ctx, cstring(src)))
+}
+
+// Set line/column (+window options) for buffer "buf", window "win".
+@(export)
+buflist_setfpos :: proc "c"(buf: rawptr, win: rawptr, lnum_in: C.int, col: C.int, copy_options: bool) {
+	lnum := lnum_in
+	n := (^u64)(uintptr(buf) + B_WINFOFF_SIZE)^
+	items := (^rawptr)(uintptr(buf) + B_WINFOFF_ITEMS)^
+	i: u64 = 0
+	wip: rawptr = nil
+	for i < n {
+		wip = ([^]rawptr)(items)[i]
+		if (^rawptr)(uintptr(wip) + WI_WIN_OFF)^ == win {
+			break
+		}
+		i += 1
+	}
+
+	if i == n {
+		// Allocate a new entry.
+		wip = xcalloc(1, WININFO_SIZE_O)
+		(^rawptr)(uintptr(wip) + WI_WIN_OFF)^ = win
+		if lnum == 0 { // set lnum even when it's 0
+			lnum = 1
+		}
+	} else {
+		// Remove the entry from the list (kv_shift by 1: memmove + shrink).
+		if i < n - 1 {
+			libc.memmove(rawptr(uintptr(items) + uintptr(i * 8)),
+				rawptr(uintptr(items) + uintptr((i + 1) * 8)),
+				C.size_t((n - 1 - i) * 8))
+		}
+		(^u64)(uintptr(buf) + B_WINFOFF_SIZE)^ = n - 1
+		if copy_options && (^bool)(uintptr(wip) + WI_OPTSET_OFF)^ {
+			clear_winopt(transmute(rawptr)(uintptr(wip) + WI_OPT_OFF))
+			deleteFoldRecurse(buf, transmute(^Garray)(uintptr(wip) + WI_FOLDS_OFF))
+		}
+	}
+	if lnum != 0 {
+		(^C.int)(uintptr(wip) + WI_MARK_OFF)^ = lnum
+		(^C.int)(uintptr(wip) + WI_MARK_OFF + 4)^ = col
+		if win != nil {
+			pos := Pos_T{lnum = lnum, col = col, coladd = 0}
+			(^Fmarkv_T)(uintptr(wip) + WI_MARK_OFF + 24)^ =
+				mark_view_make(win, pos)
+		}
+	}
+	if win != nil {
+		(^C.int)(uintptr(wip) + WI_CHANGELISTIDX_OFF)^ =
+			(^C.int)(uintptr(win) + W_CHANGELISTIDX)^
+	}
+	if copy_options && win != nil {
+		// Save the window-specific option values.
+		copy_winopt(transmute(rawptr)(uintptr(win) + W_ONEBUF_OPT_OFF),
+			transmute(rawptr)(uintptr(wip) + WI_OPT_OFF))
+		(^bool)(uintptr(wip) + WI_FOLD_MANUAL_OFF)^ =
+			(^bool)(uintptr(win) + W_FOLD_MANUAL_OFF)^
+		cloneFoldGrowArray(transmute(^Garray)(uintptr(win) + W_FOLDS_OFF),
+			transmute(^Garray)(uintptr(wip) + WI_FOLDS_OFF))
+		(^bool)(uintptr(wip) + WI_OPTSET_OFF)^ = true
+	}
+
+	// Insert the entry in front of the list (kv_pushp + shift right).
+	n2 := (^u64)(uintptr(buf) + B_WINFOFF_SIZE)^
+	cap := (^u64)(uintptr(buf) + B_WINFOFF_CAP)^
+	if n2 == cap {
+		newcap := cap << 1
+		if newcap == 0 {
+			newcap = 8
+		}
+		items = xrealloc(items, C.size_t(newcap * 8))
+		(^rawptr)(uintptr(buf) + B_WINFOFF_ITEMS)^ = items
+		(^u64)(uintptr(buf) + B_WINFOFF_CAP)^ = newcap
+	}
+	if n2 > 0 {
+		libc.memmove(rawptr(uintptr(items) + 8), rawptr(uintptr(items)),
+			C.size_t(n2 * 8))
+	}
+	([^]rawptr)(items)[0] = wip
+	(^u64)(uintptr(buf) + B_WINFOFF_SIZE)^ = n2 + 1
+}
+
+// File name + line number for file 'fnum' (for '%'/'#' expansion).
+@(export)
+buflist_name_nr :: proc "c"(fnum: C.int, fname: ^^u8, lnum: ^C.int) -> C.int {
+	buf := buflist_findnr(fnum)
+	if buf == nil || (^rawptr)(uintptr(buf) + B_FNAME)^ == nil {
+		return FAIL
+	}
+
+	fname^ = (^u8)((^rawptr)(uintptr(buf) + B_FNAME)^)
+	lnum^ = buflist_findlnum(buf)
+
+	return OK
+}
+
+// Expand "*ffname" to a full path; default "*sfname" from it when NULL.
+// The old "*ffname" pointer value is not freed (C contract).
+@(export)
+fname_expand :: proc "c"(buf: rawptr, ffname: ^cstring, sfname: ^cstring) {
+	if ffname^ == nil { // no file name given, nothing to do
+		return
+	}
+	if sfname^ == nil { // no short file name given, use ffname
+		sfname^ = ffname^
+	}
+	ffname^ = transmute(cstring)(fix_fname_r(ffname^)) // expand to full path
+
+	// MSWIN shortcut resolution dropped (Linux-only port).
+}
+
+// Change directory to the current file's directory when 'autochdir'.
+@(export)
+do_autochdir :: proc "c"() {
+	if p_acd_g != 0 {
+		if starting == 0 &&
+			(^rawptr)(uintptr(curbuf) + B_FFNAME)^ != nil &&
+			vim_chdirfile_r(cstring((^u8)((^rawptr)(uintptr(curbuf) + B_FFNAME)^)),
+				KCDCAUSE_AUTO_O) == OK {
+			last_chdir_reason_g = transmute(rawptr)(cstring("autochdir"))
+			shorten_fnames(true)
+		}
+	}
+}
+
+// Relative cursor position ("%99", "Top"/"Bot"/"All") for the statusline.
+@(export)
+get_rel_pos :: proc "c"(wp: rawptr, buf: ^u8, buflen: C.int) -> C.int {
+	// Need at least 3 chars for writing.
+	if buflen < 3 {
+		return 0
+	}
+
+	above := (^C.int)(uintptr(wp) + W_TOPLINE_OFF)^ - 1
+	above += win_get_fill_r(wp, (^C.int)(uintptr(wp) + W_TOPLINE_OFF)^) -
+		(^C.int)(uintptr(wp) + W_TOPFILL_OFF)^
+	if (^C.int)(uintptr(wp) + W_TOPLINE_OFF)^ == 1 &&
+		(^C.int)(uintptr(wp) + W_TOPFILL_OFF)^ >= 1 {
+		// All lines displayed plus filler indication: seeing everything.
+		above = 0
+	}
+	wbuf := (^rawptr)(uintptr(wp) + W_BUFFER_OFF)^
+	below := (^C.int)(uintptr(wbuf) + B_ML_LINE_COUNT_OFF)^ -
+		(^C.int)(uintptr(wp) + W_BOTLINE_OFF)^ + 1
+	if below <= 0 {
+		return libc.snprintf(buf, C.size_t(buflen), cstring("%s"),
+			cstring(above == 0 ? "All" : "Bot"))
+	}
+
+	if above <= 0 {
+		return libc.snprintf(buf, C.size_t(buflen), cstring("%s"),
+			cstring("Top"))
+	}
+
+	perc := calc_percentage(i64(above), i64(above + below))
+	tmp: [8]u8
+	// Localized percentage value.
+	libc.snprintf(&tmp[0], C.size_t(8), cstring("%d%%"), perc)
+	return libc.snprintf(buf, C.size_t(buflen), cstring("%3s"),
+		cstring(&tmp[0]))
 }

@@ -1218,7 +1218,7 @@ foreign _ {
 	validate_cursor_r :: proc "c" (wp: rawptr) ---
 
 	@(link_name = "msg_trunc")
-	msg_trunc_r :: proc "c" (s: ^u8, check: bool, hl_id: C.int) ---
+	msg_trunc_r :: proc "c" (s: ^u8, check: bool, hl_id: C.int) -> ^u8 ---
 }
 
 FNAME_INCL_S :: 8

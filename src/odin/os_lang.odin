@@ -51,9 +51,7 @@ foreign _ {
 
 	// set_helplang_default — PORTED to Odin (option.odin)
 
-	@(link_name = "maketitle")
-	maketitle :: proc() ---
-
+	// maketitle now defined in buffer.odin — call directly.
 	@(link_name = "skiptowhite")
 	skiptowhite :: proc(p: cstring) -> cstring ---
 

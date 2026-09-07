@@ -2313,6 +2313,7 @@ theend:
 /// @param newlnum  if > 0: put cursor on this line number (if possible)
 //
 /// @return 1 if swapcommand was actually set, 0 otherwise
+#pragma weak set_swapcommand
 bool set_swapcommand(char *command, linenr_T newlnum)
 {
   if ((command == NULL && newlnum <= 0) || *get_vim_var_str(VV_SWAPCOMMAND) != NUL) {
@@ -2359,6 +2360,7 @@ bool set_swapcommand(char *command, linenr_T newlnum)
 ///                 info of the previous buffer for "oldwin" is stored.
 ///
 /// @return FAIL for failure, OK otherwise
+#pragma weak do_ecmd
 int do_ecmd(int fnum, char *ffname, char *sfname, exarg_T *eap, linenr_T newlnum, int flags,
             win_T *oldwin)
 {

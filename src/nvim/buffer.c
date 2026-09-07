@@ -177,6 +177,24 @@
 #pragma weak buf_inc_changedtick
 #pragma weak buf_set_changedtick
 #pragma weak read_buffer_into
+#pragma weak close_buffer
+#pragma weak buflist_findpat
+#pragma weak ExpandBufnames
+#pragma weak buflist_list
+#pragma weak fileinfo
+#pragma weak col_print
+#pragma weak append_arg_number
+#pragma weak ex_buffer_all
+#pragma weak maketitle
+#pragma weak resettitle
+#pragma weak do_modelines
+#pragma weak buf_close_terminal
+#pragma weak buflist_nr2name
+#pragma weak buflist_setfpos
+#pragma weak buflist_name_nr
+#pragma weak fname_expand
+#pragma weak do_autochdir
+#pragma weak get_rel_pos
 
 #ifdef ABORT_ON_INTERNAL_ERROR
 # define CHECK_CURBUF \

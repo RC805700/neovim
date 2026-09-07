@@ -1877,11 +1877,10 @@ foreign _ {
 	msg_clr_eos_force_r :: proc "c" () ---
  	@(link_name = "changed_line_abv_curs")
 	changed_line_abv_curs_r :: proc "c" () ---
-	@(link_name = "get_real_state")
-	get_real_state_r :: proc "c" () -> C.int ---
- 	@(link_name = "do_autochdir")
- 	do_autochdir_r :: proc "c" () ---
-	@(link_name = "aborting")
+ 	@(link_name = "get_real_state")
+ 	get_real_state_r :: proc "c" () -> C.int ---
+ 	// do_autochdir now defined in buffer.odin — call directly.
+ 	@(link_name = "aborting")
 	aborting_r :: proc "c" () -> bool ---
 	@(link_name = "cursor_down_inner")
 	cursor_down_inner_r :: proc "c" (wp: rawptr, n: C.int, skip_conceal: bool) ---
@@ -2095,7 +2094,7 @@ win_enter_ext_o :: proc "c"(wp: rawptr, flags: C.int) {
 		}
 	}
 
-	maketitle_r()
+	maketitle()
 	(^bool)(uintptr(curwin) + W_REDR_STATUS_OFF)^ = true
 	redraw_tabline_opt = true
 	if restart_edit != 0 {
@@ -2134,7 +2133,7 @@ win_enter_ext_o :: proc "c"(wp: rawptr, flags: C.int) {
 	setmouse_r() // in case jumped to/from help buffer
 
 	// Change directories when the 'acd' option is set.
-	do_autochdir_r()
+	do_autochdir()
 }
 
 // ── Batch 6: splits (win_split/win_init) + snapshots ─────────────────────────
@@ -3343,8 +3342,6 @@ do_autocmd_winclosed_busy: bool = false
 foreign _ {
 	@(link_name = "reset_synblock")
 	reset_synblock_r :: proc "c" (wp: rawptr) ---
-	@(link_name = "close_buffer")
-	close_buffer_r :: proc "c" (win: rawptr, buf: rawptr, action: C.int, abort_if_last: bool, ignore_abort: bool, set_context: bool) -> bool ---
 	@(link_name = "has_event")
 	has_event_r :: proc "c" (e: C.int) -> bool ---
 }
@@ -3404,7 +3401,7 @@ win_close_buffer_o :: proc "c"(win: rawptr, action: C.int, abort_if_last: bool) 
 		bufref: Bufref_T
 		set_bufref(&bufref, curbuf)
 		(^C.int)(uintptr(win) + W_LOCKED_OFF)^ += 1
-		retval = close_buffer_r(win, (^rawptr)(uintptr(win) + W_BUFFER_OFF)^,
+		retval = close_buffer(win, (^rawptr)(uintptr(win) + W_BUFFER_OFF)^,
 			action, abort_if_last, true, true)
 		if win_valid_any_tab(win) {
 			(^C.int)(uintptr(win) + W_LOCKED_OFF)^ -= 1
@@ -3614,7 +3611,7 @@ win_close_othertab :: proc "c"(win: rawptr, free_buf: C.int, tp: rawptr, force: 
 		if (^rawptr)(uintptr(win) + W_BUFFER_OFF)^ != nil {
 			// Close the link to the buffer.
 			fb := free_buf
-			close_buffer_r(win, (^rawptr)(uintptr(win) + W_BUFFER_OFF)^,
+			close_buffer(win, (^rawptr)(uintptr(win) + W_BUFFER_OFF)^,
 				fb != 0 ? DOBUF_UNLOAD_O : 0, false, true, true)
 		}
 		// Careful: Autocommands may have closed the tab page or made it the
@@ -7139,7 +7136,7 @@ wingotofile_o :: proc "c"(nchar: C.int, prenum: C.int, prenum1: C.int) {
 		if wp == nil && win_split(0, 0) == OK {
 			(^bool)(uintptr(curwin) + W_P_SCB_OFF)^ = false // RESET_BINDING
 			(^bool)(uintptr(curwin) + W_P_CRB_OFF)^ = false
-			if do_ecmd_r(0, transmute(cstring)(ptr), nil, nil, ECMD_LASTL_O, ECMD_HIDE_O, nil) == FAIL {
+			if do_ecmd(0, transmute(cstring)(ptr), nil, nil, ECMD_LASTL_O, ECMD_HIDE_O, nil) == FAIL {
 				// Failed to open the file, close the window opened for
 				// it. Save/restore got_int around win_close (which fails
 				// unconditionally when got_int is set).

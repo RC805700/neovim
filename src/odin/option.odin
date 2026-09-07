@@ -177,8 +177,7 @@ foreign _ {
 
 	@(link_name = "find_key_len")
 	find_key_len_r :: proc "c" (arg: cstring, len: C.size_t, in_string: bool) -> C.int ---
-	@(link_name = "maketitle")
-	maketitle_r :: proc "c" () ---
+	// maketitle now defined in buffer.odin — call directly.
 	// starting already declared in main.odin — reuse directly.
 	@(link_name = "magic_overruled")
 	magic_overruled_g: C.int
@@ -247,7 +246,7 @@ string_to_key :: proc "c"(arg: ^u8) -> C.int {
 @(export)
 did_set_title :: proc "c"() {
 	if starting != 2 { // starting != NO_SCREEN // NO_SCREEN is 2? starting!=NO_SCREEN — check below
-		maketitle_r()
+		maketitle()
 	}
 }
 

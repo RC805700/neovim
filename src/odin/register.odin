@@ -375,10 +375,8 @@ foreign _ {
  	@(link_name = "check_fname")
 	check_fname_r :: proc "c" () -> C.int ---
 	// last_search_pat / set_last_search_pat now defined in search.odin — reuse directly.
-	@(link_name = "buflist_findpat")
-	buflist_findpat_r :: proc "c" (pattern: cstring, pattern_end: cstring, unlisted: bool, diffmode: bool, curtab_only: bool) -> C.int ---
-	@(link_name = "buflist_name_nr")
-	buflist_name_nr_r :: proc "c" (fnum: C.int, fname: ^^u8, lnum: ^C.int) -> C.int ---
+	// buflist_findpat now defined in buffer.odin — call directly.
+	// buflist_name_nr now defined in buffer.odin — call directly.
 	@(link_name = "getdigits_int")
 	getdigits_int_r :: proc "c" (pp: ^^u8, strict: bool, def: C.int) -> C.int ---
 	@(link_name = "utf_ptr2cells_len")
@@ -2687,7 +2685,7 @@ ex_display :: proc "c" (eap: rawptr) {
 		aname: ^u8
 		dummy: C.int
 
-		if buflist_name_nr_r(0, &aname, &dummy) != FAIL_R && !message_filtered(transmute(cstring)(aname)) {
+		if buflist_name_nr(0, &aname, &dummy) != FAIL_R && !message_filtered(transmute(cstring)(aname)) {
 			msg_puts(cstring("\n  c  \"#   "))
 			dis_msg(aname, false)
 		}
@@ -3070,7 +3068,7 @@ write_reg_contents_ex :: proc "c" (name: C.int, str: cstring, len_arg: i64, must
 				emsg(transmute(cstring)(&nbuf[0]))
 			}
 		} else {
-			buf = buflist_findnr(buflist_findpat_r(str, transmute(cstring)((^u8)(uintptr(transmute(rawptr)(str)) + uintptr(len))), true, false, false))
+			buf = buflist_findnr(buflist_findpat(str, transmute(cstring)((^u8)(uintptr(transmute(rawptr)(str)) + uintptr(len))), true, false, false))
 		}
 		if buf == nil {
 			return
