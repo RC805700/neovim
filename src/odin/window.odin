@@ -1879,8 +1879,6 @@ foreign _ {
 	changed_line_abv_curs_r :: proc "c" () ---
 	@(link_name = "get_real_state")
 	get_real_state_r :: proc "c" () -> C.int ---
-	@(link_name = "win_fix_current_dir")
-	win_fix_current_dir_r :: proc "c" () ---
  	@(link_name = "do_autochdir")
  	do_autochdir_r :: proc "c" () ---
 	@(link_name = "aborting")
@@ -2083,7 +2081,7 @@ win_enter_ext_o :: proc "c"(wp: rawptr, flags: C.int) {
 		win_fix_cursor_o(get_real_state_r() & (MODE_NORMAL_O | MODE_CMDLINE_O | MODE_TERMINAL_O) != 0)
 	}
 
-	win_fix_current_dir_r()
+	win_fix_current_dir()
 
 	entering_window(curwin)
 	// Careful: autocommands may close the window and make "wp" invalid
@@ -6266,6 +6264,110 @@ make_windows :: proc "c"(count_in: C.int, vertical: bool) -> C.int {
 	unblock_autocmds_r()
 	// return actual number of windows
 	return count - todo
+}
+
+// ── Batch 41: dir fix + jump-open + scroll-snapshot flag ─────────────────────
+// w_localdir@800 (existing W_LOCALDIR_OFF) cc-probed via off44.
+MAXPATHL_O :: 4096
+KCD_SCOPE_WINDOW_O :: 0
+KCD_SCOPE_TABPAGE_O :: 1
+KCD_SCOPE_GLOBAL_O :: 2
+KCD_CAUSE_WINDOW_O :: 1
+
+@(private="file")
+did_initial_scroll_size_snapshot_b41: bool = false
+
+foreign _ {
+	@(link_name = "globaldir")
+	globaldir_g: rawptr
+	@(link_name = "last_chdir_reason")
+	last_chdir_reason_g: rawptr
+	@(link_name = "pathcmp")
+	pathcmp_r :: proc "c" (p: cstring, q: cstring, maxlen: C.int) -> C.int ---
+	@(link_name = "do_autocmd_dirchanged")
+	do_autocmd_dirchanged_r :: proc "c" (new_dir: cstring, scope: C.int, cause: C.int, pre: bool) ---
+}
+
+// Jump to the first open window containing buffer "buf" (NULL if none).
+@(export)
+buf_jump_open_win :: proc "c"(buf: rawptr) -> rawptr {
+	if (^rawptr)(uintptr(curwin) + W_BUFFER_OFF)^ == buf {
+		win_enter(curwin, false)
+		return curwin
+	}
+	wp := firstwin // FOR_ALL_WINDOWS_IN_TAB(wp, curtab): curtab nuance
+	for wp != nil {
+		if (^rawptr)(uintptr(wp) + W_BUFFER_OFF)^ == buf {
+			win_enter(wp, false)
+			return wp
+		}
+		wp = (^rawptr)(uintptr(wp) + W_NEXT_OFF)^
+	}
+	return nil
+}
+
+// Change to the directory of the current window/tab (unless starting up).
+@(export)
+win_fix_current_dir :: proc "c"() {
+	// New directory is either the local directory of the window, tab or NULL.
+	w_localdir := (^rawptr)(uintptr(curwin) + W_LOCALDIR_OFF)^
+	new_dir := w_localdir != nil ? transmute(cstring)(w_localdir) :
+		transmute(cstring)((^rawptr)(uintptr(curtab) + TP_LOCALDIR_OFF)^)
+	cwd: [MAXPATHL_O]u8
+	if os_dirname(transmute(cstring)(&cwd[0]), MAXPATHL_O) != OK {
+		cwd[0] = 0
+	}
+	if new_dir != nil {
+		// Window/tab has a local directory: Save current directory as
+		// global (unless that was done already) and change to the local one.
+		if globaldir_g == nil {
+			if cwd[0] != 0 {
+				globaldir_g = transmute(rawptr)(xstrdup_o(&cwd[0]))
+			}
+		}
+		dir_differs := pathcmp_r(new_dir, transmute(cstring)(&cwd[0]), -1) != 0
+		if p_acd_g == 0 && dir_differs {
+			do_autocmd_dirchanged_r(new_dir,
+				w_localdir != nil ? KCD_SCOPE_WINDOW_O : KCD_SCOPE_TABPAGE_O,
+				KCD_CAUSE_WINDOW_O, true)
+		}
+		if os_chdir(new_dir) == 0 {
+			if p_acd_g == 0 && dir_differs {
+				do_autocmd_dirchanged_r(new_dir,
+					w_localdir != nil ? KCD_SCOPE_WINDOW_O : KCD_SCOPE_TABPAGE_O,
+					KCD_CAUSE_WINDOW_O, false)
+			}
+		}
+		last_chdir_reason_g = nil
+		shorten_fnames(true)
+	} else if globaldir_g != nil {
+		// No local directory and not in the global directory: change back.
+		dir_differs := pathcmp_r(transmute(cstring)(globaldir_g),
+			transmute(cstring)(&cwd[0]), -1) != 0
+		if p_acd_g == 0 && dir_differs {
+			do_autocmd_dirchanged_r(transmute(cstring)(globaldir_g),
+				KCD_SCOPE_GLOBAL_O, KCD_CAUSE_WINDOW_O, true)
+		}
+		if os_chdir(transmute(cstring)(globaldir_g)) == 0 {
+			if p_acd_g == 0 && dir_differs {
+				do_autocmd_dirchanged_r(transmute(cstring)(globaldir_g),
+					KCD_SCOPE_GLOBAL_O, KCD_CAUSE_WINDOW_O, false)
+			}
+		}
+		xfree(globaldir_g)
+		globaldir_g = nil
+		last_chdir_reason_g = nil
+		shorten_fnames(true)
+	}
+}
+
+// Take the initial scroll-size snapshot once (for WinScrolled/WinResized).
+@(export)
+may_make_initial_scroll_size_snapshot :: proc "c"() {
+	if !did_initial_scroll_size_snapshot_b41 {
+		did_initial_scroll_size_snapshot_b41 = true
+		snapshot_windows_scroll_size()
+	}
 }
 
 // ── Batch 40: frame restore + split guard + aucmd window ─────────────────────

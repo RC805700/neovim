@@ -192,6 +192,9 @@ void nvim_odin_init_winopt(win_T *win);
 #pragma weak winframe_restore
 #pragma weak check_split_disallowed
 #pragma weak win_alloc_aucmd_win
+#pragma weak buf_jump_open_win
+#pragma weak win_fix_current_dir
+#pragma weak may_make_initial_scroll_size_snapshot
 #pragma weak win_splitmove
 #pragma weak merge_win_config
 #pragma weak win_set_buf
