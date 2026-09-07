@@ -7541,11 +7541,9 @@ GRID_CHARS_OFF :: 8
 foreign _ {
 	@(link_name = "win_text_height")
 	win_text_height_r :: proc "c" (wp: rawptr, start_lnum: C.int, start_vcol: C.longlong, end_lnum: ^C.int, end_vcol: ^C.longlong, fill: rawptr, max: C.longlong) -> C.longlong ---
-	@(link_name = "ui_call_win_viewport")
-	ui_call_win_viewport_r :: proc "c" (grid: C.longlong, win: C.int, topline: C.longlong, botline: C.longlong, curline: C.longlong, curcol: C.longlong, line_count: C.longlong, scroll_delta: C.longlong) ---
-	@(link_name = "ui_ext_win_position")
-	ui_ext_win_position_r :: proc "c" (wp: rawptr, validate: bool) ---
-	@(link_name = "pum_ui_flush")
+ 	@(link_name = "ui_call_win_viewport")
+ 	ui_call_win_viewport_r :: proc "c" (grid: C.longlong, win: C.int, topline: C.longlong, botline: C.longlong, curline: C.longlong, curcol: C.longlong, line_count: C.longlong, scroll_delta: C.longlong) ---
+ 	@(link_name = "pum_ui_flush")
 	pum_ui_flush_r :: proc "c" () ---
 	@(link_name = "msg_ui_flush")
 	msg_ui_flush_r :: proc "c" () ---
@@ -7632,7 +7630,7 @@ win_ui_flush :: proc "c"(validate: bool) {
 				(^bool)(grid + GRID_PENDING_COMP_OFF)^) &&
 				(^rawptr)(grid + GRID_CHARS_OFF)^ != nil {
 				if tp == curtab {
-					ui_ext_win_position_r(wp, validate)
+					ui_ext_win_position(wp, validate)
 				} else {
 					ui_call_win_hide_r((^C.int)(uintptr(wp) + W_GRID_HANDLE_OFF)^)
 					(^bool)(uintptr(wp) + W_POS_CHANGED_OFF)^ = false
@@ -7650,4 +7648,181 @@ win_ui_flush :: proc "c"(validate: bool) {
 	pum_ui_flush_r()
 	// And the message
 	msg_ui_flush_r()
+}
+
+// ── Batch 46: ui_ext_win_position ────────────────────────────────────────────
+// ScreenGrid: handle@0/chars@8(float-grid ptr)/valid@56/mouse@59/zindex@60/
+// comp_row@64/comp_col@68/comp_index@80; WinConfig: window@0/bufpos@4{lnum,col}/
+// row@24(f64)/col@32(f64)/anchor@40/relative@44/external@48/mouse@50/
+// zindex@56/fixed@469/hide@470; w_grid@10440 — cc-probed via off47/off48.
+
+W_GRID_OFF :: 10440
+GRID_HANDLE_OFF2 :: 0
+GRID_VALID_OFF :: 56
+GRID_MOUSE_OFF2 :: 59
+GRID_ZINDEX_OFF :: 60
+GRID_COMP_ROW_OFF :: 64
+GRID_COMP_COL_OFF :: 68
+GRID_COMP_INDEX_OFF :: 80
+WCFG_WINDOW_OFF :: 0
+WCFG_BUFPOS_COL_OFF :: 8
+WCFG_ROW_OFF :: 24
+WCFG_COL_OFF :: 32
+WCFG_ANCHOR_OFF :: 40
+WCFG_FIXED_OFF :: 469
+WCFG_MOUSE_OFF2 :: 50
+WCFG_ZINDEX_OFF2 :: 56
+KFLOAT_REL_TABLINE_O :: 4
+KFLOAT_REL_LASTSTATUS_O :: 5
+KFLOAT_ANCHOR_EAST_O :: 1
+KFLOAT_ANCHOR_SOUTH_O :: 2
+KZINDEX_MESSAGES_O :: 200
+
+foreign _ {
+	@(link_name = "find_window_by_handle")
+	find_window_by_handle_r :: proc "c" (window: C.int, err: rawptr) -> rawptr ---
+	@(link_name = "grid_adjust")
+	grid_adjust_r :: proc "c" (grid: rawptr, row_off: ^C.int, col_off: ^C.int) -> rawptr ---
+	@(link_name = "textpos2screenpos")
+	textpos2screenpos_r :: proc "c" (wp: rawptr, pos: ^Pos_T, rowp: ^C.int, scolp: ^C.int, ccolp: ^C.int, ecolp: ^C.int, local: bool) ---
+	@(link_name = "ui_comp_layers_adjust")
+	ui_comp_layers_adjust_r :: proc "c" (layer_idx: C.size_t, raise: bool) ---
+	@(link_name = "ui_comp_put_grid")
+	ui_comp_put_grid_r :: proc "c" (grid: rawptr, row: C.int, col: C.int, height: C.int, width: C.int, valid: bool, on_top: bool) -> bool ---
+	@(link_name = "ui_call_win_pos")
+	ui_call_win_pos_r :: proc "c" (grid: C.longlong, win: C.int, startrow: C.longlong, startcol: C.longlong, width: C.longlong, height: C.longlong) ---
+	@(link_name = "ui_call_win_float_pos")
+	ui_call_win_float_pos_r :: proc "c" (grid: C.longlong, win: C.int, anchor: NvimString, anchor_grid: C.longlong, anchor_row: f64, anchor_col: f64, mouse_enabled: bool, zindex: C.longlong, compindex: C.longlong, screen_row: C.longlong, screen_col: C.longlong) ---
+	@(link_name = "ui_call_win_external_pos")
+	ui_call_win_external_pos_r :: proc "c" (grid: C.longlong, win: C.int) ---
+	@(link_name = "ui_check_cursor_grid")
+	ui_check_cursor_grid_r :: proc "c" (grid_handle: C.int) ---
+	@(link_name = "default_grid")
+	default_grid_u8: u8 // address-of only
+	@(link_name = "float_anchor_str")
+	float_anchor_str_g: [4]cstring
+}
+
+@(export)
+ui_ext_win_position :: proc "c"(wp: rawptr, validate: bool) {
+	wcfg := uintptr(wp) + W_CONFIG_OFF
+	wgrid := uintptr(wp) + W_GRID_ALLOC_OFF
+	(^bool)(uintptr(wp) + W_POS_CHANGED_OFF)^ = false
+	if !(^bool)(uintptr(wp) + W_FLOATING_OFF)^ {
+		if ui_has(K_UIMULTIGRID_O) {
+			// Windows on the default grid don't necessarily have comp_col
+			// and comp_row set, but the rest relies on it.
+			(^C.int)(wgrid + GRID_COMP_COL_OFF)^ = (^C.int)(uintptr(wp) + W_WINCOL_OFF)^
+			(^C.int)(wgrid + GRID_COMP_ROW_OFF)^ = (^C.int)(uintptr(wp) + W_WINROW_OFF)^
+		}
+		ui_call_win_pos_r(
+			C.longlong((^C.int)(wgrid + GRID_HANDLE_OFF2)^),
+			(^C.int)(uintptr(wp) + W_HANDLE_OFF)^,
+			C.longlong((^C.int)(uintptr(wp) + W_WINROW_OFF)^),
+			C.longlong((^C.int)(uintptr(wp) + W_WINCOL_OFF)^),
+			C.longlong((^C.int)(uintptr(wp) + W_WIDTH_OFF)^),
+			C.longlong((^C.int)(uintptr(wp) + W_HEIGHT_OFF)^))
+		return
+	}
+	cfg_external := (^bool)(wcfg + 48)^
+	if !cfg_external {
+		grid := transmute(rawptr)(&default_grid_u8)
+		row := (^f64)(wcfg + WCFG_ROW_OFF)^
+		col := (^f64)(wcfg + WCFG_COL_OFF)^
+		if (^C.int)(wcfg + WCFG_RELATIVE_OFF)^ == KFLOAT_REL_WINDOW_O {
+			dummy: Api_Error = {typ = -1, msg = nil}
+			win := find_window_by_handle_r((^C.int)(wcfg + WCFG_WINDOW_OFF)^,
+				transmute(rawptr)(&dummy))
+			api_clear_error_r(&dummy)
+			if win != nil {
+				// Anchored window first, if it moved.
+				if (^bool)(uintptr(win) + W_POS_CHANGED_OFF)^ &&
+					(^rawptr)(uintptr(win) + W_GRID_ALLOC_OFF + GRID_CHARS_OFF)^ != nil &&
+					win_valid(win) {
+					ui_ext_win_position(win, validate)
+				}
+				row_off: C.int = 0
+				col_off: C.int = 0
+				win_grid_alloc_r(win)
+				grid = grid_adjust_r(transmute(rawptr)(uintptr(win) + W_GRID_OFF),
+					&row_off, &col_off)
+				row += f64(row_off)
+				col += f64(col_off)
+				if (^C.int)(wcfg + WCFG_BUFPOS_LNUM_OFF)^ >= 0 {
+					lnum := min((^C.int)(wcfg + WCFG_BUFPOS_LNUM_OFF)^ + 1,
+						(^C.int)(uintptr((^rawptr)(uintptr(win) + W_BUFFER_OFF)^) + B_ML_LINE_COUNT_OFF)^)
+					pos := Pos_T{lnum, (^C.int)(wcfg + WCFG_BUFPOS_COL_OFF)^, 0}
+					trow, tcol, tcolc, tcole: C.int
+					textpos2screenpos_r(win, &pos, &trow, &tcol, &tcolc, &tcole, true)
+					row += f64(trow - 1)
+					col += f64(tcol - 1)
+				}
+			}
+		} else if (^C.int)(wcfg + WCFG_RELATIVE_OFF)^ == KFLOAT_REL_LASTSTATUS_O {
+			row += f64(Rows - C.int(p_ch) - last_stl_height(false))
+		} else if (^C.int)(wcfg + WCFG_RELATIVE_OFF)^ == KFLOAT_REL_TABLINE_O {
+			row += f64(tabline_height())
+		}
+		resort := (^C.size_t)(wgrid + GRID_COMP_INDEX_OFF)^ != 0 &&
+			(^C.int)(wgrid + GRID_ZINDEX_OFF)^ != (^C.int)(wcfg + WCFG_ZINDEX_OFF2)^
+		raise := resort && (^C.int)(wgrid + GRID_ZINDEX_OFF)^ < (^C.int)(wcfg + WCFG_ZINDEX_OFF2)^
+		(^C.int)(wgrid + GRID_ZINDEX_OFF)^ = (^C.int)(wcfg + WCFG_ZINDEX_OFF2)^
+		if resort {
+			ui_comp_layers_adjust_r((^C.size_t)(wgrid + GRID_COMP_INDEX_OFF)^, raise)
+		}
+		valid := (^C.int)(uintptr(wp) + W_REDR_TYPE_OFF)^ == 0 || ui_has(K_UIMULTIGRID_O)
+		if !valid && !validate {
+			(^bool)(uintptr(wp) + W_POS_CHANGED_OFF)^ = true
+			return
+		}
+		east := (^C.int)(wcfg + WCFG_ANCHOR_OFF)^ & KFLOAT_ANCHOR_EAST_O != 0
+		south := (^C.int)(wcfg + WCFG_ANCHOR_OFF)^ & KFLOAT_ANCHOR_SOUTH_O != 0
+		comp_row := C.int(row) - (south ? (^C.int)(uintptr(wp) + W_HEIGHT_OUTER_OFF)^ : 0)
+		comp_col := C.int(col) - (east ? (^C.int)(uintptr(wp) + W_WIDTH_OUTER_OFF)^ : 0)
+		above_ch := (^C.int)(wcfg + WCFG_ZINDEX_OFF2)^ < KZINDEX_MESSAGES_O ? C.int(p_ch) : 0
+		comp_row += (^C.int)(uintptr(grid) + GRID_COMP_ROW_OFF)^
+		comp_col += (^C.int)(uintptr(grid) + GRID_COMP_COL_OFF)^
+		comp_row = max(min(comp_row, Rows - (^C.int)(uintptr(wp) + W_HEIGHT_OUTER_OFF)^ - above_ch), 0)
+		if !(^bool)(wcfg + WCFG_FIXED_OFF)^ || east {
+			comp_col = max(min(comp_col, Columns - (^C.int)(uintptr(wp) + W_WIDTH_OUTER_OFF)^), 0)
+		}
+		(^C.int)(uintptr(wp) + W_WINROW_OFF)^ = comp_row
+		(^C.int)(uintptr(wp) + W_WINCOL_OFF)^ = comp_col
+		if !(^bool)(wcfg + WCFG_REL_HIDE)^ {
+			ui_comp_put_grid_r(transmute(rawptr)(wgrid), comp_row, comp_col,
+				(^C.int)(uintptr(wp) + W_HEIGHT_OUTER_OFF)^,
+				(^C.int)(uintptr(wp) + W_WIDTH_OUTER_OFF)^, valid, false)
+			if ui_has(K_UIMULTIGRID_O) {
+				anchor_s := float_anchor_str_g[(^C.int)(wcfg + WCFG_ANCHOR_OFF)^]
+				anchor := NvimString{data = anchor_s,
+					size = C.size_t(libc.strlen(anchor_s))}
+				ui_call_win_float_pos_r(
+					C.longlong((^C.int)(wgrid + GRID_HANDLE_OFF2)^),
+					(^C.int)(uintptr(wp) + W_HANDLE_OFF)^,
+					anchor,
+					C.longlong((^C.int)(uintptr(grid) + GRID_HANDLE_OFF2)^),
+					row, col,
+					(^bool)(wgrid + GRID_MOUSE_OFF2)^,
+					C.longlong((^C.int)(wgrid + GRID_ZINDEX_OFF)^),
+					C.longlong((^C.size_t)(wgrid + GRID_COMP_INDEX_OFF)^),
+					C.longlong((^C.int)(uintptr(wp) + W_WINROW_OFF)^),
+					C.longlong((^C.int)(uintptr(wp) + W_WINCOL_OFF)^))
+			}
+			ui_check_cursor_grid_r((^C.int)(wgrid + GRID_HANDLE_OFF2)^)
+			(^bool)(wgrid + GRID_MOUSE_OFF2)^ = (^bool)(wcfg + WCFG_MOUSE_OFF2)^
+			if !valid {
+				(^bool)(wgrid + GRID_VALID_OFF)^ = false
+				redraw_later(wp, UPD_NOT_VALID_O)
+			}
+		} else {
+			if ui_has(K_UIMULTIGRID_O) {
+				ui_call_win_hide_r((^C.int)(wgrid + GRID_HANDLE_OFF2)^)
+			}
+			ui_comp_remove_grid_r(transmute(rawptr)(wgrid))
+		}
+	} else {
+		ui_call_win_external_pos_r(
+			C.longlong((^C.int)(wgrid + GRID_HANDLE_OFF2)^),
+			(^C.int)(uintptr(wp) + W_HANDLE_OFF)^)
+	}
 }
