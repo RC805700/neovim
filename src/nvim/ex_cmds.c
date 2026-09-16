@@ -3320,6 +3320,7 @@ static int global_need_beginline;       // call beginline() after ":g"
 /// Get old substitute replacement string
 ///
 /// @param[out]  ret_sub    Location where old string will be saved.
+#pragma weak sub_get_replacement
 void sub_get_replacement(SubReplacementString *const ret_sub)
   FUNC_ATTR_NONNULL_ALL
 {
@@ -3331,6 +3332,7 @@ void sub_get_replacement(SubReplacementString *const ret_sub)
 /// @warning `sub` must be in allocated memory. It is not copied.
 ///
 /// @param[in]  sub  New replacement string.
+#pragma weak sub_set_replacement
 void sub_set_replacement(SubReplacementString sub)
 {
   xfree(old_sub.sub);
@@ -4989,12 +4991,14 @@ static int show_sub(exarg_T *eap, pos_T old_cusr, PreviewLines *preview_lines, i
 }
 
 /// :substitute command.
+#pragma weak ex_substitute
 void ex_substitute(exarg_T *eap)
 {
   do_sub(eap, profile_zero(), 0, 0);
 }
 
 /// :substitute command preview callback.
+#pragma weak ex_substitute_preview
 int ex_substitute_preview(exarg_T *eap, int cmdpreview_ns, handle_T cmdpreview_bufnr)
 {
   // Only preview once the pattern delimiter has been typed

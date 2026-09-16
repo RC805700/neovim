@@ -180,7 +180,7 @@ CPO_LINEOFF :: 'o'
 CPO_MATCH :: '%'
 CPO_SCOLON :: ';'
 
-CMOD_KEEPPATTERNS :: 0x080 // cmod_flags bit
+CMOD_KEEPPATTERNS :: 0x1000 // cmod_flags bit (:keeppatterns; was 0x080=CONFIRM — fixed 2026-09: :keeppatterns never suppressed pattern saves)
 RE_MAGIC :: 1
 
 HIST_SEARCH :: 1
