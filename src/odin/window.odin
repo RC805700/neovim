@@ -302,7 +302,7 @@ foreign _ {
  	@(link_name = "p_spr")
  	p_spr_g: C.int
 }
-// redraw_later_r/UPD_NOT_VALID/xfree/first_tabpage/firstwin/curwin/curtab/
+// redraw_later/UPD_NOT_VALID/xfree/first_tabpage/firstwin/curwin/curtab/
 // one_window/frame2win reused.
 
 frame_fixed_height_o :: proc "c" (wp_frame: rawptr) -> bool {
@@ -472,7 +472,7 @@ frame_comp_pos_o :: proc "c" (topfrp: rawptr, row: ^C.int, col: ^C.int) {
 			// position changed, redraw
 			(^C.int)(uintptr(wp) + W_WINROW_OFF)^ = row^
 			(^C.int)(uintptr(wp) + W_WINCOL_OFF)^ = col^
-			redraw_later_r(wp, UPD_NOT_VALID)
+			redraw_later(wp, UPD_NOT_VALID)
 			(^bool)(uintptr(wp) + W_REDR_STATUS_OFF)^ = true
 			(^bool)(uintptr(wp) + W_POS_CHANGED_OFF)^ = true
 		}
@@ -1741,8 +1741,8 @@ win_split_ins :: proc "c"(size: C.int, flags: C.int, new_wp: rawptr, dir: C.int,
 
 	// Both windows need redrawing. Update all status lines, in case they
 	// show something related to the window count or position.
-	redraw_later_r(wp, UPD_NOT_VALID_O)
-	redraw_later_r(oldwin, UPD_NOT_VALID_O)
+	redraw_later(wp, UPD_NOT_VALID_O)
+	redraw_later(oldwin, UPD_NOT_VALID_O)
 	status_redraw_all_r()
 
 	if need_status != 0 {
@@ -2098,19 +2098,19 @@ win_enter_ext_o :: proc "c"(wp: rawptr, flags: C.int) {
 	(^bool)(uintptr(curwin) + W_REDR_STATUS_OFF)^ = true
 	redraw_tabline_opt = true
 	if restart_edit != 0 {
-		redraw_later_r(curwin, UPD_VALID_O)
+		redraw_later(curwin, UPD_VALID_O)
 	}
 
 	// change background color according to NormalNC,
 	// but only if actually defined (otherwise no extra redraw)
 	if (^C.int)(uintptr(curwin) + W_HL_NORMAL_OFF)^ !=
 	(^C.int)(uintptr(curwin) + W_HL_NORMALNC_OFF)^ {
-		redraw_later_r(curwin, UPD_NOT_VALID_O)
+		redraw_later(curwin, UPD_NOT_VALID_O)
 	}
 	if prevwin_g != nil {
 		if (^C.int)(uintptr(prevwin_g) + W_HL_NORMAL_OFF)^ !=
 		(^C.int)(uintptr(prevwin_g) + W_HL_NORMALNC_OFF)^ {
-			redraw_later_r(prevwin_g, UPD_NOT_VALID_O)
+			redraw_later(prevwin_g, UPD_NOT_VALID_O)
 		}
 	}
 
@@ -2551,7 +2551,7 @@ W_LINES_VALID_OFF :: 624
 
 @(export)
 win_init_empty :: proc "c"(wp: rawptr) {
-	redraw_later_r(wp, UPD_NOT_VALID_O)
+	redraw_later(wp, UPD_NOT_VALID_O)
 	(^C.int)(uintptr(wp) + W_LINES_VALID_OFF)^ = 0
 	(^C.int)(uintptr(wp) + W_CURSOR_OFF)^ = 1
 	(^C.int)(uintptr(wp) + W_CURSWANT_OFF)^ = 0
@@ -2688,8 +2688,6 @@ foreign _ {
 	reset_VIsual_and_resel_r :: proc "c" () ---
 	@(link_name = "reset_dragwin")
 	reset_dragwin_r :: proc "c" () ---
-	@(link_name = "redraw_all_later")
-	redraw_all_later_r :: proc "c" (type: C.int) ---
 	@(link_name = "terminal_check_size")
 	terminal_check_size_r :: proc "c" (term: rawptr) ---
 	@(link_name = "switch_win_noblock")
@@ -2909,7 +2907,7 @@ win_new_tabpage :: proc "c"(after: C.int, filename: cstring, enter: bool, first:
 		terminal_check_size_r((^rawptr)(uintptr(curbuf) + B_TERMINAL_OFF)^)
 	}
 	if enter {
-		redraw_all_later_r(UPD_NOT_VALID_O)
+		redraw_all_later(UPD_NOT_VALID_O)
 		tabpage_check_windows_o(old_curtab)
 		lastused_tabpage_g = old_curtab
 		entering_window(curwin)
@@ -3005,7 +3003,7 @@ enter_tabpage_o :: proc "c"(tp: rawptr, old_curbuf: rawptr, trigger_enter_autocm
 			apply_autocmds(EVENT_BUFENTER_O, nil, nil, false, curbuf)
 		}
 	}
-	redraw_all_later_r(UPD_NOT_VALID_O)
+	redraw_all_later(UPD_NOT_VALID_O)
 }
 
 // Find tab page "n" (first one is 1). Returns NULL when not found.
@@ -3166,10 +3164,10 @@ win_goto :: proc "c"(wp: rawptr) {
 	win_enter(wp, true)
 	// Conceal cursor line in previous window, unconceal in current window.
 	if win_valid(owp) && (^C.int)(uintptr(owp) + W_P_COLE_OFF)^ > 0 && msg_scrolled == 0 {
-		redrawWinline_r(owp, (^C.int)(uintptr(owp) + W_CURSOR_OFF)^)
+		redrawWinline(owp, (^C.int)(uintptr(owp) + W_CURSOR_OFF)^)
 	}
 	if (^C.int)(uintptr(curwin) + W_P_COLE_OFF)^ > 0 && msg_scrolled == 0 {
-		redrawWinline_r(curwin, (^C.int)(uintptr(curwin) + W_CURSOR_OFF)^)
+		redrawWinline(curwin, (^C.int)(uintptr(curwin) + W_CURSOR_OFF)^)
 	}
 }
 
@@ -4019,7 +4017,7 @@ win_close :: proc "c"(win: rawptr, free_buf: bool, force: bool) -> C.int {
 	(^bool)(uintptr(curwin) + W_POS_CHANGED_OFF)^ = true
 	if !was_floating {
 		// TODO(bfredl): how about no?
-		redraw_all_later_r(UPD_NOT_VALID_O)
+		redraw_all_later(UPD_NOT_VALID_O)
 	}
 	return OK
 }
@@ -4109,7 +4107,7 @@ win_equal_rec_o :: proc "c"(next_curwin: rawptr, current: bool, topfr: rawptr, d
 			frame_new_height(topfr, h, false, false, false)
 			(^C.int)(uintptr((^rawptr)(uintptr(topfr) + FR_WIN_OFF)^) + W_WINCOL_OFF)^ = c
 			frame_new_width(topfr, w, false, false)
-			redraw_all_later_r(UPD_NOT_VALID_O)
+			redraw_all_later(UPD_NOT_VALID_O)
 		}
 	} else if b_at((^u8)(uintptr(topfr) + FR_LAYOUT_OFF), 0) == FR_ROW_O {
 		(^C.int)(uintptr(topfr) + FR_WIDTH_OFF)^ = w
@@ -4447,7 +4445,7 @@ win_setheight_win :: proc "c"(height: C.int, win: rawptr, from_top: bool) {
 		// recompute the window positions
 		win_comp_pos()
 		win_fix_scroll(true)
-		redraw_all_later_r(UPD_NOT_VALID_O)
+		redraw_all_later(UPD_NOT_VALID_O)
 		redraw_cmdline_g = true
 	}
 }
@@ -4596,7 +4594,7 @@ win_setwidth_win :: proc "c"(width: C.int, wp: rawptr, from_left: bool) {
 			w + (^C.int)(uintptr(wp) + W_VSEP_WIDTH_OFF)^, from_left)
 		// recompute the window positions
 		win_comp_pos()
-		redraw_all_later_r(UPD_NOT_VALID_O)
+		redraw_all_later(UPD_NOT_VALID_O)
 	}
 }
 
@@ -5836,7 +5834,7 @@ restore_snapshot :: proc "c"(idx: C.int, close_curwin: C.int) {
 		if wp != nil && close_curwin != 0 {
 			win_goto(wp)
 		}
-		redraw_all_later_r(UPD_NOT_VALID_O)
+		redraw_all_later(UPD_NOT_VALID_O)
 	}
 	clear_snapshot_o(curtab, idx)
 }
@@ -6356,7 +6354,7 @@ win_drag_status_line :: proc "c"(dragwin: rawptr, offset_in: C.int) {
 	}
 	win_comp_pos()
 	win_fix_scroll(true)
-	redraw_all_later_r(UPD_SOME_VALID_O)
+	redraw_all_later(UPD_SOME_VALID_O)
 	showmode_r()
 }
 
@@ -6451,7 +6449,7 @@ win_drag_vsep_line :: proc "c"(dragwin: rawptr, offset_in: C.int) {
 		}
 	}
 	win_comp_pos()
-	redraw_all_later_r(UPD_NOT_VALID_O)
+	redraw_all_later(UPD_NOT_VALID_O)
 }
 
 // ── Batch 41: dir fix + jump-open + scroll-snapshot flag ─────────────────────
@@ -7046,7 +7044,7 @@ win_rotate_o :: proc "c"(upwards: bool, count_in: C.int) {
 	}
 	(^bool)(uintptr(wp1) + W_POS_CHANGED_OFF)^ = true
 	(^bool)(uintptr(wp2) + W_POS_CHANGED_OFF)^ = true
-	redraw_all_later_r(UPD_NOT_VALID_O)
+	redraw_all_later(UPD_NOT_VALID_O)
 }
 
 // ── Batch 44: do_window dispatcher ───────────────────────────────────────────

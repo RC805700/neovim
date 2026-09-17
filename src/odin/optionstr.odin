@@ -609,7 +609,7 @@ did_set_breakindentopt :: proc "c"(args: ^optset_T) -> cstring {
 
 	// list setting requires a redraw
 	if use_win && (^C.int)(uintptr(win) + W_BRIOPT_LIST_OFF)^ != 0 {
-		redraw_all_later_o(UPD_NOT_VALID_S)
+		redraw_all_later(UPD_NOT_VALID_S)
 	}
 
 	return nil
@@ -656,7 +656,7 @@ did_set_global_chars_option_o :: proc "c"(win: rawptr, val: ^u8, what: C.int, op
 		tp = (^rawptr)(uintptr(tp) + 8)^
 	}
 
-	redraw_all_later_o(UPD_NOT_VALID_S)
+	redraw_all_later(UPD_NOT_VALID_S)
 
 	return nil
 }
@@ -776,7 +776,7 @@ did_set_selection :: proc "c"(args: ^optset_T) -> cstring {
 	}
 	if VIsual_active {
 		// Visual selection may be drawn differently.
-		redraw_curbuf_later_r(UPD_INVERTED_F)
+		redraw_curbuf_later(UPD_INVERTED_F)
 	}
 	return nil
 }
@@ -814,7 +814,7 @@ foreign _ {
 	check_ei_r :: proc "c" (ei: ^u8) -> C.int ---
 }
 // utfc_ptr2len/utf_ptr2char/ptr2cells live in mark.odin — reuse directly.
-// _vim_strchr/VIsual_active/redraw_curbuf_later_r/comp_col_r/B_P_COT_OFF/
+// _vim_strchr/VIsual_active/redraw_curbuf_later/comp_col_r/B_P_COT_OFF/
 // B_COT_FLAGS_OFF/OPT_LOCAL_E/OPT_GLOBAL_E/E595_S reused from sibling files.
 
 @(export)
@@ -1993,7 +1993,7 @@ did_set_guicursor :: proc "c"(args: ^optset_T) -> cstring {
 	}
 	if VIsual_active {
 		// In Visual mode cursor may be drawn differently.
-		redrawWinline_r(curwin, (^C.int)(uintptr(curwin) + W_CURSOR_OFF)^)
+		redrawWinline(curwin, (^C.int)(uintptr(curwin) + W_CURSOR_OFF)^)
 	}
 	return nil
 }
@@ -2338,7 +2338,7 @@ foreign _ {
  	@(link_name = "terminal_notify_theme")
  	terminal_notify_theme_r :: proc "c" (term: rawptr, dark: bool) ---
 }
-// redraw_later_r/redraw_buf_later_o/free_fmark/os_time/firstbuf reused.
+// redraw_later/redraw_buf_later/free_fmark/os_time/firstbuf reused.
 
 @(export)
 did_set_background :: proc "c"(args: ^optset_T) -> cstring {
@@ -2418,7 +2418,7 @@ did_set_buftype :: proc "c"(args: ^optset_T) -> cstring {
 	}
 	if (^C.int)(uintptr(win) + W_STATUS_HEIGHT_OFF)^ != 0 || global_stl_height() != 0 {
 		(^bool)(uintptr(win) + W_REDR_STATUS_OFF)^ = true
-		redraw_later_r(win, UPD_VALID_O)
+		redraw_later(win, UPD_VALID_O)
 	}
 	(^bool)(uintptr(buf) + B_HELP_OFF)^ = b_at(bt, 0) == 'h'
 	redraw_titles()
@@ -2484,7 +2484,7 @@ did_set_fileformat :: proc "c"(args: ^optset_T) -> cstring {
 	// Redraw needed when switching to/from "mac": a CR in the text
 	// will be displayed differently.
 	if get_fileformat(buf) == EOL_MAC_E || b_at((^u8)(old_str.data), 0) == 'm' {
-		redraw_buf_later_o(buf, UPD_NOT_VALID_O)
+		redraw_buf_later(buf, UPD_NOT_VALID_O)
 	}
 	return nil
 }

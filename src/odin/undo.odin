@@ -215,8 +215,6 @@ foreign _ {
 	buf_updates_unload_r :: proc "c" (buf: rawptr, can_reload: bool) ---
 	@(link_name = "buf_updates_changedtick")
 	buf_updates_changedtick_r :: proc "c" (buf: rawptr) ---
-	@(link_name = "redrawWinline")
-	redrawWinline_r :: proc "c" (wp: rawptr, lnum: C.int) ---
 	// foldOpenCursor now defined in fold.odin — reuse directly.
 	@(link_name = "messaging")
 	messaging_r :: proc "c" () -> bool ---
@@ -1644,8 +1642,6 @@ foreign _ {
 
 	@(link_name = "check_pos")
 	check_pos_r :: proc "c" (buf: rawptr, pos: ^Pos_T) ---
-	@(link_name = "redraw_later")
-	redraw_later_r :: proc "c" (wp: rawptr, typ: C.int) ---
 }
 
 // ── u_undo / u_redo / u_undo_and_forget ──────────────────────────────────────
@@ -2204,7 +2200,7 @@ u_undoredo :: proc "c" (undo: bool, do_buf_event: bool) {
 		if oldsize > 0 || newsize > 0 {
 			changed_lines_r(curbuf, top + 1, 0, bot, newsize - oldsize, do_buf_event)
 			if spell_check_window(curwin) && bot <= ml_line_count_b(curbuf) {
-				redrawWinline_r(curwin, bot)
+				redrawWinline(curwin, bot)
 			}
 		}
 
@@ -2409,7 +2405,7 @@ u_undo_end :: proc "c" (did_undo_arg: bool, absolute: bool, quiet: bool) {
 			}
 			for wp != nil {
 				if buf_ptr_at(wp, W_BUFFER_M) == curbuf && buf_i32_at(wp, W_P_COLE) > 0 {
-					redraw_later_r(wp, UPD_NOT_VALID)
+					redraw_later(wp, UPD_NOT_VALID)
 				}
 				wp = (^rawptr)(uintptr(wp) + W_NEXT)^
 			}

@@ -240,7 +240,6 @@ foreign nvim {
   diff_win_options :: proc(win: rawptr, startup: bool) ---
   shorten_fnames :: proc(force: bool) ---
   setmouse :: proc() ---
-  redraw_later :: proc(win: rawptr, type_: c.int) ---
   qf_jump :: proc(eap: rawptr, forceit: c.int, errornr: c.int, FILE_IT: bool) ---
   apply_autocmds :: proc "c" (event: c.int, fname: cstring, fname2: cstring, group: bool, buf: rawptr) -> bool ---
 
@@ -255,7 +254,6 @@ foreign nvim {
   // Startup helpers (do_autochdir now defined in buffer.odin — call directly).
   do_autocmd_uienter_all :: proc() ---
   set_reg_var :: proc(c: c.int) ---
-  redraw_all_later :: proc(type_: c.int) ---
 
   os_exit :: proc(r: c.int) ---
 

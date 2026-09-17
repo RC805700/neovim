@@ -162,10 +162,6 @@ foreign _ {
 	status_redraw_all_r :: proc "c" () ---
 	@(link_name = "changed_window_setting")
 	changed_window_setting_opt :: proc "c" (wp: rawptr) ---
-	@(link_name = "redraw_buf_later")
-	redraw_buf_later_o :: proc "c" (buf: rawptr, typ: C.int) ---
-	@(link_name = "redraw_all_later")
-	redraw_all_later_o :: proc "c" (typ: C.int) ---
 	@(link_name = "p_wmh")
 	p_wmh_opt: C.longlong
 	@(link_name = "p_wh")
@@ -1002,7 +998,7 @@ did_set_option_o :: proc "c"(
 		setmouse()
 	} else if (varp == transmute(rawptr)(&p_flp_g) ||
 	varp == transmute(rawptr)(uintptr(curbuf) + B_P_FLP_OFF)) && curwin_briopt_list() != 0 {
-		redraw_all_later_o(UPD_NOT_VALID_SP)
+		redraw_all_later(UPD_NOT_VALID_SP)
 	} else if varp == transmute(rawptr)(&p_wbr_g) ||
 	varp == transmute(rawptr)(uintptr(curwin) + W_P_WBR_OFF2) {
 		set_winbar(true)
@@ -1092,10 +1088,10 @@ check_redraw_o :: proc "c"(flags: C.uint32_t) {
 		}
 	}
 	if (flags & kOptFlagRedrBuf) != 0 {
-		redraw_buf_later_o(curbuf, UPD_NOT_VALID_SP)
+		redraw_buf_later(curbuf, UPD_NOT_VALID_SP)
 	}
 	if all {
-		redraw_all_later_o(UPD_NOT_VALID_SP)
+		redraw_all_later(UPD_NOT_VALID_SP)
 	}
 }
 
@@ -2663,7 +2659,7 @@ do_set :: proc "c"(arg_in: ^u8, opt_flags: C.int) -> C.int {
 					didset_options_o()
 					didset_options2_o()
 					ui_refresh_options()
-					redraw_all_later_o(40) // UPD_CLEAR=40? verify: UPD_NOT_VALID=40; UPD_CLEAR separate
+					redraw_all_later(40) // UPD_CLEAR=40? verify: UPD_NOT_VALID=40; UPD_CLEAR separate
 				} else {
 					showoptions_o(true, opt_flags)
 					did_show = true
@@ -3508,8 +3504,6 @@ foreign _ {
 	nvim_odin_restore_option_context :: proc "c" (ctx: rawptr, scope: C.int) ---
 	@(link_name = "api_set_error")
 	api_set_error_r :: proc "c" (err: rawptr, typ: C.int, fmt: cstring, arg: rawptr) ---
-	@(link_name = "redraw_later")
-	redraw_later_o :: proc "c" (wp: rawptr, typ: C.int) ---
 	@(link_name = "set_option_value_handle_tty")
 	set_option_value_handle_tty_c :: proc "c" (name: ^u8, opt_idx: C.int, value: OptVal, opt_flags: C.int) -> cstring ---
 	@(link_name = "p_tw")
@@ -3738,16 +3732,16 @@ check_redraw_for :: proc "c"(buf: rawptr, win: rawptr, flags: C.uint32_t) {
 	}
 	if (flags & kOptFlagRedrBuf_S) != 0 || (flags & kOptFlagRedrWin_S) != 0 || all {
 		if (flags & kOptFlagHLOnly_S) != 0 {
-			redraw_later_o(win, UPD_NOT_VALID_S)
+			redraw_later(win, UPD_NOT_VALID_S)
 		} else {
 			changed_window_setting_opt(win)
 		}
 	}
 	if (flags & kOptFlagRedrBuf_S) != 0 {
-		redraw_buf_later_o(buf, UPD_NOT_VALID_S)
+		redraw_buf_later(buf, UPD_NOT_VALID_S)
 	}
 	if all {
-		redraw_all_later_o(UPD_NOT_VALID_S)
+		redraw_all_later(UPD_NOT_VALID_S)
 	}
 }
 

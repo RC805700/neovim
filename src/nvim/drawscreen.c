@@ -2643,6 +2643,7 @@ int number_width(win_T *wp)
 ///
 /// Set must_redraw only if not already set to a higher value.
 /// e.g. if must_redraw is UPD_CLEAR, type UPD_NOT_VALID will do nothing.
+#pragma weak redraw_later
 void redraw_later(win_T *wp, int type)
 {
   // curwin may have been set to NULL when exiting
@@ -2657,6 +2658,7 @@ void redraw_later(win_T *wp, int type)
 }
 
 /// Mark all windows to be redrawn later.
+#pragma weak redraw_all_later
 void redraw_all_later(int type)
 {
   FOR_ALL_WINDOWS_IN_TAB(wp, curtab) {
@@ -2668,6 +2670,7 @@ void redraw_all_later(int type)
 
 /// Set "must_redraw" to "type" unless it already has a higher value
 /// or it is currently not allowed.
+#pragma weak set_must_redraw
 void set_must_redraw(int type)
 {
   if (!redraw_not_allowed) {
@@ -2675,6 +2678,7 @@ void set_must_redraw(int type)
   }
 }
 
+#pragma weak screen_invalidate_highlights
 void screen_invalidate_highlights(void)
 {
   FOR_ALL_WINDOWS_IN_TAB(wp, curtab) {
@@ -2684,11 +2688,13 @@ void screen_invalidate_highlights(void)
 }
 
 /// Mark all windows that are editing the current buffer to be updated later.
+#pragma weak redraw_curbuf_later
 void redraw_curbuf_later(int type)
 {
   redraw_buf_later(curbuf, type);
 }
 
+#pragma weak redraw_buf_later
 void redraw_buf_later(buf_T *buf, int type)
 {
   FOR_ALL_WINDOWS_IN_TAB(wp, curtab) {
@@ -2698,6 +2704,7 @@ void redraw_buf_later(buf_T *buf, int type)
   }
 }
 
+#pragma weak redraw_buf_line_later
 void redraw_buf_line_later(buf_T *buf, linenr_T line, bool force)
 {
   FOR_ALL_WINDOWS_IN_TAB(wp, curtab) {
@@ -2710,6 +2717,7 @@ void redraw_buf_line_later(buf_T *buf, linenr_T line, bool force)
   }
 }
 
+#pragma weak redraw_win_range_later
 void redraw_win_range_later(win_T *wp, linenr_T first, linenr_T last)
 {
   if (last >= wp->w_topline && first < wp->w_botline) {
@@ -2729,6 +2737,7 @@ void redraw_win_range_later(win_T *wp, linenr_T first, linenr_T last)
 /// Used to remove the "$" from a change command.
 /// Note that when also inserting/deleting lines w_redraw_top and w_redraw_bot
 /// may become invalid and the whole window will have to be redrawn.
+#pragma weak redrawWinline
 void redrawWinline(win_T *wp, linenr_T lnum)
   FUNC_ATTR_NONNULL_ALL
 {

@@ -2014,8 +2014,6 @@ foreign _ {
 	path_full_compare_sp :: proc "c" (s1: cstring, s2: cstring, checkname: bool, expand: bool) -> C.int ---
 	@(link_name = "path_fnamecmp")
 	path_fnamecmp_r :: proc "c" (s1: cstring, s2: cstring) -> C.int ---
-	@(link_name = "redraw_later")
-	redraw_later_sp :: proc "c" (wp: rawptr, typ: C.int) ---
 }
 
 UPD_NOT_VALID_SP :: 40
@@ -2280,7 +2278,7 @@ parse_spelllang :: proc "c"(wp: rawptr) -> ^u8 {
 			}
 		}
 	}
-	redraw_later_sp(wp, UPD_NOT_VALID_SP)
+	redraw_later(wp, UPD_NOT_VALID_SP)
 
 	xfree(spl_copy)
 	parse_spell_recursive = false
@@ -3606,7 +3604,7 @@ ex_spelldump :: proc "c"(eap: rawptr) {
 	if buf_ml_line_count_r(curbuf) > 1 {
 		_ = ml_delete_r(buf_ml_line_count_r(curbuf))
 	}
-	redraw_later_sp(curwin, UPD_NOT_VALID_SP)
+	redraw_later(curwin, UPD_NOT_VALID_SP)
 }
 
 @(export)

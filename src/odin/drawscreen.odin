@@ -52,7 +52,7 @@ conceal_check_cursor_line :: proc "c"() {
 		return
 	}
 
-	redrawWinline_r(curwin, (^C.int)(uintptr(curwin) + W_CURSOR_OFF)^)
+	redrawWinline(curwin, (^C.int)(uintptr(curwin) + W_CURSOR_OFF)^)
 
 	// Concealed line visibility toggled.
 	if decor_conceal_line_r(curwin, (^C.int)(uintptr(curwin) + W_CURSOR_OFF)^ - 1, true) {
@@ -155,4 +155,121 @@ win_cursorline_standout :: proc "c"(wp: rawptr) -> bool {
 	return (^C.int)(uintptr(wp) + W_P_CUL_OFF)^ != 0 ||
 		(wp == curwin && (^C.int)(uintptr(wp) + W_P_COLE_OFF)^ > 0 &&
 			!conceal_cursor_line(wp))
+}
+
+// ── Batch 2a: redraw_later invalidation family ────────────────────────────────
+
+W_REDRAW_TOP_OFF :: 700 // w_redraw_top (linenr_T)
+W_REDRAW_BOT_OFF :: 704 // w_redraw_bot (linenr_T)
+W_GRID_VALID_OFF :: 10512 // w_grid_alloc.valid (bool abs: 10456+56)
+
+foreign _ {
+	@(link_name = "redraw_not_allowed")
+	redraw_not_allowed_g: bool
+}
+
+// Redraw window later; must_redraw tracks the max over all windows.
+@(export)
+redraw_later :: proc "c"(wp: rawptr, type_: C.int) {
+	// curwin may be NULL when exiting; nothing to mark then.
+	if wp == nil {
+		return
+	}
+	if !exiting && !redraw_not_allowed_g &&
+		(^C.int)(uintptr(wp) + W_REDR_TYPE_OFF)^ < type_ {
+		(^C.int)(uintptr(wp) + W_REDR_TYPE_OFF)^ = type_
+		if type_ >= UPD_NOT_VALID {
+			(^C.int)(uintptr(wp) + W_LINES_VALID_OFF)^ = 0
+		}
+		must_redraw = max(must_redraw, type_)
+	}
+}
+
+// Mark all windows in the current tabpage for later redraw.
+@(export)
+redraw_all_later :: proc "c"(type_: C.int) {
+	tp := curtab
+	wp := tp == curtab ? firstwin : (^rawptr)(uintptr(tp) + TP_FIRSTWIN_OFF)^
+	for wp != nil {
+		redraw_later(wp, type_)
+		wp = (^rawptr)(uintptr(wp) + W_NEXT_OFF)^
+	}
+	// Needed when switching tabs.
+	set_must_redraw(type_)
+}
+
+// Set must_redraw unless already higher or currently not allowed.
+@(export)
+set_must_redraw :: proc "c"(type_: C.int) {
+	if !redraw_not_allowed_g {
+		must_redraw = max(must_redraw, type_)
+	}
+}
+
+// Invalidate highlights in all windows (grids need realloc).
+@(export)
+screen_invalidate_highlights :: proc "c"() {
+	tp := curtab
+	wp := tp == curtab ? firstwin : (^rawptr)(uintptr(tp) + TP_FIRSTWIN_OFF)^
+	for wp != nil {
+		redraw_later(wp, UPD_NOT_VALID)
+		(^bool)(uintptr(wp) + W_GRID_VALID_OFF)^ = false
+		wp = (^rawptr)(uintptr(wp) + W_NEXT_OFF)^
+	}
+}
+
+// Mark all windows editing the current buffer for later update.
+@(export)
+redraw_curbuf_later :: proc "c"(type_: C.int) {
+	redraw_buf_later(curbuf, type_)
+}
+
+@(export)
+redraw_buf_later :: proc "c"(buf: rawptr, type_: C.int) {
+	tp := curtab
+	wp := tp == curtab ? firstwin : (^rawptr)(uintptr(tp) + TP_FIRSTWIN_OFF)^
+	for wp != nil {
+		if (^rawptr)(uintptr(wp) + W_BUFFER_OFF)^ == buf {
+			redraw_later(wp, type_)
+		}
+		wp = (^rawptr)(uintptr(wp) + W_NEXT_OFF)^
+	}
+}
+
+@(export)
+redraw_buf_line_later :: proc "c"(buf: rawptr, line: C.int, force: bool) {
+	line_count := (^C.int)(uintptr(buf) + B_ML_LINE_COUNT_OFF)^
+	tp := curtab
+	wp := tp == curtab ? firstwin : (^rawptr)(uintptr(tp) + TP_FIRSTWIN_OFF)^
+	for wp != nil {
+		if (^rawptr)(uintptr(wp) + W_BUFFER_OFF)^ == buf {
+			redrawWinline(wp, min(line, line_count))
+			if force && line > line_count {
+				(^C.int)(uintptr(wp) + W_REDRAW_BOT_OFF)^ = line
+			}
+		}
+		wp = (^rawptr)(uintptr(wp) + W_NEXT_OFF)^
+	}
+}
+
+@(export)
+redraw_win_range_later :: proc "c"(wp: rawptr, first: C.int, last: C.int) {
+	if last >= (^C.int)(uintptr(wp) + W_TOPLINE_OFF)^ &&
+		first < (^C.int)(uintptr(wp) + W_BOTLINE_OFF)^ {
+		if (^C.int)(uintptr(wp) + W_REDRAW_TOP_OFF)^ == 0 ||
+			(^C.int)(uintptr(wp) + W_REDRAW_TOP_OFF)^ > first {
+			(^C.int)(uintptr(wp) + W_REDRAW_TOP_OFF)^ = first
+		}
+		if (^C.int)(uintptr(wp) + W_REDRAW_BOT_OFF)^ == 0 ||
+			(^C.int)(uintptr(wp) + W_REDRAW_BOT_OFF)^ < last {
+			(^C.int)(uintptr(wp) + W_REDRAW_BOT_OFF)^ = last
+		}
+		redraw_later(wp, UPD_VALID_O)
+	}
+}
+
+// Changed something at buffer line lnum: redraw it (plus maybe more).
+@(export)
+redrawWinline :: proc "c"(wp: rawptr, lnum: C.int) {
+	redraw_win_range_later(wp, lnum, lnum)
 }

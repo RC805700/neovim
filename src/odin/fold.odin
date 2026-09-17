@@ -161,12 +161,6 @@ foreign _ {
 foreign _ {
 	@(link_name = "changed_window_setting")
 	changed_window_setting_r :: proc "c" (wp: rawptr) ---
-	@(link_name = "redraw_curbuf_later")
-	redraw_curbuf_later_r :: proc "c" (typ: C.int) ---
-	@(link_name = "redraw_buf_later")
-	redraw_buf_later_r :: proc "c" (buf: rawptr, typ: C.int) ---
-	@(link_name = "redraw_win_range_later")
-	redraw_win_range_later_r :: proc "c" (wp: rawptr, first: C.int, last: C.int) ---
 	@(link_name = "diff_lnum_win")
 	diff_lnum_win_r :: proc "c" (lnum: C.int, wp: rawptr) -> C.int ---
 	@(link_name = "diff_infold")
@@ -489,7 +483,7 @@ opFoldRange :: proc "c" (firstpos: Pos_T, lastpos: Pos_T, opening: C.int, recurs
 		emsg(_t(e_nofold))
 	}
 	if had_visual {
-		redraw_curbuf_later_r(UPD_INVERTED_F)
+		redraw_curbuf_later(UPD_INVERTED_F)
 	}
 }
 
@@ -782,7 +776,7 @@ deleteFold :: proc "c" (wp: rawptr, start: C.int, end: C.int, recursive: C.int, 
 	if !did_one {
 		emsg(_t(e_nofold))
 		if had_visual {
-			redraw_buf_later_r(w_ptr_at(wp, W_BUFFER), UPD_INVERTED_F)
+			redraw_buf_later(w_ptr_at(wp, W_BUFFER), UPD_INVERTED_F)
 		}
 	} else {
 		check_cursor_col_r(wp)
@@ -855,7 +849,7 @@ foldUpdateAfterInsert :: proc "c" () {
 @(export)
 foldUpdateAll :: proc "c" (win: rawptr) {
 	w_set_bool(win, W_FOLDINVALID, true)
-	redraw_later_r(win, UPD_NOT_VALID)
+	redraw_later(win, UPD_NOT_VALID)
 }
 
 /// Move to start/end of fold or fold at same level. FAIL if not moved.
@@ -1971,7 +1965,7 @@ foldUpdateIEMS :: proc "c" (wp: rawptr, top_arg: C.int, bot_arg: C.int) {
 	}
 
 	if end != bot {
-		redraw_win_range_later_r(wp, top, end)
+		redraw_win_range_later(wp, top, end)
 	}
 
 	invalid_top = 0

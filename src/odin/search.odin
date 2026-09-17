@@ -59,8 +59,6 @@ foreign _ {
 	add_to_history_r :: proc "c" (histype: C.int, str: cstring, len: C.size_t, in_map: bool, sep: C.int) ---
 	@(link_name = "reverse_text")
 	reverse_text_r :: proc "c" (s: cstring) -> ^u8 ---
-	@(link_name = "redraw_all_later")
-	redraw_all_later_s :: proc "c" (typ: C.int) ---
 	// buf_get_changedtick is a C static inline — see buf_changedtick_inline below.
 
 	@(link_name = "mb_isupper")
@@ -453,7 +451,7 @@ save_re_pat :: proc "c"(idx: C.int, pat: ^u8, patlen: C.size_t, magic: C.int) {
 	spats[idx].additional_data = nil
 	last_idx = idx
 	if p_hls != 0 {
-		redraw_all_later_s(UPD_SOME_VALID_S)
+		redraw_all_later(UPD_SOME_VALID_S)
 	}
 	set_no_hlsearch_r(false)
 }
@@ -715,7 +713,7 @@ set_last_search_pat :: proc "c"(s: cstring, idx: C.int, magic: C.int, setlast: b
 		saved_spats_last_idx = last_idx
 	}
 	if p_hls != 0 && idx == last_idx && !no_hlsearch {
-		redraw_all_later_s(UPD_SOME_VALID_S)
+		redraw_all_later(UPD_SOME_VALID_S)
 	}
 }
 
@@ -1586,7 +1584,7 @@ current_search :: proc "c"(count: C.int, forward: bool) -> C.int {
 
 	may_start_select('c')
 	setmouse_r()
-	redraw_curbuf_later_r(UPD_INVERTED_S2)
+	redraw_curbuf_later(UPD_INVERTED_S2)
 	_ = showmode_r()
 
 	return 1
@@ -1893,7 +1891,7 @@ do_search :: proc "c"(
 	}
 
 	if no_hlsearch && options & SEARCH_KEEP == 0 {
-		redraw_all_later_s(UPD_SOME_VALID_S)
+		redraw_all_later(UPD_SOME_VALID_S)
 		set_no_hlsearch_r(false)
 	}
 
@@ -3502,7 +3500,7 @@ find_pattern_in_path :: proc "c"(
 						if l_g_do_tagpreview != 0 &&
 						curwin != curwin_save && win_valid(curwin_save) {
 							validate_cursor_r(curwin)
-							redraw_later_r(curwin, UPD_VALID_S)
+							redraw_later(curwin, UPD_VALID_S)
 							win_enter(curwin_save, true)
 						}
 						outer_break = true

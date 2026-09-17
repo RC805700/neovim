@@ -715,7 +715,7 @@ do_ecmd :: proc "c"(fnum: C.int, ffname_in: cstring, sfname_in: cstring, eap: ra
 				plines_m_win_fill_r(curwin, 1,
 					(^C.int)(uintptr(curwin) + W_TOPLINE_OFF)^)
 			(^C.longlong)(so_ptr)^ = n
-			redraw_curbuf_later_r(UPD_NOT_VALID)
+			redraw_curbuf_later(UPD_NOT_VALID)
 		}
 
 		// Change directories when 'acd' is set.
@@ -2277,7 +2277,7 @@ do_filter_o :: proc "c"(line1: C.int, line2: C.int, eap: rawptr, cmd: ^u8, do_in
 				xfree(transmute(rawptr)(cmd_buf))
 				fend = true
 			} else {
-				redraw_curbuf_later_r(UPD_VALID_O)
+				redraw_curbuf_later(UPD_VALID_O)
 			}
 		}
 		if !fend {
