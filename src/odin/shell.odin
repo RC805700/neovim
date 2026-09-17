@@ -141,11 +141,11 @@ foreign _ {
 	@(link_name = "msg_multiline")
 	msg_multiline :: proc "c" (str: String, hl_id: c.int, check_int: bool, hist: bool, need_clear: ^bool) ---
 	@(link_name = "msg_schedule_semsg")
-	msg_schedule_semsg :: proc "c" (fmt: cstring, args: ..any) ---
+	msg_schedule_semsg :: proc "c" (fmt: cstring, #c_vararg args: ..any) ---
 	@(link_name = "smsg")
-	smsg :: proc "c" (hl_id: c.int, s: cstring, args: ..any) ---
+	smsg :: proc "c" (hl_id: c.int, s: cstring, #c_vararg args: ..any) ---
 	@(link_name = "semsg")
-	semsg :: proc "c" (fmt: cstring, args: ..any) ---
+	semsg :: proc "c" (fmt: cstring, #c_vararg args: ..any) ---
 	@(link_name = "wait_return")
 	wait_return :: proc "c" (redraw: c.int) ---
 

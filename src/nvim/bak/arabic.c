@@ -242,6 +242,7 @@ static int can_join(int c1, int c2)
 
 /// Check whether we are dealing with a character that could be regarded as an
 /// Arabic combining character, need to check the character before this.
+#pragma weak arabic_maycombine
 bool arabic_maycombine(int two)
   FUNC_ATTR_PURE
 {
@@ -260,6 +261,7 @@ bool arabic_maycombine(int two)
 ///
 /// @param one First character.
 /// @param two Character just after "one".
+#pragma weak arabic_combine
 bool arabic_combine(int one, int two)
   FUNC_ATTR_PURE
 {
@@ -295,6 +297,7 @@ static bool A_is_valid(int c)
 // in:     "prev_c1" is the first composing char for the previous char
 //          (not shaped)
 // in:     "next_c"  is the next character (not shaped).
+#pragma weak arabic_shape
 int arabic_shape(int c, int *c1p, int prev_c, int prev_c1, int next_c)
 {
   // Deal only with Arabic character, pass back all others

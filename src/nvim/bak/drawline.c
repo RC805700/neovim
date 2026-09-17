@@ -475,6 +475,7 @@ static void draw_col_fill(winlinevars_T *wlv, schar_T fillchar, int width, int a
 }
 
 /// Return true if CursorLineSign highlight is to be used.
+#pragma weak use_cursor_line_highlight
 bool use_cursor_line_highlight(win_T *wp, linenr_T lnum)
 {
   return wp->w_p_cul
@@ -517,6 +518,7 @@ static inline schar_T foldcolumn_sep_char(int first_level, int i, win_T *wp)
 /// @param[out] wlv_off  Pointer to linebuf offset, incremented for default column
 /// @param[out] out_buffer  Char array to fill, only used for 'statuscolumn'
 /// @param[out] out_vcol  vcol array to fill, only used for 'statuscolumn'
+#pragma weak fill_foldcolumn
 void fill_foldcolumn(win_T *wp, foldinfo_T foldinfo, linenr_T lnum, int attr, int fdc, bool is_virt,
                      int *wlv_off, colnr_T *out_vcol, schar_T *out_buffer)
 {
@@ -1101,6 +1103,7 @@ static int get_rightmost_vcol(win_T *wp, const int *color_cols)
 ///                            or explicitly return `false`.
 ///
 /// @return             the number of last row the line occupies.
+#pragma weak win_line
 int win_line(win_T *wp, linenr_T lnum, int startrow, int endrow, int col_rows, bool concealed,
              spellvars_T *spv, foldinfo_T foldinfo)
 {

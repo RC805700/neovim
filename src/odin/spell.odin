@@ -62,8 +62,7 @@ foreign _ {
 	syn_get_id_r :: proc "c" (wp: rawptr, lnum: C.int, col: C.int, trans: bool, can_spell: ^bool, change_state: bool) -> C.int ---
 	@(link_name = "syntax_present")
 	syntax_present_r :: proc "c" (wp: rawptr) -> bool ---
-	@(link_name = "win_line")
-	win_line_r :: proc "c" (wp: rawptr, lnum: C.int, startrow: C.int, endrow: C.int, attrprioidx: C.int, spv: rawptr) -> C.int ---
+	// win_line: Odin export in drawline.odin (Batch 12e; was wrong 6-arg sig).
 	@(link_name = "decor_redraw_reset")
 	decor_redraw_reset_r :: proc "c" (wp: rawptr, ds: rawptr) ---
 	@(link_name = "decor_redraw_line")
@@ -2346,21 +2345,25 @@ DECOR_STATE_SIZE :: 328
 DECOR_STATE_SPELL_OFF :: 320
 
 foreign _ {
-	@(link_name = "decor_state")
-	decor_state_buf: [DECOR_STATE_SIZE]u8
+	// decor_state: typed mirror DecorState_O in drawline.odin (Batch 9).
 	@(link_name = "concat_str")
 	concat_str_r :: proc "c" (s1: cstring, s2: cstring) -> ^u8 ---
 }
 
+// decor_state address via the typed mirror (drawline.odin).
+decor_state_buf_p :: proc "c"() -> ^u8 {
+	return transmute(^u8)(&decor_state_g)
+}
+
 decor_spell_nav_col :: proc "c"(wp: rawptr, lnum: C.int, decor_lnum: ^C.int, col: C.int) -> C.int {
 	if decor_lnum^ != lnum {
-		decor_redraw_reset_r(wp, &decor_state_buf[0])
+		decor_redraw_reset_r(wp, decor_state_buf_p())
 		decor_providers_invoke_spell_r(wp, lnum - 1, col, lnum - 1, -1)
-		decor_redraw_line_r(wp, lnum - 1, &decor_state_buf[0])
+		decor_redraw_line_r(wp, lnum - 1, decor_state_buf_p())
 		decor_lnum^ = lnum
 	}
-	decor_redraw_col_inline(wp, col, false, &decor_state_buf[0], MAXCOL)
-	return (^C.int)(uintptr(&decor_state_buf[0]) + DECOR_STATE_SPELL_OFF)^
+	decor_redraw_col_inline(wp, col, false, decor_state_buf_p(), MAXCOL)
+	return (^C.int)(uintptr(decor_state_buf_p()) + DECOR_STATE_SPELL_OFF)^
 }
 
 can_syn_spell :: proc "c"(wp: rawptr, lnum: C.int, col: C.int) -> bool {
@@ -2395,8 +2398,8 @@ spell_move_to :: proc "c"(wp: rawptr, dir: C.int, behaviour: C.int, curline: boo
 
 	// Save and reset the global DecorState.
 	saved_decor_start: [DECOR_STATE_SIZE]u8
-	libc.memcpy(&saved_decor_start[0], &decor_state_buf[0], DECOR_STATE_SIZE)
-	libc.memset(&decor_state_buf[0], 0, DECOR_STATE_SIZE)
+	libc.memcpy(&saved_decor_start[0], decor_state_buf_p(), DECOR_STATE_SIZE)
+	libc.memset(decor_state_buf_p(), 0, DECOR_STATE_SIZE)
 	decor_lnum := C.int(-1)
 
 	theend_break := false
@@ -2564,8 +2567,8 @@ spell_move_to :: proc "c"(wp: rawptr, dir: C.int, behaviour: C.int, curline: boo
 		line_breakcheck()
 	}
 
-	decor_state_free_r(&decor_state_buf[0])
-	libc.memcpy(&decor_state_buf[0], &saved_decor_start[0], DECOR_STATE_SIZE)
+	decor_state_free_r(decor_state_buf_p())
+	libc.memcpy(decor_state_buf_p(), &saved_decor_start[0], DECOR_STATE_SIZE)
 	xfree(buf)
 	return ret
 }

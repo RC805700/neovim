@@ -116,8 +116,6 @@ foreign _ {
 	ui_flush_s :: proc "c" () ---
 	@(link_name = "show_cursor_info_later")
 	show_cursor_info_later_r :: proc "c" (must_show: bool) ---
-	@(link_name = "setcursor")
-	setcursor_r :: proc "c" () ---
 	@(link_name = "ui_cursor_shape")
 	ui_cursor_shape_r :: proc "c" () ---
 	@(link_name = "vim_beep")
@@ -2851,7 +2849,7 @@ showmatch :: proc "c"(c: C.int) {
 	w_p_siso_set(curwin, 0)
 	show_cursor_info_later_r(false)
 	_ = update_screen_r()
-	setcursor_r()
+	setcursor()
 	ui_flush_s()
 	dollar_vcol = save_dollar_vcol
 

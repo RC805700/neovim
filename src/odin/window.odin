@@ -2428,8 +2428,7 @@ foreign _ {
 	nvim_odin_next_win_id_r :: proc "c" () -> C.int ---
 	@(link_name = "window_handles")
 	window_handles_g: Map_int_ptr_t
-	@(link_name = "grid_assign_handle")
-	grid_assign_handle_r :: proc "c" (grid: rawptr) ---
+	// grid_assign_handle: Odin export in grid.odin (Batch 2e).
 	@(link_name = "tv_dict_alloc")
 	tv_dict_alloc_r :: proc "c" () -> rawptr ---
 	@(link_name = "init_var_dict")
@@ -2456,7 +2455,7 @@ win_alloc :: proc "c"(after: rawptr, hidden: bool) -> rawptr {
 
 	(^bool)(uintptr(new_wp) + W_GRID_MOUSE_OFF)^ = true
 
-	grid_assign_handle_r(transmute(rawptr)(uintptr(new_wp) + W_GRID_ALLOC_OFF))
+	grid_assign_handle(transmute(^ScreenGrid)(uintptr(new_wp) + W_GRID_ALLOC_OFF))
 
 	// Init w: variables.
 	vars := tv_dict_alloc_r()
@@ -6175,8 +6174,7 @@ SCREEN_GRID_SIZE_O :: 96
 foreign _ {
 	@(link_name = "ui_call_grid_destroy")
 	ui_call_grid_destroy_r :: proc "c" (grid: C.longlong) ---
-	@(link_name = "grid_free")
-	grid_free_r :: proc "c" (grid: rawptr) ---
+	// grid_free: Odin export in grid.odin (Batch 2c).
 }
 
 // Error if splitting is currently disallowed (e.g. buffer is closing).
@@ -6199,7 +6197,7 @@ win_free_grid :: proc "c"(wp: rawptr, reinit: bool) {
 	if (^C.int)(uintptr(wp) + W_GRID_HANDLE_OFF)^ != 0 && ui_has(K_UIMULTIGRID_O) {
 		ui_call_grid_destroy_r(C.longlong((^C.int)(uintptr(wp) + W_GRID_HANDLE_OFF)^))
 	}
-	grid_free_r(transmute(rawptr)(uintptr(wp) + W_GRID_ALLOC_OFF))
+	grid_free(transmute(^ScreenGrid)(uintptr(wp) + W_GRID_ALLOC_OFF))
 	if reinit {
 		// if a float is turned into a split, the grid data structure
 		// will be reused
@@ -6663,10 +6661,9 @@ win_alloc_aucmd_win :: proc "c"(idx: C.int) {
 }
 
 // ── Batch 37: win_set_buf + merge_win_config ─────────────────────────────────
-// WinConfig.title_chunks@400/footer_chunks@440 (Kvec_VT.items@16) cc-probed.
+// WinConfig.title_chunks@400/footer_chunks@440 (Kvec_VT.items@16) cc-probed;
+// chunk-items reads use WCFG_*_CHUNKS_OFF (grid.odin) + 16.
 
-WC_TITLE_ITEMS_OFF :: 416 // W_CONFIG + 400 + 16
-WC_FOOTER_ITEMS_OFF :: 456 // W_CONFIG + 440 + 16
 WINCONFIG_SIZE_O :: 480
 
 foreign _ {
@@ -6675,17 +6672,23 @@ foreign _ {
 }
 
 // Merge float config "src" into "dst" (freeing replaced virttext).
+// NOTE: C takes src BY VALUE (480B struct, MEMORY-class); the Odin mirror
+// uses WinConfig_Opaque (optionstr.odin) for ABI equivalence. NEVER declare
+// src as rawptr — the first 8 struct bytes would be read as a pointer and
+// w_config filled with garbage (float-border crash, Batch 2g).
 @(export)
-merge_win_config :: proc "c"(dst: rawptr, src: rawptr) {
-	if (^rawptr)(uintptr(dst) + WC_TITLE_ITEMS_OFF)^ !=
-		(^rawptr)(uintptr(src) + WC_TITLE_ITEMS_OFF)^ {
-		clear_virttext_r(transmute(^Kvec_VT)(uintptr(dst) + W_CONFIG_OFF + WC_TITLE_CHUNKS_OFF))
+merge_win_config :: proc "c"(dst: rawptr, src: WinConfig_Opaque) {
+	s := src // local copy: &param is illegal in Odin
+	srcp := uintptr(&s)
+	if (^rawptr)(uintptr(dst) + WCFG_TITLE_CHUNKS_OFF + 16)^ !=
+		(^rawptr)(srcp + WCFG_TITLE_CHUNKS_OFF + 16)^ {
+		clear_virttext_r(transmute(^Kvec_VT)(uintptr(dst) + WCFG_TITLE_CHUNKS_OFF))
 	}
-	if (^rawptr)(uintptr(dst) + WC_FOOTER_ITEMS_OFF)^ !=
-		(^rawptr)(uintptr(src) + WC_FOOTER_ITEMS_OFF)^ {
-		clear_virttext_r(transmute(^Kvec_VT)(uintptr(dst) + W_CONFIG_OFF + WC_FOOTER_CHUNKS_OFF))
+	if (^rawptr)(uintptr(dst) + WCFG_FOOTER_CHUNKS_OFF + 16)^ !=
+		(^rawptr)(srcp + WCFG_FOOTER_CHUNKS_OFF + 16)^ {
+		clear_virttext_r(transmute(^Kvec_VT)(uintptr(dst) + WCFG_FOOTER_CHUNKS_OFF))
 	}
-	libc.memcpy(dst, src, WINCONFIG_SIZE_O)
+	libc.memcpy(dst, transmute(rawptr)(srcp), WINCONFIG_SIZE_O)
 }
 
 // Set buffer "buf" in window "win" (API nvim_win_set_buf path).
@@ -6767,7 +6770,7 @@ clear_float_config :: proc "c"(fconfig: rawptr, free_fields: bool) {
 	if free_fields {
 		init: WinConfig_Opaque // zeroed; fill below
 		win_config_init_assign_o(&init)
-		merge_win_config(fconfig, transmute(rawptr)(&init))
+		merge_win_config(fconfig, init)
 	} else {
 		win_config_init_assign_o(fconfig)
 	}

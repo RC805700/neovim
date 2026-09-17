@@ -2193,7 +2193,7 @@ keymap_init :: proc "c" () -> ^u8 {
 
 	p_keymap_slot := (^^u8)(uintptr(b) + 10792) // &curbuf->b_p_keymap
 	p_keymap := p_keymap_slot^ // the char* value stored in b_p_keymap
-	if p_keymap == nil {
+	if p_keymap == nil || p_keymap^ == 0 {
 		keymap_unload()
 		do_cmdline_cmd(transmute(^u8)(cstring("unlet! b:keymap_name")))
 	} else {
@@ -2203,21 +2203,9 @@ keymap_init :: proc "c" () -> ^u8 {
 		libc.snprintf(buf, C.size_t(buflen), cstring("keymap/%s_%s.vim"),
 			cstring(p_keymap), cstring(p_enc))
 
-		{ dbg := libc.fopen(cstring("/tmp/opencode/km_dbg.txt"), cstring("a"))
-		  if dbg != nil {
-		      libc.fprintf(dbg, cstring("SR try=%s\n"), transmute(cstring)(buf))
-		      libc.fclose(dbg)
-		  }
-		}
 		if source_runtime(buf, 0) == FAIL {
 			libc.snprintf(buf, C.size_t(buflen), cstring("keymap/%s.vim"),
 				cstring(p_keymap))
-			{ dbg := libc.fopen(cstring("/tmp/opencode/km_dbg.txt"), cstring("a"))
-			  if dbg != nil {
-			      libc.fprintf(dbg, cstring("SR try2=%s\n"), transmute(cstring)(buf))
-			      libc.fclose(dbg)
-			  }
-			}
 			if source_runtime(buf, 0) == FAIL {
 				xfree(buf)
 				return transmute(^u8)(_t("E544: Keymap file not found"))

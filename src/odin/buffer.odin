@@ -4141,8 +4141,6 @@ CharBoundsOff :: struct {
 #assert(size_of(CharBoundsOff) == 2)
 
 foreign _ {
-	@(link_name = "redrawing")
-	redrawing_r :: proc "c"() -> bool ---
 	@(link_name = "p_titlelen")
 	p_titlelen_g: C.longlong
 	@(link_name = "p_titlestring")
@@ -4187,7 +4185,7 @@ maketitle :: proc "c"() {
 	icon_str: ^u8 = nil
 	buf: [IOSIZE_O]u8
 
-	if !redrawing_r() {
+	if !redrawing() {
 		// Postpone updating the title when 'lazyredraw' is set.
 		need_maketitle_opt = true
 		return

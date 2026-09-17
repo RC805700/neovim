@@ -62,6 +62,7 @@ static Set(glyph) glyph_cache = SET_INIT;
 ///
 /// If the default_grid is used, adjust window relative positions to global
 /// screen positions.
+#pragma weak grid_adjust
 ScreenGrid *grid_adjust(GridView *grid, int *row_off, int *col_off)
 {
   *row_off += grid->row_offset;
@@ -256,6 +257,7 @@ static void schar_get_first_two_codepoints(schar_T sc, int *c0, int *c1)
   }
 }
 
+#pragma weak line_do_arabic_shape
 void line_do_arabic_shape(schar_T *buf, int cols)
 {
   int i = 0;
@@ -319,6 +321,7 @@ next:
 
 /// clear a line in the grid starting at "off" until "width" characters
 /// are cleared.
+#pragma weak grid_clear_line
 void grid_clear_line(ScreenGrid *grid, size_t off, int width, bool valid)
 {
   for (int col = 0; col < width; col++) {
@@ -329,6 +332,7 @@ void grid_clear_line(ScreenGrid *grid, size_t off, int width, bool valid)
   memset(grid->vcols + off, -1, (size_t)width * sizeof(colnr_T));
 }
 
+#pragma weak grid_invalidate
 void grid_invalidate(ScreenGrid *grid)
 {
   memset(grid->attrs, -1, sizeof(sattr_T) * (size_t)grid->rows * (size_t)grid->cols);
@@ -342,6 +346,7 @@ static bool grid_invalid_row(ScreenGrid *grid, int row)
 /// Get a single character directly from grid.chars
 ///
 /// @param[out] attrp  set to the character's attribute (optional)
+#pragma weak grid_getchar
 schar_T grid_getchar(ScreenGrid *grid, int row, int col, int *attrp)
 {
   // safety check
@@ -371,6 +376,7 @@ static int grid_line_flags = 0;
 ///
 /// Must be matched with a grid_line_flush call before moving to
 /// another line.
+#pragma weak grid_line_start
 void grid_line_start(GridView *view, int row)
 {
   int col = 0;
@@ -378,6 +384,7 @@ void grid_line_start(GridView *view, int row)
   screengrid_line_start(grid, row, col);
 }
 
+#pragma weak screengrid_line_start
 void screengrid_line_start(ScreenGrid *grid, int row, int col)
 {
   grid_line_maxcol = grid->cols;
@@ -409,6 +416,7 @@ void screengrid_line_start(ScreenGrid *grid, int row, int col)
 /// This indicates what already is on screen, not the pending render buffer.
 ///
 /// @return char or space if out of bounds
+#pragma weak grid_line_getchar
 schar_T grid_line_getchar(int col, int *attr)
 {
   if (col < grid_line_maxcol) {
@@ -424,6 +432,7 @@ schar_T grid_line_getchar(int col, int *attr)
   }
 }
 
+#pragma weak grid_line_put_schar
 void grid_line_put_schar(int col, schar_T schar, int attr)
 {
   assert(grid_line_grid);
@@ -447,6 +456,7 @@ void grid_line_put_schar(int col, schar_T schar, int attr)
 /// Note: only outputs within one row!
 ///
 /// @return number of grid cells used
+#pragma weak grid_line_puts
 int grid_line_puts(int col, const char *text, int textlen, int attr)
 {
   const char *ptr = text;
@@ -512,6 +522,7 @@ int grid_line_puts(int col, const char *text, int textlen, int attr)
   return col - start_col;
 }
 
+#pragma weak grid_line_fill
 int grid_line_fill(int start_col, int end_col, schar_T sc, int attr)
 {
   end_col = MIN(end_col, grid_line_maxcol);
@@ -532,6 +543,7 @@ int grid_line_fill(int start_col, int end_col, schar_T sc, int attr)
 
 /// @param bg_attr     applies to both the buffered line and the columns to clear
 /// @param clear_attr  applies only to the columns to clear
+#pragma weak grid_line_clear_end
 void grid_line_clear_end(int start_col, int end_col, int bg_attr, int clear_attr)
 {
   if (grid_line_first > start_col) {
@@ -544,11 +556,13 @@ void grid_line_clear_end(int start_col, int end_col, int bg_attr, int clear_attr
 }
 
 /// move the cursor to a position in a currently rendered line.
+#pragma weak grid_line_cursor_goto
 void grid_line_cursor_goto(int col)
 {
   ui_grid_cursor_goto(grid_line_grid->handle, grid_line_row, col);
 }
 
+#pragma weak grid_line_mirror
 void grid_line_mirror(int width)
 {
   grid_line_clear_to = MAX(grid_line_last, grid_line_clear_to);
@@ -559,6 +573,7 @@ void grid_line_mirror(int width)
   grid_line_flags |= SLF_RIGHTLEFT;
 }
 
+#pragma weak linebuf_mirror
 void linebuf_mirror(int *firstp, int *lastp, int *clearp, int width)
 {
   int first = *firstp;
@@ -598,6 +613,7 @@ void linebuf_mirror(int *firstp, int *lastp, int *clearp, int width)
 }
 
 /// End a group of grid_line_puts calls and send the screen buffer to the UI layer.
+#pragma weak grid_line_flush
 void grid_line_flush(void)
 {
   ScreenGrid *grid = grid_line_grid;
@@ -616,6 +632,7 @@ void grid_line_flush(void)
 /// flush grid line but only if on a valid row
 ///
 /// This is a stopgap until message.c has been refactored to behave
+#pragma weak grid_line_flush_if_valid_row
 void grid_line_flush_if_valid_row(void)
 {
   if (grid_line_row < 0 || grid_line_row >= grid_line_grid->rows) {
@@ -629,6 +646,7 @@ void grid_line_flush_if_valid_row(void)
   grid_line_flush();
 }
 
+#pragma weak grid_clear
 void grid_clear(GridView *grid, int start_row, int end_row, int start_col, int end_col, int attr)
 {
   for (int row = start_row; row < end_row; row++) {
@@ -675,6 +693,7 @@ static int grid_char_needs_redraw(ScreenGrid *grid, int col, size_t off_to, int 
 ///   - When false, use "last_vcol" for grid->vcols[] of the columns to clear.
 ///   - When true, use an increasing sequence starting from "last_vcol + 1" for
 ///     grid->vcols[] of the columns to clear.
+#pragma weak grid_put_linebuf
 void grid_put_linebuf(ScreenGrid *grid, int row, int coloff, int col, int endcol, int clear_width,
                       int bg_attr, int clear_attr, colnr_T last_vcol, int flags)
 {
@@ -850,6 +869,7 @@ void grid_put_linebuf(ScreenGrid *grid, int row, int coloff, int col, int endcol
   }
 }
 
+#pragma weak grid_alloc
 void grid_alloc(ScreenGrid *grid, int rows, int columns, bool copy, bool valid)
 {
   int new_row;
@@ -907,6 +927,7 @@ void grid_alloc(ScreenGrid *grid, int rows, int columns, bool copy, bool valid)
   }
 }
 
+#pragma weak grid_free
 void grid_free(ScreenGrid *grid)
 {
   xfree(grid->chars);
@@ -940,6 +961,7 @@ void grid_free_all_mem(void)
 ///
 /// If "doclear" is true, don't try to copy from the old grid rather clear the
 /// resized grid.
+#pragma weak win_grid_alloc
 void win_grid_alloc(win_T *wp)
 {
   GridView *grid = &wp->w_grid;
@@ -1001,6 +1023,7 @@ void win_grid_alloc(win_T *wp)
 }
 
 /// assign a handle to the grid. The grid need not be allocated.
+#pragma weak grid_assign_handle
 void grid_assign_handle(ScreenGrid *grid)
 {
   static int last_grid_handle = DEFAULT_GRID_HANDLE;
@@ -1017,6 +1040,7 @@ void grid_assign_handle(ScreenGrid *grid)
 /// 'col' is the column from with we start inserting.
 //
 /// 'row', 'col' and 'end' are relative to the start of the region.
+#pragma weak grid_ins_lines
 void grid_ins_lines(ScreenGrid *grid, int row, int line_count, int end, int col, int width)
 {
   int j;
@@ -1057,6 +1081,7 @@ void grid_ins_lines(ScreenGrid *grid, int row, int line_count, int end, int col,
 /// 'end' is the line after the scrolled part. Normally it is Rows.
 /// When scrolling region used 'off' is the offset from the top for the region.
 /// 'row' and 'end' are relative to the start of the region.
+#pragma weak grid_del_lines
 void grid_del_lines(ScreenGrid *grid, int row, int line_count, int end, int col, int width)
 {
   int j;
@@ -1149,6 +1174,7 @@ static int get_bordertext_col(int total_col, int text_width, AlignTextPos align)
 }
 
 /// draw border on floating window grid
+#pragma weak grid_draw_border
 void grid_draw_border(ScreenGrid *grid, WinConfig *config, int *adj, int winbl, int *hl_attr)
 {
   int *attrs = config->border_attr;
@@ -1236,6 +1262,7 @@ static void linecopy(ScreenGrid *grid, int to, int from, int col, int width)
   memmove(grid->vcols + off_to, grid->vcols + off_from, (size_t)width * sizeof(colnr_T));
 }
 
+#pragma weak get_win_by_grid_handle
 win_T *get_win_by_grid_handle(handle_T handle)
 {
   FOR_ALL_WINDOWS_IN_TAB(wp, curtab) {

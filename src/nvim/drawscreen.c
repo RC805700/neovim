@@ -139,6 +139,7 @@ static bool conceal_cursor_used = false;
 /// Check if the cursor line needs to be redrawn because of 'concealcursor'.
 ///
 /// When cursor is moved at the same time, both lines will be redrawn regardless.
+#pragma weak conceal_check_cursor_line
 void conceal_check_cursor_line(void)
 {
   bool should_conceal = conceal_cursor_line(curwin);
@@ -416,6 +417,7 @@ void screen_resize(int width, int height)
 
 /// Check if the new Nvim application "screen" dimensions are valid.
 /// Correct it if it's too small or way too big.
+#pragma weak check_screensize
 void check_screensize(void)
 {
   // Limit Rows and Columns to avoid an overflow in Rows * Columns.
@@ -425,6 +427,7 @@ void check_screensize(void)
 }
 
 /// Return true if redrawing should currently be done.
+#pragma weak redrawing
 bool redrawing(void)
 {
   return !RedrawingDisabled
@@ -759,6 +762,7 @@ int update_screen(void)
 }
 
 /// Prepare for 'hlsearch' highlighting.
+#pragma weak start_search_hl
 void start_search_hl(void)
 {
   if (!p_hls || no_hlsearch) {
@@ -772,6 +776,7 @@ void start_search_hl(void)
 }
 
 /// Clean up for 'hlsearch' highlighting.
+#pragma weak end_search_hl
 void end_search_hl(void)
 {
   if (screen_search_hl.rm.regprog == NULL) {
@@ -783,6 +788,7 @@ void end_search_hl(void)
 }
 
 /// Set cursor to its position in the current window.
+#pragma weak setcursor
 void setcursor(void)
 {
   setcursor_mayforce(curwin, false);
@@ -790,6 +796,7 @@ void setcursor(void)
 
 /// Set cursor to its position in the current window.
 /// @param force  when true, also when not redrawing.
+#pragma weak setcursor_mayforce
 void setcursor_mayforce(win_T *wp, bool force)
 {
   if (force || redrawing()) {
@@ -2833,6 +2840,7 @@ void win_redraw_last_status(const frame_T *frp)
 
 /// Return true if the cursor line in window "wp" may be concealed, according
 /// to the 'concealcursor' option.
+#pragma weak conceal_cursor_line
 bool conceal_cursor_line(const win_T *wp)
   FUNC_ATTR_NONNULL_ALL
 {
@@ -2858,6 +2866,7 @@ bool conceal_cursor_line(const win_T *wp)
 /// Whether cursorline is drawn in a special way
 ///
 /// If true, both old and new cursorline will need to be redrawn when moving cursor within windows.
+#pragma weak win_cursorline_standout
 bool win_cursorline_standout(const win_T *wp)
   FUNC_ATTR_NONNULL_ALL
 {
