@@ -18,6 +18,7 @@
 #include "nvim/map_defs.h"
 #include "nvim/memory.h"
 
+#pragma weak mh_find_bucket_glyph
 uint32_t mh_find_bucket_glyph(Set(glyph) *set, String key, bool put)
 {
   MapHash *h = &set->h;
@@ -47,6 +48,7 @@ uint32_t mh_find_bucket_glyph(Set(glyph) *set, String key, bool put)
 }
 
 /// @return index into set->keys if found, MH_TOMBSTONE otherwise
+#pragma weak mh_get_glyph
 uint32_t mh_get_glyph(Set(glyph) *set, String key)
 {
   if (set->h.n_buckets == 0) {
@@ -56,6 +58,7 @@ uint32_t mh_get_glyph(Set(glyph) *set, String key)
   return (idx != MH_TOMBSTONE) ? set->h.hash[idx] - 1 : MH_TOMBSTONE;
 }
 
+#pragma weak mh_rehash_glyph
 void mh_rehash_glyph(Set(glyph) *set)
 {
   // assume the format of set->keys, i e NUL terminated strings
@@ -70,6 +73,7 @@ void mh_rehash_glyph(Set(glyph) *set)
   set->h.n_occupied = set->h.size = set->h.n_keys;
 }
 
+#pragma weak mh_put_glyph
 uint32_t mh_put_glyph(Set(glyph) *set, String key, MHPutStatus *new)
 {
   MapHash *h = &set->h;

@@ -5071,6 +5071,7 @@ char *skip_vimgrep_pat(char *p, char **s, int *flags)
 }
 
 /// `:oldfiles` (sync) and `:browse oldfiles` (async).
+#pragma weak ex_oldfiles
 void ex_oldfiles(exarg_T *eap)
 {
   nlua_call_excmd("vim._core.ex_cmd", "ex_oldfiles", eap, &cmdmod, NULL);

@@ -4996,6 +4996,22 @@ push_preview_o :: proc "c"(preview_lines: ^PreviewLines_T, current_match: ^SubRe
 	preview_lines.len += 1
 }
 
+// ── Batch 40: ex_oldfiles (lua-shim tail; ex_cmds.c DONE) ───────────────────
+// (free_prev_shellcmd/free_old_sub are #ifdef EXITFREE — absent here, like
+// free_titles. find_pipe is #ifndef UNIX — dropped like completeslash.)
+
+foreign _ {
+	@(link_name = "nlua_call_excmd")
+	nlua_call_excmd_r :: proc "c"(module: cstring, func: cstring, eap: rawptr, cmod: rawptr, extra: rawptr) -> bool ---
+}
+
+// ":oldfiles" (sync) and ":browse oldfiles" (async): lua-side handler.
+@(export)
+ex_oldfiles :: proc "c"(eap: rawptr) {
+	nlua_call_excmd_r(cstring("vim._core.ex_cmd"), cstring("ex_oldfiles"),
+		eap, transmute(rawptr)(&cmdmod_cmod_flags), nil)
+}
+
 // ── Batch 39: do_write/check_overwrite + check_writable ─────────────────────
 
 EXARG_APPEND_OFF :: 116

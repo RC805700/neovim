@@ -69,6 +69,7 @@ ScreenGrid *grid_adjust(GridView *grid, int *row_off, int *col_off)
   return grid->target;
 }
 
+#pragma weak schar_from_str
 schar_T schar_from_str(const char *str)
 {
   if (str == NULL) {
@@ -80,6 +81,7 @@ schar_T schar_from_str(const char *str)
 /// @param buf need not be NUL terminated, but may not contain embedded NULs.
 ///
 /// caller must ensure len < MAX_SCHAR_SIZE (not =, as NUL needs a byte)
+#pragma weak schar_from_buf
 schar_T schar_from_buf(const char *buf, size_t len)
 {
   assert(len < MAX_SCHAR_SIZE);
@@ -107,6 +109,7 @@ schar_T schar_from_buf(const char *buf, size_t len)
 ///
 /// @return true if cache was clered, and all your screen buffers now are hosed
 /// and you need to use UPD_CLEAR
+#pragma weak schar_cache_clear_if_full
 bool schar_cache_clear_if_full(void)
 {
   // note: critical max is really (1<<24)-1. This gives us some marginal
@@ -118,6 +121,7 @@ bool schar_cache_clear_if_full(void)
   return false;
 }
 
+#pragma weak schar_cache_clear
 void schar_cache_clear(void)
 {
   decor_check_invalid_glyphs();
@@ -131,6 +135,7 @@ void schar_cache_clear(void)
   }
 }
 
+#pragma weak schar_high
 bool schar_high(schar_T sc)
 {
 #ifdef ORDER_BIG_ENDIAN
@@ -147,6 +152,7 @@ bool schar_high(schar_T sc)
 #endif
 
 /// sets final NUL
+#pragma weak schar_get
 size_t schar_get(char *buf_out, schar_T sc)
 {
   size_t len = schar_get_adv(&buf_out, sc);
@@ -155,6 +161,7 @@ size_t schar_get(char *buf_out, schar_T sc)
 }
 
 /// advance buf_out. do NOT set final NUL
+#pragma weak schar_get_adv
 size_t schar_get_adv(char **buf_out, schar_T sc)
 {
   size_t len;
@@ -171,6 +178,7 @@ size_t schar_get_adv(char **buf_out, schar_T sc)
   return len;
 }
 
+#pragma weak schar_len
 size_t schar_len(schar_T sc)
 {
   if (schar_high(sc)) {
@@ -182,6 +190,7 @@ size_t schar_len(schar_T sc)
   }
 }
 
+#pragma weak schar_cells
 int schar_cells(schar_T sc)
 {
   // hot path
@@ -207,6 +216,7 @@ static char schar_get_first_byte(schar_T sc)
   return schar_high(sc) ? glyph_cache.keys[schar_idx(sc)] : *(char *)&sc;
 }
 
+#pragma weak schar_get_first_codepoint
 int schar_get_first_codepoint(schar_T sc)
 {
   char sc_buf[MAX_SCHAR_SIZE];
@@ -215,6 +225,7 @@ int schar_get_first_codepoint(schar_T sc)
 }
 
 /// @return ascii char or NUL if not ascii
+#pragma weak schar_get_ascii
 char schar_get_ascii(schar_T sc)
 {
 #ifdef ORDER_BIG_ENDIAN
@@ -1236,6 +1247,7 @@ win_T *get_win_by_grid_handle(handle_T handle)
 }
 
 /// Put a unicode character in a screen cell.
+#pragma weak schar_from_char
 schar_T schar_from_char(int c)
 {
   schar_T sc = 0;
