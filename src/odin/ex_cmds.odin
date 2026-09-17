@@ -62,8 +62,7 @@ foreign _ {
 	msg_listdo_overwrite_g: C.int
 	@(link_name = "msg_scrolled_ign")
 	msg_scrolled_ign_g: bool
-	@(link_name = "do_write")
-	do_write_r :: proc "c"(eap: rawptr) -> C.int ---
+	// do_write now defined below (Batch 39) — call directly.
 	// do_bang now defined below (Batch 31b) — call directly.
 }
 
@@ -821,7 +820,7 @@ ex_update :: proc "c"(eap: rawptr) {
 		(!bt_nofilename(curbuf) &&
 			(^rawptr)(uintptr(curbuf) + B_FFNAME)^ != nil &&
 			!os_path_exists(cstring((^u8)((^rawptr)(uintptr(curbuf) + B_FFNAME)^)))) {
-		do_write_r(eap)
+		do_write(eap)
 	}
 }
 
@@ -838,7 +837,7 @@ ex_write :: proc "c"(eap: rawptr) {
 	if (^bool)(uintptr(eap) + EXARG_USEFILTER_OFF)^ {
 		do_bang(1, eap, false, true, false) // input lines to shell cmd
 	} else {
-		do_write_r(eap)
+		do_write(eap)
 	}
 }
 
@@ -866,8 +865,7 @@ foreign _ {
 	do_argfile_r :: proc "c"(eap: rawptr, argn: C.int) ---
 	@(link_name = "before_quit_all")
 	before_quit_all_r :: proc "c"(eap: rawptr) -> C.int ---
-	@(link_name = "check_overwrite")
-	check_overwrite_r :: proc "c"(eap: rawptr, buf: rawptr, fname: cstring, ffname: cstring, other: bool) -> C.int ---
+	// check_overwrite now defined below (Batch 39) — call directly.
 	@(link_name = "buf_write_all")
 	buf_write_all_r :: proc "c"(buf: rawptr, forceit: bool) -> C.int ---
 	@(link_name = "not_exiting")
@@ -982,7 +980,7 @@ do_wqall :: proc "c"(eap: rawptr) {
 				ro_failed := check_readonly_o(&forceit, buf)
 				(^C.int)(uintptr(eap) + EXARG_FORCEIT_OFF)^ = forceit
 				if ro_failed ||
-					check_overwrite_r(eap, buf, cstring(fname), cstring(ffname),
+					check_overwrite(eap, buf, cstring(fname), cstring(ffname),
 						false) == FAIL {
 					error += 1
 				} else {
@@ -1047,7 +1045,7 @@ ex_wnext :: proc "c"(eap: rawptr) {
 	(^C.int)(uintptr(eap) + EXARG_LINE1_OFF)^ = 1
 	(^C.int)(uintptr(eap) + EXARG_LINE2_OFF)^ =
 		(^C.int)(uintptr(curbuf) + B_ML_LINE_COUNT_OFF)^
-	if do_write_r(eap) != FAIL {
+	if do_write(eap) != FAIL {
 		do_argfile_r(eap, i)
 	}
 }
@@ -4996,6 +4994,313 @@ push_preview_o :: proc "c"(preview_lines: ^PreviewLines_T, current_match: ^SubRe
 	}
 	preview_lines.items[preview_lines.len] = current_match^
 	preview_lines.len += 1
+}
+
+// ── Batch 39: do_write/check_overwrite + check_writable ─────────────────────
+
+EXARG_APPEND_OFF :: 116
+CPO_ALTWRITE_O :: C.int('A')
+CPO_OVERNEW_O :: C.int('O')
+E471_S :: "E471: Argument required"
+E139_S :: "E139: File is loaded in another buffer"
+E13_S :: "E13: File exists (add ! to override)"
+E17_S :: "E17: \"%s\" is a directory"
+E140_S :: "E140: Use ! to write partial buffer"
+E503_S :: "E503: \"%s\" is not a file or writable device"
+E768_S :: "E768: Swap file exists: %s (:silent! overrides)"
+
+foreign _ {
+	// p_dir already in option.odin as p_dir_opt — reuse.
+	@(link_name = "p_wa")
+	p_wa_g: C.int
+	@(link_name = "makeswapname")
+	makeswapname_r :: proc "c"(fname: cstring, ffname: cstring, buf: rawptr, dir_name: cstring) -> ^u8 ---
+	@(link_name = "augroup_exists")
+	augroup_exists_r :: proc "c"(name: cstring) -> bool ---
+	@(link_name = "do_doautocmd")
+	do_doautocmd_r :: proc "c"(arg_start: cstring, do_msg: bool, did_something: rawptr) -> C.int ---
+	// buf_write already bound in Batch-31a as buf_write_r — reuse.
+}
+
+// E17/E503/E768 share one %s-formatter (split for single-line snprintf).
+emsg_fname1_o :: proc "c"(fmt: cstring, fname: cstring) {
+	msg: [512]u8
+	if fname == nil {
+		libc.snprintf(&msg[0], C.size_t(512), fmt, cstring(""))
+	} else {
+		libc.snprintf(&msg[0], C.size_t(512), fmt, fname)
+	}
+	emsg(cstring(&msg[0]))
+}
+
+// UNIX-only: readable device check (C static; MSWin branch dropped).
+check_writable_o :: proc "c"(fname: cstring) -> C.int {
+	if os_nodetype(fname) == NODE_OTHER {
+		emsg_fname1_o(cstring(E503_S), fname)
+		return FAIL
+	}
+	return OK
+}
+
+// Check the file may be overwritten (dialogs may set forceit).
+@(export)
+check_overwrite :: proc "c"(eap: rawptr, buf: rawptr, fname: cstring, ffname: cstring, other: bool) -> C.int {
+	// Another file, or flags demand it, or partial write: '!' required
+	// (an "acwrite" buffer rewriting its own b_ffname skips the check —
+	// buf_write() only allows it with BufWriteCmd autocmds).
+	bflags := (^C.int)(uintptr(buf) + B_FLAGS_OFF)^
+	needs_check := other ||
+		(!bt_nofilename(buf) &&
+			((bflags & BF_NOTEDITED_O) != 0 ||
+				((bflags & BF_NEW_O) != 0 &&
+					vim_strchr_c(p_cpo, CPO_OVERNEW_O) == nil) ||
+				(bflags & BF_READERR_O) != 0))
+	if needs_check && p_wa_g == 0 && os_path_exists(ffname) {
+		forceit := (^C.int)(uintptr(eap) + EXARG_FORCEIT_OFF)^
+		append := (^C.int)(uintptr(eap) + EXARG_APPEND_OFF)^
+		if forceit == 0 && append == 0 {
+			// A directory can be opened on Unix.
+			if os_isdir(ffname) {
+				emsg_fname1_o(cstring(E17_S), ffname)
+				return FAIL
+			}
+			if p_confirm_g != 0 ||
+				(cmdmod_cmod_flags & CMOD_CONFIRM_O) != 0 {
+				buff: [DIALOG_MSG_SIZE_O]u8
+				libc.snprintf(&buff[0], C.size_t(DIALOG_MSG_SIZE_O),
+					cstring("Overwrite existing file \"%s\"?"),
+					fname == nil ? cstring("") : fname)
+				if vim_dialog_yesno_r(VIM_QUESTION_O, nil, cstring(&buff[0]),
+					2) != VIM_YES_O {
+					return FAIL
+				}
+				(^C.int)(uintptr(eap) + EXARG_FORCEIT_OFF)^ = 1
+			} else {
+				emsg(cstring(E13_S))
+				return FAIL
+			}
+		}
+
+		// ":w! filename": refuse when a swap file exists for it.
+		if other && emsg_silent == 0 {
+			dir: ^u8 = nil
+
+			// First 'directory' entry only (unwritable "." fails at
+			// write time anyway). Short name: no buffer for the file.
+			if p_dir_opt == nil || ([^]u8)(p_dir_opt)[0] == 0 {
+				dir = xstrdup_o(transmute(^u8)(cstring(".")))
+			} else {
+				dir = (^u8)(xmalloc(C.size_t(MAXPATHL)))
+				p := p_dir_opt
+				copy_option_part(&p, dir, C.size_t(MAXPATHL), cstring(","))
+			}
+			swapname := makeswapname_r(fname, ffname, curbuf, cstring(dir))
+			xfree(transmute(rawptr)(dir))
+			if os_path_exists(cstring(swapname)) {
+				if p_confirm_g != 0 ||
+					(cmdmod_cmod_flags & CMOD_CONFIRM_O) != 0 {
+					buff: [DIALOG_MSG_SIZE_O]u8
+					libc.snprintf(&buff[0], C.size_t(DIALOG_MSG_SIZE_O),
+						cstring("Swap file \"%s\" exists, overwrite anyway?"),
+						cstring(swapname))
+					if vim_dialog_yesno_r(VIM_QUESTION_O, nil,
+						cstring(&buff[0]), 2) != VIM_YES_O {
+						xfree(transmute(rawptr)(swapname))
+						return FAIL
+					}
+					(^C.int)(uintptr(eap) + EXARG_FORCEIT_OFF)^ = 1
+				} else {
+					emsg_fname1_o(cstring(E768_S), cstring(swapname))
+					xfree(transmute(rawptr)(swapname))
+					return FAIL
+				}
+			}
+			xfree(transmute(rawptr)(swapname))
+		}
+	}
+	return OK
+}
+
+// Write the current buffer to file "eap->arg" (or the current file).
+@(export)
+do_write :: proc "c"(eap: rawptr) -> C.int {
+	done := false
+	other := false
+	fname: ^u8 = nil // init to shut up gcc
+	retval: C.int = FAIL
+	free_fname: ^u8 = nil
+	alt_buf: rawptr = nil
+
+	if not_writing_o() { // check 'write' option
+		return FAIL
+	}
+
+	ffname := (^u8)((^rawptr)(uintptr(eap))^) // eap->arg
+	if ([^]u8)(ffname)[0] == 0 {
+		if (^C.int)(uintptr(eap) + EXARG_CMDIDX_OFF)^ == CMD_SAVEAS_O {
+			emsg(cstring(E471_S))
+			done = true
+		} else {
+			other = false
+		}
+	} else {
+		fname = ffname
+		free_fname = fix_fname_r(cstring(ffname))
+		// Out of memory: keep the unexpanded name, the file MUST be
+		// writable in this situation.
+		if free_fname != nil {
+			ffname = free_fname
+		}
+		other = otherfile(cstring(ffname))
+	}
+
+	// A new file goes into the alternate-file list.
+	if !done && other {
+		if vim_strchr_c(p_cpo, CPO_ALTWRITE_O) != nil ||
+			(^C.int)(uintptr(eap) + EXARG_CMDIDX_OFF)^ == CMD_SAVEAS_O {
+			alt_buf = setaltfname(cstring(ffname), cstring(fname), 1)
+		} else {
+			alt_buf = buflist_findname(cstring(ffname))
+		}
+		if alt_buf != nil &&
+			(^rawptr)(uintptr(alt_buf) + B_ML_MFP_OFF)^ != nil {
+			// Overwriting a file loaded in another buffer is bad.
+			emsg(cstring(E139_S))
+			done = true
+		}
+	}
+
+	// The current file needs readonly/permission checks and a name;
+	// "nofile"/"nowrite" buffers cannot be written implicitly either.
+	if !done && !other &&
+		(bt_dontwrite_msg(curbuf) || check_fname_r() == FAIL ||
+			check_writable_o(cstring((^u8)((^rawptr)(uintptr(curbuf) + B_FFNAME)^))) == FAIL ||
+			check_readonly_o(
+				(^C.int)(uintptr(eap) + EXARG_FORCEIT_OFF), curbuf)) {
+		done = true
+	}
+
+	if !done && !other {
+		ffname = (^u8)((^rawptr)(uintptr(curbuf) + B_FFNAME)^)
+		fname = (^u8)((^rawptr)(uintptr(curbuf) + B_FNAME)^)
+		// A partial write needs '!'.
+		if (((^C.int)(uintptr(eap) + EXARG_LINE1_OFF)^ != 1 ||
+				(^C.int)(uintptr(eap) + EXARG_LINE2_OFF)^ !=
+				(^C.int)(uintptr(curbuf) + B_ML_LINE_COUNT_OFF)^) &&
+			(^C.int)(uintptr(eap) + EXARG_FORCEIT_OFF)^ == 0 &&
+			(^C.int)(uintptr(eap) + EXARG_APPEND_OFF)^ == 0 &&
+			p_wa_g == 0) {
+			if p_confirm_g != 0 ||
+				(cmdmod_cmod_flags & CMOD_CONFIRM_O) != 0 {
+				if vim_dialog_yesno_r(VIM_QUESTION_O, nil,
+					cstring("Write partial file?"), 2) != VIM_YES_O {
+					done = true
+				} else {
+					(^C.int)(uintptr(eap) + EXARG_FORCEIT_OFF)^ = 1
+				}
+			} else {
+				emsg(cstring(E140_S))
+				done = true
+			}
+		}
+	}
+
+	if !done {
+		if check_overwrite(eap, curbuf, cstring(fname), cstring(ffname),
+			other) == OK {
+			if (^C.int)(uintptr(eap) + EXARG_CMDIDX_OFF)^ == CMD_SAVEAS_O &&
+				alt_buf != nil {
+				was_curbuf := curbuf
+
+				apply_autocmds(EVENT_BUFFILEPRE_O, nil, nil, false, curbuf)
+				apply_autocmds(EVENT_BUFFILEPRE_O, nil, nil, false, alt_buf)
+				if curbuf != was_curbuf || aborting_r() {
+					// Buffer changed, don't change name now.
+					retval = FAIL
+					done = true
+				} else {
+					// Swap the names: editing continues under the new
+					// name. Before buf_write(): no file name + 'F' in
+					// 'cpo' sets the file name from here.
+					tmp: rawptr = nil
+					tmp = (^rawptr)(uintptr(alt_buf) + B_FNAME)^
+					(^rawptr)(uintptr(alt_buf) + B_FNAME)^ =
+						(^rawptr)(uintptr(curbuf) + B_FNAME)^
+					(^rawptr)(uintptr(curbuf) + B_FNAME)^ = tmp
+					tmp = (^rawptr)(uintptr(alt_buf) + B_FFNAME)^
+					(^rawptr)(uintptr(alt_buf) + B_FFNAME)^ =
+						(^rawptr)(uintptr(curbuf) + B_FFNAME)^
+					(^rawptr)(uintptr(curbuf) + B_FFNAME)^ = tmp
+					tmp = (^rawptr)(uintptr(alt_buf) + B_SFNAME_OFF)^
+					(^rawptr)(uintptr(alt_buf) + B_SFNAME_OFF)^ =
+						(^rawptr)(uintptr(curbuf) + B_SFNAME_OFF)^
+					(^rawptr)(uintptr(curbuf) + B_SFNAME_OFF)^ = tmp
+					buf_name_changed(curbuf)
+					apply_autocmds(EVENT_BUFFILEPOST_O, nil, nil, false,
+						curbuf)
+					apply_autocmds(EVENT_BUFFILEPOST_O, nil, nil, false,
+						alt_buf)
+					if (^C.int)(uintptr(alt_buf) + B_P_BL_OFF)^ == 0 {
+						(^C.int)(uintptr(alt_buf) + B_P_BL_OFF)^ = 1
+						apply_autocmds(EVENT_BUFADD_O, nil, nil, false,
+							alt_buf)
+					}
+					if curbuf != was_curbuf || aborting_r() {
+						// Buffer changed, don't write the file.
+						retval = FAIL
+						done = true
+					}
+				}
+			}
+			if !done {
+				// Empty 'filetype' gets detected now.
+				if b_at((^u8)(uintptr(curbuf) + B_P_FT_OFF), 0) == 0 {
+					if augroup_exists_r(cstring("filetypedetect")) {
+						do_doautocmd_r(cstring("filetypedetect BufRead"),
+							true, nil)
+					}
+					do_modelines(0)
+				}
+
+				// Autocommands may have renamed (esp. 'autochdir').
+				fname = (^u8)((^rawptr)(uintptr(curbuf) + B_SFNAME_OFF)^)
+			}
+			if !done {
+				if handle_mkdir_p_arg_o(eap, cstring(fname)) == FAIL {
+					retval = FAIL
+					done = true
+				} else {
+					name_was_missing :=
+						(^rawptr)(uintptr(curbuf) + B_FFNAME)^ == nil
+					retval = buf_write_r(curbuf, cstring(ffname), cstring(fname),
+						(^C.int)(uintptr(eap) + EXARG_LINE1_OFF)^,
+						(^C.int)(uintptr(eap) + EXARG_LINE2_OFF)^, eap,
+						(^C.int)(uintptr(eap) + EXARG_APPEND_OFF)^ != 0,
+						(^C.int)(uintptr(eap) + EXARG_FORCEIT_OFF)^ != 0,
+						true, false)
+
+					// After ":saveas fname" reset 'readonly'.
+					if (^C.int)(uintptr(eap) + EXARG_CMDIDX_OFF)^ ==
+						CMD_SAVEAS_O {
+						if retval == OK {
+							(^C.int)(uintptr(curbuf) + B_P_RO_OFF)^ = 0
+							redraw_tabline_opt = true
+						}
+					}
+
+					// 'acd': directory follows a new/changed name.
+					if (^C.int)(uintptr(eap) + EXARG_CMDIDX_OFF)^ ==
+						CMD_SAVEAS_O || name_was_missing {
+						do_autochdir()
+					}
+				}
+			}
+		}
+	}
+
+	// theend:
+	xfree(transmute(rawptr)(free_fname))
+	return retval
 }
 
 // ── Batch 37c: ex_substitute entry points (go live; kill C do_sub) ──────────

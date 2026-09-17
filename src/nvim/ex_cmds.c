@@ -1857,6 +1857,7 @@ static int handle_mkdir_p_arg(exarg_T *eap, char *fname)
 /// If "*eap->arg == NUL" write to current file.
 ///
 /// @return  FAIL for failure, OK otherwise.
+#pragma weak do_write
 int do_write(exarg_T *eap)
 {
   bool other;
@@ -2026,6 +2027,7 @@ theend:
 /// @param other   writing under other name
 ///
 /// @return  OK if it's OK, FAIL if it is not.
+#pragma weak check_overwrite
 int check_overwrite(exarg_T *eap, buf_T *buf, char *fname, char *ffname, bool other)
 {
   // Write to another file or b_flags set or not writing the whole file:
