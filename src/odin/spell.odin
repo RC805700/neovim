@@ -2627,15 +2627,16 @@ check_need_cap :: proc "c"(wp: rawptr, lnum: C.int, col: C.int) -> bool {
 
 foreign _ {
 	@(link_name = "sub_nsubs")
-	sub_nsubs_sp: C.longlong
+	sub_nsubs_sp: C.int
+	// (C ints, NOT longlong: C's strong 4B symbols win the link and the two
+	// globals are adjacent — 8B accesses straddle both (Batch-38 lesson).)
 	@(link_name = "sub_nlines")
-	sub_nlines_sp: C.longlong
+	sub_nlines_sp: C.int
 	@(link_name = "ml_replace")
 	ml_replace_sp :: proc "c" (lnum: C.int, line: ^u8, copy: bool) -> C.int ---
 	@(link_name = "inserted_bytes")
 	inserted_bytes_r :: proc "c" (lnum: C.int, col: C.int, oldlen: C.int, newlen: C.int) ---
-	@(link_name = "do_sub_msg")
-	do_sub_msg_sp :: proc "c" (count_only: bool) -> bool ---
+	// do_sub_msg now defined in ex_cmds.odin — call directly.
 }
 
 @(export)
@@ -2694,7 +2695,7 @@ ex_spellrepall :: proc "c"(eap: rawptr) {
 	if sub_nsubs_sp == 0 {
 		semsg_one(cstring("E753: Not found: %s"), transmute(cstring)(repl_from))
 	} else {
-		_ = do_sub_msg_sp(false)
+		_ = do_sub_msg(false)
 	}
 }
 

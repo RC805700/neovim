@@ -924,7 +924,7 @@ did_set_option_o :: proc "c"(
 		// Don't do any extra processing if setting directly.
 	} else if opt.immutable && !optval_equal(old_value, new_value) {
 		errmsg = cstring("E794: Cannot set variable in this context") // e_unsupportedoption placeholder
-	} else if (secure || sandbox != 0) && (opt.flags & kOptFlagSecure) != 0 {
+	} else if (secure != 0 || sandbox != 0) && (opt.flags & kOptFlagSecure) != 0 {
 		errmsg = e_secure_s
 	} else if new_value.typ == kOptValTypeString &&
 	check_illegal_path_names((^^u8)(varp)^, opt.flags) {
@@ -1021,7 +1021,7 @@ did_set_option_o :: proc "c"(
 
 		flagsp := insecure_flag_c(curwin, opt_idx, opt_flags)
 		flagsp_local: ^C.uint32_t = scope_both ? insecure_flag_c(curwin, opt_idx, OPT_LOCAL_S) : nil
-		if !value_checked && (secure || sandbox != 0 || (opt_flags & OPT_MODELINE_S) != 0) {
+		if !value_checked && (secure != 0 || sandbox != 0 || (opt_flags & OPT_MODELINE_S) != 0) {
 			flagsp^ |= kOptFlagInsecure
 			if flagsp_local != nil {
 				flagsp_local^ |= kOptFlagInsecure
@@ -1157,7 +1157,7 @@ set_option_o :: proc "c"(
 
 	if (opt_flags & OPT_MODELINE_S) != 0 || sandbox != 0 ||
 	(!value_replaced && (p_flags^ & kOptFlagInsecure) != 0) {
-		secure = true
+		secure = 1
 	}
 
 	set_option_varp_o(opt_idx, varp, value, false)

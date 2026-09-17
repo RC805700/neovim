@@ -3047,8 +3047,7 @@ foreign _ {
 	ml_firstmarked_r :: proc "c"() -> C.int ---
 	@(link_name = "ml_clearmarked")
 	ml_clearmarked_r :: proc "c"() ---
-	@(link_name = "do_sub_msg")
-	do_sub_msg_r :: proc "c"(count_only: bool) -> bool ---
+	// do_sub_msg now defined below (Batch 38) — call directly.
 	// sub_nsubs/sub_nlines/msg_didout already bound (spell.odin C.longlong,
 	// Batch-31b bool) — reuse; C sees consistent zero values here.
 }
@@ -3126,7 +3125,7 @@ global_exe :: proc "c"(cmd: cstring) {
 
 	// Substitutes report their count, else report added/deleted lines
 	// (not when the buffer changed mid-execution).
-	if !do_sub_msg_r(false) && curbuf == old_buf {
+	if !do_sub_msg(false) && curbuf == old_buf {
 		msgmore_r((^C.int)(uintptr(curbuf) + B_ML_LINE_COUNT_OFF)^ - old_lcount)
 	}
 }
@@ -3698,9 +3697,9 @@ sub_joining_lines_o :: proc "c"(eap: rawptr, pat: ^NvimString, sub: cstring, cmd
 				(^C.int)(uintptr(curbuf) + B_ML_LINE_COUNT_OFF)^ ? 1 : 0)
 		if joined_lines_count > 1 {
 			do_join_r(C.size_t(joined_lines_count), false, true, false, true)
-			sub_nsubs_sp = C.longlong(joined_lines_count) - 1
+			sub_nsubs_sp = C.int(joined_lines_count) - 1
 			sub_nlines_sp = 1
-			do_sub_msg_r(false)
+			do_sub_msg(false)
 			ex_may_print_r(eap)
 		}
 
@@ -3993,7 +3992,7 @@ do_sub_o :: proc "c"(eap: rawptr, timeout: proftime_T, cmdpreview_ns: C.int, cmd
 		sub_nsubs_sp = 0
 		sub_nlines_sp = 0
 	}
-	start_nsubs = sub_nsubs_sp
+	start_nsubs = C.longlong(sub_nsubs_sp)
 
 	if (^C.int)(uintptr(eap) + EXARG_CMDIDX_OFF)^ == CMD_TILDE_O {
 		which_pat = RE_LAST // use last used regexp
@@ -4901,7 +4900,7 @@ sub_engine_o :: proc "c"(eap: rawptr, timeout: proftime_T, cmdpreview_ns: C.int,
 		(^Pos_T)(uintptr(curwin) + W_CURSOR_OFF)^ = old_cursor
 	}
 
-	if sub_nsubs_sp > start_nsubs {
+	if sub_nsubs_sp > C.int(start_nsubs) {
 		if (cmdmod_cmod_flags & CMOD_LOCKMARKS_O) == 0 {
 			// Set the '[ and '] marks.
 			(^C.int)(uintptr(curbuf) + B_OP_START)^ =
@@ -4920,7 +4919,7 @@ sub_engine_o :: proc "c"(eap: rawptr, timeout: proftime_T, cmdpreview_ns: C.int,
 					beginline(BL_WHITE | BL_FIX)
 				}
 			}
-			if cmdpreview_ns <= 0 && !do_sub_msg_r(subflags_f.do_count) && subflags_f.do_ask && p_ch > 0 {
+			if cmdpreview_ns <= 0 && !do_sub_msg(subflags_f.do_count) && subflags_f.do_ask && p_ch > 0 {
 				msg_msg(cstring(""), 0)
 			}
 		} else {
@@ -5020,4 +5019,180 @@ ex_substitute_preview :: proc "c"(eap: rawptr, cmdpreview_ns: C.int, cmdpreview_
 	}
 
 	return 0
+}
+
+// ── Batch 38: do_sub_msg + check_secure + prepare_tagpreview +
+// skip_vimgrep_pat (4 small live leaves) ───────────────────────────────────
+
+E12_S :: "E12: Command not allowed in secure mode in current dir or tag search"
+VGR_GLOBAL_O :: 1
+VGR_NOJUMP_O :: 2
+VGR_FUZZY_O :: 4
+KOPTFOLDCOLUMN_O :: 102 // kOptFoldcolumn (options_enum.generated.h:107)
+
+foreign _ {
+	@(link_name = "skip_regexp")
+	skip_regexp_r :: proc "c"(startp: ^u8, delim: C.int, magic: C.int) -> ^u8 ---
+}
+
+// Secure/sandbox gate for shell and option writes (ex_cmds.c:3298).
+@(export)
+check_secure :: proc "c"() -> bool {
+	if secure != 0 {
+		secure = 2
+		emsg(cstring(E12_S))
+		return true
+	}
+
+	// In the sandbox more things are forbidden, including the things
+	// disallowed in secure mode.
+	if sandbox != 0 {
+		emsg(e_sandbox_s)
+		return true
+	}
+	return false
+}
+
+// Report the number of substitutions (also after ":global").
+// Used for the 'n' flag count when count_only.
+@(export)
+do_sub_msg :: proc "c"(count_only: bool) -> bool {
+	// Only report when: more than 'report' substitutions, the command
+	// was typed (or many lines changed), and not 'lazyredraw'-silent.
+	if ((C.longlong(sub_nsubs_sp) > p_report &&
+			(KeyTyped || sub_nlines_sp > 1 || p_report < 1)) ||
+			count_only) &&
+		messaging_r() {
+		if got_int {
+			xstrlcpy_o(cstring(&msg_buf_g[0]), cstring("(Interrupted) "),
+				MSG_BUF_LEN_O)
+		} else {
+			([^]u8)(&msg_buf_g[0])[0] = 0
+		}
+
+		// NGETTEXT singular/plural (C-locale behavior, buffer.odin precedent).
+		single := sub_nsubs_sp == 1
+		per_line := sub_nlines_sp == 1
+		fmt := cstring("%ld substitutions on %ld lines")
+		if count_only {
+			if single && per_line {
+				fmt = cstring("%ld match on %ld line")
+			} else if single {
+				fmt = cstring("%ld match on %ld lines")
+			} else if per_line {
+				fmt = cstring("%ld matches on %ld line")
+			} else {
+				fmt = cstring("%ld matches on %ld lines")
+			}
+		} else {
+			if single && per_line {
+				fmt = cstring("%ld substitution on %ld line")
+			} else if single {
+				fmt = cstring("%ld substitution on %ld lines")
+			} else if per_line {
+				fmt = cstring("%ld substitutions on %ld line")
+			}
+		}
+		tmp: [128]u8
+		libc.snprintf(&tmp[0], C.size_t(128), fmt,
+			C.longlong(sub_nsubs_sp), C.longlong(sub_nlines_sp))
+		_xstrlcat(cstring(&msg_buf_g[0]), cstring(&tmp[0]),
+			C.size_t(MSG_BUF_LEN_O))
+		if msg_msg(cstring(&msg_buf_g[0]), 0) {
+			// Save message to display it after redraw.
+			set_keep_msg_r(cstring(&msg_buf_g[0]), 0)
+		}
+		return true
+	}
+	if got_int {
+		emsg(cstring(E_INTERR_S))
+		return true
+	}
+	return false
+}
+
+// Set up for a tag preview window (true when it was created).
+@(export)
+prepare_tagpreview :: proc "c"(undo_sync: bool) -> bool {
+	if (^C.int)(uintptr(curwin) + W_P_PVW_OFF)^ != 0 {
+		return false
+	}
+
+	// A preview window already open: use it (same-tab walk: tp == curtab
+	// here, so firstwin — FOR_ALL_WINDOWS_IN_TAB nuance, window Batch-1).
+	wp := firstwin
+	for wp != nil {
+		if (^C.int)(uintptr(wp) + W_P_PVW_OFF)^ != 0 {
+			win_enter(wp, undo_sync)
+			return false
+		}
+		wp = (^rawptr)(uintptr(wp) + W_NEXT_OFF)^
+	}
+
+	// No preview window yet: create one.
+	if win_split(g_do_tagpreview > 0 ? g_do_tagpreview : 0, 0) == FAIL {
+		return false
+	}
+	(^C.int)(uintptr(curwin) + W_P_PVW_OFF)^ = 1
+	(^C.int)(uintptr(curwin) + W_P_WFH_OFF)^ = 1
+	// RESET_BINDING: don't take over 'scrollbind'/'cursorbind'.
+	(^bool)(uintptr(curwin) + W_P_SCB_OFF)^ = false
+	(^bool)(uintptr(curwin) + W_P_CRB_OFF)^ = false
+	(^C.int)(uintptr(curwin) + W_P_DIFF_OFF)^ = 0 // no 'diff'
+
+	set_option_direct(KOPTFOLDCOLUMN_O,
+		str_optval(transmute(^u8)(cstring("0")), C.size_t(1)), 0,
+		SID_NONE_O) // no 'foldcolumn'
+	return true
+}
+
+// Skip the pattern argument of ":vimgrep /pat/[g][j]".
+// *s gets the pattern start (NUL-terminated unless NULL); *flags gets
+// VGR_* bits. Returns the char just past pattern plus flags.
+@(export)
+skip_vimgrep_pat :: proc "c"(p_in: ^u8, s: ^^u8, flags: ^C.int) -> ^u8 {
+	p := p_in
+	if _vim_isIDc(C.int(([^]u8)(p)[0])) {
+		// ":vimgrep pattern fname"
+		if s != nil {
+			s^ = p
+		}
+		p = transmute(^u8)(skiptowhite(cstring(p)))
+		if s != nil && ([^]u8)(p)[0] != 0 {
+			([^]u8)(p)[0] = 0
+			p = (^u8)(uintptr(p) + 1)
+		}
+	} else {
+		// ":vimgrep /pattern/[g][j] fname"
+		if s != nil {
+			s^ = (^u8)(uintptr(p) + 1)
+		}
+		c := ([^]u8)(p)[0]
+		p = skip_regexp_r((^u8)(uintptr(p) + 1), C.int(c), 1)
+		if ([^]u8)(p)[0] != c {
+			return nil
+		}
+
+		// Truncate the pattern.
+		if s != nil {
+			([^]u8)(p)[0] = 0
+		}
+		p = (^u8)(uintptr(p) + 1)
+
+		// Find the flags.
+		for ([^]u8)(p)[0] == 'g' || ([^]u8)(p)[0] == 'j' ||
+			([^]u8)(p)[0] == 'f' {
+			if flags != nil {
+				if ([^]u8)(p)[0] == 'g' {
+					flags^ |= VGR_GLOBAL_O
+				} else if ([^]u8)(p)[0] == 'j' {
+					flags^ |= VGR_NOJUMP_O
+				} else {
+					flags^ |= VGR_FUZZY_O
+				}
+			}
+			p = (^u8)(uintptr(p) + 1)
+		}
+	}
+	return p
 }

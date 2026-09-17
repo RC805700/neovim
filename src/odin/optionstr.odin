@@ -227,7 +227,7 @@ check_illegal_path_names :: proc "c"(val: ^u8, flags: C.uint32_t) -> bool {
 	nfname := (flags & kOptFlagNFname) != 0
 	ndname := (flags & kOptFlagNDname) != 0
 	if nfname {
-		pat: cstring = secure_v ? "/\\*?[|;&<>\r\n" : "/\\*?[<>\r\n"
+		pat: cstring = secure_v != 0 ? "/\\*?[|;&<>\r\n" : "/\\*?[<>\r\n"
 		if libc.strpbrk(transmute(cstring)(val), pat) != nil {
 			return true
 		}
@@ -1541,7 +1541,7 @@ did_set_keymap :: proc "c"(args: ^optset_T) -> cstring {
 
 	// Reset the secure flag, since the value of 'keymap' has
 	// been checked to be safe.
-	secure = false
+	secure = 0
 
 	// load or unload key mapping tables
 	errmsg := transmute(cstring)(keymap_init())

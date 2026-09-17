@@ -3295,6 +3295,7 @@ void ex_z(exarg_T *eap)
 
 /// @return  true if the secure flag is set and also give an error message.
 ///          Otherwise, return false.
+#pragma weak check_secure
 bool check_secure(void)
 {
   if (secure) {
@@ -4599,6 +4600,7 @@ skip:
 /// @param count_only  used 'n' flag for ":s"
 ///
 /// @return            true if a message was given.
+#pragma weak do_sub_msg
 bool do_sub_msg(bool count_only)
 {
   // Only report substitutions when:
@@ -4840,6 +4842,7 @@ void free_old_sub(void)
 /// @param undo_sync  sync undo when leaving the window
 ///
 /// @return           true when it was created.
+#pragma weak prepare_tagpreview
 bool prepare_tagpreview(bool undo_sync)
 {
   if (curwin->w_p_pvw) {
@@ -5019,6 +5022,7 @@ int ex_substitute_preview(exarg_T *eap, int cmdpreview_ns, handle_T cmdpreview_b
 /// @param s      if not NULL, terminate the pattern with a NUL.
 ///
 /// @return  a pointer to the char just past the pattern plus flags.
+#pragma weak skip_vimgrep_pat
 char *skip_vimgrep_pat(char *p, char **s, int *flags)
 {
   if (vim_isIDc((uint8_t)(*p))) {

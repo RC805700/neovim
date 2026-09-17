@@ -79,7 +79,7 @@ foreign _ {
 	sandbox: c.int
 
 	@(link_name = "secure")
-	secure: bool
+	secure: c.int // C EXTERN int (globals.h:438), NOT bool — C sets 2
 
 	@(link_name = "p_verbose")
 	p_verbose: c.int
@@ -178,9 +178,7 @@ foreign _ {
 	// misc
 	@(link_name = "vim_tempname")
 	vim_tempname :: proc "c" () -> cstring ---
-	@(link_name = "check_secure")
-	check_secure :: proc "c" () -> bool ---
-	// make_filter_cmd now defined in ex_cmds.odin — call directly.
+	// check_secure now defined in ex_cmds.odin — call directly.
 	@(link_name = "tag_freematch")
 	tag_freematch :: proc "c" () ---
 	@(link_name = "restore_env_var")
@@ -348,7 +346,7 @@ os_expand_wildcards :: proc "c" (num_pat: c.int, pat: ^^u8, num_file: ^c.int, fi
 		return FAIL
 	}
 
-	if secure {
+	if secure != 0 {
 		for i = 0; i < num_pat; i += 1 {
 			if vim_strchr(([^]^u8)(pat)[i], c.int('`')) != nil && check_secure() {
 				return FAIL

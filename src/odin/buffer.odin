@@ -4453,7 +4453,7 @@ chk_modeline_o :: proc "c"(lnum: C.int, flags: C.int) -> C.int {
 			(^C.int)(uintptr(&current_sctx_buf[0]) + 4)^ = 0
 			(^C.int)(uintptr(&current_sctx_buf[0]) + 8)^ = lnum
 			// Make sure no risky things run as a side effect.
-			secure = true
+			secure = 1
 
 			retval = do_set(s, OPT_MODELINE_S | OPT_LOCAL_S | flags)
 

@@ -1210,8 +1210,7 @@ foreign _ {
 	@(link_name = "path_full_compare")
 	path_full_compare_r :: proc "c" (s1: cstring, s2: cstring, checkname: bool, expand: bool) -> C.int ---
 
-	@(link_name = "prepare_tagpreview")
-	prepare_tagpreview :: proc "c" (keep_help: bool) ---
+	// prepare_tagpreview now defined in ex_cmds.odin — call directly.
 	// getfile now defined in ex_cmds.odin — call directly (cstring args).
 	@(link_name = "validate_cursor")
 	validate_cursor_r :: proc "c" (wp: rawptr) ---
