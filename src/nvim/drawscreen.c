@@ -2744,6 +2744,7 @@ void redrawWinline(win_T *wp, linenr_T lnum)
   redraw_win_range_later(wp, lnum, lnum);
 }
 
+#pragma weak redraw_buf_range_later
 void redraw_buf_range_later(buf_T *buf, linenr_T first, linenr_T last)
 {
   FOR_ALL_WINDOWS_IN_TAB(wp, curtab) {
@@ -2754,6 +2755,7 @@ void redraw_buf_range_later(buf_T *buf, linenr_T first, linenr_T last)
 }
 
 /// called when the status bars for the buffer 'buf' need to be updated
+#pragma weak redraw_buf_status_later
 void redraw_buf_status_later(buf_T *buf)
 {
   FOR_ALL_WINDOWS_IN_TAB(wp, curtab) {
@@ -2768,6 +2770,7 @@ void redraw_buf_status_later(buf_T *buf)
 }
 
 /// Mark all status lines and window bars for redraw; used after first :cd
+#pragma weak status_redraw_all
 void status_redraw_all(void)
 {
   bool is_stl_global = global_stl_height() != 0;
@@ -2782,12 +2785,14 @@ void status_redraw_all(void)
 }
 
 /// Marks all status lines and window bars of the current buffer for redraw.
+#pragma weak status_redraw_curbuf
 void status_redraw_curbuf(void)
 {
   status_redraw_buf(curbuf);
 }
 
 /// Marks all status lines and window bars of the given buffer for redraw.
+#pragma weak status_redraw_buf
 void status_redraw_buf(buf_T *buf)
 {
   bool is_stl_global = global_stl_height() != 0;
@@ -2807,6 +2812,7 @@ void status_redraw_buf(buf_T *buf)
 }
 
 /// Redraw all status lines that need to be redrawn.
+#pragma weak redraw_statuslines
 void redraw_statuslines(void)
 {
   FOR_ALL_WINDOWS_IN_TAB(wp, curtab) {
@@ -2828,6 +2834,7 @@ void redraw_statuslines(void)
 }
 
 /// Redraw all status lines at the bottom of frame "frp".
+#pragma weak win_redraw_last_status
 void win_redraw_last_status(const frame_T *frp)
   FUNC_ATTR_NONNULL_ARG(1)
 {
@@ -2885,6 +2892,7 @@ bool win_cursorline_standout(const win_T *wp)
 /// Update w_cursorline, taking care to set it to the to the start of a closed fold.
 ///
 /// @param[out] foldinfo foldinfo for the cursor line
+#pragma weak win_update_cursorline
 void win_update_cursorline(win_T *wp, foldinfo_T *foldinfo)
 {
   wp->w_cursorline = win_cursorline_standout(wp) ? wp->w_cursor.lnum : 0;

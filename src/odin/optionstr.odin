@@ -1444,8 +1444,6 @@ foreign _ {
 	verbose_open_r :: proc "c" () -> C.int ---
 	@(link_name = "messagesopt_changed")
 	messagesopt_changed_r :: proc "c" () -> C.int ---
-	@(link_name = "status_redraw_buf")
-	status_redraw_buf_r :: proc "c" (buf: rawptr) ---
 }
 // check_colorcolumn_r/buf_init_chartab_r/set_iminsert_global/set_imsearch_global/
 // keymap_init/valid_filetype_o/secure/W_NRWIDTH_OFF reused from sibling files.
@@ -1572,7 +1570,7 @@ did_set_keymap :: proc "c"(args: ^optset_T) -> cstring {
 			set_iminsert_global(buf)
 			set_imsearch_global(buf)
 		}
-		status_redraw_buf_r(buf)
+		status_redraw_buf(buf)
 	}
 
 	return errmsg

@@ -1248,7 +1248,7 @@ buf_name_changed :: proc "c"(buf: rawptr) {
 		check_arg_idx_r(curwin) // check file name for arg list
 	}
 	maketitle() // set window title
-	status_redraw_all_r() // status lines need to be redrawn
+	status_redraw_all() // status lines need to be redrawn
 	fmarks_check_names(buf) // check named file marks
 	ml_timestamp_r(buf) // reset timestamp
 }

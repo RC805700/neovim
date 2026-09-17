@@ -273,3 +273,157 @@ redraw_win_range_later :: proc "c"(wp: rawptr, first: C.int, last: C.int) {
 redrawWinline :: proc "c"(wp: rawptr, lnum: C.int) {
 	redraw_win_range_later(wp, lnum, lnum)
 }
+
+// ── Batch 2b: buf_range/status family + cursorline ────────────────────────────
+
+foreign _ {
+	@(link_name = "win_check_ns_hl")
+	win_check_ns_hl_r :: proc "c"(wp: rawptr) -> bool ---
+	@(link_name = "win_redr_winbar")
+	win_redr_winbar_r :: proc "c"(wp: rawptr) ---
+	@(link_name = "win_redr_status")
+	win_redr_status_r :: proc "c"(wp: rawptr) ---
+	@(link_name = "draw_tabline")
+	draw_tabline_r :: proc "c"() ---
+}
+
+@(export)
+redraw_buf_range_later :: proc "c"(buf: rawptr, first: C.int, last: C.int) {
+	tp := curtab
+	wp := tp == curtab ? firstwin : (^rawptr)(uintptr(tp) + TP_FIRSTWIN_OFF)^
+	for wp != nil {
+		if (^rawptr)(uintptr(wp) + W_BUFFER_OFF)^ == buf {
+			redraw_win_range_later(wp, first, last)
+		}
+		wp = (^rawptr)(uintptr(wp) + W_NEXT_OFF)^
+	}
+}
+
+// Status bars for buffer buf need update.
+@(export)
+redraw_buf_status_later :: proc "c"(buf: rawptr) {
+	tp := curtab
+	wp := tp == curtab ? firstwin : (^rawptr)(uintptr(tp) + TP_FIRSTWIN_OFF)^
+	for wp != nil {
+		if (^rawptr)(uintptr(wp) + W_BUFFER_OFF)^ == buf &&
+			((^C.int)(uintptr(wp) + W_STATUS_HEIGHT_OFF)^ != 0 ||
+				(wp == curwin && global_stl_height() != 0) ||
+				(^C.int)(uintptr(wp) + W_WINBAR_HEIGHT_OFF)^ != 0) {
+			(^bool)(uintptr(wp) + W_REDR_STATUS_OFF)^ = true
+			set_must_redraw(UPD_VALID_O)
+		}
+		wp = (^rawptr)(uintptr(wp) + W_NEXT_OFF)^
+	}
+}
+
+// Mark all status lines and window bars for redraw; used after first :cd.
+@(export)
+status_redraw_all :: proc "c"() {
+	is_stl_global := global_stl_height() != 0
+	tp := curtab
+	wp := tp == curtab ? firstwin : (^rawptr)(uintptr(tp) + TP_FIRSTWIN_OFF)^
+	for wp != nil {
+		if ((!is_stl_global && (^C.int)(uintptr(wp) + W_STATUS_HEIGHT_OFF)^ != 0) ||
+			wp == curwin ||
+			(^C.int)(uintptr(wp) + W_WINBAR_HEIGHT_OFF)^ != 0) {
+			(^bool)(uintptr(wp) + W_REDR_STATUS_OFF)^ = true
+			redraw_later(wp, UPD_VALID_O)
+		}
+		wp = (^rawptr)(uintptr(wp) + W_NEXT_OFF)^
+	}
+}
+
+// Marks all status lines and window bars of the current buffer for redraw.
+@(export)
+status_redraw_curbuf :: proc "c"() {
+	status_redraw_buf(curbuf)
+}
+
+// Marks all status lines and window bars of the given buffer for redraw.
+@(export)
+status_redraw_buf :: proc "c"(buf: rawptr) {
+	is_stl_global := global_stl_height() != 0
+	tp := curtab
+	wp := tp == curtab ? firstwin : (^rawptr)(uintptr(tp) + TP_FIRSTWIN_OFF)^
+	for wp != nil {
+		if (^rawptr)(uintptr(wp) + W_BUFFER_OFF)^ == buf &&
+			((!is_stl_global && (^C.int)(uintptr(wp) + W_STATUS_HEIGHT_OFF)^ != 0) ||
+				(is_stl_global && wp == curwin) ||
+				(^C.int)(uintptr(wp) + W_WINBAR_HEIGHT_OFF)^ != 0) {
+			(^bool)(uintptr(wp) + W_REDR_STATUS_OFF)^ = true
+			redraw_later(wp, UPD_VALID_O)
+		}
+		wp = (^rawptr)(uintptr(wp) + W_NEXT_OFF)^
+	}
+	// Redraw the ruler if in the command line and not marked above.
+	if p_ru_g != 0 && (^C.int)(uintptr(curwin) + W_STATUS_HEIGHT_OFF)^ == 0 &&
+		!(^bool)(uintptr(curwin) + W_REDR_STATUS_OFF)^ {
+		redraw_cmdline_g = true
+		redraw_later(curwin, UPD_VALID_O)
+	}
+}
+
+// Redraw all status lines that need to be redrawn.
+@(export)
+redraw_statuslines :: proc "c"() {
+	tp := curtab
+	wp := tp == curtab ? firstwin : (^rawptr)(uintptr(tp) + TP_FIRSTWIN_OFF)^
+	for wp != nil {
+		if (^bool)(uintptr(wp) + W_REDR_STATUS_OFF)^ {
+			win_check_ns_hl_r(wp)
+			win_redr_winbar_r(wp)
+			win_redr_status_r(wp)
+		}
+		wp = (^rawptr)(uintptr(wp) + W_NEXT_OFF)^
+	}
+
+	win_check_ns_hl_r(nil)
+	if redraw_tabline_opt {
+		draw_tabline_r()
+	}
+
+	if need_maketitle_opt {
+		maketitle()
+	}
+}
+
+// Redraw all status lines at the bottom of frame frp.
+@(export)
+win_redraw_last_status :: proc "c"(frp_in: rawptr) {
+	frp := frp_in
+	if b_at((^u8)(uintptr(frp) + FR_LAYOUT_OFF), 0) == FR_LEAF_O {
+		win := (^rawptr)(uintptr(frp) + FR_WIN_OFF)^
+		(^bool)(uintptr(win) + W_REDR_STATUS_OFF)^ = true
+	} else if b_at((^u8)(uintptr(frp) + FR_LAYOUT_OFF), 0) == FR_ROW_O {
+		child := (^rawptr)(uintptr(frp) + FR_CHILD_OFF)^
+		for child != nil {
+			win_redraw_last_status(child)
+			child = (^rawptr)(uintptr(child) + FR_NEXT_OFF)^
+		}
+	} else {
+		// FR_COL: only the last child has the bottom status line.
+		child := (^rawptr)(uintptr(frp) + FR_CHILD_OFF)^
+		for (^rawptr)(uintptr(child) + FR_NEXT_OFF)^ != nil {
+			child = (^rawptr)(uintptr(child) + FR_NEXT_OFF)^
+		}
+		win_redraw_last_status(child)
+	}
+}
+
+// Update w_cursorline, folding the cursor line into a closed fold's start.
+@(export)
+win_update_cursorline :: proc "c"(wp: rawptr, foldinfo: ^Foldinfo_T) {
+	if win_cursorline_standout(wp) {
+		(^C.int)(uintptr(wp) + W_CURSORLINE_OFF)^ =
+			(^C.int)(uintptr(wp) + W_CURSOR_OFF)^
+	} else {
+		(^C.int)(uintptr(wp) + W_CURSORLINE_OFF)^ = 0
+	}
+	if (^C.int)(uintptr(wp) + W_P_CUL_OFF)^ != 0 {
+		// Make sure the cursorline on a closed fold is redrawn.
+		foldinfo^ = fold_info(wp, (^C.int)(uintptr(wp) + W_CURSOR_OFF)^)
+		if foldinfo.fi_level != 0 && foldinfo.fi_lines > 0 {
+			(^C.int)(uintptr(wp) + W_CURSORLINE_OFF)^ = foldinfo.fi_lnum
+		}
+	}
+}

@@ -152,9 +152,6 @@ foreign _ {
 	@(link_name = "do_map")
 	do_map :: proc "c" (maptype: C.int, arg: ^u8, mode: C.int, is_abbrev: bool) -> C.int ---
 
-	@(link_name = "status_redraw_curbuf")
-	status_redraw_curbuf :: proc "c" () ---
-
 	@(link_name = "eval_to_string")
 	eval_to_string :: proc "c" (arg: ^u8, join_list: bool, use_simple_function: bool) -> ^u8 ---
 

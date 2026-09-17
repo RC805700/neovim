@@ -148,8 +148,6 @@ foreign _ {
 	find_special_key_r :: proc "c" (srcp: ^^u8, src_len: C.size_t, modp: ^C.int, flags: C.int, has_lt: ^bool) -> C.int ---
 	@(link_name = "need_maketitle")
 	need_maketitle_opt: bool
-	@(link_name = "redraw_buf_status_later")
-	redraw_buf_status_later_opt :: proc "c" (buf: rawptr) ---
 	@(link_name = "redraw_tabline")
 	redraw_tabline_opt: bool
 	@(link_name = "api_free_string")
@@ -158,8 +156,6 @@ foreign _ {
 	_empty_string_arr: [1]u8
 	// curbufIsChanged is an Odin proc in undo.odin — reuse directly.	@(link_name = "copy_string")
  	copy_string_o :: proc "c" (s: NvimString, arena: rawptr) -> NvimString ---
- 	@(link_name = "status_redraw_all")
-	status_redraw_all_r :: proc "c" () ---
 	@(link_name = "changed_window_setting")
 	changed_window_setting_opt :: proc "c" (wp: rawptr) ---
 	@(link_name = "p_wmh")
@@ -1075,7 +1071,7 @@ check_redraw_o :: proc "c"(flags: C.uint32_t) {
 	all := (flags & kOptFlagRedrAll) == kOptFlagRedrAll
 
 	if (flags & kOptFlagRedrStat) != 0 || all {
-		status_redraw_all_r()
+		status_redraw_all()
 	}
 	if (flags & kOptFlagRedrTabl) != 0 || all {
 		redraw_tabline_opt = true
@@ -3341,7 +3337,7 @@ set_fileformat :: proc "c"(eol_style: C.int, opt_flags: C.int) {
 		set_option_direct(94, str_optval(transmute(^u8)(p), libc.strlen(p)), opt_flags, 0) // kOptFileformat=94
 	}
 
-	redraw_buf_status_later_opt(curbuf)
+	redraw_buf_status_later(curbuf)
 	redraw_tabline_opt = true
 	need_maketitle_opt = true
 }
@@ -3725,7 +3721,7 @@ check_redraw_for :: proc "c"(buf: rawptr, win: rawptr, flags: C.uint32_t) {
 	all := (flags & kOptFlagRedrAll_S) == kOptFlagRedrAll_S
 
 	if (flags & kOptFlagRedrStat_S) != 0 || all {
-		status_redraw_all_r()
+		status_redraw_all()
 	}
 	if (flags & kOptFlagRedrTabl_S) != 0 || all {
 		redraw_tabline_opt = true

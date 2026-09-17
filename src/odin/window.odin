@@ -1743,7 +1743,7 @@ win_split_ins :: proc "c"(size: C.int, flags: C.int, new_wp: rawptr, dir: C.int,
 	// show something related to the window count or position.
 	redraw_later(wp, UPD_NOT_VALID_O)
 	redraw_later(oldwin, UPD_NOT_VALID_O)
-	status_redraw_all_r()
+	status_redraw_all()
 
 	if need_status != 0 {
 		msg_row = Rows - 1
