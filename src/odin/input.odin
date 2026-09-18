@@ -656,7 +656,11 @@ inbuf_poll :: proc "c" (ms: c.int, events: ^MultiQueue) -> TriState {
 		multiqueue_process_events(ch_before_blocking_events)
 	}
 
-	// LOOP_PROCESS_EVENTS_UNTIL(&main_loop, NULL, ms, os_input_ready||input_eof)
+	// LOOP_PROCESS_EVENTS_UNTIL(&main_loop, NULL, ms, os_input_ready||input_eof).
+	// C-faithful: with a NULL multiqueue, LOOP_PROCESS_EVENTS always polls
+	// (loop_poll_events drains fast_events only, never loop.events) — do NOT
+	// drain main_loop.events here; that would run vim.schedule callbacks
+	// before pending typeahead, inverting C's ordering.
 	deadline := i64(-1)
 	if ms >= 0 {
 		deadline = i64(os_hrtime() / 1000000) + i64(ms)
@@ -673,10 +677,6 @@ inbuf_poll :: proc "c" (ms: c.int, events: ^MultiQueue) -> TriState {
 				loop_poll_events(&main_loop, 0)
 				break
 			}
-		}
-		if !multiqueue_empty(main_loop.events) {
-			multiqueue_process_events(main_loop.events)
-			continue
 		}
 		loop_poll_events(&main_loop, remaining)
 		if os_input_ready(events) || input_eof {

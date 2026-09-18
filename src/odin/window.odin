@@ -1154,27 +1154,24 @@ win_free :: proc "c"(wp: rawptr, tp: rawptr) {
 		(^C.size_t)(uintptr(wp) + W_WINBAR_CLICK_DEFS_SIZE_OFF)^)
 	xfree((^rawptr)(uintptr(wp) + W_WINBAR_CLICK_DEFS_OFF)^)
 
-	sc_map := (^rawptr)(uintptr(wp) + W_STATUSCOL_CLICK_DEFS_OFF)^
-	if sc_map != nil {
-		sc_mp := (^Map_int_StcClicks)(sc_map)
-		// values[] is dense 0..n_keys (key index space, not buckets).
-		for i: u32 = 0; i < sc_mp.set.h.n_keys; i += 1 {
-			inner := sc_mp.values[i] // StcClicks map
-			for j: u32 = 0; j < inner.set.h.n_keys; j += 1 {
-				row_defs := inner.values[j] // StcClick
-				stl_clear_click_defs_r(transmute(rawptr)(row_defs.def),
-					C.size_t(row_defs.size))
-				xfree(transmute(rawptr)(row_defs.def))
-			}
-			// map_destroy(int, &inner): free keys+hash arrays.
-			xfree(transmute(rawptr)(inner.set.keys))
-			xfree(transmute(rawptr)(inner.set.h.hash))
+	sc_mp := (^Map_int_StcClicks)(uintptr(wp) + W_STATUSCOL_CLICK_DEFS_OFF)
+	// values[] is dense 0..n_keys (key index space, not buckets).
+	for i: u32 = 0; i < sc_mp.set.h.n_keys; i += 1 {
+		inner := sc_mp.values[i] // StcClicks map
+		for j: u32 = 0; j < inner.set.h.n_keys; j += 1 {
+			row_defs := inner.values[j] // StcClick
+			stl_clear_click_defs_r(transmute(rawptr)(row_defs.def),
+				C.size_t(row_defs.size))
+			xfree(transmute(rawptr)(row_defs.def))
 		}
-		// map_destroy(int, wp->w_statuscol_click_defs): frees internals only
-		// (C does not free the Map struct itself — mirror exactly).
-		xfree(transmute(rawptr)(sc_mp.set.keys))
-		xfree(transmute(rawptr)(sc_mp.set.h.hash))
+		// map_destroy(int, &inner): free keys+hash arrays.
+		xfree(transmute(rawptr)(inner.set.keys))
+		xfree(transmute(rawptr)(inner.set.h.hash))
 	}
+	// map_destroy(int, wp->w_statuscol_click_defs): frees internals only
+	// (inline Map[1]: C does not free the Map struct itself — mirror exactly).
+	xfree(transmute(rawptr)(sc_mp.set.keys))
+	xfree(transmute(rawptr)(sc_mp.set.h.hash))
 
 	// Remove the window from the b_wininfo lists, it may happen that the
 	// freed memory is re-used for another window.

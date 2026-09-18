@@ -74,11 +74,14 @@ loop_uv_run :: proc(loop: ^Loop, ms: i64) -> bool {
 loop_poll_events :: proc "c" (loop: ^Loop, ms: i64) -> bool {
 	context = runtime.default_context()
 	timeout_expired := loop_uv_run(loop, ms)
-	// NOTE: the main event queue (loop.events) carries every child queue
-	// (proc->events, stream->s.events, etc.) via parent links, so draining
-	// it here is what lets pending events (proc_close_handles, read_event, ...)
-	// fire and unblock callers like proc_wait(). fast_events is drained too.
-	multiqueue_process_events(loop.events)
+	// C-faithful: drain fast_events ONLY. loop.events is NOT drained here
+	// ("Does NOT process Loop.events, that is an application-specific
+	// decision" — event/loop.c). Callers that need loop.events (proc_teardown,
+	// state machine) drain it explicitly. Draining it here runs vim.schedule
+	// callbacks before fed typeahead is processed, inverting C's ordering
+	// (which-key trigger re-attach raced fed keys → "Recursion detected").
+	// proc_wait() is unaffected: it drains its own queue via
+	// loop_process_events_q (proc.odin).
 	multiqueue_process_events(loop.fast_events)
 	return timeout_expired
 }

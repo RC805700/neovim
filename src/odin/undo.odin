@@ -648,7 +648,7 @@ u_savecommon :: proc "c" (buf: rawptr, top: C.int, bot: C.int, newbot: C.int, re
 		i: C.int = 0
 		lnum := top + 1
 		for i < size {
-			os_breakcheck()
+			fast_breakcheck()
 			if got_int {
 				u_freeentry(uep, i)
 				return FAIL_R
