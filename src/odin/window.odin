@@ -1749,7 +1749,7 @@ win_split_ins :: proc "c"(size: C.int, flags: C.int, new_wp: rawptr, dir: C.int,
 		msg_row = Rows - 1
 		msg_col = sc_col
 		msg_clr_eos_force_r() // Old command/ruler may still be there
-		comp_col_r()
+		comp_col()
 		msg_row = Rows - 1
 		msg_col = 0 // put position back at start of line
 	}
@@ -5155,7 +5155,7 @@ last_status_rec_o :: proc "c"(fr: rawptr, statusline: bool, is_stl_global: bool)
 				if !resize_frame_for_status_o(fr) {
 					return
 				}
-				comp_col_r()
+				comp_col()
 			}
 			// Set prev_height when difference is due to 'laststatus'.
 			if abs((^C.int)(uintptr(wp) + W_HEIGHT_OFF)^ -
@@ -5170,7 +5170,7 @@ last_status_rec_o :: proc "c"(fr: rawptr, statusline: bool, is_stl_global: bool)
 			// Non-global statusline: re-add it.
 			(^C.int)(uintptr(wp) + W_STATUS_HEIGHT_OFF)^ = STATUS_HEIGHT_O
 			(^C.int)(uintptr(wp) + W_HSEP_HEIGHT_OFF)^ = 0
-			comp_col_r()
+			comp_col()
 		}
 	} else {
 		// Column or row frame: recurse over all child frames.
@@ -5202,7 +5202,7 @@ win_remove_status_line :: proc "c"(wp: rawptr, add_hsep: bool) {
 				(^C.int)(uintptr(wp) + W_VIEW_HEIGHT_OFF)^ :
 				(^C.int)(uintptr(wp) + W_HEIGHT_OFF)^) + STATUS_HEIGHT_O)
 	}
-	comp_col_r()
+	comp_col()
 	stl_clear_click_defs_r((^rawptr)(uintptr(wp) + W_STATUS_CLICK_DEFS_OFF)^,
 		(^C.size_t)(uintptr(wp) + W_STATUS_CLICK_DEFS_SIZE_OFF)^)
 	xfree((^rawptr)(uintptr(wp) + W_STATUS_CLICK_DEFS_OFF)^)
@@ -6355,7 +6355,7 @@ win_drag_status_line :: proc "c"(dragwin: rawptr, offset_in: C.int) {
 	win_comp_pos()
 	win_fix_scroll(true)
 	redraw_all_later(UPD_SOME_VALID_O)
-	showmode_r()
+	showmode()
 }
 
 // Separator line of "dragwin" is dragged "offset" lines right (neg is left).

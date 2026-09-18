@@ -112,8 +112,6 @@ foreign _ {
 	msg_outtrans_s :: proc "c" (str: cstring, hl_id: C.int, hist: bool) -> C.int ---
 	@(link_name = "ui_flush")
 	ui_flush_s :: proc "c" () ---
-	@(link_name = "show_cursor_info_later")
-	show_cursor_info_later_r :: proc "c" (must_show: bool) ---
 	@(link_name = "ui_cursor_shape")
 	ui_cursor_shape_r :: proc "c" () ---
 	@(link_name = "vim_beep")
@@ -1585,7 +1583,7 @@ current_search :: proc "c"(count: C.int, forward: bool) -> C.int {
 	may_start_select('c')
 	setmouse_r()
 	redraw_curbuf_later(UPD_INVERTED_S2)
-	_ = showmode_r()
+	_ = showmode()
 
 	return 1
 }
@@ -2845,8 +2843,8 @@ showmatch :: proc "c"(c: C.int) {
 	save_siso := w_p_siso_r(curwin)
 	w_p_so_set(curwin, 0)
 	w_p_siso_set(curwin, 0)
-	show_cursor_info_later_r(false)
-	_ = update_screen_r()
+	show_cursor_info_later(false)
+	_ = update_screen()
 	setcursor()
 	ui_flush_s()
 	dollar_vcol = save_dollar_vcol

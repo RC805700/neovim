@@ -1727,9 +1727,9 @@ mark_adjust_buf :: proc "c" (buf: rawptr, line1, line2, amount, amount_after: C.
 
 	// adjust per-window "last cursor" positions
 	kv_n := (^C.size_t)(uintptr(buf) + B_WININFO)^
-	kv_items := (^^rawptr)(uintptr(buf) + B_WININFO + 16)
+	kv_items := (^rawptr)(uintptr(buf) + B_WININFO + 16)^
 	for i: C.size_t = 0; i < kv_n; i += 1 {
-		wip := (^rawptr)(uintptr(kv_items) + uintptr(i) * size_of(rawptr))^
+		wip := ([^]rawptr)(kv_items)[i]
 		wi_mark := get_fmark(wip, WI_MARK)
 		if !by_term || wi_mark.mark.lnum < buf_line_count(buf) {
 			one_adjust_cursor(&wi_mark.mark, line1, line2, amount, amount_after)

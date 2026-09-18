@@ -814,7 +814,7 @@ foreign _ {
 	check_ei_r :: proc "c" (ei: ^u8) -> C.int ---
 }
 // utfc_ptr2len/utf_ptr2char/ptr2cells live in mark.odin — reuse directly.
-// _vim_strchr/VIsual_active/redraw_curbuf_later/comp_col_r/B_P_COT_OFF/
+// _vim_strchr/VIsual_active/redraw_curbuf_later/comp_col/B_P_COT_OFF/
 // B_COT_FLAGS_OFF/OPT_LOCAL_E/OPT_GLOBAL_E/E595_S reused from sibling files.
 
 @(export)
@@ -832,7 +832,7 @@ did_set_keymodel :: proc "c"(args: ^optset_T) -> cstring {
 did_set_showcmdloc :: proc "c"(args: ^optset_T) -> cstring {
 	errmsg := did_set_str_generic(args)
 	if errmsg == nil {
-		comp_col_r()
+		comp_col()
 	}
 	return errmsg
 }
@@ -1273,7 +1273,7 @@ foreign _ {
 	@(link_name = "win_config_float")
 	win_config_float_r :: proc "c" (wp: rawptr, cfg: WinConfig_Opaque) ---
 }
-// get_option_default_o/xfree/xmalloc_sp/comp_col_r/
+// get_option_default_o/xfree/xmalloc_sp/comp_col/
 // OPT_GLOBAL_S/OPT_LOCAL_S/strstr_c/skip_to_option_part/is_digit_o/illegal_char reused.
 
 did_set_statustabline_rulerformat_o :: proc "c"(args: ^optset_T, rulerformat: bool,
@@ -1336,7 +1336,7 @@ statuscolumn: bool) -> cstring {
 		errmsg = check_stl_option(s)
 	}
 	if rulerformat && errmsg == nil {
-		comp_col_r()
+		comp_col()
 	}
 	return errmsg
 }

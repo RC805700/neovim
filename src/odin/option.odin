@@ -716,15 +716,13 @@ foreign _ {
 	@(link_name = "set_option_sctx")
 	set_option_sctx_r :: proc "c" (opt_idx: C.int, opt_flags: C.int, sctx: sctx_T) ---
 	@(link_name = "nvim_odin_apply_optionset_autocmd")
-	apply_optionset_autocmd_r :: proc "c" (opt_idx: C.int, opt_flags: C.int, v1: OptValData, v2: OptValData, v3: OptValData, v4: OptValData, err: cstring) ---
+	apply_optionset_autocmd_r :: proc "c" (opt_idx: C.int, opt_flags: C.int, v1: OptVal, v2: OptVal, v3: OptVal, v4: OptVal, err: cstring) ---
 	@(link_name = "nvim_odin_do_syntax_autocmd")
 	do_syntax_autocmd_r :: proc "c" (buf: rawptr, value_changed: bool) ---
 	@(link_name = "do_filetype_autocmd")
 	do_filetype_autocmd_r :: proc "c" (buf: rawptr, value_changed: bool) ---
 	@(link_name = "nvim_odin_do_spelllang_source")
 	do_spelllang_source_r :: proc "c" (wp: rawptr) ---
-	@(link_name = "comp_col")
-	comp_col_r :: proc "c" () ---
 }
 
 SCCTX_SIZE :: 24
@@ -987,7 +985,7 @@ did_set_option_o :: proc "c"(
 		do_spelllang_source_r(curwin)
 	}
 
-	comp_col_r()
+	comp_col()
 
 	p_mouse_addr := transmute(rawptr)(&p_mouse_g)
 	if varp == p_mouse_addr {
@@ -1160,12 +1158,13 @@ set_option_o :: proc "c"(
 
 	if errmsg == nil && !direct {
 		if starting == 0 || starting > 2 { // !starting — starting==0 means startup finished; C checks `if (!starting)`
-			apply_optionset_autocmd_r(opt_idx, opt_flags, saved_used_value.data,
-				saved_old_global_value.data, saved_old_local_value.data, saved_new_value.data, errmsg)
+			apply_optionset_autocmd_r(opt_idx, opt_flags, saved_used_value,
+				saved_old_global_value, saved_old_local_value, saved_new_value, errmsg)
 		}
 		if (opt.flags & kOptFlagUIOption) != 0 {
 			obj := optval_as_object_o(saved_new_value)
-			ui_call_option_set_r(transmute(cstring)(opt.fullname), transmute(rawptr)(&obj))
+			nm := transmute(cstring)(opt.fullname)
+			ui_call_option_set_r(NvimString{nm, C.size_t(len(string(nm)))}, obj)
 		}
 	}
 
@@ -1179,7 +1178,7 @@ set_option_o :: proc "c"(
 
 foreign _ {
 	@(link_name = "ui_call_option_set")
-	ui_call_option_set_r :: proc "c" (name: cstring, obj: rawptr) ---
+	ui_call_option_set_r :: proc "c" (name: NvimString, obj: Api_Object_Opt) ---
 }
 
 // get_varp (exported in C): returns "used" varp
@@ -1209,8 +1208,10 @@ is_option_local_value_unset_o :: proc "c"(opt_idx: C.int) -> bool {
 // Api_Object layout from api/defs.h: type + data union.
 Api_Object_Opt :: struct #align(8) {
 	typ:  C.int,
+	_pad:  [4]u8, // C inserts 4B pad: ObjectData union is 8-aligned
 	data: [16]u8,
 }
+#assert(offset_of(Api_Object_Opt, data) == 8)
 
 API_OBJECT_TYPE_NIL_OPT :: 0
 API_OBJECT_TYPE_BOOLEAN_OPT :: 1
@@ -2221,9 +2222,11 @@ get_tty_option :: proc "c"(name: cstring) -> OptVal {
 			libc.snprintf(value, 32, "%d", t_colors_g)
 		}
 	} else if libc.strcmp(name, "term") == 0 {
-		value = p_term_g != nil ? xstrdup_r2(transmute(cstring)(p_term_g)) : xstrdup_r2(cstring("nvim"))
+		term := nvim_odin_get_p_term()
+		value = term != nil ? xstrdup_r2(transmute(cstring)(term)) : xstrdup_r2(cstring("nvim"))
 	} else if libc.strcmp(name, "ttytype") == 0 {
-		value = p_ttytype_g != nil ? xstrdup_r2(transmute(cstring)(p_ttytype_g)) : xstrdup_r2(cstring("nvim"))
+		ttytype := nvim_odin_get_p_ttytype()
+		value = ttytype != nil ? xstrdup_r2(transmute(cstring)(ttytype)) : xstrdup_r2(cstring("nvim"))
 	} else if is_tty_option(name) {
 		value = xstrdup_r2(cstring(""))
 	}
@@ -2238,25 +2241,31 @@ foreign _ {
 	@(link_name = "t_colors")
 	t_colors_g: C.int
 	@(link_name = "nvim_odin_get_p_term")
-	p_term_g: ^u8
+	nvim_odin_get_p_term :: proc "c"() -> ^u8 ---
 	@(link_name = "nvim_odin_get_p_ttytype")
-	p_ttytype_g: ^u8
+	nvim_odin_get_p_ttytype :: proc "c"() -> ^u8 ---
+	@(link_name = "nvim_odin_set_p_term")
+	nvim_odin_set_p_term :: proc "c"(val: ^u8) ---
+	@(link_name = "nvim_odin_set_p_ttytype")
+	nvim_odin_set_p_ttytype :: proc "c"(val: ^u8) ---
 }
 
 @(export)
 set_tty_option :: proc "c"(name: cstring, value: ^u8) -> bool {
 	if libc.strcmp(name, "term") == 0 {
-		if p_term_g != nil {
-			xfree(p_term_g)
+		old := nvim_odin_get_p_term()
+		if old != nil {
+			xfree(old)
 		}
-		p_term_g = value
+		nvim_odin_set_p_term(value)
 		return true
 	}
 	if libc.strcmp(name, "ttytype") == 0 {
-		if p_ttytype_g != nil {
-			xfree(p_ttytype_g)
+		old := nvim_odin_get_p_ttytype()
+		if old != nil {
+			xfree(old)
 		}
-		p_ttytype_g = value
+		nvim_odin_set_p_ttytype(value)
 		return true
 	}
 	return false
@@ -2285,7 +2294,7 @@ ui_refresh_options :: proc "c"() {
 		}
 		name := transmute(cstring)(opt_at(opt_idx).fullname)
 		value := optval_as_object_o(optval_from_varp(opt_idx, opt_at(opt_idx).varp))
-		ui_call_option_set_r(name, transmute(rawptr)(&value))
+		ui_call_option_set_r(NvimString{name, C.size_t(len(string(name)))}, value)
 	}
 	if p_mouse_g != nil {
 		setmouse()
@@ -3817,6 +3826,7 @@ set_options_bin :: proc "c"(oldval: C.int, newval: C.int, opt_flags: C.int) {
 apply_optionset_autocmd_now :: proc "c"(opt_idx: C.int, opt_flags: C.int, oldval: OptVal,
 	oldval_g: OptVal, oldval_l: OptVal, newval: OptVal, errmsg: cstring) {
 	// Don't do this while starting up, failure or recursively.
+	// Don't do this while starting up, failure or recursively.
 	if starting != 0 || errmsg != nil || b_at((^u8)(get_vim_var_str_f(VV_OPTION_TYPE_S)), 0) != 0 {
 		return
 	}
@@ -4918,7 +4928,7 @@ parse_winhl_opt :: proc "c"(winhl: ^u8, wp: rawptr) -> bool {
 		}
 
 		if wp != nil {
-			attrs: HlAttrs
+			attrs := HLATTRS_INIT
 			attrs.rgb_ae_attr |= HL_GLOBAL_S
 			ns_hl_def_c(ns_hl, hl_id_link, attrs, hl_id, nil)
 		}

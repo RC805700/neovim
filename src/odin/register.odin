@@ -261,8 +261,6 @@ foreign _ {
 	@(link_name = "vim_strsave_escaped_ext")
 	vim_strsave_escaped_ext_r :: proc "c" (string: cstring, esc_chars: cstring, cc: u8, bsl: bool) -> ^u8 ---
 
-	@(link_name = "showmode")
-	showmode_r :: proc "c" () -> C.int ---
 	@(link_name = "ui_has")
 	ui_has_r :: proc "c" (cap: C.int) -> bool ---
 	@(link_name = "get_recorded")
@@ -324,8 +322,6 @@ foreign _ {
 
 	@(link_name = "update_topline")
 	update_topline_r :: proc "c" (wp: rawptr) ---
-	@(link_name = "update_screen")
-	update_screen_r :: proc "c" () -> C.int ---
 	@(link_name = "changed_lines")
 	changed_lines_r :: proc "c" (buf: rawptr, lnum: C.int, col: C.int, lnume: C.int, xtra: C.int, do_buf_event: bool) ---
 	@(link_name = "changed_bytes")
@@ -826,7 +822,7 @@ do_record :: proc "c" (c: C.int) -> C.int {
 			retval = FAIL_R
 		} else {
 			reg_recording = c
-			showmode_r()
+			showmode()
 			do_record_regname = c
 			retval = OK_R
 
@@ -854,7 +850,7 @@ do_record :: proc "c" (c: C.int) -> C.int {
 		reg_recorded = reg_recording
 		reg_recording = 0
 		if p_ch == 0 || ui_has_r(kUIMessages) {
-			showmode_r()
+			showmode()
 		} else {
 			msg_msg(cstring(""), 0)
 		}
@@ -1462,7 +1458,7 @@ op_yank_reg :: proc "c" (oap: rawptr, message: bool, reg_arg: ^Yankreg_T, append
 			// redisplay now, so message is not deleted
 			update_topline_r(curwin)
 			if must_redraw != 0 {
-				update_screen_r()
+				update_screen()
 			}
 			fmt: cstring
 			if yank_type == kMTBlockWise {

@@ -2627,8 +2627,6 @@ do_shell :: proc "c"(cmd: ^u8, flags: C.int) {
 // ── Batch 32: :print/:list/:number (print_line/print_line_no_prefix) ────────
 
 foreign _ {
-	@(link_name = "number_width")
-	number_width_r :: proc "c"(wp: rawptr) -> C.int ---
 	// silent_mode already in main.odin; info_message in option.odin — reuse.
 }
 
@@ -2643,7 +2641,7 @@ print_line_no_prefix :: proc "c"(lnum: C.int, use_number: bool, list: bool) {
 
 	if (^C.int)(uintptr(curwin) + W_P_NU_OFF)^ != 0 || use_number {
 		libc.snprintf(&numbuf[0], C.size_t(30), cstring("%*d "),
-			number_width_r(curwin), lnum)
+			number_width(curwin), lnum)
 		msg_puts_hl_r(cstring(&numbuf[0]), HLF_N_S + 1, false)
 	}
 	msg_prt_line_r(ml_get(lnum), list)
@@ -4319,7 +4317,7 @@ sub_engine_o :: proc "c"(eap: rawptr, timeout: proftime_T, cmdpreview_ns: C.int,
 								regmatch.startpos[0].col
 							if subflags_f.do_number ||
 								(^C.int)(uintptr(curwin) + W_P_NU_OFF)^ != 0 {
-								numw := number_width_r(curwin) + 1
+								numw := number_width(curwin) + 1
 								sc += numw
 								ec += numw
 							}
@@ -4394,8 +4392,8 @@ sub_engine_o :: proc "c"(eap: rawptr, timeout: proftime_T, cmdpreview_ns: C.int,
 							update_topline_r(curwin)
 							validate_cursor_r(curwin)
 							redraw_later(curwin, UPD_SOME_VALID_S)
-							show_cursor_info_later_r(true)
-							update_screen_r()
+							show_cursor_info_later(true)
+							update_screen()
 							redraw_later(curwin, UPD_SOME_VALID_S)
 
 							(^C.int)(uintptr(curwin) + W_P_FEN)^ = save_p_fen

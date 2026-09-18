@@ -170,6 +170,7 @@ void conceal_check_cursor_line(void)
 /// needed.
 ///
 /// @return  whether resizing has been done
+#pragma weak default_grid_alloc
 bool default_grid_alloc(void)
 {
   static bool resizing = false;
@@ -217,6 +218,7 @@ bool default_grid_alloc(void)
   return true;
 }
 
+#pragma weak screenclear
 void screenclear(void)
 {
   msg_check_for_delay(false);
@@ -275,6 +277,7 @@ static bool cmdline_number_prompt(void)
 }
 
 /// Set dimensions of the Nvim application "screen".
+#pragma weak screen_resize
 void screen_resize(int width, int height)
 {
   // Avoid recursiveness, can happen when setting the window size causes
@@ -438,6 +441,7 @@ bool redrawing(void)
 ///
 /// Most code shouldn't call this directly, rather use redraw_later() and
 /// and redraw_all_later() to mark parts of the screen as needing a redraw.
+#pragma weak update_screen
 int update_screen(void)
 {
   static bool still_may_intro = true;
@@ -822,6 +826,7 @@ void setcursor_mayforce(win_T *wp, bool force)
 /// Mark the title and icon for redraw if either of them uses statusline format.
 ///
 /// @return  whether either title or icon uses statusline format.
+#pragma weak redraw_custom_title_later
 bool redraw_custom_title_later(void)
 {
   if ((p_icon && (stl_syntax & STL_IN_ICON))
@@ -835,6 +840,7 @@ bool redraw_custom_title_later(void)
 /// Show current cursor info in ruler and various other places
 ///
 /// @param always  if false, only show ruler if position has changed.
+#pragma weak show_cursor_info_later
 void show_cursor_info_later(bool force)
 {
   int state = get_real_state();
@@ -887,6 +893,7 @@ void show_cursor_info_later(bool force)
 
 /// @return true when postponing displaying the mode message: when not redrawing
 /// or inside a mapping.
+#pragma weak skip_showmode
 bool skip_showmode(void)
 {
   // Call char_avail() only when we are going to show something, because it
@@ -905,6 +912,7 @@ bool skip_showmode(void)
 /// cleared only if a mode is shown.
 /// If redraw_mode is true show or clear the mode.
 /// @return the length of the message (0 if no message).
+#pragma weak showmode
 int showmode(void)
 {
   int length = 0;
@@ -1092,6 +1100,7 @@ static void msg_pos_mode(void)
 /// Delete mode message.  Used when ESC is typed which is expected to end
 /// Insert mode (but Insert mode didn't end yet!).
 /// Caller should check "mode_displayed".
+#pragma weak unshowmode
 void unshowmode(bool force)
 {
   // Don't delete it right now, when not redrawing or inside a mapping.
@@ -1103,6 +1112,7 @@ void unshowmode(bool force)
 }
 
 // Clear the mode message.
+#pragma weak clearmode
 void clearmode(void)
 {
   const int save_msg_row = msg_row;
@@ -1138,6 +1148,7 @@ static void recording_mode(int hl_id)
 /// decide what the maximum length of a message on the status line can be.
 /// If there is a status line for the last window, 'sc_col' is independent
 /// of 'ru_col'.
+#pragma weak comp_col
 void comp_col(void)
 {
   bool last_has_status = last_stl_height(false) > 0;
@@ -2503,6 +2514,7 @@ redr_statuscol:
 ///
 /// Positive `line_count` means scrolling down, so that more space is available
 /// at 'row'. Negative `line_count` implies deleting lines at `row`.
+#pragma weak win_scroll_lines
 void win_scroll_lines(win_T *wp, int row, int line_count)
 {
   if (!redrawing() || line_count == 0) {
@@ -2534,6 +2546,7 @@ void win_scroll_lines(win_T *wp, int row, int line_count)
 
 /// Clear lines near the end of the window and mark the unused lines with "c1".
 /// When "draw_margin" is true, then draw the sign/fold/number columns.
+#pragma weak win_draw_end
 void win_draw_end(win_T *wp, schar_T c1, bool draw_margin, int startrow, int endrow, hlf_T hl)
 {
   assert(hl >= 0 && hl < HLF_COUNT);
@@ -2584,6 +2597,7 @@ void win_draw_end(win_T *wp, schar_T c1, bool draw_margin, int startrow, int end
 
 /// Compute the width of the foldcolumn.  Based on 'foldcolumn' and how much
 /// space is available for window "wp", minus "col".
+#pragma weak compute_foldcolumn
 int compute_foldcolumn(win_T *wp, int col)
 {
   int fdc = win_fdccol_count(wp);
@@ -2596,6 +2610,7 @@ int compute_foldcolumn(win_T *wp, int col)
 /// Return the width of the 'number' and 'relativenumber' column.
 /// Caller may need to check if 'number' or 'relativenumber' is set.
 /// Otherwise it depends on 'numberwidth' and the line count.
+#pragma weak number_width
 int number_width(win_T *wp)
 {
   linenr_T lnum;

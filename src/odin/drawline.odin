@@ -2524,7 +2524,7 @@ win_line :: proc "c"(wp: rawptr, lnum: C.int, startrow: C.int, endrow: C.int, co
 
 				// Window too narrow: draw all "@" lines.
 				if wlv.col <= leftcols_width {
-					win_draw_end_r(wp, 64, true, wlv.row, // '@'
+					win_draw_end(wp, 64, true, wlv.row, // '@'
 						(^C.int)(uintptr(wp) + W_VIEW_HEIGHT_OFF)^, HLF_AT_O)
 					set_empty_rows_r(wp, wlv.row)
 					wlv.row = endrow
@@ -2687,7 +2687,7 @@ draw_statuscol_o :: proc "c"(wp: rawptr, wlv: ^WinLineVars, col_rows: C.int, stc
 			nw: C.int = 0
 			if (^C.int)(uintptr(wp) + W_P_NU_OFF)^ != 0 ||
 				(^C.int)(uintptr(wp) + W_P_RNU_OFF)^ != 0 {
-				nw = number_width_r(wp)
+				nw = number_width(wp)
 			}
 			(^C.int)(uintptr(wp) + W_NRWIDTH_VAL_OFF)^ = nw
 		} else { // avoid truncating 'statuscolumn'
@@ -3562,8 +3562,6 @@ foreign _ {
 
 HLF_CUC_O :: 55
 foreign _ {
-	@(link_name = "win_draw_end")
-	win_draw_end_r :: proc "c"(wp: rawptr, c1: u32, draw_margin: bool, startrow: C.int, endrow: C.int, hl: C.int) ---
 	@(link_name = "set_empty_rows")
 	set_empty_rows_r :: proc "c"(wp: rawptr, used: C.int) ---
 }
@@ -3706,7 +3704,7 @@ draw_sign_o :: proc "c"(nrcol: bool, wp: rawptr, wlv: ^WinLineVars, sign_idx: C.
 	if sattr.text[0] != 0 && wlv.row == wlv.startrow + wlv.filler_lines && wlv.filler_todo <= 0 {
 		fill: C.int = SIGN_WIDTH_O
 		if nrcol {
-			fill = number_width_r(wp) + 1
+			fill = number_width(wp) + 1
 		}
 		attr: C.int = 0
 		if wlv.sign_cul_attr != 0 {
@@ -3749,7 +3747,7 @@ get_line_number_str_o :: proc "c"(wp: rawptr, lnum: C.int, buf: ^u8, buf_len: C.
 		}
 	}
 
-	libc.snprintf(buf, buf_len, fmt, number_width_r(wp), num)
+	libc.snprintf(buf, buf_len, fmt, number_width(wp), num)
 }
 
 // True when CursorLineNr applies to the number column (plain, C-static).
@@ -3815,7 +3813,7 @@ draw_lnum_col_o :: proc "c"(wp: rawptr, wlv: ^WinLineVars) {
 			draw_sign_o(true, wp, wlv, 0)
 		} else {
 			// Line number (blank space after wrapping).
-			width := number_width_r(wp) + 1
+			width := number_width(wp) + 1
 			attr := get_line_number_attr_o(wp, wlv)
 			if wlv.row == wlv.startrow + wlv.filler_lines &&
 				((^C.int)(uintptr(wp) + W_SKIPCOL_OFF)^ == 0 || wlv.row > 0 ||
@@ -3851,8 +3849,6 @@ HLF_FC_O :: 29
 foreign _ {
 	@(link_name = "ns_hl_fast")
 	ns_hl_fast_g: C.int
-	@(link_name = "compute_foldcolumn")
-	compute_foldcolumn_r :: proc "c"(wp: rawptr, col: C.int) -> C.int ---
 }
 
 // Window highlight attribute (highlight.h:116 static inline).
@@ -3867,7 +3863,7 @@ win_hl_attr_o :: proc "c"(wp: rawptr, hlf: C.int) -> C.int {
 
 // Setup for drawing the 'foldcolumn', if there is one (plain, C-static).
 draw_foldcolumn_o :: proc "c"(wp: rawptr, wlv: ^WinLineVars) {
-	fdc := compute_foldcolumn_r(wp, 0)
+	fdc := compute_foldcolumn(wp, 0)
 	if fdc > 0 {
 		attr := win_hl_attr_o(wp,
 			use_cursor_line_highlight(wp, wlv.lnum) ? HLF_CLF_O : HLF_FC_O)
