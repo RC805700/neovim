@@ -22,6 +22,18 @@ typedef enum {
 
 #include "eval/list.c.generated.h"
 
+#pragma weak f_add
+#pragma weak f_reverse
+#pragma weak f_count
+#pragma weak f_filter
+#pragma weak f_map
+#pragma weak f_mapnew
+#pragma weak f_foreach
+#pragma weak f_extend
+#pragma weak f_extendnew
+#pragma weak f_insert
+#pragma weak f_remove
+
 static const char e_argument_of_str_must_be_list_string_or_dictionary[]
   = N_("E706: Argument of %s must be a List, String or Dictionary");
 static const char e_argument_of_str_must_be_list_string_dictionary_or_blob[]

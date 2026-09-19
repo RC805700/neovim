@@ -15,6 +15,8 @@
 
 #include "eval/executor.c.generated.h"
 
+#pragma weak eexe_mod_op
+
 /// Handle "blob1 += blob2".
 /// Returns OK or FAIL.
 static int tv_op_blob(typval_T *tv1, const typval_T *tv2, const char *op)

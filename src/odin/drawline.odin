@@ -203,6 +203,17 @@ utf_ptr2StrCharInfo_o :: proc "c"(ptr: ^u8) -> StrCharInfo_O {
 	return StrCharInfo_O{ptr = ptr, chr = utf_ptr2CharInfo_o(ptr)}
 }
 
+// mbyte.h:93 static inline utfc_next (ASCII-guarded wrapper around the impl).
+// CALL THIS, never utfc_next_impl_r directly: the impl asserts *next >= 0x80.
+utfc_next_o :: proc "c" (cur: StrCharInfo_O) -> StrCharInfo_O {
+	nextp := (^u8)(uintptr(cur.ptr) + uintptr(cur.chr.len))
+	next := nextp^
+	if next < 0x80 {
+		return StrCharInfo_O{ptr = nextp, chr = CharInfo_O{value = C.int32_t(next), len = 1}}
+	}
+	return utfc_next_impl_r(cur)
+}
+
 // plines.h:51 static inline dispatcher.
 win_charsize_o :: proc "c"(cstype: bool, vcol: C.int, ptr: ^u8, chr: C.int32_t, csarg: ^CharsizeArg_O) -> CharSize_O {
 	if cstype == K_CHARSIZE_FAST_O {
@@ -849,7 +860,7 @@ win_line :: proc "c"(wp: rawptr, lnum: C.int, startrow: C.int, endrow: C.int, co
 			if ([^]u8)(prev_ptr)[0] == 0 { // NUL
 				break
 			}
-			ci = utfc_next_impl_r(ci)
+			ci = utfc_next_o(ci)
 			if (^C.int)(uintptr(wp) + W_P_LIST_OFF)^ != 0 {
 				prev_space := ([^]u8)(prev_ptr)[0] == ' '
 				next_space := ([^]u8)(ci.ptr)[0] == ' '

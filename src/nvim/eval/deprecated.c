@@ -16,6 +16,11 @@
 
 #include "eval/deprecated.c.generated.h"  // IWYU pragma: keep
 
+#pragma weak f_rpcstart
+#pragma weak f_rpcstop
+#pragma weak f_last_buffer_nr
+#pragma weak f_termopen
+
 /// "rpcstart()" function (DEPRECATED)
 void f_rpcstart(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 {

@@ -7658,6 +7658,11 @@ WCFG_BUFPOS_COL_OFF :: 8
 WCFG_ROW_OFF :: 24
 WCFG_COL_OFF :: 32
 WCFG_ANCHOR_OFF :: 40
+// WinConfig-relative (wcfg base): relative@44, bufpos.lnum@4 (cc-probed).
+// (WCFG_RELATIVE_OFF=10604 and WCFG_BUFPOS_LNUM_OFF=10564 are win_T-ABSOLUTE
+// for wp-based walks — NEVER add them to a wcfg base.)
+WCFG_REL_RELATIVE_OFF :: 44
+WCFG_REL_BUFPOS_LNUM_OFF :: 4
 WCFG_FIXED_OFF :: 469
 WCFG_MOUSE_OFF2 :: 50
 WCFG_ZINDEX_OFF2 :: 56
@@ -7718,7 +7723,7 @@ ui_ext_win_position :: proc "c"(wp: rawptr, validate: bool) {
 		grid := transmute(rawptr)(&default_grid_u8)
 		row := (^f64)(wcfg + WCFG_ROW_OFF)^
 		col := (^f64)(wcfg + WCFG_COL_OFF)^
-		if (^C.int)(wcfg + WCFG_RELATIVE_OFF)^ == KFLOAT_REL_WINDOW_O {
+		if (^C.int)(wcfg + WCFG_REL_RELATIVE_OFF)^ == KFLOAT_REL_WINDOW_O {
 			dummy: Api_Error = {typ = -1, msg = nil}
 			win := find_window_by_handle_r((^C.int)(wcfg + WCFG_WINDOW_OFF)^,
 				transmute(rawptr)(&dummy))
@@ -7737,8 +7742,8 @@ ui_ext_win_position :: proc "c"(wp: rawptr, validate: bool) {
 					&row_off, &col_off)
 				row += f64(row_off)
 				col += f64(col_off)
-				if (^C.int)(wcfg + WCFG_BUFPOS_LNUM_OFF)^ >= 0 {
-					lnum := min((^C.int)(wcfg + WCFG_BUFPOS_LNUM_OFF)^ + 1,
+				if (^C.int)(wcfg + WCFG_REL_BUFPOS_LNUM_OFF)^ >= 0 {
+					lnum := min((^C.int)(wcfg + WCFG_REL_BUFPOS_LNUM_OFF)^ + 1,
 						(^C.int)(uintptr((^rawptr)(uintptr(win) + W_BUFFER_OFF)^) + B_ML_LINE_COUNT_OFF)^)
 					pos := Pos_T{lnum, (^C.int)(wcfg + WCFG_BUFPOS_COL_OFF)^, 0}
 					trow, tcol, tcolc, tcole: C.int
@@ -7747,9 +7752,9 @@ ui_ext_win_position :: proc "c"(wp: rawptr, validate: bool) {
 					col += f64(tcol - 1)
 				}
 			}
-		} else if (^C.int)(wcfg + WCFG_RELATIVE_OFF)^ == KFLOAT_REL_LASTSTATUS_O {
+		} else if (^C.int)(wcfg + WCFG_REL_RELATIVE_OFF)^ == KFLOAT_REL_LASTSTATUS_O {
 			row += f64(Rows - C.int(p_ch) - last_stl_height(false))
-		} else if (^C.int)(wcfg + WCFG_RELATIVE_OFF)^ == KFLOAT_REL_TABLINE_O {
+		} else if (^C.int)(wcfg + WCFG_REL_RELATIVE_OFF)^ == KFLOAT_REL_TABLINE_O {
 			row += f64(tabline_height())
 		}
 		resort := (^C.size_t)(wgrid + GRID_COMP_INDEX_OFF)^ != 0 &&
