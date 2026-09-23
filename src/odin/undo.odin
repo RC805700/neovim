@@ -254,10 +254,6 @@ foreign _ {
 	FullName_save_r :: proc "c" (fname: cstring, force: bool) -> ^u8 ---
 	@(link_name = "get_buf_arg")
 	get_buf_arg_r :: proc "c" (arg: ^Typval) -> rawptr ---
-	@(link_name = "tv_dict_alloc_ret")
-	tv_dict_alloc_ret_r :: proc "c" (ret_tv: ^Typval) ---
-	@(link_name = "tv_get_string")
-	tv_get_string_r :: proc "c" (tv: ^Typval) -> ^u8 ---
 	@(link_name = "file_ff_differs")
 	file_ff_differs_r :: proc "c" (buf: rawptr, ignore_empty: bool) -> bool ---
 	@(link_name = "extmark_apply_undo")
@@ -2913,24 +2909,24 @@ u_eval_tree :: proc "c" (buf: rawptr, first_uhp: ^U_Header_T) -> rawptr {
 
 	uhp := first_uhp
 	for uhp != nil {
-		dict := tv_dict_alloc_m()
-		tv_dict_add_nr_m(dict, cstring("seq"), 3, i64(uhp.uh_seq))
-		tv_dict_add_nr_m(dict, cstring("time"), 4, i64(uhp.uh_time))
+		dict := tv_dict_alloc()
+		tv_dict_add_nr(dict, cstring("seq"), 3, C.longlong(uhp.uh_seq))
+		tv_dict_add_nr(dict, cstring("time"), 4, C.longlong(uhp.uh_time))
 		if uhp == buf_newhead(buf) {
-			tv_dict_add_nr_m(dict, cstring("newhead"), 7, 1)
+			tv_dict_add_nr(dict, cstring("newhead"), 7, 1)
 		}
 		if uhp == buf_curhead(buf) {
-			tv_dict_add_nr_m(dict, cstring("curhead"), 7, 1)
+			tv_dict_add_nr(dict, cstring("curhead"), 7, 1)
 		}
 		if uhp.uh_save_nr > 0 {
-			tv_dict_add_nr_m(dict, cstring("save"), 4, i64(uhp.uh_save_nr))
+			tv_dict_add_nr(dict, cstring("save"), 4, C.longlong(uhp.uh_save_nr))
 		}
 
 		if uh_alt_next_ptr(uhp) != nil {
-			tv_dict_add_list_m(dict, cstring("alt"), 3, u_eval_tree(buf, uh_alt_next_ptr(uhp)))
+			tv_dict_add_list(dict, cstring("alt"), 3, u_eval_tree(buf, uh_alt_next_ptr(uhp)))
 		}
 
-		tv_list_append_dict_m(list, dict)
+		tv_list_append_dict(list, dict)
 		uhp = uh_prev_ptr(uhp)
 	}
 
@@ -2942,12 +2938,12 @@ u_eval_tree :: proc "c" (buf: rawptr, first_uhp: ^U_Header_T) -> rawptr {
 f_undofile :: proc "c" (argvars: ^Typval, rettv: ^Typval, fptr: rawptr) {
 	rettv.v_type = VAR_STRING_U
 	(^rawptr)(uintptr(rettv) + 8)^ = nil
-	fname := tv_get_string_r(&([^]Typval)(argvars)[0])
+	fname := tv_get_string(transmute(^Typval_T)(&([^]Typval)(argvars)[0]))
 
-	if fname^ == 0 {
+	if ([^]u8)(fname)[0] == 0 {
 		return
 	}
-	ffname := FullName_save_r(transmute(cstring)(fname), true)
+	ffname := FullName_save_r(fname, true)
 	if ffname != nil {
 		(^rawptr)(uintptr(rettv) + 8)^ = u_get_undo_file_name(transmute(cstring)(ffname), false)
 	}
@@ -2959,7 +2955,7 @@ VAR_STRING_U :: 2 // typval_T VAR_STRING
 /// "undotree()" function
 @(export)
 f_undotree :: proc "c" (argvars: ^Typval, rettv: ^Typval, fptr: rawptr) {
-	tv_dict_alloc_ret_r(rettv)
+	tv_dict_alloc_ret(transmute(^Typval_T)(rettv))
 
 	tv := &([^]Typval)(argvars)[0]
 	buf := tv.v_type == VAR_UNKNOWN_U ? curbuf : get_buf_arg_r(tv)
@@ -2969,14 +2965,14 @@ f_undotree :: proc "c" (argvars: ^Typval, rettv: ^Typval, fptr: rawptr) {
 
 	dict := (^rawptr)(uintptr(rettv) + 8)^
 
-	tv_dict_add_nr_m(dict, cstring("synced"), 6, i64(buf_bool_at(buf, B_U_SYNCED)))
-	tv_dict_add_nr_m(dict, cstring("seq_last"), 8, i64(buf_i32_at(buf, B_U_SEQ_LAST)))
-	tv_dict_add_nr_m(dict, cstring("save_last"), 9, i64(buf_i32_at(buf, B_U_SAVE_NR_LAST)))
-	tv_dict_add_nr_m(dict, cstring("seq_cur"), 7, i64(buf_i32_at(buf, B_U_SEQ_CUR)))
-	tv_dict_add_nr_m(dict, cstring("time_cur"), 8, buf_i64_at(buf, B_U_TIME_CUR))
-	tv_dict_add_nr_m(dict, cstring("save_cur"), 8, i64(buf_i32_at(buf, B_U_SAVE_NR_CUR)))
+	tv_dict_add_nr(dict, cstring("synced"), 6, C.longlong(buf_bool_at(buf, B_U_SYNCED)))
+	tv_dict_add_nr(dict, cstring("seq_last"), 8, C.longlong(buf_i32_at(buf, B_U_SEQ_LAST)))
+	tv_dict_add_nr(dict, cstring("save_last"), 9, C.longlong(buf_i32_at(buf, B_U_SAVE_NR_LAST)))
+	tv_dict_add_nr(dict, cstring("seq_cur"), 7, C.longlong(buf_i32_at(buf, B_U_SEQ_CUR)))
+	tv_dict_add_nr(dict, cstring("time_cur"), 8, C.longlong(buf_i64_at(buf, B_U_TIME_CUR)))
+	tv_dict_add_nr(dict, cstring("save_cur"), 8, C.longlong(buf_i32_at(buf, B_U_SAVE_NR_CUR)))
 
-	tv_dict_add_list_m(dict, cstring("entries"), 7, u_eval_tree(buf, buf_oldhead(buf)))
+	tv_dict_add_list(dict, cstring("entries"), 7, u_eval_tree(buf, buf_oldhead(buf)))
 }
 
 VAR_UNKNOWN_U :: 0

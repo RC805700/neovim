@@ -44,6 +44,14 @@ const char *const encode_special_var_names[] = {
 
 #include "eval/encode.c.generated.h"
 
+#pragma weak encode_blob_write
+#pragma weak encode_list_write
+#pragma weak encode_vim_list_to_buf
+#pragma weak encode_read_from_list
+#pragma weak encode_init_lrstate
+#pragma weak encode_check_json_key
+#pragma weak encode_tv2echo
+
 /// Msgpack callback for writing to a Blob
 int encode_blob_write(void *const data, const char *const buf, const size_t len)
   FUNC_ATTR_NONNULL_ARG(1)
@@ -1061,4 +1069,10 @@ ListReaderState encode_init_lrstate(const list_T *const list)
                   ? 0
                   : strlen(TV_LIST_ITEM_TV(tv_list_first(list))->vval.v_string)),
   };
+}
+
+// Shim for Odin: reset encode.c's file-static error flag.
+void nvim_odin_reset_echo_emsg(void)
+{
+  did_echo_string_emsg = false;
 }

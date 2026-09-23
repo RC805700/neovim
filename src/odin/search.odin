@@ -2876,8 +2876,6 @@ w_p_siso_set :: proc "c"(wp: rawptr, v: C.longlong) {
 foreign _ {
 	@(link_name = "tv_dict_find")
 	tv_dict_find_r :: proc "c" (d: rawptr, key: cstring, len: C.ssize_t) -> rawptr ---
-	@(link_name = "tv_get_number_chk")
-	tv_get_number_chk_r :: proc "c" (arg: ^Typval, err: ^bool) -> C.longlong ---
 	// tv_list_len is a C static inline — see tv_list_len_i below.
 }
 
@@ -2895,7 +2893,7 @@ tv_vval_dict :: proc "c"(tv: ^Typval) -> rawptr {
 VAR_LIST_S :: 4 // VAR_LIST in typval enum
 
 tv_get_string_chk_r :: proc "c"(arg: ^Typval) -> ^u8 {
-	return tv_get_string_chk_r2(arg)
+	return transmute(^u8)(tv_get_string_chk(transmute(^Typval_T)(arg)))
 }
 tv_v_list_ptr :: proc "c"(tv: ^Typval) -> rawptr {
 	return (^rawptr)(uintptr(tv) + 8)^
@@ -2910,7 +2908,7 @@ f_searchcount :: proc "c"(argvars: ^Typval, rettv: ^Typval, fptr: rawptr) {
 	recompute := true
 	stat: searchstat_T
 
-	tv_dict_alloc_ret_r(rettv)
+	tv_dict_alloc_ret(transmute(^Typval_T)(rettv))
 
 	if shortmess(SHM_SEARCHCOUNT) {
 		recompute = true
@@ -2919,27 +2917,27 @@ f_searchcount :: proc "c"(argvars: ^Typval, rettv: ^Typval, fptr: rawptr) {
 	if ([^]Typval)(argvars)[0].v_type != VAR_UNKNOWN {
 		err := false
 
-		if tv_check_nonnull_dict_arg(argvars, 0) == 0 {
+		if tv_check_for_nonnull_dict_arg(transmute(^Typval_T)(argvars), 0) == 0 {
 			return
 		}
 		dict := tv_vval_dict(&([^]Typval)(argvars)[0])
 		di := tv_dict_find_r(dict, "timeout", -C.ssize_t(1))
 		if di != nil {
-			timeout = C.int(tv_get_number_chk_r(di_tv_of(di), &err))
+			timeout = C.int(tv_get_number_chk(transmute(^Typval_T)(di_tv_of(di)), &err))
 			if err {
 				return
 			}
 		}
 		di = tv_dict_find_r(dict, "maxcount", -C.ssize_t(1))
 		if di != nil {
-			maxcount = C.int(tv_get_number_chk_r(di_tv_of(di), &err))
+			maxcount = C.int(tv_get_number_chk(transmute(^Typval_T)(di_tv_of(di)), &err))
 			if err {
 				return
 			}
 		}
 		di = tv_dict_find_r(dict, "recompute", -C.ssize_t(1))
 		if di != nil {
-			recompute = tv_get_number_chk_r(di_tv_of(di), &err) != 0
+			recompute = tv_get_number_chk(transmute(^Typval_T)(di_tv_of(di)), &err) != 0
 			if err {
 				return
 			}
@@ -2965,21 +2963,21 @@ f_searchcount :: proc "c"(argvars: ^Typval, rettv: ^Typval, fptr: rawptr) {
 			}
 			li := tv_list_find(l, 0)
 			if li != nil {
-				pos.lnum = C.int(tv_get_number_chk_r(li_tv_of(li), &err))
+				pos.lnum = C.int(tv_get_number_chk(transmute(^Typval_T)(li_tv_of(li)), &err))
 				if err {
 					return
 				}
 			}
 			li = tv_list_find(l, 1)
 			if li != nil {
-				pos.col = C.int(tv_get_number_chk_r(li_tv_of(li), &err)) - 1
+				pos.col = C.int(tv_get_number_chk(transmute(^Typval_T)(li_tv_of(li)), &err)) - 1
 				if err {
 					return
 				}
 			}
 			li = tv_list_find(l, 2)
 			if li != nil {
-				pos.coladd = C.int(tv_get_number_chk_r(li_tv_of(li), &err))
+				pos.coladd = C.int(tv_get_number_chk(transmute(^Typval_T)(li_tv_of(li)), &err))
 				if err {
 					return
 				}
@@ -3007,11 +3005,11 @@ f_searchcount :: proc "c"(argvars: ^Typval, rettv: ^Typval, fptr: rawptr) {
 
 	update_search_stat(0, &pos, &pos, &stat, recompute, maxcount, timeout)
 
-	tv_dict_add_nr_m(tv_vval_dict(rettv), cstring("current"), 8, i64(stat.cur))
-	tv_dict_add_nr_m(tv_vval_dict(rettv), cstring("total"), 5, i64(stat.cnt))
-	tv_dict_add_nr_m(tv_vval_dict(rettv), cstring("exact_match"), 12, i64(bool_int(stat.exact_match)))
-	tv_dict_add_nr_m(tv_vval_dict(rettv), cstring("incomplete"), 10, i64(stat.incomplete))
-	tv_dict_add_nr_m(tv_vval_dict(rettv), cstring("maxcount"), 8, i64(stat.last_maxcount))
+	tv_dict_add_nr(tv_vval_dict(rettv), cstring("current"), 8, C.longlong(stat.cur))
+	tv_dict_add_nr(tv_vval_dict(rettv), cstring("total"), 5, C.longlong(stat.cnt))
+	tv_dict_add_nr(tv_vval_dict(rettv), cstring("exact_match"), 12, C.longlong(bool_int(stat.exact_match)))
+	tv_dict_add_nr(tv_vval_dict(rettv), cstring("incomplete"), 10, C.longlong(stat.incomplete))
+	tv_dict_add_nr(tv_vval_dict(rettv), cstring("maxcount"), 8, C.longlong(stat.last_maxcount))
 
 	restore_last_search_pattern()
 	restore_incsearch_state()
@@ -3019,13 +3017,6 @@ f_searchcount :: proc "c"(argvars: ^Typval, rettv: ^Typval, fptr: rawptr) {
 
 bool_int :: proc "c"(b: bool) -> C.int {
 	return b ? 1 : 0
-}
-
-foreign _ {
-	@(link_name = "tv_check_for_nonnull_dict_arg")
-	tv_check_nonnull_dict_arg :: proc "c" (argvars: ^Typval, idx: C.int) -> C.int ---
-	@(link_name = "tv_get_string_chk")
-	tv_get_string_chk_r2 :: proc "c" (arg: ^Typval) -> ^u8 ---
 }
 
 // ── find_pattern_in_path ([i, [d, [I, i_CTRL-X_CTRL-[ etc.) ─────────────────

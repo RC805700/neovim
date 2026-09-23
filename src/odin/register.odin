@@ -384,14 +384,6 @@ foreign _ {
 	get_v_event_r :: proc "c" (sve: rawptr) -> rawptr ---
 	@(link_name = "restore_v_event")
 	restore_v_event_r :: proc "c" (v_event: rawptr, sve: rawptr) ---
-	@(link_name = "tv_dict_set_keys_readonly")
-	tv_dict_set_keys_readonly_r :: proc "c" (dict: rawptr) ---
-	@(link_name = "tv_dict_add_bool")
-	tv_dict_add_bool_r :: proc "c" (d: rawptr, key: cstring, key_len: C.size_t, val: C.int) -> C.int ---
-	@(link_name = "tv_list_append_allocated_string")
-	tv_list_append_allocated_string_r :: proc "c" (l: rawptr, str: ^u8) ---
-	@(link_name = "tv_dict_add_str_len")
-	tv_dict_add_str_len_r2 :: proc "c" (d: rawptr, key: cstring, key_len: C.size_t, val: cstring, len: C.int) -> C.int ---
 	@(link_name = "get_op_char")
 	get_op_char_r :: proc "c" (optype: C.int) -> C.int ---
 
@@ -836,14 +828,14 @@ do_record :: proc "c" (c: C.int) -> C.int {
 		if p != nil {
 			// Remove escaping for K_SPECIAL in multi-byte chars.
 			vim_unescape_ks_r(p)
-			tv_dict_add_str_m(dict, cstring("regcontents"), 11, transmute(cstring)(p))
+			tv_dict_add_str(dict, cstring("regcontents"), 11, transmute(cstring)(p))
 		}
 
 		buf: [NUMBUFLEN + 2]u8
 		buf[0] = u8(do_record_regname)
 		buf[1] = 0
-		tv_dict_add_str_m(dict, cstring("regname"), 7, transmute(cstring)(&buf[0]))
-		tv_dict_set_keys_readonly_r(dict)
+		tv_dict_add_str(dict, cstring("regname"), 7, transmute(cstring)(&buf[0]))
+		tv_dict_set_keys_readonly(dict)
 
 		_ = apply_autocmds(EVENT_RECORDINGLEAVE, nil, nil, false, curbuf)
 		restore_v_event_r(dict, &sve)
@@ -1513,7 +1505,7 @@ add_regtype_to_dict :: proc "c"(reg: ^Yankreg_T, dict: rawptr, buf: ^u8, bufsize
 	// "reg" is NULL when pasting a special register, which is charwise.
 	len := format_reg_type(reg != nil ? reg.y_type : kMTCharWise,
 		reg != nil ? reg.y_width : 0, buf, bufsize)
-	tv_dict_add_str_len_r2(dict, cstring("regtype"), 7, transmute(cstring)(buf), C.int(len))
+	tv_dict_add_str_len(dict, cstring("regtype"), 7, transmute(cstring)(buf), C.int(len))
 }
 
 /// Execute autocommands for TextYankPost.
@@ -1534,7 +1526,7 @@ do_autocmd_textyankpost :: proc "c" (oap: rawptr, reg: ^Yankreg_T) {
 		tv_list_append_string(list, reg.y_array[i].data, C.ssize_t(reg.y_array[i].size))
 	}
 	(^C.int)(uintptr(list) + 72)^ = VAR_FIXED_VAL
-	tv_dict_add_list_m(dict, cstring("regcontents"), 11, list)
+	tv_dict_add_list(dict, cstring("regcontents"), 11, list)
 
 	// Register type.
 	buf: [NUMBUFLEN + 2]u8
@@ -1543,22 +1535,22 @@ do_autocmd_textyankpost :: proc "c" (oap: rawptr, reg: ^Yankreg_T) {
 	// Name of requested register, or empty string for unnamed operation.
 	buf[0] = u8(oap_get_i32(oap, OAP_REGNAME))
 	buf[1] = 0
-	tv_dict_add_str_m(dict, cstring("regname"), 7, transmute(cstring)(&buf[0]))
+	tv_dict_add_str(dict, cstring("regname"), 7, transmute(cstring)(&buf[0]))
 
 	// Motion type: inclusive or exclusive.
-	tv_dict_add_bool_r(dict, cstring("inclusive"), 9,
+	tv_dict_add_bool(dict, cstring("inclusive"), 9,
 		oap_get_bool(oap, OAP_INCLUSIVE) ? kBoolVarTrue : kBoolVarFalse)
 
 	// Kind of operation: yank, delete, change).
 	buf[0] = u8(get_op_char_r(oap_get_i32(oap, OAP_OP_TYPE)))
 	buf[1] = 0
-	tv_dict_add_str_m(dict, cstring("operator"), 8, transmute(cstring)(&buf[0]))
+	tv_dict_add_str(dict, cstring("operator"), 8, transmute(cstring)(&buf[0]))
 
 	// Selection type: visual or not.
-	tv_dict_add_bool_r(dict, cstring("visual"), 6,
+	tv_dict_add_bool(dict, cstring("visual"), 6,
 		oap_get_bool(oap, OAP_IS_VISUAL) ? kBoolVarTrue : kBoolVarFalse)
 
-	tv_dict_set_keys_readonly_r(dict)
+	tv_dict_set_keys_readonly(dict)
 	textlock += 1
 	_ = apply_autocmds(EVENT_TEXTYANKPOST, nil, nil, false, curbuf)
 	textlock -= 1
@@ -1599,7 +1591,7 @@ put_do_autocmd :: proc "c"(regname: C.int, reg: ^Yankreg_T, insert: ^Str16, post
 	}
 
 	(^C.int)(uintptr(list) + 72)^ = VAR_FIXED_VAL
-	tv_dict_add_list_m(v_event, cstring("regcontents"), 11, list)
+	tv_dict_add_list(v_event, cstring("regcontents"), 11, list)
 
 	buf: [NUMBUFLEN + 2]u8
 
@@ -1607,19 +1599,19 @@ put_do_autocmd :: proc "c"(regname: C.int, reg: ^Yankreg_T, insert: ^Str16, post
 	buf[0] = u8(regname)
 	buf[1] = 0
 	buflen: C.size_t = buf[0] == 0 ? 0 : 1
-	tv_dict_add_str_len_r2(v_event, cstring("regname"), 7, transmute(cstring)(&buf[0]), C.int(buflen))
+	tv_dict_add_str_len(v_event, cstring("regname"), 7, transmute(cstring)(&buf[0]), C.int(buflen))
 
 	// kind of operation (P, p)
 	buf[0] = dir == BACKWARD_DIR ? 'P' : 'p'
 	buf[1] = 0
-	tv_dict_add_str_len_r2(v_event, cstring("operator"), 8, transmute(cstring)(&buf[0]), 1)
+	tv_dict_add_str_len(v_event, cstring("operator"), 8, transmute(cstring)(&buf[0]), 1)
 
 	add_regtype_to_dict(reg, v_event, &buf[0], size_of(buf))
 
-	tv_dict_add_bool_r(v_event, cstring("visual"), 6, VIsual_active ? kBoolVarTrue : kBoolVarFalse)
+	tv_dict_add_bool(v_event, cstring("visual"), 6, VIsual_active ? kBoolVarTrue : kBoolVarFalse)
 
 	// Lock the dictionary and its keys
-	tv_dict_set_keys_readonly_r(v_event)
+	tv_dict_set_keys_readonly(v_event)
 
 	put_recursive = true
 	textlock += 1
@@ -2746,7 +2738,7 @@ get_reg_wrap_one_line :: proc "c"(s: ^u8, flags: C.int) -> rawptr {
 		return s
 	}
 	list := tv_list_alloc(1)
-	tv_list_append_allocated_string_r(list, s)
+	tv_list_append_allocated_string(list, s)
 	return list
 }
 

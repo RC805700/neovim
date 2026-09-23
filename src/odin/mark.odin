@@ -313,22 +313,8 @@ foreign _ {
 	has_event :: proc "c" (event: C.int) -> bool ---
 	aucmd_defer :: proc "c" (event: C.int, fname, fname_io: ^u8, group: C.int, buf, eap: rawptr, data: ^Api_Object) ---
 
-	@(link_name = "tv_dict_alloc")
-	tv_dict_alloc_m :: proc "c" () -> rawptr ---
 	@(link_name = "tv_dict_free")
 	tv_dict_free_m :: proc "c" (d: rawptr) ---
-	@(link_name = "tv_list_append_dict")
-	tv_list_append_dict_m :: proc "c" (l, dict: rawptr) ---
-	@(link_name = "tv_list_append_number")
-	tv_list_append_number_m :: proc "c" (l: rawptr, n: i64) ---
-	@(link_name = "tv_dict_add_nr")
-	tv_dict_add_nr_m :: proc "c" (d: rawptr, key: cstring, key_len: C.size_t, nr: i64) -> C.int ---
-	@(link_name = "tv_dict_add_str_len")
-	tv_dict_add_str_len_m :: proc "c" (d: rawptr, key: cstring, key_len: C.size_t, val: cstring, len: C.int) -> C.int ---
-	@(link_name = "tv_dict_add_str")
-	tv_dict_add_str_m :: proc "c" (d: rawptr, key: cstring, key_len: C.size_t, val: cstring) -> C.int ---
-	@(link_name = "tv_dict_add_list")
-	tv_dict_add_list_m :: proc "c" (d: rawptr, key: cstring, key_len: C.size_t, list: rawptr) -> C.int ---
 }
 
 // ── Small helpers ────────────────────────────────────────────────────────────
@@ -2107,17 +2093,17 @@ add_mark :: proc "c"(l: rawptr, mname: ^u8, mnamelen: C.size_t, pos: ^Pos_T, buf
 		return 1 // OK
 	}
 
-	d := tv_dict_alloc_m()
-	tv_list_append_dict_m(l, d)
+	d := tv_dict_alloc()
+	tv_list_append_dict(l, d)
 
 	lpos := tv_list_alloc(-3) // kListLenMayKnow
 
-	tv_list_append_number_m(lpos, i64(bufnr))
-	tv_list_append_number_m(lpos, i64(pos.lnum))
-	tv_list_append_number_m(lpos, i64(pos.col < MAXCOL ? pos.col + 1 : MAXCOL))
-	tv_list_append_number_m(lpos, i64(pos.coladd))
+	tv_list_append_number(lpos, C.longlong(bufnr))
+	tv_list_append_number(lpos, C.longlong(pos.lnum))
+	tv_list_append_number(lpos, C.longlong(pos.col < MAXCOL ? pos.col + 1 : MAXCOL))
+	tv_list_append_number(lpos, C.longlong(pos.coladd))
 
-	if tv_dict_add_str_len_m(d, cstring("mark"), 4, transmute(cstring)(mname), C.int(mnamelen)) == 0 || tv_dict_add_list_m(d, cstring("pos"), 3, lpos) == 0 || (fname != nil && tv_dict_add_str_m(d, cstring("file"), 4, transmute(cstring)(fname)) == 0) {
+	if tv_dict_add_str_len(d, cstring("mark"), 4, transmute(cstring)(mname), C.int(mnamelen)) == 0 || tv_dict_add_list(d, cstring("pos"), 3, lpos) == 0 || (fname != nil && tv_dict_add_str(d, cstring("file"), 4, transmute(cstring)(fname)) == 0) {
 		return 0 // FAIL
 	}
 

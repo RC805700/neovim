@@ -247,7 +247,6 @@ foreign nvim {
   get_vim_var_str :: proc(idx: c.int) -> cstring ---
   get_vim_var_list :: proc(idx: c.int) -> rawptr ---
   set_vim_var_list :: proc(idx: c.int, val: rawptr) ---
-  tv_list_alloc :: proc(n: c.ssize_t) -> rawptr ---
 
   // Startup helpers (do_autochdir now defined in buffer.odin — call directly).
   do_autocmd_uienter_all :: proc() ---

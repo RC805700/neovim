@@ -212,7 +212,7 @@ input_stop :: proc "c" () {
 
 // ── cursorhold ──
 @(private = "file")
-cursorhold_event :: proc(argv: ^rawptr) {
+cursorhold_event :: proc "c" (argv: ^rawptr) {
 	context = runtime.default_context()
 	event: c.int = (State & MODE_INSERT != 0) ? EVENT_CURSORHOLDI : EVENT_CURSORHOLD
 	_ = apply_autocmds(event, nil, nil, false, curbuf)
@@ -699,7 +699,7 @@ inbuf_poll :: proc "c" (ms: c.int, events: ^MultiQueue) -> TriState {
 }
 
 @(private = "file")
-input_read_cb :: proc(stream: ^RStream, buf: ^u8, count: c.size_t, data: rawptr, at_eof: bool) -> c.size_t {
+input_read_cb :: proc "c" (stream: ^RStream, buf: ^u8, count: c.size_t, data: rawptr, at_eof: bool) -> c.size_t {
 	context = runtime.default_context()
 	if at_eof {
 		input_eof = true

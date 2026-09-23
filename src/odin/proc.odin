@@ -6,6 +6,7 @@
 package main
 
 import "core:c"
+import "core:c/libc"
 import "base:runtime"
 
 // Signal numbers: SIGTERM/SIGHUP/SIGINT are in os_signal.odin; SIGKILL here.
@@ -48,13 +49,13 @@ loop_process_events_q :: proc "c" (loop: ^Loop, q: ^MultiQueue, ms: i64) {
 }
 
 // kvec helpers for Loop.children (Kvec_Proc_ptr).
-kv_children_size :: proc(loop: ^Loop) -> c.size_t {
+kv_children_size :: proc "c" (loop: ^Loop) -> c.size_t {
 	return loop.children.n
 }
-kv_children_at :: proc(loop: ^Loop, i: c.size_t) -> ^Proc {
+kv_children_at :: proc "c" (loop: ^Loop, i: c.size_t) -> ^Proc {
 	return (^Proc)(([^]rawptr)(loop.children.items)[i])
 }
-kv_children_push :: proc(loop: ^Loop, p: ^Proc) {
+kv_children_push :: proc "c" (loop: ^Loop, p: ^Proc) {
 	n := loop.children.n
 	// Grow if needed (items is a heap array of `Proc *`, sized `a`).
 	if n >= loop.children.a {
@@ -73,7 +74,7 @@ kv_children_push :: proc(loop: ^Loop, p: ^Proc) {
 	([^]rawptr)(loop.children.items)[n] = rawptr(p)
 	loop.children.n = n + 1
 }
-kv_children_remove_at :: proc(loop: ^Loop, i: c.size_t) {
+kv_children_remove_at :: proc "c" (loop: ^Loop, i: c.size_t) {
 	n := loop.children.n
 	if i < n - 1 {
 		copy(([^]rawptr)(loop.children.items)[i:n-1], ([^]rawptr)(loop.children.items)[i+1:n])
@@ -306,7 +307,7 @@ proc_free :: proc "c" (pr: ^Proc) {
 
 // Sends SIGKILL (or SIGTERM..SIGKILL for PTY jobs) to processes that did
 // not terminate after proc_stop().
-children_kill_cb :: proc(handle: ^uv_timer_t) {
+children_kill_cb :: proc "c" (handle: ^uv_timer_t) {
 	loop := (^Loop)(handle.loop.data)
 
 	for i := c.size_t(0); i < kv_children_size(loop); i += 1 {
@@ -328,7 +329,7 @@ children_kill_cb :: proc(handle: ^uv_timer_t) {
 	}
 }
 
-proc_close_event :: proc(argv: ^rawptr) {
+proc_close_event :: proc "c" (argv: ^rawptr) {
 	pr := (^Proc)(([^]rawptr)(argv)[0])
 	if pr.cb != nil {
 		// User (hint: channel_job_start) is responsible for calling proc_free().
@@ -338,7 +339,7 @@ proc_close_event :: proc(argv: ^rawptr) {
 	}
 }
 
-decref :: proc(pr: ^Proc) {
+decref :: proc "c" (pr: ^Proc) {
 	if pr.refcount -= 1; pr.refcount != 0 {
 		return
 	}
@@ -351,19 +352,23 @@ decref :: proc(pr: ^Proc) {
 			break
 		}
 	}
-	assert(i < kv_children_size(loop))  // element found
+	if i >= kv_children_size(loop) {  // element found
+		libc.abort()
+	}
 	kv_children_remove_at(loop, i)
 	e := event_create(proc_close_event, pr)
 	create_event(pr.events, e)
 }
 
-proc_close :: proc(pr: ^Proc) {
+proc_close :: proc "c" (pr: ^Proc) {
 	if proc_is_tearing_down && pr.closed && (pr.detach || pr.kind == ProcType.Pty) {
 		// If a detached/pty process dies while tearing down it might get
 		// closed twice.
 		return
 	}
-	assert(!pr.closed)
+	if pr.closed {
+		libc.abort()
+	}
 	pr.closed = true
 
 	if pr.detach {
@@ -380,7 +385,7 @@ proc_close :: proc(pr: ^Proc) {
 }
 
 // Flush output stream.
-flush_stream :: proc(pr: ^Proc, stream: ^RStream) {
+flush_stream :: proc "c" (pr: ^Proc, stream: ^RStream) {
 	if stream == nil || stream.s.closed {
 		return
 	}
@@ -415,7 +420,7 @@ flush_stream :: proc(pr: ^Proc, stream: ^RStream) {
 	}
 }
 
-proc_close_handles :: proc(argv: ^rawptr) {
+proc_close_handles :: proc "c" (argv: ^rawptr) {
 	pr := (^Proc)(([^]rawptr)(argv)[0])
 
 	exit_need_delay += 1
@@ -427,7 +432,7 @@ proc_close_handles :: proc(argv: ^rawptr) {
 	exit_need_delay -= 1
 }
 
-exit_delay_cb :: proc(handle: ^uv_timer_t) {
+exit_delay_cb :: proc "c" (handle: ^uv_timer_t) {
 	uv_timer_stop(&main_loop.exit_delay_timer)
 	multiqueue_put_event(main_loop.fast_events, exit_event_event)
 }
@@ -435,7 +440,7 @@ exit_delay_cb :: proc(handle: ^uv_timer_t) {
 // Reusable exit_event Event for the fast_events queue.
 exit_event_event: Event
 
-exit_event :: proc(argv: ^rawptr) {
+exit_event :: proc "c" (argv: ^rawptr) {
 	status := c.int(uintptr(([^]rawptr)(argv)[0]))
 	if exit_need_delay != 0 {
 		exit_event_event = event_create(exit_event, rawptr(uintptr(status)))
@@ -449,7 +454,9 @@ exit_event :: proc(argv: ^rawptr) {
 			ui_client_exit_status = status
 			os_exit(status)
 		} else {
-			assert(status == 0)  // Called from rpc_close(), which passes 0.
+			if status != 0 {  // Called from rpc_close(), which passes 0.
+				libc.abort()
+			}
 			preserve_exit(nil)
 		}
 	}
@@ -463,7 +470,7 @@ exit_on_closed_chan :: proc "c" (status: c.int) {
 	multiqueue_put_event(main_loop.fast_events, e)
 }
 
-on_proc_exit :: proc(pr: ^Proc) {
+on_proc_exit :: proc "c" (pr: ^Proc) {
 	loop := pr.loop
 	// Process has terminated, but there could still be data to be read. Queue
 	// proc_close_handles as an event delayed after the libuv loop.
@@ -475,7 +482,7 @@ on_proc_exit :: proc(pr: ^Proc) {
 	create_event(queue, e)
 }
 
-on_proc_stream_close :: proc(stream: ^Stream, data: rawptr) {
+on_proc_stream_close :: proc "c" (stream: ^Stream, data: rawptr) {
 	pr := (^Proc)(data)
 	decref(pr)
 }

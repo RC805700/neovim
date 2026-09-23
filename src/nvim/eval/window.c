@@ -37,6 +37,47 @@
 
 #include "eval/window.c.generated.h"
 
+#pragma weak win_has_winnr
+#pragma weak win_id2wp
+#pragma weak win_id2wp_tp
+#pragma weak find_win_by_nr
+#pragma weak find_win_by_nr_or_id
+#pragma weak find_tabwin
+#pragma weak win_findbuf
+#pragma weak f_win_getid
+#pragma weak f_win_gotoid
+#pragma weak f_win_id2tabwin
+#pragma weak f_win_id2win
+#pragma weak f_winbufnr
+#pragma weak f_tabpagenr
+#pragma weak f_tabpagewinnr
+#pragma weak f_winnr
+#pragma weak f_winrestcmd
+#pragma weak f_winrestview
+#pragma weak f_winsaveview
+#pragma weak f_winlayout
+#pragma weak f_wincol
+#pragma weak f_winline
+#pragma weak f_winheight
+#pragma weak f_winwidth
+#pragma weak f_getwinpos
+#pragma weak f_getwinposx
+#pragma weak f_getwinposy
+#pragma weak f_gettabinfo
+#pragma weak f_getwininfo
+#pragma weak f_win_findbuf
+#pragma weak f_win_screenpos
+#pragma weak f_win_move_separator
+#pragma weak f_win_move_statusline
+#pragma weak f_win_gettype
+#pragma weak f_getcmdwintype
+#pragma weak f_win_splitmove
+#pragma weak win_execute_before
+#pragma weak win_execute_after
+#pragma weak f_win_execute
+#pragma weak switch_win
+#pragma weak restore_win
+
 static const char e_cannot_resize_window_in_another_tab_page[]
   = N_("E1308: Cannot resize a window in another tab page");
 

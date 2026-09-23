@@ -58,6 +58,76 @@
 
 #include "eval/userfunc.c.generated.h"
 
+#pragma weak deref_func_name
+#pragma weak emsg_funcname
+#pragma weak func_ref
+#pragma weak func_unref
+#pragma weak func_ptr_ref
+#pragma weak func_ptr_unref
+#pragma weak get_func_arity
+#pragma weak eval_fname_script
+#pragma weak translated_function_exists
+#pragma weak printable_func_name
+#pragma weak trans_function_name
+#pragma weak function_exists
+#pragma weak save_function_name
+#pragma weak get_scriptlocal_funcname
+#pragma weak get_user_func_name
+#pragma weak func_call
+#pragma weak callback_call_retnr
+#pragma weak call_func
+#pragma weak call_simple_func
+#pragma weak call_simple_luafunc
+#pragma weak ex_delfunction
+#pragma weak get_func_tv
+#pragma weak set_ref_in_func_args
+#pragma weak get_func_line
+#pragma weak func_has_ended
+#pragma weak func_has_abort
+#pragma weak call_user_func
+#pragma weak create_funccal
+#pragma weak remove_funccal
+#pragma weak save_funccal
+#pragma weak restore_funccal
+#pragma weak get_current_funccal
+#pragma weak set_current_funccal
+#pragma weak can_add_defer
+#pragma weak add_defer
+#pragma weak invoke_all_defer
+#pragma weak get_funccal
+#pragma weak get_funccal_local_dict
+#pragma weak get_funccal_local_ht
+#pragma weak get_funccal_local_var
+#pragma weak get_funccal_args_dict
+#pragma weak get_funccal_args_ht
+#pragma weak get_funccal_args_var
+#pragma weak list_func_vars
+#pragma weak get_current_funccal_dict
+#pragma weak find_hi_in_scoped_ht
+#pragma weak find_var_in_scoped_ht
+#pragma weak set_ref_in_previous_funccal
+#pragma weak set_ref_in_call_stack
+#pragma weak set_ref_in_functions
+#pragma weak set_ref_in_func
+#pragma weak func_init
+#pragma weak func_tbl_get
+#pragma weak find_func
+#pragma weak get_lambda_tv
+#pragma weak register_luafunc
+#pragma weak ex_call
+#pragma weak ex_function
+#pragma weak do_return
+#pragma weak get_return_cmd
+#pragma weak ex_return
+#pragma weak make_partial
+#pragma weak func_name
+#pragma weak func_breakpoint
+#pragma weak func_dbg_tick
+#pragma weak func_level
+#pragma weak current_func_returned
+#pragma weak free_unref_funccal
+
+
 /// structure used as item in "fc_defer"
 typedef struct {
   char *dr_name;  ///< function name, allocated
@@ -65,17 +135,21 @@ typedef struct {
   int dr_argcount;
 } defer_T;
 
-static hashtab_T func_hashtab;
+// Function name hashtable: moved to Odin (userfunc.odin func_hashtab).
+// C readers use the single Odin-owned copy.
+extern hashtab_T func_hashtab;
 
-// Used by get_func_tv()
-static garray_T funcargs = GA_EMPTY_INIT_VALUE;
+// Used by get_func_tv(): moved to Odin (userfunc.odin funcargs).
+// C weak copies below reference the single Odin-owned global.
+extern garray_T funcargs;
 
-// pointer to funccal for currently active function
-static funccall_T *current_funccal = NULL;
+// pointer to funccal for currently active function: moved to Odin
+// (userfunc.odin current_funccal). C readers use the single Odin copy.
+extern funccall_T *current_funccal;
 
-// Pointer to list of previously used funccal, still around because some
-// item in it is still being used.
-static funccall_T *previous_funccal = NULL;
+// Pointer to list of previously used funccal: moved to Odin
+// (userfunc.odin previous_funccal). C readers use the single Odin copy.
+extern funccall_T *previous_funccal;
 
 static const char *e_funcexts = N_("E122: Function %s already exists, add ! to replace it");
 static const char *e_funcdict = N_("E717: Dictionary entry already exists");
@@ -1428,7 +1502,8 @@ static int call_user_func_check(ufunc_T *fp, int argcount, typval_T *argvars, ty
   return error;
 }
 
-static funccal_entry_T *funccal_stack = NULL;
+// Moved to Odin (userfunc.odin funccal_stack). C readers use the single copy.
+extern funccal_entry_T *funccal_stack;
 
 /// Save the current function call pointer, and set it to NULL.
 /// Used when executing autocommands and for ":source".
@@ -4212,4 +4287,30 @@ char *register_luafunc(LuaRef ref)
 
   // coverity[leaked_storage]
   return fp->uf_name;
+}
+
+// Shim for Odin: reach C-static func_clear_free().
+void nvim_odin_func_clear_free(void *fp, bool force)
+{
+  func_clear_free(fp, force);
+}
+
+// Shim for Odin: script_items.ga_len for SCRIPT_ID_VALID().
+int nvim_odin_script_items_len(void)
+{
+  return script_items.ga_len;
+}
+
+// Shim for Odin: func_hashtab walk state for get_user_func_name().
+void nvim_odin_func_hashtab_state(const void **arr, size_t *used, int *changed)
+{
+  *arr = func_hashtab.ht_array;
+  *used = func_hashtab.ht_used;
+  *changed = func_hashtab.ht_changed;
+}
+
+// Shim for Odin: C-static func_remove().
+bool nvim_odin_func_remove(void *fp)
+{
+  return func_remove(fp);
 }

@@ -198,8 +198,6 @@ foreign _ {
 	put_line_r :: proc "c" (fd: ^libc.FILE, s: cstring) -> C.int ---
 	@(link_name = "put_eol")
 	put_eol_r :: proc "c" (fd: ^libc.FILE) -> C.int ---
-	@(link_name = "tv_get_lnum")
-	tv_get_lnum_r :: proc "c" (tv: ^Typval) -> C.int ---
 	@(link_name = "ga_grow")
 	ga_grow_r :: proc "c" (gap: ^Garray, n: C.int) ---
 	@(link_name = "ga_init")
@@ -2718,7 +2716,7 @@ put_fold_open_close :: proc "c" (fd: ^libc.FILE, fp: ^Fold_T, off: C.int) -> C.i
 // ── f_fold* functions ────────────────────────────────────────────────────────
 
 foldclosed_both :: proc "c" (argvars: ^Typval, rettv: ^Typval, end: bool) {
-	lnum := tv_get_lnum_r(argvars)
+	lnum := tv_get_lnum(transmute(^Typval_T)(argvars))
 	if lnum >= 1 && lnum <= ml_line_count_b(curbuf) {
 		first: C.int
 		last: C.int
@@ -2742,7 +2740,7 @@ f_foldclosedend :: proc "c" (argvars: ^Typval, rettv: ^Typval, fptr: rawptr) {
 
 @(export)
 f_foldlevel :: proc "c" (argvars: ^Typval, rettv: ^Typval, fptr: rawptr) {
-	lnum := tv_get_lnum_r(argvars)
+	lnum := tv_get_lnum(transmute(^Typval_T)(argvars))
 	if lnum >= 1 && lnum <= ml_line_count_b(curbuf) {
 		(^i64)(uintptr(rettv) + 8)^ = i64(foldLevel(lnum))
 	}
@@ -2805,7 +2803,7 @@ f_foldtextresult :: proc "c" (argvars: ^Typval, rettv: ^Typval, fptr: rawptr) {
 		return
 	}
 	ftres_entered = true
-	lnum := max(tv_get_lnum_r(argvars), 0)
+	lnum := max(tv_get_lnum(transmute(^Typval_T)(argvars)), 0)
 
 	info := fold_info(curwin, lnum)
 	if info.fi_lines > 0 {

@@ -92,37 +92,37 @@ SocketWatcher :: struct {
 
 // Callback typedefs (defs.h). These are type aliases, NOT foreign
 // procedure declarations.
-signal_cb :: proc(watcher: ^SignalWatcher, signum: c.int, data: rawptr)
-signal_close_cb :: proc(watcher: ^SignalWatcher, data: rawptr)
+signal_cb :: proc "c" (watcher: ^SignalWatcher, signum: c.int, data: rawptr)
+signal_close_cb :: proc "c" (watcher: ^SignalWatcher, data: rawptr)
 
-time_cb :: proc(watcher: ^TimeWatcher, data: rawptr)
+time_cb :: proc "c" (watcher: ^TimeWatcher, data: rawptr)
 
 wbuffer_data_finalizer :: proc(data: rawptr)
 
-stream_read_cb :: proc(stream: ^RStream, read_data: ^u8, count: c.size_t, data: rawptr, eof: bool) -> c.size_t
+stream_read_cb :: proc "c" (stream: ^RStream, read_data: ^u8, count: c.size_t, data: rawptr, eof: bool) -> c.size_t
 
-stream_write_cb :: proc(stream: ^Stream, data: rawptr, status: c.int)
+stream_write_cb :: proc "c" (stream: ^Stream, data: rawptr, status: c.int)
 
-stream_close_cb :: proc(stream: ^Stream, data: rawptr)
+stream_close_cb :: proc "c" (stream: ^Stream, data: rawptr)
 
-socket_cb :: proc(watcher: ^SocketWatcher, result: c.int, data: rawptr)
+socket_cb :: proc "c" (watcher: ^SocketWatcher, result: c.int, data: rawptr)
 
-socket_close_cb :: proc(watcher: ^SocketWatcher, data: rawptr)
+socket_close_cb :: proc "c" (watcher: ^SocketWatcher, data: rawptr)
 
-proc_exit_cb :: proc(p: ^Proc, status: c.int, data: rawptr)
+proc_exit_cb :: proc "c" (p: ^Proc, status: c.int, data: rawptr)
 
-proc_state_cb :: proc(p: ^Proc, suspended: bool, data: rawptr)
+proc_state_cb :: proc "c" (p: ^Proc, suspended: bool, data: rawptr)
 
-internal_proc_cb :: proc(p: ^Proc)
+internal_proc_cb :: proc "c" (p: ^Proc)
 
-argv_callback :: proc(argv: ^rawptr)
+argv_callback :: proc "c" (argv: ^rawptr)
 
 Event :: struct {
 	handler: argv_callback,
 	argv: [EVENT_HANDLER_MAX_ARGC]rawptr,
 }
 
-event_create :: proc(cb: argv_callback, args: ..rawptr) -> Event {
+event_create :: proc "c" (cb: argv_callback, args: ..rawptr) -> Event {
 	e: Event
 	e.handler = cb
 	for i in 0..<len(args) {

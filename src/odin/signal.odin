@@ -29,12 +29,12 @@ signal_watcher_close :: proc "c" (watcher: ^SignalWatcher, cb: signal_close_cb) 
 	uv_close((^uv_handle_t)(&watcher.uv), rawptr(close_cb))
 }
 
-signal_event :: proc(argv: ^rawptr) {
+signal_event :: proc "c" (argv: ^rawptr) {
 	watcher := (^SignalWatcher)(argv^)
 	watcher.cb(watcher, watcher.uv.signum, watcher.data)
 }
 
-signal_watcher_cb :: proc(handle: ^uv_signal_t, signum: c.int) {
+signal_watcher_cb :: proc "c" (handle: ^uv_signal_t, signum: c.int) {
 	watcher := (^SignalWatcher)(handle.data)
 	create_event(watcher.events, event_create(signal_event, watcher))
 }

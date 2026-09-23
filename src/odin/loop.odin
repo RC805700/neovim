@@ -103,7 +103,7 @@ loop_schedule_deferred :: proc "c" (loop: ^Loop, event: Event) {
 	loop_schedule_fast(loop, event_create(loop_deferred_event, loop, eventp))
 }
 
-loop_deferred_event :: proc(argv: ^rawptr) {
+loop_deferred_event :: proc "c" (argv: ^rawptr) {
 	loop := (^Loop)(argv^)
 	eventp := (^Event)((^rawptr)(rawptr(uintptr(argv) + size_of(rawptr)))^)
 	multiqueue_put_event(loop.events, eventp^)
@@ -118,7 +118,7 @@ loop_on_put :: proc(queue: ^MultiQueue, data: rawptr) {
 	}
 }
 
-loop_walk_cb :: proc(handle: ^uv_handle_t, arg: rawptr) {
+loop_walk_cb :: proc "c" (handle: ^uv_handle_t, arg: rawptr) {
 	if uv_is_closing(handle) == 0 {
 		uv_close(handle, nil)
 	}
@@ -189,18 +189,18 @@ loop_size :: proc "c" (loop: ^Loop) -> c.size_t {
 	return rv
 }
 
-loop_async_cb :: proc(handle: ^uv_async_t) {
+loop_async_cb :: proc "c" (handle: ^uv_async_t) {
 	l := (^Loop)(handle.loop.data)
 	uv_mutex_lock(&l.mutex)
 	multiqueue_move_events(l.fast_events, l.thread_events)
 	uv_mutex_unlock(&l.mutex)
 }
 
-loop_timer_cb :: proc(handle: ^uv_timer_t) {
+loop_timer_cb :: proc "c" (handle: ^uv_timer_t) {
 	timeout_expired := (^bool)(handle.data)
 	timeout_expired^ = true
 }
 
-loop_timer_close_cb :: proc(handle: ^uv_handle_t) {
+loop_timer_close_cb :: proc "c" (handle: ^uv_handle_t) {
 	xfree(handle.data)
 }

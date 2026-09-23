@@ -169,7 +169,7 @@ foreign _ {
 	@(link_name = "utf8len_tab")
 	utf8len_tab_g: [256]u8
 	@(link_name = "highlight_attr")
-	highlight_attr_g: [^]C.int
+	highlight_attr_g: [HLF_COUNT_O]C.int
 	@(link_name = "utf_ptr2CharInfo_impl")
 	utf_ptr2CharInfo_impl_r :: proc "c"(p: ^u8, len: C.size_t) -> C.int32_t ---
 	@(link_name = "utfc_next_impl")

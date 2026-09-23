@@ -50,6 +50,40 @@
 
 #include "eval/fs.c.generated.h"
 
+#pragma weak f_chdir
+#pragma weak f_delete
+#pragma weak f_executable
+#pragma weak f_exepath
+#pragma weak f_filecopy
+#pragma weak f_filereadable
+#pragma weak f_filewritable
+#pragma weak f_finddir
+#pragma weak f_findfile
+#pragma weak f_fnamemodify
+#pragma weak f_getcwd
+#pragma weak f_getfperm
+#pragma weak f_getfsize
+#pragma weak f_getftime
+#pragma weak f_getftype
+#pragma weak f_glob
+#pragma weak f_globpath
+#pragma weak f_glob2regpat
+#pragma weak f_haslocaldir
+#pragma weak f_isabsolutepath
+#pragma weak f_isdirectory
+#pragma weak f_mkdir
+#pragma weak f_pathshorten
+#pragma weak f_readdir
+#pragma weak f_rename
+#pragma weak f_simplify
+#pragma weak f_tempname
+#pragma weak f_browse
+#pragma weak f_browsedir
+#pragma weak f_readblob
+#pragma weak f_readfile
+#pragma weak f_resolve
+#pragma weak f_writefile
+
 static const char e_error_while_writing_str[] = N_("E80: Error while writing: %s");
 
 /// Adjust a filename, according to a string of modifiers.

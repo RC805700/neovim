@@ -54,6 +54,9 @@ typedef kvec_t(ContainerStackItem) ContainerStack;
 
 #include "eval/decode.c.generated.h"
 
+#pragma weak decode_create_map_special_dict
+#pragma weak decode_string
+
 /// Create special dictionary
 ///
 /// @param[out]  rettv  Location where created dictionary will be saved.

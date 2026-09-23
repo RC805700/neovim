@@ -348,11 +348,11 @@ free_buf_options :: proc "c"(buf: rawptr, free_p_ff: bool) {
 	clear_str_at_o(buf, B_P_COT_OFF)
 	clear_str_at_o(buf, B_P_CPT_OFF)
 	clear_str_at_o(buf, B_P_CFU_OFF)
-	callback_free_r(transmute(rawptr)(uintptr(buf) + B_CFU_CB_OFF))
+	callback_free((^Callback_E)(transmute(rawptr)(uintptr(buf) + B_CFU_CB_OFF)))
 	clear_str_at_o(buf, B_P_OFU_OFF)
-	callback_free_r(transmute(rawptr)(uintptr(buf) + B_OFU_CB_OFF))
+	callback_free((^Callback_E)(transmute(rawptr)(uintptr(buf) + B_OFU_CB_OFF)))
 	clear_str_at_o(buf, B_P_TSRFU_OFF)
-	callback_free_r(transmute(rawptr)(uintptr(buf) + B_TSRFU_CB_OFF))
+	callback_free((^Callback_E)(transmute(rawptr)(uintptr(buf) + B_TSRFU_CB_OFF)))
 	clear_cpt_callbacks_r((^^rawptr)(uintptr(buf) + B_P_CPT_CB_OFF),
 		(^C.int)(uintptr(buf) + B_P_CPT_COUNT_OFF)^)
 	(^C.int)(uintptr(buf) + B_P_CPT_COUNT_OFF)^ = 0
@@ -365,9 +365,9 @@ free_buf_options :: proc "c"(buf: rawptr, free_p_ff: bool) {
 	clear_str_at_o(buf, B_P_TAGS_OFF)
 	clear_str_at_o(buf, B_P_TC_OFF)
 	clear_str_at_o(buf, B_P_TFU_OFF)
-	callback_free_r(transmute(rawptr)(uintptr(buf) + B_TFU_CB_OFF))
+	callback_free((^Callback_E)(transmute(rawptr)(uintptr(buf) + B_TFU_CB_OFF)))
 	clear_str_at_o(buf, B_P_FFU_OFF)
-	callback_free_r(transmute(rawptr)(uintptr(buf) + B_FFU_CB_OFF))
+	callback_free((^Callback_E)(transmute(rawptr)(uintptr(buf) + B_FFU_CB_OFF)))
 	clear_str_at_o(buf, B_P_DICT_OFF)
 	clear_str_at_o(buf, B_P_DIA_OFF)
 	clear_str_at_o(buf, B_P_TSR_OFF)
@@ -491,8 +491,6 @@ foreign _ {
 	in_assert_fails_g: bool
 	@(link_name = "msg_delay")
 	msg_delay_r :: proc "c" (ms: u64, ignoreinput: bool) ---
-	@(link_name = "vars_clear")
-	vars_clear_r2 :: proc "c" (ht: rawptr) ---
 	@(link_name = "hash_remove")
 	hash_remove_r :: proc "c" (ht: rawptr, hi: rawptr) ---
 	@(link_name = "uc_clear")
@@ -503,8 +501,6 @@ foreign _ {
 	map_clear_mode_r :: proc "c" (buf: rawptr, mode: C.int, local: bool, abbr: bool) ---
 	@(link_name = "buf_free_callbacks")
 	buf_free_callbacks_r :: proc "c" (buf: rawptr) ---
-	@(link_name = "tv_dict_add")
-	tv_dict_add_r :: proc "c" (d: rawptr, item: rawptr) -> C.int ---
 }
 
 // Set file_id for a buffer. Must always be called when b_fname is changed!
@@ -612,7 +608,7 @@ free_buffer_stuff_o :: proc "c"(buf: rawptr, free_flags: C.int) {
 	if changedtick_hi != nil {
 		hash_remove_r(transmute(rawptr)(uintptr(vars) + DV_HASHTAB_OFF), changedtick_hi)
 	}
-	vars_clear_r2(transmute(rawptr)(uintptr(vars) + DV_HASHTAB_OFF)) // free all vars
+	vars_clear(transmute(rawptr)(uintptr(vars) + DV_HASHTAB_OFF)) // free all vars
 	hash_init_r(transmute(rawptr)(uintptr(vars) + DV_HASHTAB_OFF))
 	if (free_flags & KBFF_INIT_CHANGEDTICK_O) != 0 {
 		buf_init_changedtick_o(buf)
@@ -639,7 +635,7 @@ buf_init_changedtick_o :: proc "c"(buf: rawptr) {
 	// di_flags@16 (u8): RO|FIX. di_key@17: "changedtick\0" (12 bytes).
 	(^u8)(di + 16)^ = DI_FLAGS_RO_O | DI_FLAGS_FIX_O
 	libc.memcpy(rawptr(di + 17), transmute(rawptr)(cstring(CHANGEDTICK_S)), 12)
-	tv_dict_add_r((^rawptr)(uintptr(buf) + B_VARS_OFF)^, rawptr(di))
+	tv_dict_add((^rawptr)(uintptr(buf) + B_VARS_OFF)^, rawptr(di))
 }
 
 // Return true if the current buffer is empty, unnamed, unmodified and used
@@ -716,9 +712,9 @@ buflist_new :: proc "c"(ffname_arg: cstring, sfname_arg: cstring, lnum: C.int, f
 	if buf != curbuf || curbuf == nil {
 		buf = xcalloc(1, BUF_SIZE_O)
 		// init b: variables
-		vars := tv_dict_alloc_r()
+		vars := tv_dict_alloc()
 		(^rawptr)(uintptr(buf) + B_VARS_OFF)^ = vars
-		init_var_dict_r(vars, transmute(rawptr)(uintptr(buf) + B_BUFVAR_OFF), VAR_SCOPE_O)
+		init_var_dict(vars, transmute(rawptr)(uintptr(buf) + B_BUFVAR_OFF), VAR_SCOPE_O)
 		buf_init_changedtick_o(buf)
 	}
 	if ffname != nil {
@@ -2088,8 +2084,6 @@ JUMPLISTSIZE_O :: 100
 foreign _ {
 	@(link_name = "nvim_odin_set_buf_free_count")
 	nvim_odin_set_buf_free_count_r :: proc "c" (v: C.int) ---
-	@(link_name = "tv_dict_item_copy")
-	tv_dict_item_copy_r :: proc "c" (di: rawptr) -> rawptr ---
 	@(link_name = "aubuflocal_remove")
 	aubuflocal_remove_r :: proc "c" (buf: rawptr) ---
 	@(link_name = "au_pending_free_buf")
@@ -2105,10 +2099,10 @@ free_buffer_o :: proc "c"(buf: rawptr) {
 	free_buffer_stuff_o(buf, KBFF_CLEAR_WININFO_O)
 	vars := (^rawptr)(uintptr(buf) + B_VARS_OFF)^
 	if (^C.int)(uintptr(vars) + DV_REFCOUNT_OFF)^ > DO_NOT_FREE_CNT_O {
-		tv_dict_add_r(vars,
-			tv_dict_item_copy_r(transmute(rawptr)(uintptr(buf) + B_CHANGEDTICK_DI_OFF)))
+		tv_dict_add(vars,
+			tv_dict_item_copy(transmute(rawptr)(uintptr(buf) + B_CHANGEDTICK_DI_OFF)))
 	}
-	unref_var_dict_r(vars)
+	unref_var_dict(vars)
 	aubuflocal_remove_r(buf)
 	xfree((^rawptr)(uintptr(buf) + B_ADDITIONAL_DATA_OFF)^)
 	xfree((^rawptr)(uintptr(buf) + B_PROMPT_TEXT_OFF)^)
@@ -2120,8 +2114,8 @@ free_buffer_o :: proc "c"(buf: rawptr) {
 	(^uint)(uintptr(buf) + B_WINFOFF_SIZE)^ = 0
 	(^uint)(uintptr(buf) + B_WINFOFF_CAP)^ = 0
 	(^rawptr)(uintptr(buf) + B_WINFOFF_ITEMS)^ = nil
-	callback_free_r(transmute(rawptr)(uintptr(buf) + B_PROMPT_CB_OFF))
-	callback_free_r(transmute(rawptr)(uintptr(buf) + B_PROMPT_INT_OFF))
+	callback_free((^Callback_E)(transmute(rawptr)(uintptr(buf) + B_PROMPT_CB_OFF)))
+	callback_free((^Callback_E)(transmute(rawptr)(uintptr(buf) + B_PROMPT_INT_OFF)))
 	clear_fmark(transmute(^Fmark_T)(uintptr(buf) + B_LAST_CURSOR), 0)
 	clear_fmark(transmute(^Fmark_T)(uintptr(buf) + B_LAST_INSERT), 0)
 	clear_fmark(transmute(^Fmark_T)(uintptr(buf) + B_LAST_CHANGE), 0)

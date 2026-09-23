@@ -43,6 +43,32 @@ typedef struct {
 
 #include "eval/buffer.c.generated.h"
 
+#pragma weak find_buffer
+#pragma weak f_bufadd
+#pragma weak f_bufexists
+#pragma weak f_buflisted
+#pragma weak f_bufload
+#pragma weak f_bufloaded
+#pragma weak f_bufname
+#pragma weak f_bufnr
+#pragma weak f_bufwinid
+#pragma weak f_bufwinnr
+#pragma weak f_getbufline
+#pragma weak f_getbufoneline
+#pragma weak f_getline
+#pragma weak f_append
+#pragma weak f_appendbufline
+#pragma weak f_setbufline
+#pragma weak f_setline
+#pragma weak f_deletebufline
+#pragma weak f_getbufinfo
+#pragma weak switch_buffer
+#pragma weak restore_buffer
+#pragma weak f_prompt_setcallback
+#pragma weak f_prompt_setinterrupt
+#pragma weak f_prompt_setprompt
+#pragma weak f_prompt_appendbuf
+
 /// Find a buffer by number or exact name.
 buf_T *find_buffer(typval_T *avar)
 {

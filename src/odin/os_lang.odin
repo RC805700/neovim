@@ -116,7 +116,10 @@ ascii_isdigit :: proc "c" (c: u8) -> bool {
 
 @(private)
 ascii_iswhite :: proc "c" (c: u8) -> bool {
-	return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == 0x0b || c == 0x0c
+	// C ascii_iswhite (ascii_defs.h:84): space/tab ONLY. Do NOT widen:
+	// skipwhite must stop at \n (ex_function line_arg detection depends
+	// on it; Batch 24ac proved the wide version hangs defines).
+	return c == ' ' || c == '\t'
 }
 
 @(private)

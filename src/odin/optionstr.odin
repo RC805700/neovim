@@ -1646,7 +1646,7 @@ did_set_spelloptions :: proc "c"(args: ^optset_T) -> cstring {
 	}
 	if (opt_flags & OPT_GLOBAL_E) == 0 &&
 	opt_strings_flags_o((^u8)(val), &opt_spo_values_g[0],
-		(^C.uint32_t)(uintptr((^rawptr)(uintptr(win) + W_S_OFF)^) + SB_P_SPO_FLAGS), true) != OK_S {
+		(^C.uint32_t)(uintptr((^rawptr)(uintptr(win) + W_S_OFF)^) + SB_P_SPO_FLAGS_OFF), true) != OK_S {
 		return cstring("E474: Invalid argument")
 	}
 	return nil
@@ -2327,8 +2327,6 @@ foreign _ {
 	ml_setflags_r :: proc "c" (buf: rawptr) ---
 	@(link_name = "init_highlight")
 	init_highlight_r :: proc "c" (both: bool, reset: bool) ---
-	@(link_name = "get_var_value")
-	get_var_value_r :: proc "c" (name: cstring) -> ^u8 ---
 	@(link_name = "do_unlet")
 	do_unlet_r :: proc "c" (name: cstring, name_len: C.size_t, forceit: bool) -> C.int ---
  	@(link_name = "enc_canonize")
@@ -2356,7 +2354,7 @@ did_set_background :: proc "c"(args: ^optset_T) -> cstring {
 	init_highlight_r(false, false)
 
 	if (dark != (b_at(p_bg_g, 0) == 'd')) &&
-	get_var_value_r("g:colors_name") != nil {
+	get_var_value("g:colors_name") != nil {
 		// The color scheme must have set 'background' back to another
 		// value, that's not what we want here.  Disable the color
 		// scheme and set the colors again.

@@ -1066,10 +1066,6 @@ WC_FOOTER_CHUNKS_OFF :: 440
 foreign _ {
 	@(link_name = "alist_unlink")
 	alist_unlink_r :: proc "c" (al: rawptr) ---
-	@(link_name = "vars_clear")
-	vars_clear_r :: proc "c" (ht: rawptr) ---
-	@(link_name = "unref_var_dict")
-	unref_var_dict_r :: proc "c" (dict: rawptr) ---
 	@(link_name = "tagstack_clear_entry")
 	tagstack_clear_entry_r :: proc "c" (item: rawptr) ---
 	@(link_name = "stl_clear_click_defs")
@@ -1122,9 +1118,9 @@ win_free :: proc "c"(wp: rawptr, tp: rawptr) {
 	xfree((^rawptr)(uintptr(wp) + W_P_LCS_CHARS_OFF + 64)^)
 
 	vars := (^rawptr)(uintptr(wp) + W_VARS_OFF)^
-	vars_clear_r(transmute(rawptr)(uintptr(vars) + DV_HASHTAB_OFF))
+	vars_clear(transmute(rawptr)(uintptr(vars) + DV_HASHTAB_OFF))
 	hash_init_r(transmute(rawptr)(uintptr(vars) + DV_HASHTAB_OFF))
-	unref_var_dict_r(vars)
+	unref_var_dict(vars)
 
 	if prevwin_g == wp {
 		prevwin_g = nil
@@ -2426,10 +2422,6 @@ foreign _ {
 	@(link_name = "window_handles")
 	window_handles_g: Map_int_ptr_t
 	// grid_assign_handle: Odin export in grid.odin (Batch 2e).
-	@(link_name = "tv_dict_alloc")
-	tv_dict_alloc_r :: proc "c" () -> rawptr ---
-	@(link_name = "init_var_dict")
-	init_var_dict_r :: proc "c" (dict: rawptr, dict_var: rawptr, scope: C.int) ---
 	@(link_name = "nvim_odin_init_winopt")
 	nvim_odin_init_winopt_r :: proc "c" (win: rawptr) ---
 }
@@ -2455,9 +2447,9 @@ win_alloc :: proc "c"(after: rawptr, hidden: bool) -> rawptr {
 	grid_assign_handle(transmute(^ScreenGrid)(uintptr(new_wp) + W_GRID_ALLOC_OFF))
 
 	// Init w: variables.
-	vars := tv_dict_alloc_r()
+	vars := tv_dict_alloc()
 	(^rawptr)(uintptr(new_wp) + W_VARS_OFF)^ = vars
-	init_var_dict_r(vars, transmute(rawptr)(uintptr(new_wp) + W_WINVAR_OFF), VAR_SCOPE_O)
+	init_var_dict(vars, transmute(rawptr)(uintptr(new_wp) + W_WINVAR_OFF), VAR_SCOPE_O)
 
 	// Don't execute autocommands while the window is not properly
 	// initialized yet. gui_create_scrollbar() may trigger a FocusGained
@@ -2707,9 +2699,9 @@ alloc_tabpage_o :: proc "c"() -> rawptr {
 		(^C.int)(tp)^, nil, &new_item)
 	slot^ = tp
 	// Init t: variables.
-	vars := tv_dict_alloc_r()
+	vars := tv_dict_alloc()
 	(^rawptr)(uintptr(tp) + TP_VARS_OFF)^ = vars
-	init_var_dict_r(vars, transmute(rawptr)(uintptr(tp) + TP_WINVAR_OFF), VAR_SCOPE_O)
+	init_var_dict(vars, transmute(rawptr)(uintptr(tp) + TP_WINVAR_OFF), VAR_SCOPE_O)
 	(^bool)(uintptr(tp) + TP_DIFF_INVALID_OFF)^ = true
 	(^C.longlong)(uintptr(tp) + TP_CH_USED_OFF)^ = C.longlong(p_ch)
 	return tp
@@ -4844,9 +4836,9 @@ free_tabpage :: proc "c"(tp: rawptr) {
 		clear_snapshot_o(tp, idx)
 	}
 	vars := (^rawptr)(uintptr(tp) + TP_VARS_OFF)^
-	vars_clear_r2(transmute(rawptr)(uintptr(vars) + DV_HASHTAB_OFF)) // free t: vars
+	vars_clear(transmute(rawptr)(uintptr(vars) + DV_HASHTAB_OFF)) // free t: vars
 	hash_init_r(transmute(rawptr)(uintptr(vars) + DV_HASHTAB_OFF))
-	unref_var_dict_r(vars)
+	unref_var_dict(vars)
 	if tp == lastused_tabpage_g {
 		lastused_tabpage_g = nil
 	}
@@ -7836,25 +7828,13 @@ may_trigger_recursive_b47: bool = false
 foreign _ {
 	@(link_name = "event_ignored")
 	event_ignored_r :: proc "c" (event: C.int, ei: cstring) -> bool ---
-	@(link_name = "tv_list_append_owned_tv")
-	tv_list_append_owned_tv_r :: proc "c" (l: rawptr, tv: Typval_T) -> rawptr ---
-	@(link_name = "tv_list_alloc")
-	tv_list_alloc_r :: proc "c" (len: C.long) -> rawptr ---
-	@(link_name = "tv_dict_add_tv")
-	tv_dict_add_tv_r :: proc "c" (d: rawptr, key: cstring, key_len: C.size_t, tv: rawptr) -> C.int ---
-	@(link_name = "tv_dict_add_dict")
-	tv_dict_add_dict_r :: proc "c" (d: rawptr, key: cstring, key_len: C.size_t, dict: rawptr) -> C.int ---
-	@(link_name = "tv_dict_add_list")
-	tv_dict_add_list_r :: proc "c" (d: rawptr, key: cstring, key_len: C.size_t, list: rawptr) -> C.int ---
-	@(link_name = "tv_dict_unref")
- 	tv_dict_unref_r :: proc "c" (d: rawptr) ---
- 	@(link_name = "tv_dict_extend")
- 	tv_dict_extend_r :: proc "c" (d1: rawptr, d2: rawptr, action: cstring) ---
 }
 
 // Dict with size/scroll changes of one window (refcount 1; NULL on error).
+
+// Dict with size/scroll changes of one window (refcount 1; NULL on error).
 make_win_info_dict_o :: proc "c"(width: C.int, height: C.int, topline: C.int, topfill: C.int, leftcol: C.int, skipcol: C.int) -> rawptr {
-	d := tv_dict_alloc_r()
+	d := tv_dict_alloc()
 	(^C.int)(uintptr(d) + DV_REFCOUNT_OFF)^ = 1
 	// not actually looping, for breaking out on error
 	for {
@@ -7862,32 +7842,32 @@ make_win_info_dict_o :: proc "c"(width: C.int, height: C.int, topline: C.int, to
 		tv.v_lock = VAR_FIXED_O - VAR_FIXED_O + VAR_UNLOCKED_O // 0
 		tv.v_type = VAR_NUMBER_O
 		tv.vval = transmute(rawptr)C.longlong(width)
-		if tv_dict_add_tv_r(d, cstring("width"), 5, transmute(rawptr)(&tv)) == FAIL {
+		if tv_dict_add_tv(d, cstring("width"), 5, &tv) == FAIL {
 			break
 		}
 		tv.vval = transmute(rawptr)C.longlong(height)
-		if tv_dict_add_tv_r(d, cstring("height"), 6, transmute(rawptr)(&tv)) == FAIL {
+		if tv_dict_add_tv(d, cstring("height"), 6, &tv) == FAIL {
 			break
 		}
 		tv.vval = transmute(rawptr)C.longlong(topline)
-		if tv_dict_add_tv_r(d, cstring("topline"), 7, transmute(rawptr)(&tv)) == FAIL {
+		if tv_dict_add_tv(d, cstring("topline"), 7, &tv) == FAIL {
 			break
 		}
 		tv.vval = transmute(rawptr)C.longlong(topfill)
-		if tv_dict_add_tv_r(d, cstring("topfill"), 7, transmute(rawptr)(&tv)) == FAIL {
+		if tv_dict_add_tv(d, cstring("topfill"), 7, &tv) == FAIL {
 			break
 		}
 		tv.vval = transmute(rawptr)C.longlong(leftcol)
-		if tv_dict_add_tv_r(d, cstring("leftcol"), 7, transmute(rawptr)(&tv)) == FAIL {
+		if tv_dict_add_tv(d, cstring("leftcol"), 7, &tv) == FAIL {
 			break
 		}
 		tv.vval = transmute(rawptr)C.longlong(skipcol)
-		if tv_dict_add_tv_r(d, cstring("skipcol"), 7, transmute(rawptr)(&tv)) == FAIL {
+		if tv_dict_add_tv(d, cstring("skipcol"), 7, &tv) == FAIL {
 			break
 		}
 		return d
 	}
-	tv_dict_unref_r(d)
+	tv_dict_unref(d)
 	return nil
 }
 
@@ -7926,7 +7906,7 @@ check_window_scroll_resize_o :: proc "c"(size_count: ^C.int, first_scroll_win: ^
 				tv.v_lock = VAR_UNLOCKED_O
 				tv.v_type = VAR_NUMBER_O
 				tv.vval = transmute(rawptr)C.longlong((^C.int)(uintptr(wp) + W_HANDLE_OFF)^)
-				tv_list_append_owned_tv_r(winlist, tv)
+				tv_list_append_owned_tv(winlist, tv)
 			} else if size_count != nil {
 				size_count^ += 1
 				if first_size_win^ == nil {
@@ -7962,8 +7942,8 @@ check_window_scroll_resize_o :: proc "c"(size_count: ^C.int, first_scroll_win: ^
 			winid: [NUMBUFLEN]u8
 			key_len := libc.snprintf(&winid[0], NUMBUFLEN, cstring("%d"),
 				(^C.int)(uintptr(wp) + W_HANDLE_OFF)^)
-			if tv_dict_add_dict_r(v_event, transmute(cstring)(&winid[0]), C.size_t(key_len), d) == FAIL {
-				tv_dict_unref_r(d)
+			if tv_dict_add_dict(v_event, transmute(cstring)(&winid[0]), C.size_t(key_len), d) == FAIL {
+				tv_dict_unref(d)
 				break
 			}
 			(^C.int)(uintptr(d) + DV_REFCOUNT_OFF)^ -= 1
@@ -7980,8 +7960,8 @@ check_window_scroll_resize_o :: proc "c"(size_count: ^C.int, first_scroll_win: ^
 		alldict := make_win_info_dict_o(tot_width, tot_height, tot_topline,
 			tot_topfill, tot_leftcol, tot_skipcol)
 		if alldict != nil {
-			if tv_dict_add_dict_r(v_event, cstring("all"), 3, alldict) == FAIL {
-				tv_dict_unref_r(alldict)
+			if tv_dict_add_dict(v_event, cstring("all"), 3, alldict) == FAIL {
+				tv_dict_unref(alldict)
 			} else {
 				(^C.int)(uintptr(alldict) + DV_REFCOUNT_OFF)^ -= 1
 			}
@@ -8010,13 +7990,13 @@ may_trigger_win_scrolled_resized :: proc "c"() {
 	windows_list: rawptr = nil
 	if trigger_resize {
 		// Create the list for v:event.windows before making the snapshot.
-		windows_list = tv_list_alloc_r(C.long(size_count))
+		windows_list = tv_list_alloc(C.ssize_t(size_count))
 		check_window_scroll_resize_o(nil, nil, nil, windows_list, nil)
 	}
 	scroll_dict: rawptr = nil
 	if trigger_scroll {
 		// Create the dict with entries for v:event before the snapshot.
-		scroll_dict = tv_dict_alloc_r()
+		scroll_dict = tv_dict_alloc()
 		(^C.int)(uintptr(scroll_dict) + DV_REFCOUNT_OFF)^ = 1
 		check_window_scroll_resize_o(nil, nil, nil, nil, scroll_dict)
 	}
@@ -8044,8 +8024,8 @@ may_trigger_win_scrolled_resized :: proc "c"() {
 	if trigger_resize && windows_list != nil {
 		save_v_event: [SAVE_V_EVENT_SIZE_O]u8
 		v_event := get_v_event_r(&save_v_event[0])
-		if tv_dict_add_list_r(v_event, cstring("windows"), 7, windows_list) == OK {
-			tv_dict_set_keys_readonly_r(v_event)
+		if tv_dict_add_list(v_event, cstring("windows"), 7, windows_list) == OK {
+			tv_dict_set_keys_readonly(v_event)
 			buf := bufref_valid(&resize_bufref) ? resize_bufref.br_buf : curbuf
 			apply_autocmds(EVENT_WINRESIZED_O, transmute(cstring)(&resize_winid[0]),
 				transmute(cstring)(&resize_winid[0]), false, buf)
@@ -8056,9 +8036,9 @@ may_trigger_win_scrolled_resized :: proc "c"() {
 		save_v_event: [SAVE_V_EVENT_SIZE_O]u8
 		v_event := get_v_event_r(&save_v_event[0])
 		// Move the entries from scroll_dict to v_event.
-		tv_dict_extend_r(v_event, scroll_dict, cstring("move"))
-		tv_dict_set_keys_readonly_r(v_event)
-		tv_dict_unref_r(scroll_dict)
+		tv_dict_extend(v_event, scroll_dict, cstring("move"))
+		tv_dict_set_keys_readonly(v_event)
+		tv_dict_unref(scroll_dict)
 		buf := bufref_valid(&scroll_bufref) ? scroll_bufref.br_buf : curbuf
 		apply_autocmds(EVENT_WINSCROLLED_O, transmute(cstring)(&scroll_winid[0]),
 			transmute(cstring)(&scroll_winid[0]), false, buf)

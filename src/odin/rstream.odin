@@ -119,7 +119,7 @@ fread_idle_cb :: proc "c" (handle: ^uv_idle_t) {
 	rstream_invoke_read_cb(stream, false)
 }
 
-read_event :: proc(argv: ^rawptr) {
+read_event :: proc "c" (argv: ^rawptr) {
 	context = runtime.default_context()
 	stream := (^RStream)(argv^)
 	stream.pending_read = false
@@ -189,9 +189,11 @@ rstream_invoke_read_cb :: proc "c" (stream: ^RStream, eof: bool) {
 	create_event(stream.s.events, event_create(read_event, stream))
 }
 
-rstream_close_cb :: proc (s: ^Stream, data: rawptr) {
+rstream_close_cb :: proc "c" (s: ^Stream, data: rawptr) {
 	stream := (^RStream)(data)
-	assert(stream != nil && s == &stream.s)
+	if stream == nil || s != &stream.s {
+		libc.abort()
+	}
 	if stream.buffer != 0 {
 		xfree((rawptr)(stream.buffer))
 		stream.buffer = 0

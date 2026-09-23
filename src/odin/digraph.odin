@@ -155,27 +155,6 @@ foreign _ {
 	@(link_name = "eval_to_string")
 	eval_to_string :: proc "c" (arg: ^u8, join_list: bool, use_simple_function: bool) -> ^u8 ---
 
-	@(link_name = "tv_list_alloc_ret")
-	tv_list_alloc_ret :: proc "c" (rettv: ^Typval, len: C.int) ---
-
-	@(link_name = "tv_list_append_list")
-	tv_list_append_list :: proc "c" (l: rawptr, l2: rawptr) ---
-
-	@(link_name = "tv_list_append_string")
-	tv_list_append_string :: proc "c" (l: rawptr, s: ^u8, len: C.ssize_t) ---
-
-	@(link_name = "tv_get_string_buf_chk")
-	tv_get_string_buf_chk :: proc "c" (arg: ^Typval, buf: ^u8) -> ^u8 ---
-
-	@(link_name = "tv_get_string_chk")
-	tv_get_string_chk :: proc "c" (arg: ^Typval) -> ^u8 ---
-
-	@(link_name = "tv_check_for_opt_bool_arg")
-	tv_check_for_opt_bool_arg :: proc "c" (argvars: ^Typval, idx: C.int) -> C.int ---
-
-	@(link_name = "tv_get_bool")
-	tv_get_bool :: proc "c" (arg: ^Typval) -> C.int ---
-
 	@(link_name = "tv_list_find")
 	tv_list_find :: proc "c" (l: rawptr, idx: C.int) -> rawptr ---
 
@@ -2046,14 +2025,14 @@ printdigraph :: proc "c"(dp: ^digr_T, previous: ^C.int) {
 @(export)
 get_digraph_chars :: proc "c"(arg: ^Typval, char1, char2: ^C.int) -> C.int {
 	buf_chars: [65]u8 = {}
-	chars := tv_get_string_buf_chk(arg, &buf_chars[0])
+	chars := tv_get_string_buf_chk(transmute(^Typval_T)(arg), &buf_chars[0])
 	p := chars
 	if p != nil {
-		if p^ != 0 {
-			char1^ = mb_cptr2char_adv(&p)
-			if p^ != 0 {
-				char2^ = mb_cptr2char_adv(&p)
-				if p^ == 0 {
+		if ([^]u8)(p)[0] != 0 {
+			char1^ = mb_cptr2char_adv(transmute(^^u8)(&p))
+			if ([^]u8)(p)[0] != 0 {
+				char2^ = mb_cptr2char_adv(transmute(^^u8)(&p))
+				if ([^]u8)(p)[0] == 0 {
 					if check_digraph_chars_valid(char1^, char2^) {
 						return OK
 					}
@@ -2062,7 +2041,7 @@ get_digraph_chars :: proc "c"(arg: ^Typval, char1, char2: ^C.int) -> C.int {
 			}
 		}
 	}
-	semsg_safe(_t(e_digraph_must_be_just_two_characters_str), chars)
+	semsg_safe(_t(e_digraph_must_be_just_two_characters_str), rawptr(chars))
 	return FAIL
 }
 
@@ -2073,14 +2052,14 @@ digraph_set_common :: proc "c"(argchars, argdigraph: ^Typval) -> bool {
 		return false
 	}
 	buf_digraph: [65]u8 = {}
-	digraph := tv_get_string_buf_chk(argdigraph, &buf_digraph[0])
+	digraph := tv_get_string_buf_chk(transmute(^Typval_T)(argdigraph), &buf_digraph[0])
 	if digraph == nil {
 		return false
 	}
 	p := digraph
-	n := mb_cptr2char_adv(&p)
-	if p^ != 0 {
-		semsg_safe(_t(e_digraph_argument_must_be_one_character_str), digraph)
+	n := mb_cptr2char_adv(transmute(^^u8)(&p))
+	if ([^]u8)(p)[0] != 0 {
+		semsg_safe(_t(e_digraph_argument_must_be_one_character_str), rawptr(digraph))
 		return false
 	}
 	registerdigraph(char1, char2, n)
@@ -2093,12 +2072,12 @@ f_digraph_get :: proc "c" (argvars: ^Typval, rettv: ^Typval, fptr: rawptr) {
 	rettv.v_type = VAR_STRING
 	tv_v_string(rettv)^ = nil
 
-	digraphs := tv_get_string_chk(&([^]Typval)(argvars)[0])
+	digraphs := tv_get_string_chk(transmute(^Typval_T)(&([^]Typval)(argvars)[0]))
 	if digraphs == nil {
 		return
 	}
-	if libc.strlen(transmute(cstring)(digraphs)) != 2 {
-		semsg_safe(_t(e_digraph_must_be_just_two_characters_str), digraphs)
+	if libc.strlen(digraphs) != 2 {
+		semsg_safe(_t(e_digraph_must_be_just_two_characters_str), rawptr(digraphs))
 		return
 	}
 	code := digraph_get(C.int(([^]u8)(digraphs)[0]), C.int(([^]u8)(digraphs)[1]), false)
@@ -2111,14 +2090,14 @@ f_digraph_get :: proc "c" (argvars: ^Typval, rettv: ^Typval, fptr: rawptr) {
 // "digraph_getlist()" function
 @(export)
 f_digraph_getlist :: proc "c" (argvars: ^Typval, rettv: ^Typval, fptr: rawptr) {
-	if tv_check_for_opt_bool_arg(argvars, 0) == FAIL {
+	if tv_check_for_opt_bool_arg(transmute(^Typval_T)(argvars), 0) == FAIL {
 		return
 	}
 	flag_list_all := false
 	if ([^]Typval)(argvars)[0].v_type == VAR_UNKNOWN {
 		flag_list_all = false
 	} else {
-		flag := tv_get_bool(&([^]Typval)(argvars)[0])
+		flag := tv_get_bool(transmute(^Typval_T)(&([^]Typval)(argvars)[0]))
 		flag_list_all = flag != 0
 	}
 	digraph_getlist_common(flag_list_all, rettv)

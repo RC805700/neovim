@@ -8,7 +8,6 @@ import "core:c"
 import "base:runtime"
 
 foreign _ {
-	tv_dict_to_env :: proc "c" (denv: rawptr) -> ^^u8 ---
 	close :: proc(fd: c.int) -> c.int ---
 }
 
@@ -157,7 +156,7 @@ libuv_proc_close :: proc "c" (uvproc: ^LibuvProc) {
 	uv_close((^uv_handle_t)(&uvproc.uv), rawptr(libuv_proc_close_cb))
 }
 
-libuv_proc_close_cb :: proc(handle: ^uv_handle_t) {
+libuv_proc_close_cb :: proc "c" (handle: ^uv_handle_t) {
 	pr := (^Proc)(handle.data)
 	if pr.internal_close_cb != nil {
 		pr.internal_close_cb(pr)
@@ -168,7 +167,7 @@ libuv_proc_close_cb :: proc(handle: ^uv_handle_t) {
 	}
 }
 
-exit_cb :: proc(handle: ^uv_process_t, status: i64, term_signal: c.int) {
+exit_cb :: proc "c" (handle: ^uv_process_t, status: i64, term_signal: c.int) {
 	pr := (^Proc)(handle.data)
 	pr.status = term_signal != 0 ? 128 + term_signal : c.int(status)
 	pr.internal_exit_cb(pr)

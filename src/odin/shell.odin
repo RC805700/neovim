@@ -1056,7 +1056,7 @@ do_os_system :: proc(argv: ^^u8, input: ^u8, len: c.size_t, output: ^^u8, nread:
 	return exitcode
 }
 
-system_data_cb :: proc(stream: ^RStream, buf: ^u8, count: c.size_t, data: rawptr, eof: bool) -> c.size_t {
+system_data_cb :: proc "c" (stream: ^RStream, buf: ^u8, count: c.size_t, data: rawptr, eof: bool) -> c.size_t {
 	context = runtime.default_context()
 	dbuf := (^StringBuilder)(data)
 	kv_concat_len(dbuf, buf, count)
@@ -1152,7 +1152,7 @@ MIN :: proc(a, b: c.size_t) -> c.size_t {
 	return b
 }
 
-out_data_event :: proc(argv: ^rawptr) {
+out_data_event :: proc "c" (argv: ^rawptr) {
 	context = runtime.default_context()
 	need_clear := true
 	fd := (c.int)(uintptr(([^]rawptr)(argv)[2]))
@@ -1213,7 +1213,7 @@ utfc_ptr2len_len :: proc(p: ^u8, len: c.int) -> c.int {
 	return l
 }
 
-out_data_cb :: proc(stream: ^RStream, ptr: ^u8, count: c.size_t, data: rawptr, eof: bool) -> c.size_t {
+out_data_cb :: proc "c" (stream: ^RStream, ptr: ^u8, count: c.size_t, data: rawptr, eof: bool) -> c.size_t {
 	context = runtime.default_context()
 	if count > 0 && out_data_decide_throttle(count) {
 		out_data_ring(ptr, count)
@@ -1356,7 +1356,7 @@ foreign _ {
 	ml_append :: proc "c" (lnum: c.int, line: ^u8, len: c.int, heap: bool) -> bool ---
 }
 
-shell_write_cb :: proc(stream: ^Stream, data: rawptr, status: c.int) {
+shell_write_cb :: proc "c" (stream: ^Stream, data: rawptr, status: c.int) {
 	context = runtime.default_context()
 	if status != 0 {
 		msg_schedule_semsg(GT(cstring("E5677: Error writing input to shell-command: %s")), uv_err_name(status))

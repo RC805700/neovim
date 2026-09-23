@@ -225,7 +225,7 @@ event_create_oneshot :: proc "c" (ev: Event, num: c.int) -> Event {
 	return event_create(multiqueue_oneshot_event, data)
 }
 
-multiqueue_oneshot_event :: proc(argv: ^rawptr) {
+multiqueue_oneshot_event :: proc "c" (argv: ^rawptr) {
 	data := (^MulticastEvent)(argv^)
 	if !data.fired {
 		data.fired = true

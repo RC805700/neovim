@@ -117,7 +117,7 @@ socket_watcher_init :: proc "c" (loop: ^Loop, watcher: ^SocketWatcher, endpoint:
 }
 
 // Callback after closing a Stream initialized by socket_connect().
-connect_close_cb :: proc(stream: ^Stream, data: rawptr) {
+connect_close_cb :: proc "c" (stream: ^Stream, data: rawptr) {
 	closed := (^bool)(data)
 	closed^ = true
 }
@@ -257,7 +257,7 @@ socket_watcher_close :: proc "c" (watcher: ^SocketWatcher, cb: socket_close_cb) 
 	uv_close(transmute(^uv_handle_t)(watcher.stream), rawptr(socket_watcher_close_cb))
 }
 
-connection_event :: proc (argv: ^rawptr) {
+connection_event :: proc "c" (argv: ^rawptr) {
 	watcher := (^SocketWatcher)(argv^)
 	status := c.int(uintptr((^rawptr)(uintptr(argv) + size_of(rawptr))^))
 	watcher.cb(watcher, status, watcher.data)

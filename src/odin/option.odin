@@ -2750,12 +2750,8 @@ foreign _ {
 }
 
 foreign _ {
-	@(link_name = "callback_free")
-	callback_free_r :: proc "c" (cb: rawptr) ---
 	@(link_name = "callback_from_typval")
 	callback_from_typval_r :: proc "c" (cb: rawptr, tv: rawptr) -> bool ---
-	@(link_name = "tv_free")
-	tv_free_r :: proc "c" (tv: rawptr) ---
 	@(link_name = "eval_expr")
 	eval_expr_r :: proc "c" (arg: cstring, arg2: rawptr) -> rawptr ---
 	@(link_name = "xcalloc")
@@ -2769,7 +2765,7 @@ kCallbackNone_S :: -1
 @(export)
 option_set_callback_func :: proc "c"(optval: ^u8, optcb: rawptr) -> C.int {
 	if optval == nil || b_at(optval, 0) == 0 {
-		callback_free_r(optcb)
+		callback_free((^Callback_E)(optcb))
 		return 1 // OK
 	}
 
@@ -2791,13 +2787,13 @@ option_set_callback_func :: proc "c"(optval: ^u8, optcb: rawptr) -> C.int {
 	cb_buf: [24]u8
 	if !callback_from_typval_r(&cb_buf[0], tv_ptr) ||
 	(^C.int)(&cb_buf[0])^ == kCallbackNone_S {
-		tv_free_r(tv_ptr)
+		tv_free((^Typval_T)(tv_ptr))
 		return 0 // FAIL
 	}
 
-	callback_free_r(optcb)
+	callback_free((^Callback_E)(optcb))
 	libc.memcpy(optcb, &cb_buf[0], size_of(cb_buf))
-	tv_free_r(tv_ptr)
+	tv_free((^Typval_T)(tv_ptr))
 	return 1 // OK
 }
 
@@ -4574,11 +4570,6 @@ ga_append_ptr :: proc "c"(gap: ^Garray, item: rawptr) {
 	gap.ga_len += 1
 }
 
-foreign _ {
-	@(link_name = "tv_dict_add_tv")
-	tv_dict_add_tv_c :: proc "c" (d: rawptr, key: cstring, key_len: C.size_t, tv: ^Typval_T) -> C.int ---
-}
-
 @(export)
 did_set_global_undolevels :: proc "c"(value: C.longlong, old_value: C.longlong) -> cstring {
 	// sync undo before 'undolevels' changes
@@ -4602,7 +4593,7 @@ B_P_UL_OFF2 :: 10928
 
 @(export)
 get_winbuf_options :: proc "c"(bufopt: C.int) -> rawptr {
-	d := tv_dict_alloc_m()
+	d := tv_dict_alloc()
 
 	opt_idx: C.int = 0
 	for opt_idx < 377 {
@@ -4614,7 +4605,7 @@ get_winbuf_options :: proc "c"(bufopt: C.int) -> rawptr {
 
 			if varp != nil {
 				opt_tv := optval_as_tv_c(optval_from_varp(opt_idx, varp), true)
-				tv_dict_add_tv_c(d, transmute(cstring)(opt.fullname),
+				tv_dict_add_tv(d, transmute(cstring)(opt.fullname),
 					C.size_t(libc.strlen(transmute(cstring)(opt.fullname))), &opt_tv)
 			}
 		}

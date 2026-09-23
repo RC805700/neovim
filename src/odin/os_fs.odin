@@ -423,60 +423,53 @@ os_mkdir :: proc "c" (path: cstring, mode: c.int32_t) -> c.int {
 @(export)
 os_mkdir_recurse :: proc "c" (dir: cstring, mode: c.int32_t, failed_dir: ^cstring, created: ^cstring) -> c.int {
 	context = runtime.default_context()
-	// Mirror C's os_mkdir_recurse: walk components, skip ones that are
-	// already directories, and only call os_mkdir on missing ones.
-	// (Avoids opening existing directories, which fails with EPERM in some
-	// sandboxes, unlike C's uv_fs_mkdir which only stats.)
+	// Mirror C's observable behavior (bak/os/fs.c): create exactly the
+	// missing suffix chain, fail on the first error, report failed/created.
+	// Prefixes are rebuilt from the original string, so absolute paths stay
+	// absolute (a previous walk read &buf[i], producing relative stumps like
+	// "tmp/mk2" and creating stray dirs under cwd). Only stats/creates like
+	// C's uv_fs backend (never opens directories: no EPERM issue).
 	dir_str := string(dir)
-	if len(dir_str) == 0 {
+	n := len(dir_str)
+	if n == 0 {
 		return -1
 	}
-	created_set := false
-	buf := make([]byte, len(dir_str) + 1)
-	defer delete(buf)
-	copy(buf, dir_str)
-	buf[len(dir_str)] = 0
-
-	// Skip leading separators; absolute paths start walking from root.
+	// End offsets of each non-empty component.
+	ends := make([dynamic]int)
+	defer delete(ends)
 	i := 0
-	for i < len(buf) && buf[i] == '/' {
-		i += 1
-	}
-	if i == 0 {
+	if dir_str[0] == '/' {
 		i = 1
 	}
-	for i < len(buf) {
+	for i < n {
 		j := i
-		for j < len(buf) && buf[j] != '/' {
+		for j < n && dir_str[j] != '/' {
 			j += 1
 		}
-		if j < len(buf) {
-			buf[j] = 0
+		if j > i {
+			append(&ends, j)
 		}
-		if !os_isdir(cstring(&buf[i])) {
-			ret := os_mkdir(cstring(&buf[i]), mode)
+		i = j + 1
+	}
+	buf := make([]byte, n + 1)
+	defer delete(buf)
+	created_set := false
+	for e in ends {
+		copy(buf, dir_str[:e])
+		buf[e] = 0
+		if !os_isdir(transmute(cstring)(&buf[0])) {
+			ret := os_mkdir(transmute(cstring)(&buf[0]), mode)
 			if ret != 0 {
 				if failed_dir != nil {
-					failed_dir^ = strings.clone_to_cstring(string(dir))
-				}
-				if j < len(buf) {
-					buf[j] = '/'
+					failed_dir^ = strings.clone_to_cstring(string(buf[:e]))
 				}
 				return ret
 			}
 			if !created_set && created != nil {
-				created^ = strings.clone_to_cstring(string(dir))
+				created^ = strings.clone_to_cstring(string(buf[:e]))
 				created_set = true
 			}
 		}
-		if j >= len(buf) {
-			break
-		}
-		buf[j] = '/'
-		i = j + 1
-	}
-	if !created_set && created != nil {
-		created^ = strings.clone_to_cstring(string(dir))
 	}
 	return 0
 }

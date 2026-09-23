@@ -8,12 +8,12 @@ package main
 import "base:runtime"
 import "core:c"
 
-time_event :: proc(argv: ^rawptr) {
+time_event :: proc "c" (argv: ^rawptr) {
 	watcher := (^TimeWatcher)(argv^)
 	watcher.cb(watcher, watcher.data)
 }
 
-close_event :: proc(argv: ^rawptr) {
+close_event :: proc "c" (argv: ^rawptr) {
 	watcher := (^TimeWatcher)(argv^)
 	watcher.close_cb(watcher, watcher.data)
 }

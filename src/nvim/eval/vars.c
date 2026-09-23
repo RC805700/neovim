@@ -54,6 +54,22 @@ typedef int (*ex_unletlock_callback)(lval_T *, char *, exarg_T *, int);
 
 #include "eval/vars.c.generated.h"
 
+#pragma weak skip_var_list
+#pragma weak eval_one_expr_in_str
+#pragma weak list_hashtable_vars
+#pragma weak eval_spell_expr
+#pragma weak get_spellword
+#pragma weak init_var_dict
+#pragma weak vars_clear
+#pragma weak vars_clear_ext
+#pragma weak set_internal_string_var
+#pragma weak eval_charconvert
+#pragma weak eval_diff
+#pragma weak eval_patch
+#pragma weak get_var_value
+#pragma weak unref_var_dict
+#pragma weak del_menutrans_vars
+
 // TODO(ZyX-I): Remove DICT_MAXNEST, make users be non-recursive instead
 
 #define DICT_MAXNEST 100        // maximum nesting of lists and dicts

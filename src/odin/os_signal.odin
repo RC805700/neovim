@@ -150,7 +150,7 @@ signal_name :: proc(signum: c.int) -> ^u8 {
 	}
 	return transmute(^u8)(name)
 }
-deadly_signal :: proc(signum: c.int) {
+deadly_signal :: proc "c" (signum: c.int) {
 	set_vim_var_nr(VV_DYING, 1)
 	v_dying = 1
 
@@ -163,8 +163,10 @@ deadly_signal :: proc(signum: c.int) {
 }
 
 @(export)
-on_signal :: proc(watcher: ^SignalWatcher, signum: c.int, data: rawptr) {
-	assert(signum >= 0)
+on_signal :: proc "c" (watcher: ^SignalWatcher, signum: c.int, data: rawptr) {
+	if signum < 0 {
+		libc.abort()
+	}
 	switch signum {
 	case SIGPWR:
 		// Power failure: flush swap files to be safe.
