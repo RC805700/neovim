@@ -2327,8 +2327,6 @@ foreign _ {
 	ml_setflags_r :: proc "c" (buf: rawptr) ---
 	@(link_name = "init_highlight")
 	init_highlight_r :: proc "c" (both: bool, reset: bool) ---
-	@(link_name = "do_unlet")
-	do_unlet_r :: proc "c" (name: cstring, name_len: C.size_t, forceit: bool) -> C.int ---
  	@(link_name = "enc_canonize")
  	enc_canonize_r :: proc "c" (enc: ^u8) -> ^u8 ---
  	@(link_name = "terminal_notify_theme")
@@ -2358,7 +2356,7 @@ did_set_background :: proc "c"(args: ^optset_T) -> cstring {
 		// The color scheme must have set 'background' back to another
 		// value, that's not what we want here.  Disable the color
 		// scheme and set the colors again.
-		do_unlet_r("g:colors_name", 13, true)
+		do_unlet("g:colors_name", 13, true)
 		free_string_option(p_bg_g)
 		want := dark ? cstring("dark") : cstring("light")
 		dlen := libc.strlen(want)

@@ -241,16 +241,8 @@ foreign nvim {
   qf_jump :: proc(eap: rawptr, forceit: c.int, errornr: c.int, FILE_IT: bool) ---
   apply_autocmds :: proc "c" (event: c.int, fname: cstring, fname2: cstring, group: bool, buf: rawptr) -> bool ---
 
-  // Vim variable access
-  set_vim_var_nr :: proc(idx: c.int, val: i64) ---
-  set_vim_var_string :: proc(idx: c.int, val: cstring, len: c.ssize_t) ---
-  get_vim_var_str :: proc(idx: c.int) -> cstring ---
-  get_vim_var_list :: proc(idx: c.int) -> rawptr ---
-  set_vim_var_list :: proc(idx: c.int, val: rawptr) ---
-
   // Startup helpers (do_autochdir now defined in buffer.odin — call directly).
   do_autocmd_uienter_all :: proc() ---
-  set_reg_var :: proc(c: c.int) ---
 
   os_exit :: proc(r: c.int) ---
 

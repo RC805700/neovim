@@ -2679,8 +2679,6 @@ foreign _ {
 	prep_exarg_r :: proc "c" (eap: rawptr, buf: rawptr) ---
 	@(link_name = "qf_stack_get_bufnr")
 	qf_stack_get_bufnr_r :: proc "c" () -> C.int ---
-	@(link_name = "tv_dict_watcher_notify")
-	tv_dict_watcher_notify_r :: proc "c" (dict: rawptr, key: cstring, newtv: ^Typval_T, oldtv: ^Typval_T) ---
 	@(link_name = "msg_qflist")
 	msg_qflist_g: ^u8
 	@(link_name = "msg_loclist")
@@ -2887,7 +2885,7 @@ buf_set_changedtick :: proc "c"(buf: rawptr, changedtick: C.longlong) {
 	(^C.longlong)(uintptr(buf) + B_CHANGEDTICK_DI_OFF + 8)^ = changedtick
 	if tv_dict_is_watched_o((^rawptr)(uintptr(buf) + B_VARS_OFF)^) {
 		(^C.int)(uintptr(buf) + B_LOCKED_OFF)^ += 1
-		tv_dict_watcher_notify_r((^rawptr)(uintptr(buf) + B_VARS_OFF)^,
+			tv_dict_watcher_notify((^rawptr)(uintptr(buf) + B_VARS_OFF)^,
 			cstring(rawptr(uintptr(buf) + B_CHANGEDTICK_DI_OFF + 17)),
 			transmute(^Typval_T)(uintptr(buf) + B_CHANGEDTICK_DI_OFF), &old_val)
 		(^C.int)(uintptr(buf) + B_LOCKED_OFF)^ -= 1

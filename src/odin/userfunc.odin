@@ -19,7 +19,7 @@ deref_func_name :: proc "c" (name: cstring, lenp: ^C.int, partialp: ^rawptr, no_
 	if no_autoload {
 		na = 1
 	}
-	v := find_var_e(name, C.size_t(lenp^), nil, na)
+	v := 	find_var(name, C.size_t(lenp^), nil, na)
 	if v == nil {
 		return name
 	}
@@ -662,7 +662,7 @@ func_call :: proc "c" (name: cstring, args: rawptr, partial: rawptr, selfdict: r
 	}
 	for argc > 0 {
 		argc -= 1
-		tv_clear_e(&argv[argc])
+		tv_clear(&argv[argc])
 	}
 	return r
 }
@@ -726,7 +726,7 @@ callback_call_retnr :: proc "c" (callback: rawptr, argcount: C.int, argvars: ^Ty
 		return -2
 	}
 	retval := tv_get_number_chk(&rettv, nil)
-	tv_clear_e(&rettv)
+	tv_clear(&rettv)
 	return retval
 }
 
@@ -919,7 +919,7 @@ call_func :: proc "c" (funcname: cstring, len: C.int, rettv: ^Typval_T, argcount
 	}
 	for argv_clear > 0 {
 		argv_clear -= 1
-		tv_clear_e(&argv[argv_clear + argv_base])
+		tv_clear(&argv[argv_clear + argv_base])
 	}
 	xfree(tofree)
 	xfree(rawptr(name))
@@ -1470,7 +1470,7 @@ call_user_func :: proc "c" (fp: rawptr, argcount: C.int, argvars: ^Typval_T, ret
 	handle_defer_one_o(current_funccal)
 	RedrawingDisabled -= 1
 	if (did_emsg_g() != 0 && ((^C.int)(uintptr(fp) + UF_FLAGS_OFF_O)^ & FC_ABORT_O) != 0) || rettv.v_type == VAR_UNKNOWN {
-		tv_clear_e(rettv)
+		tv_clear(rettv)
 		rettv.v_type = VAR_NUMBER
 		rettv.vval = transmute(rawptr)(C.longlong(-1))
 	}
@@ -1533,7 +1533,7 @@ call_user_func :: proc "c" (fp: rawptr, argcount: C.int, argvars: ^Typval_T, ret
 	did_emsg_set(did_emsg_g() != 0 || save_did_emsg != 0)
 	depth_g -= 1
 	for k: C.int = 0; k < tv_to_free_len; k += 1 {
-		tv_clear_e((^Typval_T)(tv_to_free[k]))
+		tv_clear((^Typval_T)(tv_to_free[k]))
 	}
 	cleanup_function_call_o(fc)
 	if (^C.int)(uintptr(fp) + UF_CALLS_OFF_O)^ - 1 <= 0 && (^C.int)(uintptr(fp) + UF_REFCOUNT_OFF_O)^ <= 0 {
@@ -1671,10 +1671,10 @@ handle_defer_one_o :: proc "c" (funccal: rawptr) {
 		av := (^Typval_T)(uintptr(dr) + DR_ARGV_OFF_O)
 		call_func(name, -1, &rettv, ac, av, &fe)
 		exception_state_restore_e(rawptr(&estate[0]))
-		tv_clear_e(&rettv)
+		tv_clear(&rettv)
 		xfree(rawptr(name))
 		for i := ac - 1; i >= 0; i -= 1 {
-			tv_clear_e((^Typval_T)(uintptr(dr) + DR_ARGV_OFF_O + uintptr(i) * 16))
+			tv_clear((^Typval_T)(uintptr(dr) + DR_ARGV_OFF_O + uintptr(i) * 16))
 		}
 	}
 	ga_clear_r((^Garray)(uintptr(funccal) + FC_DEFER_OFF_O))
@@ -1764,7 +1764,7 @@ free_funccal_contents_o :: proc "c" (fc: rawptr) {
 	vars_clear(rawptr(uintptr(fc) + FC_L_AVARS_OFF_O + 16))
 	li := tv_list_first_o(rawptr(uintptr(fc) + FC_L_VARLIST_OFF_O))
 	for li != nil {
-		tv_clear_e((^Typval_T)(uintptr(li) + 16))
+		tv_clear((^Typval_T)(uintptr(li) + 16))
 		li = (^rawptr)(li)^
 	}
 	free_funccal_o(fc)
@@ -1936,7 +1936,7 @@ get_func_tv :: proc "c" (name: cstring, len: C.int, rettv: ^Typval_T, arg: ^cstr
 	ret := get_func_arguments_o(&argp, evalarg, pta, rawptr(&argvars[0]), &argcount)
 	if ret == OK_E {
 		i: C.int = 0
-		if get_vim_var_nr_f(VV_TESTING_O) != 0 {
+		if get_vim_var_nr(VV_TESTING_O) != 0 {
 			if funcargs.ga_itemsize == 0 {
 				ga_init_r2(&funcargs, 8, 50)
 			}
@@ -1958,7 +1958,7 @@ get_func_tv :: proc "c" (name: cstring, len: C.int, rettv: ^Typval_T, arg: ^cstr
 	}
 	for argcount > 0 {
 		argcount -= 1
-		tv_clear_e(&argvars[argcount])
+		tv_clear(&argvars[argcount])
 	}
 	arg^ = skipwhite(argp)
 	return ret
@@ -2602,10 +2602,6 @@ foreign _ {
 	set_ref_in_ht_e :: proc "c" (ht: rawptr, copyID: C.int, list_stack: rawptr) -> bool ---
 	@(link_name = "set_ref_in_list_items")
 	set_ref_in_list_items_e :: proc "c" (l: rawptr, copyID: C.int, ht_stack: rawptr) -> bool ---
-	@(link_name = "find_var_ht")
-	find_var_ht_e :: proc "c" (name: cstring, name_len: C.size_t, varname: ^cstring) -> rawptr ---
-	@(link_name = "find_var_in_ht")
-	find_var_in_ht_e :: proc "c" (ht: rawptr, htname: C.int, varname: cstring, varname_len: C.size_t, no_autoload: C.int) -> rawptr ---
 	@(link_name = "hash_find_len")
 	hash_find_len_e :: proc "c" (ht: rawptr, key: cstring, len: C.size_t) -> rawptr ---
 }
@@ -2623,7 +2619,7 @@ find_hi_in_scoped_ht :: proc "c" (name: cstring, pht: ^rawptr) -> rawptr {
 	varname: cstring = nil
 	current_funccal = (^rawptr)(uintptr((^rawptr)(uintptr(current_funccal) + FC_FUNC_OFF_O)^) + UF_SCOPED_OFF_O)^
 	for current_funccal != nil {
-		ht := find_var_ht_e(name, namelen, &varname)
+		ht := 	find_var_ht(name, namelen, &varname)
 		if ht != nil && ([^]u8)(varname)[0] != 0 {
 			hi = hash_find_len_e(ht, varname, namelen - C.size_t(uintptr(transmute(rawptr)(varname)) - uintptr(transmute(rawptr)(name))))
 			if hi != nil {
@@ -2657,9 +2653,9 @@ find_var_in_scoped_ht :: proc "c" (name: cstring, namelen: C.size_t, no_autoload
 	varname: cstring = nil
 	current_funccal = (^rawptr)(uintptr((^rawptr)(uintptr(current_funccal) + FC_FUNC_OFF_O)^) + UF_SCOPED_OFF_O)^
 	for current_funccal != nil {
-		ht := find_var_ht_e(name, namelen, &varname)
+		ht := 	find_var_ht(name, namelen, &varname)
 		if ht != nil && ([^]u8)(varname)[0] != 0 {
-			v = find_var_in_ht_e(ht, C.int(([^]u8)(name)[0]), varname, namelen - C.size_t(uintptr(transmute(rawptr)(varname)) - uintptr(transmute(rawptr)(name))), no_autoload)
+			v = 	find_var_in_ht(ht, C.int(([^]u8)(name)[0]), varname, namelen - C.size_t(uintptr(transmute(rawptr)(varname)) - uintptr(transmute(rawptr)(name))), no_autoload)
 			if v != nil {
 				break
 			}
@@ -2838,7 +2834,7 @@ ex_call_inner_o :: proc "c" (eap: rawptr, name: cstring, arg: ^cstring, startarg
 			failed = true
 			break
 		}
-		tv_clear_e(&rettv)
+		tv_clear(&rettv)
 		if doesrange_dummy {
 			break
 		}
@@ -2902,7 +2898,7 @@ ex_defer_inner_o :: proc "c" (name: cstring, arg: ^cstring, partial: rawptr, eva
 	if r == FAIL_E {
 		for argcount > 0 {
 			argcount -= 1
-			tv_clear_e(&argvars[int(argcount)])
+			tv_clear(&argvars[int(argcount)])
 		}
 		return FAIL_E
 	}
@@ -2925,7 +2921,7 @@ ex_call :: proc "c" (eap: rawptr) {
 		rettv := Typval_T{v_type = VAR_UNKNOWN}
 		emsg_skip += 1
 		if eval0_e(arg, &rettv, eap, rawptr(&ea)) != FAIL_E {
-			tv_clear_e(&rettv)
+			tv_clear(&rettv)
 		}
 		emsg_skip -= 1
 		clear_evalarg_e(rawptr(&ea), eap)
@@ -3034,7 +3030,7 @@ do_return :: proc "c" (eap: rawptr, reanimate: bool, is_cmd: bool, rettv: rawptr
 	} else {
 		(^bool)(uintptr(current_funccal) + FC_RETURNED_OFF_O)^ = true
 		if !reanimate && rettv != nil {
-			tv_clear_e((^Typval_T)((^rawptr)(uintptr(current_funccal) + FC_RETTV_OFF_O)^))
+			tv_clear((^Typval_T)((^rawptr)(uintptr(current_funccal) + FC_RETTV_OFF_O)^))
 			(^Typval_T)((^rawptr)(uintptr(current_funccal) + FC_RETTV_OFF_O)^)^ = (^Typval_T)(rettv)^
 			if !is_cmd {
 				xfree(rettv)
@@ -3096,7 +3092,7 @@ ex_return :: proc "c" (eap: rawptr) {
 		if !(^bool)(uintptr(eap) + EXARG_SKIP_OFF2_O)^ {
 			returning = do_return(eap, false, true, rawptr(&rettv))
 		} else {
-			tv_clear_e(&rettv)
+			tv_clear(&rettv)
 		}
 	} else if !(^bool)(uintptr(eap) + EXARG_SKIP_OFF2_O)^ {
 		update_force_abort_e()
@@ -4030,7 +4026,7 @@ ex_function :: proc "c" (eap: rawptr) {
 	namelen: C.size_t = 0
 	if (^rawptr)(uintptr(&fudi[0]) + FD_DICT_OFF_O)^ == nil {
 		ht: rawptr = nil
-		v := find_var_e(name, C.size_t(libc.strlen(name)), rawptr(&ht), 0)
+		v := 	find_var(name, C.size_t(libc.strlen(name)), rawptr(&ht), 0)
 		if v != nil && (^C.int)(uintptr(v))^ == VAR_FUNC {
 			emsg_funcname(cstring(E707_S), name)
 			stage = 1
@@ -4145,7 +4141,7 @@ ex_function :: proc "c" (eap: rawptr) {
 				}
 				(^rawptr)(uintptr(&fudi[0]) + 16)^ = fd_di2
 			} else {
-				tv_clear_e((^Typval_T)(fd_di2))
+				tv_clear((^Typval_T)(fd_di2))
 			}
 			(^C.int)(uintptr(fd_di2))^ = VAR_FUNC
 			(^rawptr)(uintptr(fd_di2) + 8)^ = rawptr(func_name_dup)

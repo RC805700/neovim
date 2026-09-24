@@ -74,6 +74,15 @@ typedef enum {
 #pragma weak tv_dict_has_key
 #pragma weak tv_dict_get_tv
 #pragma weak tv_dict_get_number
+#pragma weak tv_dict_watcher_add
+#pragma weak tv_dict_watcher_notify
+#pragma weak tv_dict_watcher_remove
+#pragma weak tv_clear
+#pragma weak tv_dict_find
+#pragma weak tv_list_find
+#pragma weak tv_blob_copy
+#pragma weak tv_check_str_or_nr
+#pragma weak tv_blob_remove
 #pragma weak tv_dict_get_number_def
 #pragma weak tv_dict_get_bool
 #pragma weak tv_list_find_nr

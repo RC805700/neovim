@@ -155,9 +155,6 @@ foreign _ {
 	@(link_name = "eval_to_string")
 	eval_to_string :: proc "c" (arg: ^u8, join_list: bool, use_simple_function: bool) -> ^u8 ---
 
-	@(link_name = "tv_list_find")
-	tv_list_find :: proc "c" (l: rawptr, idx: C.int) -> rawptr ---
-
 	@(link_name = "ga_append_via_ptr")
 	ga_append_via_ptr :: proc "c" (gap: ^Garray, item_size: C.size_t) -> rawptr ---
 

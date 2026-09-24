@@ -69,6 +69,74 @@ typedef int (*ex_unletlock_callback)(lval_T *, char *, exarg_T *, int);
 #pragma weak get_var_value
 #pragma weak unref_var_dict
 #pragma weak del_menutrans_vars
+#pragma weak heredoc_get
+#pragma weak evalvars_init
+#pragma weak garbage_collect_globvars
+#pragma weak garbage_collect_vimvars
+#pragma weak garbage_collect_scriptvars
+#pragma weak prepare_vimvar
+#pragma weak restore_vimvar
+#pragma weak get_user_var_name
+#pragma weak new_script_vars
+#pragma weak reset_v_option_vars
+#pragma weak assert_error
+#pragma weak cat_prefix_varname
+#pragma weak before_set_vvar
+#pragma weak var_redir_start
+#pragma weak var_redir_str
+#pragma weak var_redir_stop
+#pragma weak get_globvar_dict
+#pragma weak get_globvar_ht
+#pragma weak v_exception
+#pragma weak v_throwpoint
+#pragma weak set_reg_var
+#pragma weak set_vcount
+#pragma weak set_cmdarg
+#pragma weak var_exists
+#pragma weak ex_let
+#pragma weak ex_let_vars
+#pragma weak eval_variable
+#pragma weak check_vars
+#pragma weak ex_unlet
+#pragma weak ex_lockvar
+#pragma weak do_unlet
+#pragma weak set_var
+#pragma weak set_var_const
+#pragma weak get_vim_var_tv
+#pragma weak get_vim_var_nr
+#pragma weak get_vim_var_list
+#pragma weak get_vim_var_dict
+#pragma weak get_vim_var_str
+#pragma weak get_vim_var_partial
+#pragma weak get_vim_var_name
+#pragma weak get_vimvar_dict
+#pragma weak set_vim_var_nr
+#pragma weak set_vim_var_bool
+#pragma weak set_vim_var_special
+#pragma weak set_vim_var_char
+#pragma weak set_vim_var_string
+#pragma weak set_vim_var_list
+#pragma weak set_vim_var_dict
+#pragma weak set_vim_var_partial
+#pragma weak set_vim_var_tv
+#pragma weak set_vim_var_type
+#pragma weak f_gettabvar
+#pragma weak f_gettabwinvar
+#pragma weak f_getwinvar
+#pragma weak f_getbufvar
+#pragma weak f_settabvar
+#pragma weak f_settabwinvar
+#pragma weak f_setwinvar
+#pragma weak f_setbufvar
+#pragma weak optval_as_tv
+#pragma weak find_var
+#pragma weak find_var_ht
+#pragma weak find_var_in_ht
+#pragma weak var_check_ro
+#pragma weak var_check_fixed
+#pragma weak var_check_lock
+#pragma weak var_wrong_func_name
+#pragma weak valid_varname
 
 // TODO(ZyX-I): Remove DICT_MAXNEST, make users be non-recursive instead
 
@@ -3653,4 +3721,41 @@ void f_setbufvar(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
     xfree(bufvarname);
     curbuf = save_curbuf;
   }
+}
+
+// Shims for Odin: reach C-static scope tables (read-only; C retains mutation).
+hashtab_T *nvim_odin_compat_hashtab(void)
+{
+  return &compat_hashtab;
+}
+
+typval_T *nvim_odin_vimvar_tv(int idx)
+{
+  return &vimvars[idx].vv_tv;
+}
+
+void *nvim_odin_globvars_var(void)
+{
+  return &globvars_var;
+}
+
+void *nvim_odin_vimvars_var(void)
+{
+  return &vimvars_var;
+}
+
+// Shims for Odin: g: scope store (read-only; C retains mutation).
+dict_T *nvim_odin_globvardict(void)
+{
+  return &globvardict;
+}
+
+hashtab_T *nvim_odin_globvarht(void)
+{
+  return &globvarht;
+}
+
+dict_T *nvim_odin_vimvardict(void)
+{
+  return &vimvardict;
 }

@@ -86,7 +86,7 @@ set_swapcommand :: proc "c"(command: ^u8, newlnum: C.int) -> bool {
 		size = C.size_t(libc.snprintf(data, valsize, cstring("%ldG"),
 			C.longlong(newlnum)))
 	}
-	set_vim_var_string(VV_SWAPCOMMAND, cstring(data), C.ssize_t(size))
+	set_vim_var_string(VV_SWAPCOMMAND, cstring(data), C.ptrdiff_t(size))
 	xfree(data)
 	return true
 }

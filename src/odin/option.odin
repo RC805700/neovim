@@ -3614,12 +3614,6 @@ set_title_defaults :: proc "c"() {
 }
 
 foreign _ {
-	@(link_name = "optval_as_tv")
-	optval_as_tv_c :: proc "c" (value: OptVal, numbool: bool) -> Typval_T ---
-	@(link_name = "set_vim_var_tv")
-	set_vim_var_tv_c :: proc "c" (idx: C.int, tv: ^Typval_T) ---
-	@(link_name = "reset_v_option_vars")
-	reset_v_option_vars_c :: proc "c" () ---
 }
 
 Typval_T :: struct { // 16 bytes
@@ -3823,40 +3817,40 @@ apply_optionset_autocmd_now :: proc "c"(opt_idx: C.int, opt_flags: C.int, oldval
 	oldval_g: OptVal, oldval_l: OptVal, newval: OptVal, errmsg: cstring) {
 	// Don't do this while starting up, failure or recursively.
 	// Don't do this while starting up, failure or recursively.
-	if starting != 0 || errmsg != nil || b_at((^u8)(get_vim_var_str_f(VV_OPTION_TYPE_S)), 0) != 0 {
+	if starting != 0 || errmsg != nil || b_at((^u8)(	get_vim_var_str(VV_OPTION_TYPE_S)), 0) != 0 {
 		return
 	}
 
 	buf_type: [7]u8
-	oldval_tv := optval_as_tv_c(oldval, false)
-	oldval_g_tv := optval_as_tv_c(oldval_g, false)
-	oldval_l_tv := optval_as_tv_c(oldval_l, false)
-	newval_tv := optval_as_tv_c(newval, false)
+	oldval_tv := 	optval_as_tv(oldval, false)
+	oldval_g_tv := 	optval_as_tv(oldval_g, false)
+	oldval_l_tv := 	optval_as_tv(oldval_l, false)
+	newval_tv := 	optval_as_tv(newval, false)
 
-	set_vim_var_tv_c(VV_OPTION_OLD_S, &oldval_tv)
-	set_vim_var_tv_c(VV_OPTION_NEW_S, &newval_tv)
+		set_vim_var_tv(VV_OPTION_OLD_S, &oldval_tv)
+		set_vim_var_tv(VV_OPTION_NEW_S, &newval_tv)
 	typelen := C.size_t(libc.snprintf(&buf_type[0], 7, "%s",
 		(opt_flags & OPT_LOCAL_S) != 0 ? cstring("local") : cstring("global")))
-	set_vim_var_string(VV_OPTION_TYPE_S, transmute(cstring)(&buf_type[0]), C.ssize_t(typelen))
+	set_vim_var_string(VV_OPTION_TYPE_S, transmute(cstring)(&buf_type[0]), C.ptrdiff_t(typelen))
 	if (opt_flags & OPT_LOCAL_S) != 0 {
 		set_vim_var_string(VV_OPTION_COMMAND_S, cstring("setlocal"), 8)
-		set_vim_var_tv_c(VV_OPTION_OLDLOCAL_S, &oldval_tv)
+			set_vim_var_tv(VV_OPTION_OLDLOCAL_S, &oldval_tv)
 	}
 	if (opt_flags & OPT_GLOBAL_S) != 0 {
 		set_vim_var_string(VV_OPTION_COMMAND_S, cstring("setglobal"), 9)
-		set_vim_var_tv_c(VV_OPTION_OLDGLOBAL_S, &oldval_tv)
+			set_vim_var_tv(VV_OPTION_OLDGLOBAL_S, &oldval_tv)
 	}
 	if (opt_flags & (OPT_LOCAL_S | OPT_GLOBAL_S)) == 0 {
 		set_vim_var_string(VV_OPTION_COMMAND_S, cstring("set"), 3)
-		set_vim_var_tv_c(VV_OPTION_OLDLOCAL_S, &oldval_l_tv)
-		set_vim_var_tv_c(VV_OPTION_OLDGLOBAL_S, &oldval_g_tv)
+			set_vim_var_tv(VV_OPTION_OLDLOCAL_S, &oldval_l_tv)
+			set_vim_var_tv(VV_OPTION_OLDGLOBAL_S, &oldval_g_tv)
 	}
 	if (opt_flags & OPT_MODELINE_S) != 0 {
 		set_vim_var_string(VV_OPTION_COMMAND_S, cstring("modeline"), 8)
-		set_vim_var_tv_c(VV_OPTION_OLDLOCAL_S, &oldval_tv)
+			set_vim_var_tv(VV_OPTION_OLDLOCAL_S, &oldval_tv)
 	}
 	apply_autocmds(EVENT_OPTIONSET_S, transmute(cstring)(opt_at(opt_idx).fullname), nil, false, nil)
-	reset_v_option_vars_c()
+	reset_v_option_vars()
 }
 
 // ── get/set_option_value_for (switch context) ────────────────────────────────
@@ -4604,7 +4598,7 @@ get_winbuf_options :: proc "c"(bufopt: C.int) -> rawptr {
 			varp := nvim_odin_get_varp_from(opt_idx, curbuf, curwin)
 
 			if varp != nil {
-				opt_tv := optval_as_tv_c(optval_from_varp(opt_idx, varp), true)
+				opt_tv := 	optval_as_tv(optval_from_varp(opt_idx, varp), true)
 				tv_dict_add_tv(d, transmute(cstring)(opt.fullname),
 					C.size_t(libc.strlen(transmute(cstring)(opt.fullname))), &opt_tv)
 			}

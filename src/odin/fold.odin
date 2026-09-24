@@ -1602,7 +1602,7 @@ get_foldtext :: proc "c" (wp: rawptr, lnum: C.int, lnume: C.int, foldinfo: Foldi
 		level := min(foldinfo.fi_level, C.int(size_of(dashes)) - 1)
 		libc.memset(&dashes[0], '-', C.size_t(level))
 		dashes[level] = 0
-		set_vim_var_string(VV_FOLDDASHES, transmute(cstring)(&dashes[0]), C.ssize_t(level))
+		set_vim_var_string(VV_FOLDDASHES, transmute(cstring)(&dashes[0]), C.ptrdiff_t(level))
 		set_vim_var_nr(VV_FOLDLEVEL, i64(level))
 
 		if !got_fdt_error {
@@ -1784,10 +1784,7 @@ strmove :: #force_inline proc "c"(dst: ^u8, src: ^u8) {
 	libc.memmove(dst, src, len + 1)
 }
 
-foreign _ {
-	@(link_name = "get_vim_var_nr")
-	get_vim_var_nr_f :: proc "c" (idx: C.int) -> i64 ---
-}
+
 
 foreign _ {
 	@(link_name = "strstr")
@@ -2751,9 +2748,9 @@ f_foldtext :: proc "c" (argvars: ^Typval, rettv: ^Typval, fptr: rawptr) {
 	rettv.v_type = VAR_STRING_U_F
 	(^rawptr)(uintptr(rettv) + 8)^ = nil
 
-	foldstart := C.int(get_vim_var_nr_f(VV_FOLDSTART))
-	foldend := C.int(get_vim_var_nr_f(VV_FOLDEND))
-	dashes := get_vim_var_str_f(VV_FOLDDASHES)
+	foldstart := C.int(	get_vim_var_nr(VV_FOLDSTART))
+	foldend := C.int(	get_vim_var_nr(VV_FOLDEND))
+	dashes := 	get_vim_var_str(VV_FOLDDASHES)
 	if foldstart > 0 && foldend <= ml_line_count_b(curbuf) {
 		lnum: C.int
 		for lnum = foldstart; lnum < foldend; lnum += 1 {
@@ -2786,12 +2783,7 @@ f_foldtext :: proc "c" (argvars: ^Typval, rettv: ^Typval, fptr: rawptr) {
 
 VAR_STRING_U_F :: 2
 
-foreign _ {
-	@(link_name = "get_vim_var_nr")
-	get_vim_var_nr_f2 :: proc "c" (idx: C.int) -> i64 ---
-	@(link_name = "get_vim_var_str")
-	get_vim_var_str_f :: proc "c" (idx: C.int) -> cstring ---
-}
+
 
 @(export)
 f_foldtextresult :: proc "c" (argvars: ^Typval, rettv: ^Typval, fptr: rawptr) {

@@ -201,9 +201,6 @@ foreign _ {
 	@(link_name = "xstrlcat")
 	_xstrlcat :: proc(dst: cstring, src: cstring, dsize: c.size_t) -> c.size_t ---
 
-	@(link_name = "get_vim_var_str")
-	_get_vim_var_str :: proc(idx: c.int) -> cstring ---
-
 	@(link_name = "xmemdupz")
 	_xmemdupz :: proc(data: rawptr, len: c.size_t) -> cstring ---
 
@@ -790,7 +787,7 @@ vim_env_iter_rev :: proc "c" (delim: u8, val: cstring, iter: rawptr, dir: ^cstri
 @(export)
 vim_get_prefix_from_exepath :: proc "c" (exe_name: cstring) {
 	context = runtime.default_context()
-	_xstrlcpy(exe_name, _get_vim_var_str(VV_PROGPATH), c.size_t(MAXPATHL))
+	_xstrlcpy(exe_name, 	get_vim_var_str(VV_PROGPATH), c.size_t(MAXPATHL))
 	path_end := _path_tail_with_sep(exe_name)
 	([^]u8)(path_end)[0] = 0
 	path_end = _path_tail(exe_name)

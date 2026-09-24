@@ -356,11 +356,6 @@ free_spat :: proc "c"(spat: ^SearchPattern) {
 	xfree(spat.additional_data)
 }
 
-foreign _ {
-	@(link_name = "set_vim_var_nr")
-	set_vim_var_nr_c :: proc "c" (idx: C.int, val: i64) ---
-}
-
 @(export)
 search_regcomp :: proc "c"(
 	pat_init: ^u8,
@@ -732,7 +727,7 @@ set_search_direction :: proc "c"(cdir: C.int) {
 }
 
 set_vv_searchforward :: proc "c"() {
-	set_vim_var_nr_c(VV_SEARCHFORWARD_S, spats[0].off.dir == '/' ? 1 : 0)
+		set_vim_var_nr(VV_SEARCHFORWARD_S, spats[0].off.dir == '/' ? 1 : 0)
 }
 
 VV_SEARCHFORWARD_S :: 56 // VV_SEARCHFORWARD index (vars.c VV list order)
@@ -2874,8 +2869,6 @@ w_p_siso_set :: proc "c"(wp: rawptr, v: C.longlong) {
 // ── f_searchcount ────────────────────────────────────────────────────────────
 
 foreign _ {
-	@(link_name = "tv_dict_find")
-	tv_dict_find_r :: proc "c" (d: rawptr, key: cstring, len: C.ssize_t) -> rawptr ---
 	// tv_list_len is a C static inline — see tv_list_len_i below.
 }
 
@@ -2921,35 +2914,35 @@ f_searchcount :: proc "c"(argvars: ^Typval, rettv: ^Typval, fptr: rawptr) {
 			return
 		}
 		dict := tv_vval_dict(&([^]Typval)(argvars)[0])
-		di := tv_dict_find_r(dict, "timeout", -C.ssize_t(1))
+		di := 	tv_dict_find(dict, "timeout", 	C.ptrdiff_t(-1))
 		if di != nil {
 			timeout = C.int(tv_get_number_chk(transmute(^Typval_T)(di_tv_of(di)), &err))
 			if err {
 				return
 			}
 		}
-		di = tv_dict_find_r(dict, "maxcount", -C.ssize_t(1))
+		di = 	tv_dict_find(dict, "maxcount", 	C.ptrdiff_t(-1))
 		if di != nil {
 			maxcount = C.int(tv_get_number_chk(transmute(^Typval_T)(di_tv_of(di)), &err))
 			if err {
 				return
 			}
 		}
-		di = tv_dict_find_r(dict, "recompute", -C.ssize_t(1))
+		di = 	tv_dict_find(dict, "recompute", 	C.ptrdiff_t(-1))
 		if di != nil {
 			recompute = tv_get_number_chk(transmute(^Typval_T)(di_tv_of(di)), &err) != 0
 			if err {
 				return
 			}
 		}
-		di = tv_dict_find_r(dict, "pattern", -C.ssize_t(1))
+		di = 	tv_dict_find(dict, "pattern", 	C.ptrdiff_t(-1))
 		if di != nil {
 			pattern = tv_get_string_chk_r(di_tv_of(di))
 			if pattern == nil {
 				return
 			}
 		}
-		di = tv_dict_find_r(dict, "pos", -C.ssize_t(1))
+		di = 	tv_dict_find(dict, "pos", 	C.ptrdiff_t(-1))
 		if di != nil {
 			di_tv := di_tv_of(di)
 			if di_tv.v_type != VAR_LIST_S {
