@@ -51,6 +51,9 @@ const char *const encode_special_var_names[] = {
 #pragma weak encode_init_lrstate
 #pragma weak encode_check_json_key
 #pragma weak encode_tv2echo
+#pragma weak encode_tv2string
+#pragma weak encode_tv2json
+#pragma weak encode_vim_to_msgpack
 
 /// Msgpack callback for writing to a Blob
 int encode_blob_write(void *const data, const char *const buf, const size_t len)
@@ -1071,8 +1074,5 @@ ListReaderState encode_init_lrstate(const list_T *const list)
   };
 }
 
-// Shim for Odin: reset encode.c's file-static error flag.
-void nvim_odin_reset_echo_emsg(void)
-{
-  did_echo_string_emsg = false;
-}
+// Shims for Odin string-mode RECURSE (E724 once-only flag) live in
+// eval/encode_shim.c (they own the flag post-cutover).

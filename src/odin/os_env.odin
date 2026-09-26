@@ -462,7 +462,7 @@ expand_env_esc :: proc "c" (srcp: cstring, dst: cstring, dstlenp: c.int, esc_cha
 						tail += 1
 					}
 					([^]u8)(var)[0] = 0
-					var = uintptr(rawptr(vim_getenv(dst)))
+					var = uintptr(rawptr(vim_getenv(cstring(rawptr(d)))))
 					mustfree = true
 				}
 			} else if ([^]u8)(s)[1] == 0 || _vim_ispathsep(c.int(([^]u8)(s)[1])) || _vim_strchr(", \t\n", c.int(([^]u8)(s)[1])) != nil {
@@ -479,7 +479,7 @@ expand_env_esc :: proc "c" (srcp: cstring, dst: cstring, dstlenp: c.int, esc_cha
 					cl -= 1
 				}
 				([^]u8)(var)[0] = 0
-				var = ([^]u8)(d)[0] == 0 ? 0 : uintptr(rawptr(os_get_userdir(cstring(rawptr(var + 1)))))
+				var = ([^]u8)(d)[0] == 0 ? 0 : uintptr(rawptr(os_get_userdir(cstring(rawptr(d + 1)))))
 				mustfree = true
 				if var == 0 {
 					xpc: expand_T

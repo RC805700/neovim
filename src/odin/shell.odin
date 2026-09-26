@@ -394,10 +394,7 @@ os_expand_wildcards :: proc "c" (num_pat: c.int, pat: ^^u8, num_file: ^c.int, fi
 		}
 	}
 
-	len = c.size_t(0)
-	for k := c.size_t(0); ([^]u8)(p_sh)[k] != 0; k += 1 {
-		len += 1
-	}
+	len = c.size_t(libc.strlen(transmute(cstring)(tempname)))
 	len += 29
 	if shell_style == STYLE_VIMGLOB {
 		len += c.size_t(0)
@@ -678,8 +675,8 @@ os_expand_wildcards :: proc "c" (num_pat: c.int, pat: ^^u8, num_file: ^c.int, fi
 		if !dir && flags & EW_EXEC != 0 && !os_can_exe(transmute(cstring)(([^]^u8)(file^)[i]), nil, flags & (EW_EXEC<<1) == 0) {
 			continue
 		}
-		pp := (^u8)(xmalloc(cstr_len((^u8)(uintptr(([^]^u8)(file^)[i]) + 1)) + 1 + (dir ? 1 : 0)))
-		xstrlcpy(transmute(cstring)(pp), transmute(cstring)(([^]^u8)(file^)[i]), c.size_t(cstr_len((^u8)(uintptr(([^]^u8)(file^)[i]) + 1))))
+		pp := (^u8)(xmalloc(cstr_len(([^]^u8)(file^)[i]) + 1 + (dir ? 1 : 0)))
+		xstrlcpy(transmute(cstring)(pp), transmute(cstring)(([^]^u8)(file^)[i]), c.size_t(cstr_len(([^]^u8)(file^)[i]) + 1))
 		if dir {
 			add_pathsep(pp)
 		}

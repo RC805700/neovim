@@ -8023,18 +8023,18 @@ may_trigger_win_scrolled_resized :: proc "c"() {
 	// If both are to be triggered do WinResized first.
 	if trigger_resize && windows_list != nil {
 		save_v_event: [SAVE_V_EVENT_SIZE_O]u8
-		v_event := get_v_event_r(&save_v_event[0])
+		v_event := get_v_event(&save_v_event[0])
 		if tv_dict_add_list(v_event, cstring("windows"), 7, windows_list) == OK {
 			tv_dict_set_keys_readonly(v_event)
 			buf := bufref_valid(&resize_bufref) ? resize_bufref.br_buf : curbuf
 			apply_autocmds(EVENT_WINRESIZED_O, transmute(cstring)(&resize_winid[0]),
 				transmute(cstring)(&resize_winid[0]), false, buf)
 		}
-		restore_v_event_r(v_event, &save_v_event[0])
+		restore_v_event(v_event, &save_v_event[0])
 	}
 	if trigger_scroll && scroll_dict != nil {
 		save_v_event: [SAVE_V_EVENT_SIZE_O]u8
-		v_event := get_v_event_r(&save_v_event[0])
+		v_event := get_v_event(&save_v_event[0])
 		// Move the entries from scroll_dict to v_event.
 		tv_dict_extend(v_event, scroll_dict, cstring("move"))
 		tv_dict_set_keys_readonly(v_event)

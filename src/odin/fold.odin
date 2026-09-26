@@ -173,10 +173,6 @@ foreign _ {
 	get_sw_value_r :: proc "c" (buf: rawptr) -> C.int ---
 	@(link_name = "syn_get_foldlevel")
 	syn_get_foldlevel_r :: proc "c" (wp: rawptr, lnum: C.int) -> C.int ---
-	@(link_name = "eval_foldexpr")
-	eval_foldexpr_r :: proc "c" (wp: rawptr, cp: ^C.int) -> C.int ---
-	@(link_name = "eval_foldtext")
-	eval_foldtext_r :: proc "c" (wp: rawptr) -> Api_Object ---
 	@(link_name = "parse_virt_text")
 	parse_virt_text_r :: proc "c" (chunks: Kvec_Obj, err: ^Api_Error, width: ^C.int, untab: bool) -> Kvec_VT ---
 	@(link_name = "api_free_object")
@@ -1617,7 +1613,7 @@ get_foldtext :: proc "c" (wp: rawptr, lnum: C.int, lnume: C.int, foldinfo: Foldi
 
 			emsg_off += 1
 
-			obj := eval_foldtext_r(wp)
+			obj := eval_foldtext(wp)
 			if obj.t == kObjectTypeString_API { // kObjectTypeString
 				text = (^Api_String)(uintptr(&obj) + 8)^.data
 			} else if obj.t == kObjectTypeArray_API { // kObjectTypeArray
@@ -2509,7 +2505,7 @@ foldlevelExpr :: proc "c" (flp: ^Fline_T) {
 	save_keytyped := KeyTyped
 
 	c: C.int
-	n := eval_foldexpr_r(flp.wp, &c)
+	n := eval_foldexpr(flp.wp, &c)
 	KeyTyped = save_keytyped
 
 	switch c {

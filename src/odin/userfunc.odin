@@ -45,7 +45,7 @@ deref_func_name :: proc "c" (name: cstring, lenp: ^C.int, partialp: ^rawptr, no_
 		if partialp != nil {
 			partialp^ = pt
 		}
-		s := partial_name_e(pt)
+		s := partial_name(pt)
 		lenp^ = C.int(libc.strlen(s))
 		return s
 	}
@@ -310,19 +310,7 @@ printable_func_name :: proc "c" (fp: rawptr) -> cstring {
 foreign _ {
 }
 
-// —— Batch 24e: trans_function_name ——
-foreign _ {
-	@(link_name = "get_lval")
-	get_lval_e :: proc "c" (name: cstring, rettv: rawptr, lp: rawptr, unlet: bool, skip: bool, flags: C.int, fne_flags: C.int) -> cstring ---
-	@(link_name = "clear_lval")
-	clear_lval_e :: proc "c" (lp: rawptr) ---
-	@(link_name = "get_id_len")
-	get_id_len_e :: proc "c" (arg: ^cstring) -> C.int ---
-	@(link_name = "is_luafunc")
-	is_luafunc_e :: proc "c" (pt: rawptr) -> bool ---
-	@(link_name = "check_luafunc_name")
-	check_luafunc_name_e :: proc "c" (s: cstring, paren: bool) -> C.int ---
-}
+// —— Batch 24e: trans_function_name (FFI fully rewired) ——
 
 // lval_T offsets (cc-probed, sizeof 96).
 LL_NAME_OFF_O :: 0
@@ -364,7 +352,7 @@ trans_function_name :: proc "c" (pp: ^cstring, skip: bool, flags: C.int, fdp: ra
 	pnb := ([^]u8)(start)
 	if pnb[0] == 0x80 && pnb[1] == KS_EXTRA && pnb[2] == KE_SNR_O {
 		pp^ = transmute(cstring)(rawptr(uintptr(rawptr(pp^)) + uintptr(3)))
-		length = get_id_len_e(pp) + 3
+		length = get_id_len(pp) + 3
 		return transmute(cstring)(xmemdupz_o2(transmute(^u8)(rawptr(start)), C.size_t(length)))
 	}
 	lead := int(eval_fname_script(start))
@@ -375,7 +363,7 @@ trans_function_name :: proc "c" (pp: ^cstring, skip: bool, flags: C.int, fdp: ra
 	if lead > 2 {
 		fne = 0
 	}
-	end := get_lval_e(start, nil, rawptr(&lv[0]), false, skip, flags | GLV_READ_ONLY_O, fne)
+	end := get_lval(start, nil, rawptr(&lv[0]), false, skip, flags | GLV_READ_ONLY_O, fne)
 	lvp := uintptr(rawptr(&lv[0]))
 	for _ in 0..<1 {
 		if rawptr(end) == rawptr(start) {
@@ -392,7 +380,7 @@ trans_function_name :: proc "c" (pp: ^cstring, skip: bool, flags: C.int, fdp: ra
 					semsg(e_invarg2, start)
 				}
 			} else {
-				pp^ = find_name_end_e(start, nil, nil, FNE_INCL_BR_O)
+				pp^ = find_name_end(start, nil, nil, FNE_INCL_BR_O)
 			}
 			break
 		}
@@ -409,9 +397,9 @@ trans_function_name :: proc "c" (pp: ^cstring, skip: bool, flags: C.int, fdp: ra
 				pp^ = end
 			} else if tv.v_type == VAR_PARTIAL && rawptr(tv.vval) != nil {
 				pt := rawptr(tv.vval)
-				if is_luafunc_e(pt) && ([^]u8)(end)[0] == '.' {
+				if is_luafunc(pt) && ([^]u8)(end)[0] == '.' {
 					after := transmute(cstring)(rawptr(uintptr(rawptr(end)) + uintptr(1)))
-					length = check_luafunc_name_e(after, true)
+					length = check_luafunc_name(after, true)
 					if length == 0 {
 						semsg(cstring(E_INVEXPR2_S), cstring("v:lua"))
 						break
@@ -421,7 +409,7 @@ trans_function_name :: proc "c" (pp: ^cstring, skip: bool, flags: C.int, fdp: ra
 					name = transmute(cstring)(nb)
 					pp^ = transmute(cstring)(rawptr(uintptr(rawptr(end)) + uintptr(1) + uintptr(length)))
 				} else {
-					name = transmute(cstring)(xstrdup_o(transmute(^u8)(partial_name_e(pt))))
+					name = transmute(cstring)(xstrdup_o(transmute(^u8)(partial_name(pt))))
 					pp^ = end
 				}
 				if partial != nil {
@@ -534,7 +522,7 @@ trans_function_name :: proc "c" (pp: ^cstring, skip: bool, flags: C.int, fdp: ra
 		name = transmute(cstring)(nbuf)
 		pp^ = end
 	}
-	clear_lval_e(rawptr(&lv[0]))
+	clear_lval(rawptr(&lv[0]))
 	return name
 }
 
@@ -675,10 +663,6 @@ FCERR_DICT_O :: 4
 FCERR_OTHER_O :: 6
 FCERR_DELETED_O :: 7
 FCERR_NOTMETHOD_O :: 8
-foreign _ {
-	@(link_name = "callback_call")
-	callback_call_e :: proc "c" (callback: rawptr, argcount: C.int, argvars: ^Typval_T, rettv: ^Typval_T) -> bool ---
-}
 
 // Report a user-function call error (static in C).
 user_func_error_o :: proc "c" (error: C.int, name: cstring, found_var: bool) {
@@ -722,7 +706,7 @@ argv_add_base_o :: proc "c" (basetv: rawptr, argvars: ^rawptr, argcount: ^C.int,
 callback_call_retnr :: proc "c" (callback: rawptr, argcount: C.int, argvars: ^Typval_T) -> C.longlong {
 	context = runtime.default_context()
 	rettv: Typval_T
-	if !callback_call_e(callback, argcount, argvars, &rettv) {
+	if !callback_call(callback, argcount, argvars, &rettv) {
 		return -2
 	}
 	retval := tv_get_number_chk(&rettv, nil)
@@ -871,7 +855,7 @@ call_func :: proc "c" (funcname: cstring, len: C.int, rettv: ^Typval_T, argcount
 		rettv.v_type = VAR_NUMBER
 		rettv.vval = transmute(rawptr)(C.longlong(0))
 		error = FCERR_UNKNOWN_O
-		if is_luafunc_e(partial) {
+		if is_luafunc(partial) {
 			if nlen > 0 {
 				error = FCERR_NONE_O
 				argv_add_base_o(fe.basetv, transmute(^rawptr)(&av), &argcount, rawptr(&argv[0]), &argv_base)
@@ -1343,7 +1327,7 @@ call_user_func :: proc "c" (fp: rawptr, argcount: C.int, argvars: ^Typval_T, ret
 			if isdefault {
 				de := transmute(cstring)(([^]cstring)((^rawptr)(uintptr(fp) + UF_DEF_ARGS_OFF_O + 16)^)[uintptr(ai + (^C.int)(uintptr(fp) + UF_DEF_ARGS_OFF_O)^)])
 				ea := Evalarg_T{eval_flags = 1}
-				if eval1_e(&de, &def_rettv, rawptr(&ea)) == FAIL_E {
+				if eval1(&de, &def_rettv, rawptr(&ea)) == FAIL_E {
 					default_arg_err = true
 					break
 				}
@@ -1409,7 +1393,7 @@ call_user_func :: proc "c" (fp: rawptr, argcount: C.int, argvars: ^Typval_T, ret
 					msg_outnum(C.int(transmute(C.longlong)(ain[j].vval)))
 				} else {
 					emsg_off += 1
-					tofree := encode_tv2string_e((^Typval_T)(uintptr(argvars) + uintptr(j) * 16), nil)
+					tofree := transmute(^u8)(encode_tv2string((^Typval_T)(uintptr(argvars) + uintptr(j) * 16), nil))
 					emsg_off -= 1
 					if tofree != nil {
 						s := transmute(cstring)(tofree)
@@ -1462,7 +1446,7 @@ call_user_func :: proc "c" (fp: rawptr, argcount: C.int, argvars: ^Typval_T, ret
 		p := transmute(cstring)(rawptr(uintptr(line0) + 7))
 		ex_nesting_level_g += 1
 		ea2 := Evalarg_T{eval_flags = 1}
-		eval1_e(&p, rettv, rawptr(&ea2))
+		eval1(&p, rettv, rawptr(&ea2))
 		ex_nesting_level_g -= 1
 	} else {
 		do_cmdline_e(nil, get_func_line, rawptr(fc), DOCMD_VERBOSE_O | DOCMD_NOWAIT_O | DOCMD_REPEAT_O)
@@ -1497,7 +1481,7 @@ call_user_func :: proc "c" (fp: rawptr, argcount: C.int, argvars: ^Typval_T, ret
 			smsg(0, cstring("%s returning #%ld"), sourcing_name_str_o(), C.long(transmute(C.longlong)((^rawptr)(uintptr(fc_rettv) + 8)^)))
 		} else {
 			emsg_off += 1
-			s := encode_tv2string_e((^Typval_T)((^rawptr)(uintptr(fc) + FC_RETTV_OFF_O)^), nil)
+			s := encode_tv2string((^Typval_T)((^rawptr)(uintptr(fc) + FC_RETTV_OFF_O)^), nil)
 			tofree2 := s
 			emsg_off -= 1
 			if s != nil {
@@ -1515,6 +1499,8 @@ call_user_func :: proc "c" (fp: rawptr, argcount: C.int, argvars: ^Typval_T, ret
 		verbose_leave_scroll_e()
 		no_wait_return -= 1
 	}
+	// Balance estack_push_ufunc_e() above (C pops before restoring sctx).
+	estack_pop_r()
 	libc.memcpy(rawptr(&current_sctx_buf[0]), rawptr(&saved_sctx[0]), 24)
 	if do_profiling_yes {
 		script_prof_restore_e(&wait_start)
@@ -1873,12 +1859,7 @@ cleanup_function_call_o :: proc "c" (fc: rawptr) {
 	}
 }
 
-// —— Batch 24o: get_func_tv + funcargs move ——
-foreign _ {
-	@(link_name = "set_ref_in_item")
-	set_ref_in_item_e :: proc "c" (tv: ^Typval_T, copyID: C.int, ht_stack: rawptr, list_stack: rawptr) -> bool ---
-}
-
+// —— Batch 24o: get_func_tv + funcargs move (FFI fully rewired) ——
 VV_TESTING_O :: 76
 EVAL_EVALUATE_O :: 1
 E740_S :: "E740: Too many arguments for function %s"
@@ -1899,7 +1880,7 @@ get_func_arguments_o :: proc "c" (arg: ^cstring, evalarg: rawptr, partial_argc: 
 			break
 		}
 		tvp := (^Typval_T)(uintptr(argvars) + uintptr(argcount^) * 16)
-		if eval1_e(&argp, tvp, evalarg) == FAIL_E {
+		if eval1(&argp, tvp, evalarg) == FAIL_E {
 			ret = FAIL_E
 			break
 		}
@@ -1970,7 +1951,7 @@ set_ref_in_func_args :: proc "c" (copyID: C.int) -> bool {
 	context = runtime.default_context()
 	for i: C.int = 0; i < funcargs.ga_len; i += 1 {
 		tv := (^Typval_T)(([^]rawptr)(funcargs.ga_data)[uintptr(i)])
-		if set_ref_in_item_e(tv, copyID, nil, nil) {
+		if set_ref_in_item(tv, copyID, nil, nil) {
 			return true
 		}
 	}
@@ -2367,7 +2348,7 @@ get_function_args_o :: proc "c" (argp: ^cstring, endchar: u8, newargs: ^Garray, 
 				p = skipwhite(p)
 				expr := p
 				rettv := Typval_T{v_type = VAR_NUMBER}
-				if eval1_e(&p, &rettv, nil) != FAIL_E {
+				if eval1(&p, &rettv, nil) != FAIL_E {
 					ga_grow_r(default_args, 1)
 					for uintptr(transmute(rawptr)(p)) > uintptr(transmute(rawptr)(expr)) && ascii_iswhite(([^]u8)(transmute(rawptr)(uintptr(transmute(rawptr)(p)) - 1))[0]) {
 						p = transmute(cstring)(rawptr(uintptr(transmute(rawptr)(p)) - 1))
@@ -2598,10 +2579,6 @@ find_func :: proc "c" (name: cstring) -> rawptr {
 
 // —— Batch 24u: scoped lookup + GC marking ——
 foreign _ {
-	@(link_name = "set_ref_in_ht")
-	set_ref_in_ht_e :: proc "c" (ht: rawptr, copyID: C.int, list_stack: rawptr) -> bool ---
-	@(link_name = "set_ref_in_list_items")
-	set_ref_in_list_items_e :: proc "c" (l: rawptr, copyID: C.int, ht_stack: rawptr) -> bool ---
 	@(link_name = "hash_find_len")
 	hash_find_len_e :: proc "c" (ht: rawptr, key: cstring, len: C.size_t) -> rawptr ---
 }
@@ -2675,9 +2652,9 @@ set_ref_in_funccal_o :: proc "c" (fc: rawptr, copyID: C.int) -> bool {
 	context = runtime.default_context()
 	if (^C.int)(uintptr(fc) + FC_COPYID_OFF_O)^ != copyID {
 		(^C.int)(uintptr(fc) + FC_COPYID_OFF_O)^ = copyID
-		if set_ref_in_ht_e(rawptr(uintptr(fc) + FC_L_VARS_OFF_O + 16), copyID, nil) ||
-		   set_ref_in_ht_e(rawptr(uintptr(fc) + FC_L_AVARS_OFF_O + 16), copyID, nil) ||
-		   set_ref_in_list_items_e(rawptr(uintptr(fc) + FC_L_VARLIST_OFF_O), copyID, nil) ||
+		if set_ref_in_ht(rawptr(uintptr(fc) + FC_L_VARS_OFF_O + 16), copyID, nil) ||
+		   set_ref_in_ht(rawptr(uintptr(fc) + FC_L_AVARS_OFF_O + 16), copyID, nil) ||
+		   set_ref_in_list_items(rawptr(uintptr(fc) + FC_L_VARLIST_OFF_O), copyID, nil) ||
 		   set_ref_in_func(nil, (^rawptr)(uintptr(fc) + FC_FUNC_OFF_O)^, copyID) {
 			return true
 		}
@@ -2692,9 +2669,9 @@ set_ref_in_previous_funccal :: proc "c" (copyID: C.int) -> bool {
 	fc := previous_funccal
 	for fc != nil {
 		(^C.int)(uintptr(fc) + FC_COPYID_OFF_O)^ = copyID + 1
-		if set_ref_in_ht_e(rawptr(uintptr(fc) + FC_L_VARS_OFF_O + 16), copyID + 1, nil) ||
-		   set_ref_in_ht_e(rawptr(uintptr(fc) + FC_L_AVARS_OFF_O + 16), copyID + 1, nil) ||
-		   set_ref_in_list_items_e(rawptr(uintptr(fc) + FC_L_VARLIST_OFF_O), copyID + 1, nil) {
+		if set_ref_in_ht(rawptr(uintptr(fc) + FC_L_VARS_OFF_O + 16), copyID + 1, nil) ||
+		   set_ref_in_ht(rawptr(uintptr(fc) + FC_L_AVARS_OFF_O + 16), copyID + 1, nil) ||
+		   set_ref_in_list_items(rawptr(uintptr(fc) + FC_L_VARLIST_OFF_O), copyID + 1, nil) {
 			return true
 		}
 		fc = (^rawptr)(uintptr(fc) + FC_CALLER_OFF_O)^
@@ -2780,14 +2757,6 @@ set_ref_in_func :: proc "c" (name: cstring, fp_in: rawptr, copyID: C.int) -> boo
 
 // —— Batch 24x: :call/:defer command ——
 foreign _ {
-	@(link_name = "fill_evalarg_from_eap")
-	fill_evalarg_from_eap_e :: proc "c" (evalarg: rawptr, eap: rawptr, skip: bool) ---
-	@(link_name = "clear_evalarg")
-	clear_evalarg_e :: proc "c" (evalarg: rawptr, eap: rawptr) ---
-	@(link_name = "eval0")
-	eval0_e :: proc "c" (arg: cstring, rettv: ^Typval_T, eap: rawptr, evalarg: rawptr) -> C.int ---
-	@(link_name = "handle_subscript")
-	handle_subscript_e :: proc "c" (arg: ^cstring, rettv: ^Typval_T, evalarg: rawptr, verbose: bool) -> C.int ---
 	@(link_name = "check_internal_func")
 	check_internal_func_e :: proc "c" (fdef: rawptr, argcount: C.int) -> C.int ---
 	@(link_name = "did_throw")
@@ -2830,7 +2799,7 @@ ex_call_inner_o :: proc "c" (eap: rawptr, name: cstring, arg: ^cstring, startarg
 			break
 		}
 		ea := Evalarg_T{eval_flags = 1}
-		if handle_subscript_e(arg, &rettv, rawptr(&ea), true) == FAIL_E {
+		if handle_subscript(arg, &rettv, rawptr(&ea), true) == FAIL_E {
 			failed = true
 			break
 		}
@@ -2916,15 +2885,15 @@ ex_call :: proc "c" (eap: rawptr) {
 	partial: rawptr = nil
 	ea := Evalarg_T{}
 	skip := (^bool)(uintptr(eap) + EXARG_SKIP_OFF2_O)^
-	fill_evalarg_from_eap_e(rawptr(&ea), eap, skip)
+	fill_evalarg_from_eap(&ea, eap, skip)
 	if skip {
 		rettv := Typval_T{v_type = VAR_UNKNOWN}
 		emsg_skip += 1
-		if eval0_e(arg, &rettv, eap, rawptr(&ea)) != FAIL_E {
+		if eval0(arg, &rettv, eap, rawptr(&ea)) != FAIL_E {
 			tv_clear(&rettv)
 		}
 		emsg_skip -= 1
-		clear_evalarg_e(rawptr(&ea), eap)
+		clear_evalarg(&ea, eap)
 		return
 	}
 	tofree := trans_function_name(&arg, false, TFN_INT_O, rawptr(&fudi[0]), &partial)
@@ -2972,7 +2941,7 @@ ex_call :: proc "c" (eap: rawptr) {
 			(^rawptr)(uintptr(eap) + EXARG_NEXTCMD_OFF_O)^ = transmute(rawptr)(check_nextcmd_r(transmute(^u8)(arg)))
 		}
 	}
-	clear_evalarg_e(rawptr(&ea), eap)
+	clear_evalarg(&ea, eap)
 	tv_dict_unref((^rawptr)(uintptr(&fudi[0]) + FD_DICT_OFF_O)^)
 	xfree(rawptr(tofree))
 }
@@ -3088,7 +3057,7 @@ ex_return :: proc "c" (eap: rawptr) {
 		emsg_skip += 1
 	}
 	(^rawptr)(uintptr(eap) + EXARG_NEXTCMD_OFF_O)^ = nil
-	if (([^]u8)(arg)[0] != 0 && ([^]u8)(arg)[0] != '|' && ([^]u8)(arg)[0] != '\n') && eval0_e(arg, &rettv, eap, rawptr(&ea)) != FAIL_E {
+	if (([^]u8)(arg)[0] != 0 && ([^]u8)(arg)[0] != '|' && ([^]u8)(arg)[0] != '\n') && eval0(arg, &rettv, eap, rawptr(&ea)) != FAIL_E {
 		if !(^bool)(uintptr(eap) + EXARG_SKIP_OFF2_O)^ {
 			returning = do_return(eap, false, true, rawptr(&rettv))
 		} else {
@@ -3108,7 +3077,7 @@ ex_return :: proc "c" (eap: rawptr) {
 	if (^bool)(uintptr(eap) + EXARG_SKIP_OFF2_O)^ {
 		emsg_skip -= 1
 	}
-	clear_evalarg_e(rawptr(&ea), eap)
+	clear_evalarg(&ea, eap)
 }
 
 // —— Batch 24ab: function body reader (dormant) ——
@@ -3464,7 +3433,7 @@ list_func_head_o :: proc "c" (fp: rawptr, indent: bool, force: bool) -> C.int {
 	}
 	msg_clr_eos_r()
 	if p_verbose > 0 {
-		last_set_msg_r((^sctx_T)(uintptr(fp) + UF_SCRIPT_CTX_OFF_O)^)
+		last_set_msg((^sctx_T)(uintptr(fp) + UF_SCRIPT_CTX_OFF_O)^)
 	}
 	return OK_E
 }
@@ -3617,11 +3586,7 @@ func_clear_items_o :: proc "c" (fp: rawptr) {
 	}
 }
 
-// —— Batch 24z: partial binding + debug cookies + funccal GC ——
-foreign _ {
-	@(link_name = "garbage_collect")
-	garbage_collect_e :: proc "c" (testing: bool) -> bool ---
-}
+// —— Batch 24z: partial binding + debug cookies + funccal GC (FFI fully rewired) ——
 
 PT_NAME_OFF_O :: 8
 LV_COPYID_OFF_O :: 68
@@ -3683,7 +3648,7 @@ make_partial :: proc "c" (selfdict: rawptr, rettv: ^Typval_T) {
 					i += 1
 				}
 			}
-			partial_unref_e(ret_pt)
+			partial_unref(ret_pt)
 		}
 		rettv.v_type = VAR_PARTIAL
 		rettv.vval = transmute(rawptr)(pt)
@@ -3756,7 +3721,7 @@ free_unref_funccal :: proc "c" (copyID: C.int, testing: bool) -> bool {
 		}
 	}
 	if did_free_funccal {
-		garbage_collect_e(testing)
+		garbage_collect(testing)
 	}
 	return did_free
 }
@@ -3813,10 +3778,6 @@ func_clear_free_o :: proc "c" (fp: rawptr, force: bool) {
 
 // —— Batch 24ac: :function definition engine ——
 foreign _ {
-	@(link_name = "eval_isnamec")
-	eval_isnamec_e :: proc "c" (c: C.int) -> bool ---
-	@(link_name = "eval_isnamec1")
-	eval_isnamec1_e :: proc "c" (c: C.int) -> bool ---
 	@(link_name = "autoload_name")
 	autoload_name_e :: proc "c" (name: cstring, name_len: C.size_t) -> cstring ---
 	@(link_name = "prof_def_func")
@@ -3933,9 +3894,9 @@ ex_function :: proc "c" (eap: rawptr) {
 				ok := true
 				for ([^]u8)(nbp)[0] != 0 {
 					if i == 0 {
-						ok = eval_isnamec1_e(C.int(([^]u8)(nbp)[0]))
+						ok = eval_isnamec1(C.int(([^]u8)(nbp)[0]))
 					} else {
-						ok = eval_isnamec_e(C.int(([^]u8)(nbp)[0]))
+						ok = eval_isnamec(C.int(([^]u8)(nbp)[0]))
 					}
 					if !ok {
 						break

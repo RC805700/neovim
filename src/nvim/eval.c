@@ -7008,3 +7008,119 @@ char *typval_tostring(typval_T *arg, bool quotes)
   }
   return encode_tv2string(arg, NULL);
 }
+
+#pragma weak num_divide
+#pragma weak num_modulus
+#pragma weak get_copyID
+
+#pragma weak eval_expr_valid_arg
+#pragma weak eval_expr_to_bool
+
+#pragma weak pattern_match
+
+#pragma weak fill_evalarg_from_eap
+#pragma weak clear_evalarg
+#pragma weak eval_to_bool
+
+#pragma weak eval_to_string_skip
+#pragma weak skip_expr
+#pragma weak eval_to_string_eap
+#pragma weak eval_to_string
+#pragma weak eval_to_string_safe
+#pragma weak eval_to_number
+
+#pragma weak call_vim_function
+#pragma weak call_func_retstr
+#pragma weak call_func_retlist
+
+#pragma weak eval0
+
+#pragma weak eval_expr
+#pragma weak eval_expr_ext
+
+#pragma weak eval_expr_typval
+
+#pragma weak eval1
+
+#pragma weak f_slice
+#pragma weak eval_option
+#pragma weak eval_interp_string
+#pragma weak typval_compare
+#pragma weak handle_subscript
+#pragma weak eval_for_line
+#pragma weak next_for_item
+#pragma weak free_for_info
+#pragma weak get_lval
+#pragma weak set_var_lval
+#pragma weak clear_lval
+#pragma weak set_ref_in_ht
+#pragma weak set_ref_in_list_items
+#pragma weak set_ref_in_item
+#pragma weak set_ref_in_callback
+#pragma weak get_callback_depth
+#pragma weak callback_call
+#pragma weak ex_echo
+#pragma weak ex_echohl
+#pragma weak get_echo_hl_id
+#pragma weak ex_execute
+#pragma weak f_system
+#pragma weak f_systemlist
+#pragma weak eval_foldexpr
+#pragma weak eval_foldtext
+#pragma weak var_item_copy
+#pragma weak do_string_sub
+#pragma weak partial_name
+#pragma weak partial_unref
+#pragma weak func_equal
+#pragma weak may_call_simple_func
+#pragma weak grow_string_tv
+#pragma weak set_context_for_expression
+#pragma weak var2fpos
+#pragma weak list2fpos
+#pragma weak set_selfdict
+#pragma weak get_name_len
+#pragma weak find_option_var_end
+#pragma weak eval_isnamec
+#pragma weak eval_isnamec1
+#pragma weak eval_isdictc
+#pragma weak get_env_len
+#pragma weak get_id_len
+#pragma weak var_flavour
+#pragma weak typval_tostring
+#pragma weak find_timer_by_nr
+#pragma weak add_timer_info
+#pragma weak add_timer_info_all
+#pragma weak timer_due_cb
+#pragma weak timer_start
+#pragma weak timer_stop
+#pragma weak timer_stop_all
+#pragma weak timer_teardown
+#pragma weak callback_from_typval
+#pragma weak is_luafunc
+#pragma weak check_luafunc_name
+#pragma weak skip_luafunc_name
+#pragma weak char_from_string
+#pragma weak string_slice
+#pragma weak string2float
+#pragma weak buf_byteidx_to_charidx
+#pragma weak buf_charidx_to_byteidx
+#pragma weak tv_to_argv
+#pragma weak save_tv_as_string
+#pragma weak set_argv_var
+#pragma weak common_job_callbacks
+#pragma weak find_job
+#pragma weak find_name_end
+#pragma weak eval_fmt_source_name_line
+#pragma weak last_set_msg
+#pragma weak eval_init
+#pragma weak var_set_global
+#pragma weak eval_has_provider
+#pragma weak eval_call_provider
+#pragma weak script_host_eval
+#pragma weak garbage_collect
+#pragma weak get_v_event
+#pragma weak restore_v_event
+#pragma weak prompt_get_input
+#pragma weak prompt_trim_scrollback
+#pragma weak prompt_invoke_callback
+#pragma weak invoke_prompt_interrupt

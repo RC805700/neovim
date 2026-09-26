@@ -185,7 +185,6 @@ foreign nvim {
 foreign nvim {
   // Startup sequence
   event_init :: proc() ---
-  set_argv_var :: proc(argv: [^]cstring, argc: c.int) ---
   command_line_scan :: proc(parmp: ^Mparm) ---
   set_argf_var :: proc() ---
   nlua_init :: proc(argv: [^]cstring, argc: c.int, lua_arg0: c.int) ---
@@ -207,7 +206,6 @@ foreign nvim {
   // early_init helpers (formerly called inside C's early_init)
   exestack: Garray
   ga_grow :: proc(gap: ^Garray, n: c.int) ---
-  eval_init :: proc() ---
   // os_realtime — PORTED to Odin (time.odin)
   runtime_init :: proc() ---
   // highlight_init — PORTED to Odin
@@ -684,7 +682,7 @@ main :: proc() {
   qf_init_stack()
 
   // ── Step 6-9: set_argv_var, check_isatty, command_line_scan, set_argf_var ──
-  set_argv_var(c_args, argc)
+  set_argv_var(transmute(^^u8)(c_args), c.int(argc))
   check_and_set_isatty(&params)
   command_line_scan(&params)
   set_argf_var()

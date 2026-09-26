@@ -380,10 +380,6 @@ foreign _ {
 	@(link_name = "utf_ptr2len_len")
 	utf_ptr2len_len_r :: proc "c" (p: cstring, size: C.int) -> C.int ---
 
-	@(link_name = "get_v_event")
-	get_v_event_r :: proc "c" (sve: rawptr) -> rawptr ---
-	@(link_name = "restore_v_event")
-	restore_v_event_r :: proc "c" (v_event: rawptr, sve: rawptr) ---
 	@(link_name = "get_op_char")
 	get_op_char_r :: proc "c" (optype: C.int) -> C.int ---
 
@@ -569,7 +565,7 @@ get_expr_line :: proc "c" () -> ^u8 {
 	}
 
 	get_expr_line_nested += 1
-	rv := eval_to_string(expr_copy, true, false)
+	rv := transmute(^u8)(eval_to_string(transmute(cstring)(expr_copy), true, false))
 	get_expr_line_nested -= 1
 	xfree(expr_copy)
 	return rv
@@ -822,7 +818,7 @@ do_record :: proc "c" (c: C.int) -> C.int {
 		}
 	} else { // stop recording
 		sve: Save_V_Event_T
-		dict := get_v_event_r(&sve)
+		dict := get_v_event(&sve)
 
 		p := get_recorded_r()
 		if p != nil {
@@ -838,7 +834,7 @@ do_record :: proc "c" (c: C.int) -> C.int {
 		tv_dict_set_keys_readonly(dict)
 
 		_ = apply_autocmds(EVENT_RECORDINGLEAVE, nil, nil, false, curbuf)
-		restore_v_event_r(dict, &sve)
+		restore_v_event(dict, &sve)
 		reg_recorded = reg_recording
 		reg_recording = 0
 		if p_ch == 0 || ui_has_r(kUIMessages) {
@@ -1518,7 +1514,7 @@ do_autocmd_textyankpost :: proc "c" (oap: rawptr, reg: ^Yankreg_T) {
 	typ_recursive = true
 
 	sve: Save_V_Event_T
-	dict := get_v_event_r(&sve)
+	dict := get_v_event(&sve)
 
 	// The yanked text contents.
 	list := tv_list_alloc(C.ssize_t(reg.y_size))
@@ -1554,7 +1550,7 @@ do_autocmd_textyankpost :: proc "c" (oap: rawptr, reg: ^Yankreg_T) {
 	textlock += 1
 	_ = apply_autocmds(EVENT_TEXTYANKPOST, nil, nil, false, curbuf)
 	textlock -= 1
-	restore_v_event_r(dict, &sve)
+	restore_v_event(dict, &sve)
 
 	typ_recursive = false
 }
@@ -1573,7 +1569,7 @@ put_do_autocmd :: proc "c"(regname: C.int, reg: ^Yankreg_T, insert: ^Str16, post
 	}
 
 	sve: Save_V_Event_T
-	v_event := get_v_event_r(&sve)
+	v_event := get_v_event(&sve)
 
 	list := tv_list_alloc(reg != nil ? C.ssize_t(reg.y_size) : 1)
 
@@ -1624,7 +1620,7 @@ put_do_autocmd :: proc "c"(regname: C.int, reg: ^Yankreg_T, insert: ^Str16, post
 	put_recursive = false
 
 	// Empty the dictionary, v:event is still valid
-	restore_v_event_r(v_event, &sve)
+	restore_v_event(v_event, &sve)
 }
 
 /// Yanks the text between oap->start and oap->end into a yank register.

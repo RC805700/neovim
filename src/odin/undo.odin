@@ -252,8 +252,6 @@ foreign _ {
 	read_eintr_r :: proc "c" (fd: C.int, buf: rawptr, bufsize: C.size_t) -> C.ssize_t ---
 	@(link_name = "FullName_save")
 	FullName_save_r :: proc "c" (fname: cstring, force: bool) -> ^u8 ---
-	@(link_name = "get_buf_arg")
-	get_buf_arg_r :: proc "c" (arg: ^Typval) -> rawptr ---
 	@(link_name = "file_ff_differs")
 	file_ff_differs_r :: proc "c" (buf: rawptr, ignore_empty: bool) -> bool ---
 	@(link_name = "extmark_apply_undo")
@@ -2958,7 +2956,7 @@ f_undotree :: proc "c" (argvars: ^Typval, rettv: ^Typval, fptr: rawptr) {
 	tv_dict_alloc_ret(transmute(^Typval_T)(rettv))
 
 	tv := &([^]Typval)(argvars)[0]
-	buf := tv.v_type == VAR_UNKNOWN_U ? curbuf : get_buf_arg_r(tv)
+	buf := tv.v_type == VAR_UNKNOWN_U ? curbuf : get_buf_arg(transmute(^Typval_T)(tv))
 	if buf == nil {
 		return
 	}

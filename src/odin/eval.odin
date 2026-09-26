@@ -8,6 +8,7 @@ package main
 import "base:runtime"
 import C "core:c"
 import "core:c/libc"
+import "core:sys/posix"
 
 // —— VarType extras (digraph.odin owns bare VAR_UNKNOWN..VAR_BOOL) ——
 VAR_SPECIAL :: 8
@@ -32,14 +33,6 @@ gc_first_dict: rawptr
 gc_first_list: rawptr
 
 // —— Batch 2: eval/executor.c ——
-foreign _ {
-	@(link_name = "grow_string_tv")
-	grow_string_tv_e :: proc "c" (tv: ^Typval_T, s2: cstring) -> C.int ---
-	@(link_name = "num_divide")
-	num_divide_e :: proc "c" (n1: C.longlong, n2: C.longlong) -> C.longlong ---
-	@(link_name = "num_modulus")
-	num_modulus_e :: proc "c" (n1: C.longlong, n2: C.longlong) -> C.longlong ---
-}
 
 // tv_blob_len is a C static inline (typval.h:248): bv_ga.ga_len @ blob+0.
 tv_blob_len_o :: proc "c" (b: rawptr) -> C.int {
@@ -145,9 +138,9 @@ tv_op_number_o :: proc "c" (tv1: ^Typval_T, tv2: ^Typval_T, op: cstring) -> C.in
 		} else if o == '*' {
 			n *= tv_get_number(tv2)
 		} else if o == '/' {
-			n = num_divide_e(n, tv_get_number(tv2))
+			n = num_divide(n, tv_get_number(tv2))
 		} else if o == '%' {
-			n = num_modulus_e(n, tv_get_number(tv2))
+			n = num_modulus(n, tv_get_number(tv2))
 		}
 		tv_clear(tv1)
 		tv1.v_type = VAR_NUMBER
@@ -164,7 +157,7 @@ tv_op_string_o :: proc "c" (tv1: ^Typval_T, tv2: ^Typval_T, op: cstring) -> C.in
 	}
 	numbuf: [65]u8 // NUMBUFLEN (digraph.odin)
 	s2 := tv_get_string_buf(tv2, &numbuf[0])
-	if grow_string_tv_e(tv1, s2) == OK_E {
+	if grow_string_tv(tv1, s2) == OK_E {
 		return OK_E
 	}
 	tvs := tv_get_string(tv1)
@@ -260,12 +253,6 @@ foreign _ {
 	channel_create_event_e :: proc "c" (chan: rawptr, ext_source: cstring) ---
 	@(link_name = "channel_close")
 	channel_close_e :: proc "c" (id: C.ulonglong, part: C.int, error: ^cstring) -> bool ---
-	@(link_name = "find_job")
-	find_job_e :: proc "c" (id: C.ulonglong, show_error: bool) -> rawptr ---
-	@(link_name = "f_jobstop")
-	f_jobstop_e :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) ---
-	@(link_name = "f_jobstart")
-	f_jobstart_e :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) ---
 }
 
 // Callback mirror (channel_defs.h): union{ptr}+type = 16B with tail pad.
@@ -376,8 +363,8 @@ f_rpcstop :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 		return
 	}
 	id := C.ulonglong(transmute(C.longlong)(a0.vval))
-	if find_job_e(id, false) != nil {
-		f_jobstop_e(argvars, rettv, fptr)
+	if find_job(id, false) != nil {
+		f_jobstop(argvars, rettv, fptr)
 	} else {
 		err: cstring
 		ok := channel_close_e(id, 3, &err) // kChannelPartRpc
@@ -426,7 +413,7 @@ f_termopen :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 		return
 	}
 	tv_dict_add_bool(a1_vval^, cstring("term"), 4, 1)
-	f_jobstart_e(argvars, rettv, fptr)
+	f_jobstart(argvars, rettv, fptr)
 	if must_free {
 		tv_dict_free(a1_vval^)
 	}
@@ -668,8 +655,6 @@ f_count :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 
 // —— Batch 6: eval/list.c filter/map engine ——
 foreign _ {
-	@(link_name = "eval_expr_typval")
-	eval_expr_typval_e :: proc "c" (expr: ^Typval_T, want_func: bool, argv: ^Typval_T, argc: C.int, rettv: ^Typval_T) -> C.int ---
 	@(link_name = "hash_lock")
 	hash_lock_e :: proc "c" (ht: rawptr) ---
 	@(link_name = "hash_unlock")
@@ -715,7 +700,7 @@ filter_map_one_o :: proc "c" (tv: ^Typval_T, expr: ^Typval_T, filtermap: C.int, 
 		argv: [3]Typval_T
 		argv[0] = 	get_vim_var_tv(VV_KEY_O)^
 		argv[1] = 	get_vim_var_tv(VV_VAL_O)^
-		if eval_expr_typval_e(expr, false, &argv[0], 2, newtv) != FAIL_E {
+		if eval_expr_typval(expr, false, &argv[0], 2, newtv) != FAIL_E {
 			if filtermap == FILTERMAP_FILTER_O {
 				err := false
 				remp^ = tv_get_number_chk(newtv, &err) == 0
@@ -899,7 +884,7 @@ filter_map_blob_o :: proc "c" (blob_arg: rawptr, filtermap: C.int, expr: ^Typval
 			} else if rem {
 				p := (^rawptr)(uintptr(blob_arg) + 16)^
 				n := (^C.int)(b)^
-				libc.memmove(rawptr(uintptr(p) + uintptr(i)), rawptr(uintptr(p) + uintptr(i) + 1), C.size_t(n - i - 1))
+				libc.memmove(rawptr(uintptr(rawptr(p)) + uintptr(i)), rawptr(uintptr(rawptr(p)) + uintptr(i) + 1), C.size_t(n - i - 1))
 				(^C.int)(b)^ = n - 1
 				i -= 1
 			}
@@ -1089,10 +1074,6 @@ f_foreach :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 }
 
 // —— Batch 7: eval/list.c extend/insert/remove ——
-foreign _ {
-	@(link_name = "get_copyID")
-	get_copyID_e :: proc "c" () -> C.int ---
-}
 
 E_LISTDICTARG_S :: "E712: Argument of %s must be a List or Dictionary"
 E_LISTBLOBARG_S :: "E899: Argument of %s must be a List or Blob"
@@ -1121,7 +1102,7 @@ extend_dict_o :: proc "c" (argvars: ^Typval_T, arg_errmsg: cstring, is_new: bool
 		return
 	}
 	if is_new {
-		d1 = tv_dict_copy(nil, d1, false, get_copyID_e())
+		d1 = tv_dict_copy(nil, d1, false, get_copyID())
 		if d1 == nil {
 			return
 		}
@@ -1164,7 +1145,7 @@ extend_list_o :: proc "c" (argvars: ^Typval_T, arg_errmsg: cstring, is_new: bool
 		return
 	}
 	if is_new {
-		l1 = tv_list_copy(nil, l1, false, get_copyID_e())
+		l1 = tv_list_copy(nil, l1, false, get_copyID())
 		if l1 == nil {
 			return
 		}
@@ -1267,7 +1248,7 @@ f_insert :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 		}
 		ga_grow_r((^Garray)(b), 1)
 		p := (^rawptr)(uintptr(b) + 16)^
-		libc.memmove(rawptr(uintptr(p) + uintptr(before) + 1), rawptr(uintptr(p) + uintptr(before)), C.size_t(blen - before))
+		libc.memmove(rawptr(uintptr(rawptr(p)) + uintptr(before) + 1), rawptr(uintptr(rawptr(p)) + uintptr(before)), C.size_t(blen - before))
 		([^]u8)(p)[uintptr(before)] = u8(val)
 		(^C.int)(b)^ = blen + 1
 		tv_copy(a0, rettv)
@@ -1319,12 +1300,6 @@ f_remove :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 
 // —— Batch 8: eval/buffer.c find leaves ——
 foreign _ {
-	@(link_name = "tv_get_buf")
-	tv_get_buf_e :: proc "c" (tv: ^Typval_T, curtab_only: C.int) -> rawptr ---
-	@(link_name = "tv_get_buf_from_arg")
-	tv_get_buf_from_arg_e :: proc "c" (tv: ^Typval_T) -> rawptr ---
-	@(link_name = "get_buf_arg")
-	get_buf_arg_e :: proc "c" (arg: ^Typval_T) -> rawptr ---
 	@(link_name = "buf_ensure_loaded")
 	buf_ensure_loaded_e :: proc "c" (buf: rawptr) -> bool ---
 	@(link_name = "path_with_url")
@@ -1392,7 +1367,7 @@ f_buflisted :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 f_bufload :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 	context = runtime.default_context()
 	a0 := (^Typval_T)(uintptr(argvars))
-	buf := get_buf_arg_e(a0)
+	buf := 	get_buf_arg(a0)
 	if buf != nil {
 		if swap_exists_action_g != SEA_READONLY_O {
 			swap_exists_action_g = SEA_NONE_O
@@ -1421,7 +1396,7 @@ f_bufname :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 	if a0.v_type == VAR_UNKNOWN {
 		buf = curbuf
 	} else {
-		buf = tv_get_buf_from_arg_e(a0)
+		buf = 	tv_get_buf_from_arg(a0)
 	}
 	if buf != nil {
 		fname := (^rawptr)(uintptr(buf) + B_FNAME)^
@@ -1447,7 +1422,7 @@ f_bufnr :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 			return
 		}
 		emsg_off += 1
-		buf = tv_get_buf_e(a0, 0)
+		buf = 	tv_get_buf(a0, 0)
 		emsg_off -= 1
 	}
 	name: cstring = nil
@@ -1471,7 +1446,7 @@ KLISTLEN_MAYKNOW_O :: -3
 buf_win_common_o :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, get_nr: bool) {
 	context = runtime.default_context()
 	a0 := (^Typval_T)(uintptr(argvars))
-	buf := tv_get_buf_from_arg_e(a0)
+	buf := 	tv_get_buf_from_arg(a0)
 	if buf == nil {
 		rettv.vval = transmute(rawptr)(C.longlong(-1))
 		return
@@ -1561,7 +1536,7 @@ getbufline_o :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, retlist: bool) {
 	lnum: C.int = 1
 	end: C.int = 1
 	did_emsg_before := did_emsg_flag
-	buf := tv_get_buf_from_arg_e(a0)
+	buf := 	tv_get_buf_from_arg(a0)
 	if buf != nil {
 		lnum = tv_get_lnum_buf(a1, buf)
 		if did_emsg_flag > did_emsg_before {
@@ -1608,8 +1583,6 @@ f_getline :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 
 // —— Batch 10: eval/buffer.c set-lines engine ——
 foreign _ {
-	@(link_name = "typval_tostring")
-	typval_tostring_e :: proc "c" (arg: ^Typval_T, quotes: bool) -> ^u8 ---
 	@(link_name = "u_sync_once")
 	u_sync_once_g: C.int
 }
@@ -1701,7 +1674,7 @@ set_buffer_lines_o :: proc "c" (buf: rawptr, lnum_arg: C.int, append: bool, line
 		}
 		li = (^rawptr)(l)^ // lv_first@0
 	} else {
-		line = typval_tostring_e(lines, false)
+		line = typval_tostring(lines, false)
 	}
 	// Default result is zero == OK (vval only, like C).
 	for {
@@ -1710,7 +1683,7 @@ set_buffer_lines_o :: proc "c" (buf: rawptr, lnum_arg: C.int, append: bool, line
 				break
 			}
 			xfree(transmute(rawptr)(line))
-			line = typval_tostring_e(transmute(^Typval_T)(uintptr(li) + 16), false)
+			line = typval_tostring(transmute(^Typval_T)(uintptr(li) + 16), false)
 			li = (^rawptr)(li)^ // li_next@0
 		}
 		rettv.vval = transmute(rawptr)(C.longlong(1)) // FAIL
@@ -1784,7 +1757,7 @@ f_append :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 buf_set_append_line_o :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, append: bool) {
 	context = runtime.default_context()
 	did_emsg_before := did_emsg_flag
-	buf := tv_get_buf_e((^Typval_T)(uintptr(argvars)), 0)
+	buf := 	tv_get_buf((^Typval_T)(uintptr(argvars)), 0)
 	if buf == nil {
 		rettv.vval = transmute(rawptr)(C.longlong(1)) // FAIL
 	} else {
@@ -1829,7 +1802,7 @@ f_deletebufline :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr)
 	a0 := (^Typval_T)(uintptr(argvars))
 	a1 := (^Typval_T)(uintptr(argvars) + 16)
 	a2 := (^Typval_T)(uintptr(argvars) + 32)
-	buf := tv_get_buf_e(a0, 0)
+	buf := 	tv_get_buf(a0, 0)
 	if buf == nil {
 		return
 	}
@@ -1910,12 +1883,8 @@ foreign _ {
 	buf_has_signs_e :: proc "c" (buf: rawptr) -> bool ---
 	@(link_name = "get_buffer_signs")
 	get_buffer_signs_e :: proc "c" (buf: rawptr) -> rawptr ---
-	@(link_name = "callback_from_typval")
-	callback_from_typval_e :: proc "c" (callback: ^Callback_E, arg: ^Typval_T) -> bool ---
 	@(link_name = "ml_replace_buf")
 	ml_replace_buf_e :: proc "c" (buf: rawptr, lnum: C.int, line: ^u8, copy: bool, noalloc: bool) -> C.int ---
-	@(link_name = "prompt_trim_scrollback")
-	prompt_trim_scrollback_e :: proc "c" (buf: rawptr) ---
 	@(link_name = "buf_prompt_text")
 	buf_prompt_text_e :: proc "c" (buf: rawptr) -> ^u8 ---
 	@(link_name = "strnequal")
@@ -1999,7 +1968,7 @@ f_getbufinfo :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 			}
 		}
 	} else if a0.v_type != VAR_UNKNOWN {
-		argbuf = tv_get_buf_from_arg_e(a0)
+		argbuf = 	tv_get_buf_from_arg(a0)
 		if argbuf == nil {
 			return
 		}
@@ -2060,11 +2029,11 @@ f_prompt_setcallback :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: ra
 	}
 	a0 := (^Typval_T)(uintptr(argvars))
 	a1 := (^Typval_T)(uintptr(argvars) + 16)
-	buf := tv_get_buf_e(a0, 0)
+	buf := 	tv_get_buf(a0, 0)
 	if buf == nil {
 		return
 	}
-	if !callback_from_typval_e(&prompt_callback, a1) {
+	if !callback_from_typval(&prompt_callback, a1) {
 		return
 	}
 	callback_free((^Callback_E)(rawptr(uintptr(buf) + B_PROMPT_CB_OFF)))
@@ -2081,11 +2050,11 @@ f_prompt_setinterrupt :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: r
 	}
 	a0 := (^Typval_T)(uintptr(argvars))
 	a1 := (^Typval_T)(uintptr(argvars) + 16)
-	buf := tv_get_buf_e(a0, 0)
+	buf := 	tv_get_buf(a0, 0)
 	if buf == nil {
 		return
 	}
-	if !callback_from_typval_e(&interrupt_callback, a1) {
+	if !callback_from_typval(&interrupt_callback, a1) {
 		return
 	}
 	callback_free((^Callback_E)(rawptr(uintptr(buf) + B_PROMPT_INT_OFF)))
@@ -2101,7 +2070,7 @@ f_prompt_setprompt :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawp
 	}
 	a0 := (^Typval_T)(uintptr(argvars))
 	a1 := (^Typval_T)(uintptr(argvars) + 16)
-	buf := tv_get_buf_e(a0, 0)
+	buf := 	tv_get_buf(a0, 0)
 	if buf == nil {
 		return
 	}
@@ -2162,7 +2131,7 @@ f_prompt_appendbuf :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawp
 	rettv.vval = transmute(rawptr)(C.longlong(1))
 	a0 := (^Typval_T)(uintptr(argvars))
 	a1 := (^Typval_T)(uintptr(argvars) + 16)
-	buf := tv_get_buf_from_arg_e(a0)
+	buf := 	tv_get_buf_from_arg(a0)
 	if buf == nil || !bt_prompt(buf) {
 		return
 	}
@@ -2231,7 +2200,7 @@ f_prompt_appendbuf :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawp
 				(^bool)(uintptr(buf) + B_PROMPT_APPEND_OFF)^ = true
 			}
 		}
-		prompt_trim_scrollback_e(buf)
+		prompt_trim_scrollback(buf)
 	}
 }
 
@@ -3181,10 +3150,7 @@ f_getwinposy :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 }
 
 // —— Batch 15: eval/window.c win_execute engine (closes window.c) ——
-foreign _ {
-	@(link_name = "execute_common")
-	execute_common_e :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, arg_off: C.int) ---
-}
+// (execute_common_e removed in 27b: calls execute_common directly.)
 
 // win_execute_T mirror (eval/window.h): 4160B.
 // pos_T equality (mark.odin's equalpos is file-private).
@@ -3280,7 +3246,7 @@ f_win_execute :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 	}
 	args := WinExecute_T{}
 	if win_execute_before(&args, wp, tp) {
-		execute_common_e(argvars, rettv, 1)
+		execute_common(argvars, rettv, 1)
 	}
 	win_execute_after(&args)
 }
@@ -4137,7 +4103,7 @@ readdir_checkitem_o :: proc "c" (ctx: rawptr, name: cstring) -> C.longlong {
 	argv[0].vval = transmute(rawptr)(name)
 	rettv: Typval_T
 	done := false
-	if eval_expr_typval_e(expr, false, &argv[0], 1, &rettv) == FAIL_E {
+	if eval_expr_typval(expr, false, &argv[0], 1, &rettv) == FAIL_E {
 		done = true
 	}
 	if !done {
@@ -4502,7 +4468,7 @@ f_resolve :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 		is_relative_to_current = true
 	}
 	ln := i64(libc.strlen(cstring(rawptr(p))))
-	if ln > 1 && _after_pathsep(cstring(rawptr(p)), cstring(rawptr(uintptr(p) + uintptr(ln)))) != 0 {
+	if ln > 1 && _after_pathsep(cstring(rawptr(p)), cstring(rawptr(uintptr(rawptr(p)) + uintptr(ln)))) != 0 {
 		has_trailing_pathsep = true
 		p[ln - 1] = 0
 	}
@@ -4605,14 +4571,14 @@ f_resolve :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 				q = ([^]u8)(uintptr(q) + 2)
 			}
 			if uintptr(q) > uintptr(p) {
-				src2 := ([^]u8)(uintptr(p) + 2)
+				src2 := ([^]u8)(uintptr(rawptr(p)) + 2)
 				n2 := i64(libc.strlen(cstring(rawptr(src2)))) + 1
 				libc.memmove(rawptr(p), rawptr(src2), C.size_t(n2))
 			}
 		}
 	}
 	if !has_trailing_pathsep {
-		q = ([^]u8)(uintptr(p) + uintptr(i64(libc.strlen(cstring(rawptr(p))))))
+		q = ([^]u8)(uintptr(rawptr(p)) + uintptr(i64(libc.strlen(cstring(rawptr(p))))))
 		if _after_pathsep(cstring(rawptr(p)), cstring(rawptr(q))) != 0 {
 			wt := ([^]u8)(path_tail_with_sep_e(&p[0]))
 			wt[0] = 0
@@ -4829,14 +4795,10 @@ f_writefile :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 	}
 }
 
-// —— Batch 20a: eval/vars.c parsing leaves ——
+// —— Batch 20a: eval/vars.c parsing leaves (FFI fully rewired) ——
 foreign _ {
-	@(link_name = "find_name_end")
-	find_name_end_e :: proc "c" (arg: cstring, expr_start: ^cstring, expr_end: ^cstring, flags: C.int) -> cstring ---
 	@(link_name = "skip_expr")
 	skip_expr_e :: proc "c" (pp: ^cstring, evalarg: rawptr) -> C.int ---
-	@(link_name = "eval_to_string")
-	eval_to_string_e :: proc "c" (arg: cstring, join_list: bool, use_simple_function: bool) -> ^u8 ---
 }
 
 FNE_INCL_BR_O :: 1
@@ -4857,7 +4819,7 @@ skip_var_one_o :: proc "c" (arg: cstring) -> cstring {
 	if a[0] == '$' || a[0] == '&' {
 		start = transmute(cstring)(uintptr(a) + 1)
 	}
-	return find_name_end_e(start, nil, nil, FNE_INCL_BR_O | FNE_CHECK_START_O)
+	return find_name_end(start, nil, nil, FNE_INCL_BR_O | FNE_CHECK_START_O)
 }
 
 // Skip "[var, var]" list or a single variable name.
@@ -4867,7 +4829,7 @@ skip_var_list :: proc "c" (arg: cstring, var_count: ^C.int, semicolon: ^C.int, s
 	if ([^]u8)(arg)[0] == '[' {
 		p := ([^]u8)(arg)
 		for {
-			p = ([^]u8)(skipwhite(transmute(cstring)(uintptr(p) + 1)))
+			p = ([^]u8)(skipwhite(transmute(cstring)(uintptr(rawptr(p)) + 1)))
 			s := skip_var_one_o(transmute(cstring)(p))
 			if uintptr(rawptr(s)) == uintptr(p) {
 				if !silent {
@@ -4894,7 +4856,7 @@ skip_var_list :: proc "c" (arg: cstring, var_count: ^C.int, semicolon: ^C.int, s
 				return nil
 			}
 		}
-		return transmute(cstring)(uintptr(p) + 1)
+		return transmute(cstring)(uintptr(rawptr(p)) + 1)
 	}
 	return skip_var_one_o(arg)
 }
@@ -4903,7 +4865,7 @@ skip_var_list :: proc "c" (arg: cstring, var_count: ^C.int, semicolon: ^C.int, s
 @(export)
 eval_one_expr_in_str :: proc "c" (p: ^u8, gap: ^Garray, evaluate: bool) -> ^u8 {
 	context = runtime.default_context()
-	block_start := ([^]u8)(skipwhite(transmute(cstring)(uintptr(p) + 1)))
+	block_start := ([^]u8)(skipwhite(transmute(cstring)(uintptr(rawptr(p)) + 1)))
 	block_end := block_start
 	if block_end[0] == 0 {
 		semsg(cstring(E_MISSING_CURLY_S), transmute(cstring)(p))
@@ -4921,7 +4883,7 @@ eval_one_expr_in_str :: proc "c" (p: ^u8, gap: ^Garray, evaluate: bool) -> ^u8 {
 	}
 	if evaluate {
 		block_end[0] = 0
-		expr_val := eval_to_string_e(transmute(cstring)(block_start), false, false)
+		expr_val := transmute(^u8)(eval_to_string(transmute(cstring)(block_start), false, false))
 		block_end[0] = '}'
 		if expr_val == nil {
 			return nil
@@ -4942,10 +4904,10 @@ eval_all_expr_in_str_o :: proc "c" (str: ^u8) -> ^u8 {
 		escaped_brace := false
 		lit_start := p
 		for p[0] != '{' && p[0] != '}' && p[0] != 0 {
-			p = ([^]u8)(uintptr(p) + 1)
+			p = ([^]u8)(uintptr(rawptr(p)) + 1)
 		}
 		if p[0] != 0 && p[0] == p[1] {
-			p = ([^]u8)(uintptr(p) + 1)
+			p = ([^]u8)(uintptr(rawptr(p)) + 1)
 			escaped_brace = true
 		} else if p[0] == '}' {
 			semsg(cstring(E_STRAY_CURLY_S), transmute(cstring)(str))
@@ -4957,7 +4919,7 @@ eval_all_expr_in_str_o :: proc "c" (str: ^u8) -> ^u8 {
 			break
 		}
 		if escaped_brace {
-			p = ([^]u8)(uintptr(p) + 1)
+			p = ([^]u8)(uintptr(rawptr(p)) + 1)
 			continue
 		}
 		p = ([^]u8)(eval_one_expr_in_str(&p[0], &ga, true))
@@ -5064,12 +5026,6 @@ list_hashtable_vars :: proc "c" (ht: rawptr, prefix: cstring, empty: C.int, firs
 }
 
 // —— Batch 20c: eval/vars.c spell-expr leaves ——
-foreign _ {
-	@(link_name = "may_call_simple_func")
-	may_call_simple_func_e :: proc "c" (arg: cstring, rettv: ^Typval_T) -> C.int ---
-	@(link_name = "eval1")
-	eval1_e :: proc "c" (arg: ^cstring, rettv: ^Typval_T, evalarg: rawptr) -> C.int ---
-}
 
 // evalarg_T mirror (eval_defs.h:20): {flags i32, getline/cookie/tofree ptr}.
 Evalarg_T :: struct {
@@ -5102,10 +5058,10 @@ eval_spell_expr :: proc "c" (badword: cstring, expr: cstring) -> rawptr {
 		libc.memcpy(rawptr(&current_sctx_buf[0]), ctx, C.size_t(size_of(sctx_T)))
 	}
 	evalarg := Evalarg_T{eval_flags = 1}
-	r := may_call_simple_func_e(transmute(cstring)(p), &rettv)
+	r := may_call_simple_func(transmute(cstring)(p), &rettv)
 	if r == NOTDONE_O {
 		pc := transmute(cstring)(p)
-		r = eval1_e(&pc, &rettv, rawptr(&evalarg))
+		r = eval1(&pc, &rettv, rawptr(&evalarg))
 		p = ([^]u8)(pc)
 	}
 	if r == OK_E {
@@ -5216,12 +5172,41 @@ delete_var_o :: proc "c" (ht: rawptr, hi: rawptr) {
 	xfree(rawptr(di))
 }
 
+// Top-level typval allocator + evaluator (eval.c public).
+@(export)
+eval_expr :: proc "c" (arg: cstring, eap: rawptr) -> ^Typval_T {
+	context = runtime.default_context()
+	return eval_expr_ext(arg, eap, false)
+}
+
+// Top-level typval allocator + evaluator with simple-funccal flag.
+@(export)
+eval_expr_ext :: proc "c" (arg: cstring, eap: rawptr, use_simple_function: bool) -> ^Typval_T {
+	context = runtime.default_context()
+	tv := (^Typval_T)(xmalloc(C.size_t(size_of(Typval_T))))
+	evalarg := Evalarg_T{}
+	skip := false
+	if eap != nil {
+		skip = (^bool)(uintptr(eap) + 72)^
+	}
+	fill_evalarg_from_eap(&evalarg, eap, skip)
+	r: C.int = NOTDONE_O
+	if use_simple_function {
+		r = eval0_simple_funccal_o(arg, tv, eap, rawptr(&evalarg))
+	}
+	if r == NOTDONE_O {
+		r = eval0(arg, tv, eap, rawptr(&evalarg))
+	}
+	if r == FAIL_E {
+		xfree(tv)
+		tv = nil
+	}
+	clear_evalarg(&evalarg, eap)
+	return tv
+}
+
 // —— Batch 20e: eval/vars.c environ + lookup leaves ——
 foreign _ {
-	@(link_name = "eval_to_bool")
-	eval_to_bool_e :: proc "c" (arg: cstring, error: ^bool, eap: rawptr, skip: bool, use_simple_function: bool) -> bool ---
-	@(link_name = "eval_expr_ext")
-	eval_expr_ext_e :: proc "c" (arg: cstring, eap: rawptr, use_simple_function: bool) -> ^Typval_T ---
 	@(link_name = "p_ccv")
 	p_ccv_e: cstring
 	@(link_name = "p_dex")
@@ -5260,7 +5245,7 @@ eval_charconvert :: proc "c" (enc_from: cstring, enc_to: cstring, fname_from: cs
 		libc.memcpy(rawptr(&current_sctx_buf[0]), ctx, C.size_t(size_of(sctx_T)))
 	}
 	err := false
-	if eval_to_bool_e(p_ccv_e, &err, nil, false, true) {
+	if eval_to_bool(p_ccv_e, &err, nil, false, true) {
 		err = true
 	}
 		set_vim_var_string(VV_CC_FROM_O, nil, -1)
@@ -5287,7 +5272,7 @@ eval_diff :: proc "c" (origfile: cstring, newfile: cstring, outfile: cstring) {
 	if ctx != nil {
 		libc.memcpy(rawptr(&current_sctx_buf[0]), ctx, C.size_t(size_of(sctx_T)))
 	}
-	tv := eval_expr_ext_e(p_dex_e, nil, true)
+	tv := eval_expr_ext(p_dex_e, nil, true)
 	tv_free(tv)
 		set_vim_var_string(VV_FNAME_IN_O, nil, -1)
 		set_vim_var_string(VV_FNAME_NEW_O, nil, -1)
@@ -5308,7 +5293,7 @@ eval_patch :: proc "c" (origfile: cstring, difffile: cstring, outfile: cstring) 
 	if ctx != nil {
 		libc.memcpy(rawptr(&current_sctx_buf[0]), ctx, C.size_t(size_of(sctx_T)))
 	}
-	tv := eval_expr_ext_e(p_pex_e, nil, true)
+	tv := eval_expr_ext(p_pex_e, nil, true)
 	tv_free(tv)
 		set_vim_var_string(VV_FNAME_IN_O, nil, -1)
 		set_vim_var_string(VV_FNAME_DIFF_O, nil, -1)
@@ -5970,7 +5955,7 @@ tv_get_lnum :: proc "c" (tv: ^Typval_T) -> C.int {
 	lnum := C.int(tv_get_number_chk(tv, nil))
 	if lnum <= 0 && before == did_emsg_flag && tv.v_type != VAR_NUMBER {
 		fnum: C.int = 0
-		fp := var2fpos_e(tv, true, &fnum, false, curwin)
+		fp := var2fpos(tv, true, &fnum, false, curwin)
 		if fp != nil {
 			lnum = (^C.int)(fp)^
 		}
@@ -6085,10 +6070,6 @@ tv_islocked :: proc "c" (tv: ^Typval_T) -> bool {
 
 // —— Batch 21w: eval/typval.c sort engine ——
 foreign _ {
-	@(link_name = "encode_tv2string")
-	encode_tv2string_e :: proc "c" (tv: ^Typval_T, len: ^C.size_t) -> ^u8 ---
-	@(link_name = "partial_name")
-	partial_name_e :: proc "c" (pt: rawptr) -> cstring ---
 	@(link_name = "strtod")
 	strtod_e :: proc "c" (nptr: cstring, endptr: ^cstring) -> f64 ---
 	@(link_name = "qsort")
@@ -6186,7 +6167,7 @@ item_compare_o :: proc "c" (s1: rawptr, s2: rawptr, keep_zero: bool) -> C.int {
 				p1 = transmute(cstring)((rawptr)(tv1.vval))
 			}
 		} else {
-			p1 = transmute(cstring)(encode_tv2string_e(tv1, nil))
+			p1 = encode_tv2string(tv1, nil)
 			tofree1 = transmute(^u8)(p1)
 		}
 		if tv2.v_type == VAR_STRING {
@@ -6196,7 +6177,7 @@ item_compare_o :: proc "c" (s1: rawptr, s2: rawptr, keep_zero: bool) -> C.int {
 				p2 = transmute(cstring)((rawptr)(tv2.vval))
 			}
 		} else {
-			p2 = transmute(cstring)(encode_tv2string_e(tv2, nil))
+			p2 = encode_tv2string(tv2, nil)
 			tofree2 = transmute(^u8)(p2)
 		}
 		if p1 == nil {
@@ -6260,7 +6241,7 @@ item_compare2_o :: proc "c" (s1: rawptr, s2: rawptr, keep_zero: bool) -> C.int {
 	si2 := (^ListSortItem)(s2)
 	func_name := info.func
 	if info.partial != nil {
-		func_name = partial_name_e(info.partial)
+		func_name = partial_name(info.partial)
 	}
 	argv: [3]Typval_T
 	tv_copy((^Typval_T)(uintptr(si1.item) + 16), &argv[0])
@@ -6567,7 +6548,7 @@ tv_string2items_o :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T) {
 		tv_list_append_list((rawptr)(rettv.vval), l2)
 		tv_list_append_number(l2, idx)
 		tv_list_append_string(l2, &p[0], C.ssize_t(ln))
-		p = ([^]u8)(uintptr(p) + uintptr(ln))
+		p = ([^]u8)(uintptr(rawptr(p)) + uintptr(ln))
 		idx += 1
 	}
 }
@@ -7098,8 +7079,6 @@ tv_list_concat :: proc "c" (l1: rawptr, l2: rawptr, tv: ^Typval_T) -> C.int {
 
 // —— Batch 21e: eval/typval.c callback family ——
 foreign _ {
-	@(link_name = "partial_unref")
-	partial_unref_e :: proc "c" (pt: rawptr) ---
 	@(link_name = "api_free_luaref")
 	api_free_luaref_e :: proc "c" (ref: C.int) ---
 	@(link_name = "api_new_luaref")
@@ -7141,7 +7120,7 @@ callback_free :: proc "c" (callback: ^Callback_E) {
 		func_unref(transmute(cstring)(callback.data))
 		xfree(callback.data)
 	} else if callback.type == KCB_PARTIAL_O {
-		partial_unref_e(callback.data)
+		partial_unref(callback.data)
 	} else if callback.type == KCB_LUA_O {
 		ref := (^C.int)(&callback.data)^
 		if ref != LUA_NOREF_O {
@@ -7743,10 +7722,6 @@ tv_list_slice_or_index :: proc "c" (list: rawptr, is_range: bool, n1_arg: C.long
 }
 
 // —— Batch 21m: eval/typval.c dict extend + equal ——
-foreign _ {
-	@(link_name = "var2fpos")
-	var2fpos_e :: proc "c" (tv: ^Typval_T, dollar_lnum: bool, ret_fnum: ^C.int, charcol: bool, wp: rawptr) -> rawptr ---
-}
 
 E_KEY_EXISTS_S :: "E737: Key already exists: %s"
 EXTEND_ARG_S :: "extend() argument"
@@ -7869,10 +7844,6 @@ tv_dict_equal :: proc "c" (d1: rawptr, d2: rawptr, ic: bool) -> bool {
 }
 
 // —— Batch 21n: eval/typval.c list copy + range checks ——
-foreign _ {
-	@(link_name = "var_item_copy")
-	var_item_copy_e :: proc "c" (conv: rawptr, from: ^Typval_T, to: ^Typval_T, deep: bool, copyID: C.int) -> C.int ---
-}
 
 // Make a copy of list (deep via var_item_copy when "deep").
 @(export)
@@ -7894,7 +7865,7 @@ tv_list_copy :: proc "c" (conv: rawptr, orig: rawptr, deep: bool, copyID: C.int)
 		}
 		ni := tv_list_item_alloc_o()
 		if deep {
-			if var_item_copy_e(conv, (^Typval_T)(uintptr(li) + 16), (^Typval_T)(uintptr(ni) + 16), deep, copyID) == FAIL_E {
+			if var_item_copy(conv, (^Typval_T)(uintptr(li) + 16), (^Typval_T)(uintptr(ni) + 16), deep, copyID) == FAIL_E {
 				xfree(ni)
 				tv_list_unref(copy)
 				return nil
@@ -8018,7 +7989,7 @@ tv_dict_copy :: proc "c" (conv: rawptr, orig: rawptr, deep: bool, copyID: C.int)
 			}
 		}
 		if deep {
-			if var_item_copy_e(conv, (^Typval_T)(di), (^Typval_T)(uintptr(new_di)), deep, copyID) == FAIL_E {
+			if var_item_copy(conv, (^Typval_T)(di), (^Typval_T)(uintptr(new_di)), deep, copyID) == FAIL_E {
 				xfree(new_di)
 				break
 			}
@@ -8601,10 +8572,6 @@ tv_get_string_buf_chk :: proc "c" (tv: ^Typval_T, buf: ^u8) -> cstring {
 }
 
 // —— Batch 22b: eval/typval.c tv_equal ——
-foreign _ {
-	@(link_name = "func_equal")
-	func_equal_e :: proc "c" (tv1: ^Typval_T, tv2: ^Typval_T, ic: bool) -> bool ---
-}
 
 @(private = "file")
 tv_equal_recurse_cnt: C.int
@@ -8642,7 +8609,7 @@ tv_equal :: proc "c" (tv1: ^Typval_T, tv2: ^Typval_T, ic: bool) -> bool {
 			return false
 		}
 		tv_equal_recurse_cnt += 1
-		r := func_equal_e(tv1, tv2, ic)
+		r := func_equal(tv1, tv2, ic)
 		tv_equal_recurse_cnt -= 1
 		return r
 	} else if tv1.v_type == VAR_BLOB {
@@ -8677,7 +8644,7 @@ tv_free :: proc "c" (tv: ^Typval_T) {
 		return
 	}
 	if tv.v_type == VAR_PARTIAL {
-		partial_unref_e((rawptr)(tv.vval))
+		partial_unref((rawptr)(tv.vval))
 	} else if tv.v_type == VAR_FUNC {
 		func_unref(transmute(cstring)((rawptr)(tv.vval)))
 		xfree((rawptr)(tv.vval))
@@ -8795,11 +8762,6 @@ tv_list_flatten :: proc "c" (list: rawptr, first: rawptr, maxitems: C.longlong, 
 }
 
 // —— Batch 21o: eval/typval.c dict-string getters + to_env ——
-foreign _ {
-	@(link_name = "set_selfdict")
-	set_selfdict_e :: proc "c" (rettv: ^Typval_T, selfdict: rawptr) ---
-}
-
 E_FUNCNAME_S :: "E6000: Argument is not a function or function name"
 
 // Static scratch for tv_dict_get_string (mirrors C's function-static).
@@ -8889,14 +8851,14 @@ tv_dict_get_callback :: proc "c" (d: rawptr, key: cstring, key_len: C.ptrdiff_t,
 		return true
 	}
 	tv := (^Typval_T)(di)
-	if tv.v_type != VAR_FUNC && tv.v_type != VAR_STRING {
+	if !tv_is_func_o(tv^) && tv.v_type != VAR_STRING {
 		emsg(cstring(E_FUNCNAME_S))
 		return false
 	}
 	newtv: Typval_T
 	tv_copy(tv, &newtv)
-	set_selfdict_e(&newtv, d)
-	res := callback_from_typval_e(result, &newtv)
+	set_selfdict(&newtv, d)
+	res := callback_from_typval(result, &newtv)
 	tv_clear(&newtv)
 	return res
 }
@@ -9178,8 +9140,6 @@ f_join :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 
 // —— Batch 23b: eval/encode.c tv2 wrappers ——
 foreign _ {
-	@(link_name = "encode_vim_to_echo")
-	encode_vim_to_echo_e :: proc "c" (gap: ^Garray, tv: ^Typval_T, objname: cstring) -> C.int ---
 	@(link_name = "nvim_odin_reset_echo_emsg")
 	reset_echo_emsg_e :: proc "c" () ---
 }
@@ -9196,13 +9156,33 @@ encode_tv2echo :: proc "c" (tv: ^Typval_T, len: ^C.size_t) -> ^u8 {
 			ga_concat_e(&ga, transmute(cstring)(s))
 		}
 	} else {
-		encode_vim_to_echo_e(&ga, tv, cstring(":echo argument"))
+		encode_vim_to_echo_o(&ga, tv, cstring(":echo argument"))
 	}
 	if len != nil {
 		len^ = C.size_t(ga.ga_len)
 	}
 	ga_append_r(&ga, 0)
 	return ([^]u8)(ga.ga_data)
+}
+
+// —— Batch 23g: echo-mode driver (shares string walker via flag) ——
+
+// Echo-mode driver (encode_vim_to_echo; echo == string except RECURSE).
+encode_vim_to_echo_o :: proc "c" (gap: ^Garray, tv: ^Typval_T, objname: cstring) -> C.int {
+	context = runtime.default_context()
+	save_flag := encode_recurse_echo_g
+	encode_recurse_echo_g = true
+	copyID := get_copyID()
+	mpstack := MPConvStack_O{}
+	mpconv_stack_init_o(&mpstack)
+	if convert_one_value_string_o(gap, &mpstack, nil, tv, copyID, objname) == FAIL_E {
+		mpconv_stack_destroy_o(&mpstack)
+		encode_recurse_echo_g = save_flag
+		return FAIL_E
+	}
+	ret := encode_str_walker_o(gap, &mpstack, tv, copyID, objname)
+	encode_recurse_echo_g = save_flag
+	return ret
 }
 
 // —— Batch 23c: eval/decode.c string + special-dict ——
@@ -9287,7 +9267,7 @@ tv_clear :: proc "c" (tv: ^Typval_T) {
 		if pt != nil && (^C.int)(uintptr(pt))^ > 1 {
 			(^C.int)(uintptr(pt))^ -= 1
 		} else {
-			partial_unref_e(pt)
+			partial_unref(pt)
 		}
 		tv.vval = nil
 		tv.v_lock = VAR_UNLOCKED
@@ -9472,7 +9452,7 @@ tv_blob_remove :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, arg_errmsg: cs
 		if avs[2].v_type == VAR_UNKNOWN {
 			p := rawptr((^rawptr)(uintptr(b) + 16)^)
 			rettv.vval = transmute(rawptr)(C.longlong(([^]u8)(p)[uintptr(idx)]))
-			libc.memmove(rawptr(uintptr(p) + uintptr(idx)), rawptr(uintptr(p) + uintptr(idx) + 1), C.size_t(length - idx - 1))
+			libc.memmove(rawptr(uintptr(rawptr(p)) + uintptr(idx)), rawptr(uintptr(rawptr(p)) + uintptr(idx) + 1), C.size_t(length - idx - 1))
 			(^C.int)(uintptr(b) + 0)^ -= 1
 		} else {
 			end := C.longlong(tv_get_number_chk((^Typval_T)(uintptr(argvars) + 32), &error))
@@ -9490,10 +9470,10 @@ tv_blob_remove :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, arg_errmsg: cs
 			(^C.int)(uintptr(blob) + 0)^ = C.int(end - idx + 1)
 			ga_grow_r((^Garray)(blob), C.int(end - idx + 1))
 			p := rawptr((^rawptr)(uintptr(b) + 16)^)
-			libc.memmove((^rawptr)(uintptr(blob) + 16)^, rawptr(uintptr(p) + uintptr(idx)), C.size_t(end - idx + 1))
+			libc.memmove((^rawptr)(uintptr(blob) + 16)^, rawptr(uintptr(rawptr(p)) + uintptr(idx)), C.size_t(end - idx + 1))
 			tv_blob_set_ret_o(rettv, blob)
 			if length - end - 1 > 0 {
-				libc.memmove(rawptr(uintptr(p) + uintptr(idx)), rawptr(uintptr(p) + uintptr(end) + 1), C.size_t(length - end - 1))
+				libc.memmove(rawptr(uintptr(rawptr(p)) + uintptr(idx)), rawptr(uintptr(rawptr(p)) + uintptr(end) + 1), C.size_t(length - end - 1))
 			}
 			(^C.int)(uintptr(b) + 0)^ -= C.int(end - idx + 1)
 		}
@@ -9614,7 +9594,7 @@ tv_dict_watcher_notify :: proc "c" (dict: rawptr, key: cstring, newtv: ^Typval_T
 		if ([^]u8)(uintptr(watcher) + DW_BUSY_OFF_O)[0] == 0 && tv_dict_watcher_matches_o(watcher, key) {
 			rettv := Typval_T{}
 			([^]u8)(uintptr(watcher) + DW_BUSY_OFF_O)[0] = 1
-			callback_call_e(rawptr(uintptr(watcher) + DW_CALLBACK_OFF_O), 3, &argv[0], &rettv)
+			callback_call(rawptr(uintptr(watcher) + DW_CALLBACK_OFF_O), 3, &argv[0], &rettv)
 			([^]u8)(uintptr(watcher) + DW_BUSY_OFF_O)[0] = 0
 			tv_clear(&rettv)
 			if ([^]u8)(uintptr(watcher) + DW_NEEDFREE_OFF_O)[0] != 0 {
@@ -9927,7 +9907,7 @@ evalvars_init :: proc "c" () {
 @(export)
 garbage_collect_globvars :: proc "c" (copyID: C.int) -> C.int {
 	context = runtime.default_context()
-	if set_ref_in_ht_e(rawptr(uintptr(get_globvar_dict()) + 16), copyID, nil) {
+	if set_ref_in_ht(rawptr(uintptr(get_globvar_dict()) + 16), copyID, nil) {
 		return 1
 	}
 	return 0
@@ -9937,7 +9917,7 @@ garbage_collect_globvars :: proc "c" (copyID: C.int) -> C.int {
 @(export)
 garbage_collect_vimvars :: proc "c" (copyID: C.int) -> bool {
 	context = runtime.default_context()
-	return set_ref_in_ht_e(rawptr(uintptr(get_vimvar_dict()) + 16), copyID, nil)
+	return set_ref_in_ht(rawptr(uintptr(get_vimvar_dict()) + 16), copyID, nil)
 }
 
 // Mark s: variables for garbage collection.
@@ -9949,7 +9929,7 @@ garbage_collect_scriptvars :: proc "c" (copyID: C.int) -> bool {
 	for i <= script_items_g.ga_len {
 		item := ([^]rawptr)(script_items_g.ga_data)[uintptr(i) - 1]
 		sv := (^rawptr)(uintptr(item) + 0)^
-		if set_ref_in_ht_e(rawptr(uintptr(sv) + 24 + 16), copyID, nil) {
+		if set_ref_in_ht(rawptr(uintptr(sv) + 24 + 16), copyID, nil) {
 			abort = true
 		}
 		i += 1
@@ -10244,16 +10224,16 @@ redir_varname_g: cstring
 @(export)
 var_redir_start :: proc "c" (name: cstring, append: bool) -> C.int {
 	context = runtime.default_context()
-	if !eval_isnamec1_e(C.int(([^]u8)(name)[0])) {
+	if !eval_isnamec1(C.int(([^]u8)(name)[0])) {
 		emsg(e_invarg_s)
 		return FAIL_E
 	}
 	redir_varname_g = transmute(cstring)(xstrdup_o(transmute(^u8)(name)))
 	redir_lval_g = xcalloc(1, 96)
 	ga_init_r2(&redir_ga_g, 1, 500)
-	redir_endp_g = get_lval_e(redir_varname_g, nil, redir_lval_g, false, false, 0, FNE_CHECK_START_O)
+	redir_endp_g = get_lval(redir_varname_g, nil, redir_lval_g, false, false, 0, FNE_CHECK_START_O)
 	if redir_endp_g == nil || (^rawptr)(uintptr(redir_lval_g) + LL_NAME_OFF_O)^ == nil || ([^]u8)(redir_endp_g)[0] != 0 {
-		clear_lval_e(redir_lval_g)
+		clear_lval(redir_lval_g)
 		if redir_endp_g != nil && ([^]u8)(redir_endp_g)[0] != 0 {
 			semsg(cstring(E488_S), redir_endp_g)
 		} else {
@@ -10267,11 +10247,11 @@ var_redir_start :: proc "c" (name: cstring, append: bool) -> C.int {
 	did_emsg_set(false)
 	tv := Typval_T{v_type = VAR_STRING, v_lock = VAR_UNLOCKED, vval = transmute(rawptr)(cstring(""))}
 	if append {
-		set_var_lval_e(redir_lval_g, redir_endp_g, &tv, true, false, cstring("."))
+		set_var_lval(redir_lval_g, redir_endp_g, &tv, true, false, cstring("."))
 	} else {
-		set_var_lval_e(redir_lval_g, redir_endp_g, &tv, true, false, cstring("="))
+		set_var_lval(redir_lval_g, redir_endp_g, &tv, true, false, cstring("="))
 	}
-	clear_lval_e(redir_lval_g)
+	clear_lval(redir_lval_g)
 	if called_emsg > called_before {
 		redir_endp_g = nil
 		var_redir_stop()
@@ -10304,11 +10284,11 @@ var_redir_stop :: proc "c" () {
 		if redir_endp_g != nil {
 			ga_append_e(&redir_ga_g, 0)
 			tv := Typval_T{v_type = VAR_STRING, v_lock = VAR_UNLOCKED, vval = transmute(rawptr)(redir_ga_g.ga_data)}
-			redir_endp_g = get_lval_e(redir_varname_g, nil, redir_lval_g, false, false, 0, FNE_CHECK_START_O)
+			redir_endp_g = get_lval(redir_varname_g, nil, redir_lval_g, false, false, 0, FNE_CHECK_START_O)
 			if redir_endp_g != nil && (^rawptr)(uintptr(redir_lval_g) + LL_NAME_OFF_O)^ != nil {
-				set_var_lval_e(redir_lval_g, redir_endp_g, &tv, false, false, cstring("."))
+				set_var_lval(redir_lval_g, redir_endp_g, &tv, false, false, cstring("."))
 			}
-			clear_lval_e(redir_lval_g)
+			clear_lval(redir_lval_g)
 		}
 		if redir_ga_g.ga_data != nil {
 			xfree(redir_ga_g.ga_data)
@@ -10536,7 +10516,7 @@ var_exists :: proc "c" (var: cstring) -> bool {
 	n := false
 	v := var
 	name := var
-	length := get_name_len_e(&v, &tofree, true, false)
+	length := get_name_len(&v, &tofree, true, false)
 	if length > 0 {
 		tv := Typval_T{}
 		if tofree != nil {
@@ -10545,7 +10525,7 @@ var_exists :: proc "c" (var: cstring) -> bool {
 		n = eval_variable(name, length, &tv, nil, false, true) == OK_E
 		if n {
 			ea := Evalarg_T{eval_flags = 1}
-			n = handle_subscript_e(&v, &tv, rawptr(&ea), false) == OK_E
+			n = handle_subscript(&v, &tv, rawptr(&ea), false) == OK_E
 			if n {
 				tv_clear(&tv)
 			}
@@ -10559,12 +10539,6 @@ var_exists :: proc "c" (var: cstring) -> bool {
 }
 
 // —— Batch 26h: :let engine ——
-foreign _ {
-	@(link_name = "set_var_lval")
-	set_var_lval_e :: proc "c" (lp: rawptr, endp: cstring, rettv: ^Typval_T, copy: bool, is_const: bool, op: cstring) ---
-	@(link_name = "get_name_len")
-	get_name_len_e :: proc "c" (arg: ^cstring, alias: ^cstring, evaluate: bool, verbose: bool) -> C.int ---
-}
 
 E687_S :: "E687: Less targets than List items"
 E688_S :: "E688: More targets than List items"
@@ -10654,7 +10628,7 @@ list_arg_vars_o :: proc "c" (eap: rawptr, arg: cstring, first: ^C.int) -> cstrin
 	error := false
 	for ends_excmd_e(C.int(([^]u8)(a)[0])) == 0 && !got_int {
 		if error || (^bool)(uintptr(eap) + 72)^ {
-			a = transmute(cstring)(find_name_end_e(a, nil, nil, 3))
+			a = transmute(cstring)(find_name_end(a, nil, nil, 3))
 			if !ascii_iswhite(([^]u8)(a)[0]) && ends_excmd_e(C.int(([^]u8)(a)[0])) == 0 {
 				emsg_severe_g = true
 				semsg(cstring(E488_S), a)
@@ -10664,7 +10638,7 @@ list_arg_vars_o :: proc "c" (eap: rawptr, arg: cstring, first: ^C.int) -> cstrin
 			name_start := a
 			name := a
 			tofree: cstring = nil
-			length := get_name_len_e(&a, &tofree, true, true)
+			length := get_name_len(&a, &tofree, true, true)
 			if length <= 0 {
 				if length < 0 && !aborting_r() {
 					emsg_severe_g = true
@@ -10682,7 +10656,7 @@ list_arg_vars_o :: proc "c" (eap: rawptr, arg: cstring, first: ^C.int) -> cstrin
 				} else {
 					arg_subsc := a
 					ea := Evalarg_T{eval_flags = 1}
-					if handle_subscript_e(&a, &tv, rawptr(&ea), true) == FAIL_E {
+					if handle_subscript(&a, &tv, rawptr(&ea), true) == FAIL_E {
 						error = true
 					} else {
 						if a == arg_subsc && length == 2 && ([^]u8)(name)[1] == ':' {
@@ -10741,18 +10715,18 @@ ex_let_one_o :: proc "c" (arg: cstring, tv: ^Typval_T, copy: bool, is_const: boo
 		return ex_let_option_o(arg, tv, is_const, endchars, op)
 	} else if ([^]u8)(arg)[0] == '@' {
 		return ex_let_register_o(arg, tv, is_const, endchars, op)
-	} else if eval_isnamec1_e(C.int(([^]u8)(arg)[0])) || ([^]u8)(arg)[0] == '{' {
+	} else if eval_isnamec1(C.int(([^]u8)(arg)[0])) || ([^]u8)(arg)[0] == '{' {
 		lv: [96]u8
-		p := get_lval_e(arg, rawptr(tv), rawptr(&lv[0]), false, false, 0, FNE_CHECK_START_O)
+		p := get_lval(arg, rawptr(tv), rawptr(&lv[0]), false, false, 0, FNE_CHECK_START_O)
 		if p != nil && (^rawptr)(uintptr(&lv[0]) + LL_NAME_OFF_O)^ != nil {
 			if endchars != nil && vim_strchr_c(transmute(^u8)(endchars), C.int(([^]u8)(skipwhite(p))[0])) == nil {
 				emsg(cstring(E18_S))
 			} else {
-				set_var_lval_e(rawptr(&lv[0]), p, tv, copy, is_const, op)
+				set_var_lval(rawptr(&lv[0]), p, tv, copy, is_const, op)
 				arg_end = p
 			}
 		}
-		clear_lval_e(rawptr(&lv[0]))
+		clear_lval(rawptr(&lv[0]))
 	} else {
 		semsg(e_invarg2, arg)
 	}
@@ -10890,12 +10864,12 @@ ex_let :: proc "c" (eap: rawptr) {
 		emsg_skip += 1
 	}
 	ea := Evalarg_T{}
-	fill_evalarg_from_eap_e(rawptr(&ea), eap, skip)
-	eval_res := eval0_e(expr, &rettv, eap, rawptr(&ea))
+	fill_evalarg_from_eap(&ea, eap, skip)
+	eval_res := eval0(expr, &rettv, eap, rawptr(&ea))
 	if skip {
 		emsg_skip -= 1
 	}
-	clear_evalarg_e(rawptr(&ea), eap)
+	clear_evalarg(&ea, eap)
 	if !skip && eval_res != FAIL_E {
 		ex_let_vars((^cstring)(uintptr(eap) + 0)^, &rettv, 0, semicolon, var_count, is_const, transmute(cstring)(&op[0]))
 	}
@@ -10904,18 +10878,14 @@ ex_let :: proc "c" (eap: rawptr) {
 	}
 }
 
-// —— Batch 26f: vars.c unlet/lockvar commands ——
-foreign _ {
-	@(link_name = "get_env_len")
-	get_env_len_e :: proc "c" (arg: ^cstring) -> C.int ---
-}
-
+// —— Batch 26f: vars.c unlet/lockvar commands (FFI fully rewired) ——
 LL_LI_OFF_O :: 32
 LL_LIST_OFF_O :: 40
 LL_EMPTY2_OFF_O :: 49
 LL_N1_OFF_O :: 52
 LL_N2_OFF_O :: 56
 LL_BLOB_OFF_O :: 88
+GLV_NO_AUTOLOAD_O :: 4
 CMD_LOCKVAR_O :: 256
 E940_S :: "E940: Cannot lock or unlock variable %s"
 
@@ -11033,7 +11003,7 @@ ex_unletlock_o :: proc "c" (eap: rawptr, argstart: cstring, deep: C.int, glv_fla
 			([^]rawptr)(uintptr(&lv[0]) + LL_NAME_OFF_O)[0] = rawptr(arg)
 			([^]rawptr)(uintptr(&lv[0]) + LL_TV_OFF_O)[0] = nil
 			arg = transmute(cstring)(rawptr(uintptr(transmute(rawptr)(arg)) + 1))
-			if get_env_len_e(&arg) == 0 {
+			if get_env_len(&arg) == 0 {
 				semsg(e_invarg2, transmute(cstring)(rawptr(uintptr(transmute(rawptr)(arg)) - 1)))
 				return
 			}
@@ -11050,7 +11020,7 @@ ex_unletlock_o :: proc "c" (eap: rawptr, argstart: cstring, deep: C.int, glv_fla
 			}
 			name_end = arg
 		} else {
-			name_end = get_lval_e(arg, nil, rawptr(&lv[0]), true, (^bool)(uintptr(eap) + 72)^ || error, glv_flags, FNE_CHECK_START_O)
+			name_end = get_lval(arg, nil, rawptr(&lv[0]), true, (^bool)(uintptr(eap) + 72)^ || error, glv_flags, FNE_CHECK_START_O)
 			if (^rawptr)(uintptr(&lv[0]) + LL_NAME_OFF_O)^ == nil {
 				error = true
 			}
@@ -11060,7 +11030,7 @@ ex_unletlock_o :: proc "c" (eap: rawptr, argstart: cstring, deep: C.int, glv_fla
 					semsg(cstring(E488_S), name_end)
 				}
 				if !((^bool)(uintptr(eap) + 72)^ || error) {
-					clear_lval_e(rawptr(&lv[0]))
+					clear_lval(rawptr(&lv[0]))
 				}
 				break
 			}
@@ -11076,7 +11046,7 @@ ex_unletlock_o :: proc "c" (eap: rawptr, argstart: cstring, deep: C.int, glv_fla
 				}
 			}
 			if !(^bool)(uintptr(eap) + 72)^ {
-				clear_lval_e(rawptr(&lv[0]))
+				clear_lval(rawptr(&lv[0]))
 			}
 		}
 		arg = skipwhite(name_end)
@@ -11728,7 +11698,7 @@ valid_varname :: proc "c" (varname: cstring) -> bool {
 	for ([^]u8)(p)[0] != 0 {
 		c := ([^]u8)(p)[0]
 		first := uintptr(transmute(rawptr)(p)) == uintptr(transmute(rawptr)(varname))
-		if !eval_isnamec1_e(C.int(c)) && (first || !ascii_isdigit_o(c)) && c != '#' {
+		if !eval_isnamec1(C.int(c)) && (first || !ascii_isdigit_o(c)) && c != '#' {
 			semsg(cstring(E461_S), varname)
 			return false
 		}
@@ -11739,8 +11709,6 @@ valid_varname :: proc "c" (varname: cstring) -> bool {
 
 // —— Batch 26c: vars.c buf/win/tab var accessors ——
 foreign _ {
-	@(link_name = "eval_option")
-	eval_option_e :: proc "c" (arg: ^cstring, rettv: ^Typval_T, evaluate: bool) -> C.int ---
 	@(link_name = "find_option")
 	find_option_e :: proc "c" (name: cstring) -> C.int ---
 }
@@ -11760,10 +11728,10 @@ tv_to_optval_o :: proc "c" (tv: ^Typval_T, opt_idx: C.int, option: cstring, erro
 	has_num := !is_tty && option_has_type(opt_idx, kOptValTypeNumber)
 	has_str := is_tty || option_has_type(opt_idx, kOptValTypeString)
 	if !is_tty && (((^C.uint32_t)(uintptr(get_option(opt_idx)) + 16))^ & C.uint32_t(kOptFlagFunc)) != 0 && (tv.v_type == VAR_FUNC || tv.v_type == VAR_PARTIAL) {
-		strval := encode_tv2string_e(tv, nil)
+		strval := encode_tv2string(tv, nil)
 		err = strval == nil
 		if strval != nil {
-			value = str_optval(strval, C.size_t(libc.strlen(transmute(cstring)(strval))))
+			value = str_optval(transmute(^u8)(strval), C.size_t(libc.strlen(transmute(cstring)(strval))))
 		} else {
 			value = str_optval(nil, 0)
 		}
@@ -11903,7 +11871,7 @@ get_var_from_o :: proc "c" (varname: cstring, rettv: ^Typval_T, deftv: ^Typval_T
 					}
 				} else {
 					vn := varname
-					if eval_option_e(&vn, rettv, true) == OK_E {
+					if eval_option(&vn, rettv, true) == OK_E {
 						done = true
 					}
 				}
@@ -12040,7 +12008,7 @@ f_getbufvar :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 	context = runtime.default_context()
 	avs := ([^]Typval_T)(argvars)
 	varname := tv_get_string_chk(&avs[1])
-	buf := tv_get_buf_from_arg_e(&avs[0])
+	buf := 	tv_get_buf_from_arg(&avs[0])
 	get_var_from_o(varname, rettv, &avs[2], 'b', curtab, curwin, buf)
 }
 
@@ -12099,7 +12067,7 @@ f_setbufvar :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 		return
 	}
 	varname := tv_get_string_chk(&avs[1])
-	buf := tv_get_buf_e(&avs[0], 0)
+	buf := 	tv_get_buf(&avs[0], 0)
 	varp := &avs[2]
 	if buf == nil || varname == nil {
 		return
@@ -12125,8 +12093,6 @@ f_setbufvar :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 
 // —— Batch 26g: :let sub-engines (dormant) ——
 foreign _ {
-	@(link_name = "find_option_var_end")
-	find_option_var_end_e :: proc "c" (arg: ^cstring, opt_idx: ^C.int, opt_flags: ^C.int) -> cstring ---
 	@(link_name = "get_tty_option")
 	get_tty_option_e :: proc "c" (name: cstring) -> OptVal ---
 }
@@ -12146,7 +12112,7 @@ ex_let_env_o :: proc "c" (arg: cstring, tv: ^Typval_T, is_const: bool, endchars:
 	arg_end: cstring = nil
 	arg1 := transmute(cstring)(rawptr(uintptr(transmute(rawptr)(arg)) + 1))
 	name := arg1
-	length := get_env_len_e(&arg1)
+	length := get_env_len(&arg1)
 	if length == 0 {
 		semsg(e_invarg2, transmute(cstring)(rawptr(uintptr(transmute(rawptr)(name)) - 1)))
 	} else {
@@ -12191,7 +12157,7 @@ ex_let_option_o :: proc "c" (arg: cstring, tv: ^Typval_T, is_const: bool, endcha
 	opt_idx: C.int = 0
 	opt_flags: C.int = 0
 	arg1 := arg
-	p := find_option_var_end_e(&arg1, &opt_idx, &opt_flags)
+	p := find_option_var_end(&arg1, &opt_idx, &opt_flags)
 	if p == nil || (endchars != nil && vim_strchr_c(transmute(^u8)(endchars), C.int(([^]u8)(skipwhite(p))[0])) == nil) {
 		emsg(cstring(E18_S))
 		return nil
@@ -12232,9 +12198,9 @@ ex_let_option_o :: proc "c" (arg: cstring, tv: ^Typval_T, is_const: bool, endcha
 					} else if opch == '*' {
 						new_n = cur_n * new_n
 					} else if opch == '/' {
-						new_n = num_divide_e(cur_n, new_n)
+						new_n = num_divide(cur_n, new_n)
 					} else if opch == '%' {
-						new_n = num_modulus_e(cur_n, new_n)
+						new_n = num_modulus(cur_n, new_n)
 					}
 					if curval.typ == kOptValTypeNumber {
 						newval = num_optval(new_n)
@@ -12313,4 +12279,16260 @@ ex_let_register_o :: proc "c" (arg: cstring, tv: ^Typval_T, is_const: bool, endc
 		xfree(ptofree)
 	}
 	return arg_end
+}
+
+// —— Batch 27a: funcs.c buf lookups ——
+E158_S :: "E158: Invalid buffer name: %s"
+
+// Find a buffer by number, name, or pattern.
+@(export)
+tv_get_buf :: proc "c" (tv: ^Typval_T, curtab_only: C.int) -> rawptr {
+	context = runtime.default_context()
+	if tv.v_type == VAR_NUMBER {
+		return buflist_findnr(C.int(transmute(C.longlong)(tv.vval)))
+	}
+	if tv.v_type != VAR_STRING {
+		return nil
+	}
+	name := transmute(cstring)(rawptr(tv.vval))
+	if name == nil || ([^]u8)(name)[0] == 0 {
+		return curbuf
+	}
+	if ([^]u8)(name)[0] == '$' && ([^]u8)(name)[1] == 0 {
+		return lastbuf_g
+	}
+	save_magic := p_magic_g
+	p_magic_g = 1
+	save_cpo := p_cpo
+	p_cpo = empty_string_opt()
+	end := transmute(cstring)(rawptr(uintptr(transmute(rawptr)(name)) + uintptr(libc.strlen(name))))
+	buf := buflist_findnr(buflist_findpat(name, end, true, false, curtab_only != 0))
+	p_magic_g = save_magic
+	p_cpo = save_cpo
+	if buf == nil {
+		buf = find_buffer(tv)
+	}
+	return buf
+}
+
+// —— Batch 27c: funcs.c math/bitwise leaves ——
+E808_S :: "E808: Number or Float required"
+
+// Float absolute value helper.
+fabs_o :: proc "c" (x: f64) -> f64 {
+	context = runtime.default_context()
+	if x < 0 {
+		return -x
+	}
+	return x
+}
+
+// Number-or-float coercion (typval.h static inline).
+tv_get_float_chk_o :: proc "c" (tv: ^Typval_T, ret_f: ^f64) -> bool {
+	context = runtime.default_context()
+	if tv.v_type == VAR_FLOAT {
+		ret_f^ = transmute(f64)(tv.vval)
+		return true
+	}
+	if tv.v_type == VAR_NUMBER {
+		ret_f^ = f64(transmute(C.longlong)(tv.vval))
+		return true
+	}
+	semsg(cstring("%s"), cstring(E808_S))
+	return false
+}
+
+// Apply a float function with type checking (static in C).
+float_op_wrapper_o :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fn: proc "c" (f64) -> f64) {
+	context = runtime.default_context()
+	f: f64 = 0
+	rettv.v_type = VAR_FLOAT
+	if tv_get_float_chk_o((^Typval_T)(uintptr(argvars)), &f) {
+		rettv.vval = transmute(rawptr)(fn(f))
+	} else {
+		rettv.vval = transmute(rawptr)(f64(0))
+	}
+}
+
+// "abs(expr)" function.
+@(export)
+f_abs :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	av0 := ([^]Typval_T)(argvars)[0]
+	if av0.v_type == VAR_FLOAT {
+		float_op_wrapper_o(argvars, rettv, fabs_o)
+	} else {
+		error := false
+		n := tv_get_number_chk((^Typval_T)(uintptr(argvars)), &error)
+		if error {
+			rettv.vval = transmute(rawptr)(C.longlong(-1))
+		} else if n > 0 {
+			rettv.vval = transmute(rawptr)(n)
+		} else {
+			rettv.vval = transmute(rawptr)(-n)
+		}
+	}
+}
+
+// "and(expr, expr)" function.
+@(export)
+f_and :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	rettv.vval = transmute(rawptr)(tv_get_number_chk((^Typval_T)(uintptr(argvars)), nil) & tv_get_number_chk((^Typval_T)(uintptr(argvars) + 16), nil))
+}
+
+// "or(expr, expr)" function.
+@(export)
+f_or :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	rettv.vval = transmute(rawptr)(tv_get_number_chk((^Typval_T)(uintptr(argvars)), nil) | tv_get_number_chk((^Typval_T)(uintptr(argvars) + 16), nil))
+}
+
+// "xor(expr, expr)" function.
+@(export)
+f_xor :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	rettv.vval = transmute(rawptr)(tv_get_number_chk((^Typval_T)(uintptr(argvars)), nil) ~ tv_get_number_chk((^Typval_T)(uintptr(argvars) + 16), nil))
+}
+
+// "byte2line(byte)" function.
+@(export)
+f_byte2line :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	boff := C.int(tv_get_number_chk((^Typval_T)(uintptr(argvars)), nil)) - 1
+	if boff < 0 {
+		rettv.vval = transmute(rawptr)(C.longlong(-1))
+	} else {
+		rettv.vval = transmute(rawptr)(C.longlong(ml_find_line_or_offset_r(curbuf, 0, rawptr(&boff), false)))
+	}
+}
+
+// "changenr()" function.
+@(export)
+f_changenr :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	rettv.vval = transmute(rawptr)(C.longlong(buf_i32_at(curbuf, B_U_SEQ_CUR)))
+}
+
+// —— Batch 27d: funcs.c float leaves ——
+foreign _ {
+	@(link_name = "atan2")
+	c_atan2 :: proc "c" (x, y: f64) -> f64 ---
+	@(link_name = "fmod")
+	c_fmod :: proc "c" (x, y: f64) -> f64 ---
+	@(link_name = "pow")
+	c_pow :: proc "c" (x, y: f64) -> f64 ---
+	@(link_name = "xisinf")
+	xisinf_e :: proc "c" (d: f64) -> C.int ---
+	@(link_name = "xisnan")
+	xisnan_e :: proc "c" (d: f64) -> C.int ---
+}
+
+VARNUMBER_MAX_O :: 9223372036854775807
+DBL_EPSILON_O :: 2.220446049250313e-16
+
+// "atan2()" function.
+@(export)
+f_atan2 :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	fx, fy: f64 = 0, 0
+	rettv.v_type = VAR_FLOAT
+	if tv_get_float_chk_o((^Typval_T)(uintptr(argvars)), &fx) && tv_get_float_chk_o((^Typval_T)(uintptr(argvars) + 16), &fy) {
+		rettv.vval = transmute(rawptr)(c_atan2(fx, fy))
+	} else {
+		rettv.vval = transmute(rawptr)(f64(0))
+	}
+}
+
+// "float2nr()" function.
+@(export)
+f_float2nr :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	f: f64 = 0
+	if !tv_get_float_chk_o((^Typval_T)(uintptr(argvars)), &f) {
+		return
+	}
+	if f <= f64(-C.longlong(VARNUMBER_MAX_O)) + DBL_EPSILON_O {
+		rettv.vval = transmute(rawptr)(-C.longlong(VARNUMBER_MAX_O))
+	} else if f >= f64(C.longlong(VARNUMBER_MAX_O)) - DBL_EPSILON_O {
+		rettv.vval = transmute(rawptr)(C.longlong(VARNUMBER_MAX_O))
+	} else {
+		rettv.vval = transmute(rawptr)(C.longlong(f))
+	}
+}
+
+// "fmod()" function.
+@(export)
+f_fmod :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	fx, fy: f64 = 0, 0
+	rettv.v_type = VAR_FLOAT
+	if tv_get_float_chk_o((^Typval_T)(uintptr(argvars)), &fx) && tv_get_float_chk_o((^Typval_T)(uintptr(argvars) + 16), &fy) {
+		rettv.vval = transmute(rawptr)(c_fmod(fx, fy))
+	} else {
+		rettv.vval = transmute(rawptr)(f64(0))
+	}
+}
+
+// "pow()" function.
+@(export)
+f_pow :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	fx, fy: f64 = 0, 0
+	rettv.v_type = VAR_FLOAT
+	if tv_get_float_chk_o((^Typval_T)(uintptr(argvars)), &fx) && tv_get_float_chk_o((^Typval_T)(uintptr(argvars) + 16), &fy) {
+		rettv.vval = transmute(rawptr)(c_pow(fx, fy))
+	} else {
+		rettv.vval = transmute(rawptr)(f64(0))
+	}
+}
+
+// "isinf()" function.
+@(export)
+f_isinf :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	av0 := ([^]Typval_T)(argvars)[0]
+	if av0.v_type == VAR_FLOAT && xisinf_e(transmute(f64)(av0.vval)) != 0 {
+		if transmute(f64)(av0.vval) > 0.0 {
+			rettv.vval = transmute(rawptr)(C.longlong(1))
+		} else {
+			rettv.vval = transmute(rawptr)(C.longlong(-1))
+		}
+	}
+}
+
+// "isnan()" function.
+@(export)
+f_isnan :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	av0 := ([^]Typval_T)(argvars)[0]
+	if av0.v_type == VAR_FLOAT && xisnan_e(transmute(f64)(av0.vval)) != 0 {
+		rettv.vval = transmute(rawptr)(C.longlong(1))
+	} else {
+		rettv.vval = transmute(rawptr)(C.longlong(0))
+	}
+}
+
+// —— Batch 27e: funcs.c introspection + trivial leaves ——
+
+// "did_filetype()" function.
+@(export)
+f_did_filetype :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	if (^bool)(uintptr(curbuf) + B_DID_FILETYPE_OFF)^ {
+		rettv.vval = transmute(rawptr)(C.longlong(1))
+	} else {
+		rettv.vval = transmute(rawptr)(C.longlong(0))
+	}
+}
+
+// "empty({expr})" function.
+@(export)
+f_empty :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	av0 := ([^]Typval_T)(argvars)[0]
+	n := true
+	switch av0.v_type {
+	case VAR_STRING, VAR_FUNC:
+		s := transmute(^u8)(av0.vval)
+		n = s == nil || s^ == 0
+	case VAR_PARTIAL:
+		n = rawptr(av0.vval) == nil
+	case VAR_NUMBER:
+		n = transmute(C.longlong)(av0.vval) == 0
+	case VAR_FLOAT:
+		n = transmute(f64)(av0.vval) == 0.0
+	case VAR_LIST:
+		n = tv_list_len_o(rawptr(av0.vval)) == 0
+	case VAR_DICT:
+		n = tv_dict_len_o(rawptr(av0.vval)) == 0
+	case VAR_BOOL:
+		b := C.int(transmute(C.longlong)(av0.vval))
+		if b == kBoolVarTrue {
+			n = false
+		} else {
+			n = true
+		}
+	case VAR_SPECIAL:
+		n = C.int(transmute(C.longlong)(av0.vval)) == KSPECIALVARNULL_O
+	case VAR_BLOB:
+		n = tv_blob_len_o(rawptr(av0.vval)) == 0
+	case VAR_UNKNOWN:
+		_internal_error(cstring("f_empty(UNKNOWN)"))
+	}
+	if n {
+		rettv.vval = transmute(rawptr)(C.longlong(1))
+	} else {
+		rettv.vval = transmute(rawptr)(C.longlong(0))
+	}
+}
+
+// "invert(expr)" function.
+@(export)
+f_invert :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	rettv.vval = transmute(rawptr)(~tv_get_number_chk((^Typval_T)(uintptr(argvars)), nil))
+}
+
+// "copy()" function.
+@(export)
+f_copy :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	var_item_copy(nil, (^Typval_T)(uintptr(argvars)), rettv, false, 0)
+}
+
+// "escape({string}, {chars})" function.
+@(export)
+f_escape :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	buf: [65]u8
+	rettv.vval = transmute(rawptr)(vim_strsave_escaped_c(transmute(^u8)(tv_get_string((^Typval_T)(uintptr(argvars)))), transmute(^u8)(tv_get_string_buf((^Typval_T)(uintptr(argvars) + 16), &buf[0]))))
+	rettv.v_type = VAR_STRING
+}
+
+// "getenv()" function.
+@(export)
+f_getenv :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	p := vim_getenv(tv_get_string((^Typval_T)(uintptr(argvars))))
+	if p == nil {
+		rettv.v_type = VAR_SPECIAL
+		rettv.vval = transmute(rawptr)(C.longlong(KSPECIALVARNULL_O))
+		return
+	}
+	rettv.vval = transmute(rawptr)(p)
+	rettv.v_type = VAR_STRING
+}
+
+// —— Batch 27f: funcs.c type/lock/copy/pid/fname leaves ——
+foreign _ {
+	@(link_name = "vim_strsave_fnameescape")
+	vim_strsave_fnameescape_e :: proc "c" (fname: cstring, what: C.int) -> ^u8 ---
+}
+
+VAR_TYPE_SPECIAL_O :: 7
+E786_S :: "E786: Range not allowed"
+
+// "type()" function.
+@(export)
+f_type :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	av0 := ([^]Typval_T)(argvars)[0]
+	n: C.longlong = -1
+	switch av0.v_type {
+	case VAR_NUMBER:
+		n = VAR_TYPE_NUMBER_O
+	case VAR_STRING:
+		n = VAR_TYPE_STRING_O
+	case VAR_PARTIAL, VAR_FUNC:
+		n = VAR_TYPE_FUNC_O
+	case VAR_LIST:
+		n = VAR_TYPE_LIST_O
+	case VAR_DICT:
+		n = VAR_TYPE_DICT_O
+	case VAR_FLOAT:
+		n = VAR_TYPE_FLOAT_O
+	case VAR_BOOL:
+		n = VAR_TYPE_BOOL_O
+	case VAR_SPECIAL:
+		n = VAR_TYPE_SPECIAL_O
+	case VAR_BLOB:
+		n = VAR_TYPE_BLOB_O
+	case VAR_UNKNOWN:
+		_internal_error(cstring("f_type(UNKNOWN)"))
+	}
+	rettv.vval = transmute(rawptr)(n)
+}
+
+// "islocked()" function.
+@(export)
+f_islocked :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	lv: [96]u8
+	rettv.vval = transmute(rawptr)(C.longlong(-1))
+	end := get_lval(transmute(cstring)(tv_get_string((^Typval_T)(uintptr(argvars)))), nil, rawptr(&lv[0]), false, false, TFN_NO_AUTOLOAD_O | GLV_READ_ONLY_O, FNE_CHECK_START_O)
+	ll_name := (^cstring)(rawptr(&lv[0]))^
+	if end != nil && ll_name != nil {
+		if ([^]u8)(end)[0] != 0 {
+			ll_name_len := (^C.size_t)(rawptr(&lv[8]))^
+			if ll_name_len == 0 {
+				semsg(e_invarg2, end)
+			} else {
+				semsg(cstring(E488_S), end)
+			}
+		} else {
+			ll_tv := (^rawptr)(rawptr(&lv[24]))^
+			if ll_tv == nil {
+				di := find_var(ll_name, (^C.size_t)(rawptr(&lv[8]))^, nil, 1)
+				if di != nil {
+					locked := (([^]u8)(uintptr(di) + 16)[0] & DI_FLAGS_LOCK_O) != 0 || tv_islocked((^Typval_T)(uintptr(di)))
+					if locked {
+						rettv.vval = transmute(rawptr)(C.longlong(1))
+					} else {
+						rettv.vval = transmute(rawptr)(C.longlong(0))
+					}
+				}
+			} else if (^bool)(rawptr(&lv[48]))^ {
+				emsg(cstring(E786_S))
+			} else if (^cstring)(rawptr(&lv[80]))^ != nil {
+				semsg(cstring(E_DICTKEY_S), (^cstring)(rawptr(&lv[80]))^)
+			} else if (^rawptr)(rawptr(&lv[40]))^ != nil {
+				li := (^rawptr)(rawptr(&lv[32]))^
+				if tv_islocked((^Typval_T)(uintptr(li) + 16)) {
+					rettv.vval = transmute(rawptr)(C.longlong(1))
+				} else {
+					rettv.vval = transmute(rawptr)(C.longlong(0))
+				}
+			} else {
+				di := (^rawptr)(rawptr(&lv[72]))^
+				if tv_islocked((^Typval_T)(uintptr(di))) {
+					rettv.vval = transmute(rawptr)(C.longlong(1))
+				} else {
+					rettv.vval = transmute(rawptr)(C.longlong(0))
+				}
+			}
+		}
+	}
+	clear_lval(rawptr(&lv[0]))
+}
+
+// "deepcopy()" function.
+@(export)
+f_deepcopy :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	if tv_check_for_opt_bool_arg(argvars, 1) == FAIL_E {
+		return
+	}
+	noref: C.longlong = 0
+	if ([^]Typval_T)(argvars)[1].v_type != VAR_UNKNOWN {
+		noref = tv_get_bool_chk((^Typval_T)(uintptr(argvars) + 16), nil)
+	}
+	copyID: C.int = 0
+	if noref == 0 {
+		copyID = get_copyID()
+	}
+	var_item_copy(nil, (^Typval_T)(uintptr(argvars)), rettv, true, copyID)
+}
+
+// "getpid()" function.
+@(export)
+f_getpid :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	rettv.vval = transmute(rawptr)(C.longlong(os_get_pid()))
+}
+
+// "fnameescape({string})" function.
+@(export)
+f_fnameescape :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	rettv.vval = transmute(rawptr)(vim_strsave_fnameescape_e(tv_get_string((^Typval_T)(uintptr(argvars))), 0))
+	rettv.v_type = VAR_STRING
+}
+
+// —— Batch 27g: funcs.c len/line/line2byte/localtime leaves ——
+E701_S :: "E701: Invalid type for len()"
+
+// "len()" function.
+@(export)
+f_len :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	av0 := ([^]Typval_T)(argvars)[0]
+	switch av0.v_type {
+	case VAR_STRING, VAR_NUMBER:
+		rettv.vval = transmute(rawptr)(C.longlong(libc.strlen(tv_get_string((^Typval_T)(uintptr(argvars))))))
+	case VAR_BLOB:
+		rettv.vval = transmute(rawptr)(C.longlong(tv_blob_len_o(rawptr(av0.vval))))
+	case VAR_LIST:
+		rettv.vval = transmute(rawptr)(C.longlong(tv_list_len_o(rawptr(av0.vval))))
+	case VAR_DICT:
+		rettv.vval = transmute(rawptr)(C.longlong(tv_dict_len_o(rawptr(av0.vval))))
+	case VAR_UNKNOWN, VAR_BOOL, VAR_SPECIAL, VAR_FLOAT, VAR_PARTIAL, VAR_FUNC:
+		emsg(cstring(E701_S))
+	}
+}
+
+// "line(string, [winid])" function.
+@(export)
+f_line :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	lnum: C.longlong = 0
+	fp: rawptr = nil
+	fnum: C.int = 0
+	if ([^]Typval_T)(argvars)[1].v_type != VAR_UNKNOWN {
+		id := C.int(tv_get_number((^Typval_T)(uintptr(argvars) + 16)))
+		tp: rawptr = nil
+		wp := win_id2wp_tp(id, &tp)
+		if wp != nil && tp != nil {
+			if p_spk_g^ != 'c' || ((^C.int)(uintptr(wp) + W_P_DIFF_OFF)^ != 0 && (^C.int)(uintptr(curwin) + W_P_DIFF_OFF)^ != 0) {
+				skip_update_topline_g = true
+			}
+			check_cursor(wp)
+			fp = var2fpos((^Typval_T)(uintptr(argvars)), true, &fnum, false, wp)
+			skip_update_topline_g = false
+		}
+	} else {
+		fp = var2fpos((^Typval_T)(uintptr(argvars)), true, &fnum, false, curwin)
+	}
+	if fp != nil {
+		lnum = C.longlong((^C.int)(uintptr(fp))^)
+	}
+	rettv.vval = transmute(rawptr)(lnum)
+}
+
+// "line2byte(lnum)" function.
+@(export)
+f_line2byte :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	lnum := tv_get_lnum((^Typval_T)(uintptr(argvars)))
+	n: C.longlong = -1
+	if lnum >= 1 && lnum <= (^C.int)(uintptr(curbuf) + B_ML_LINE_COUNT)^ + 1 {
+		n = C.longlong(ml_find_line_or_offset_r(curbuf, lnum, nil, false))
+	}
+	if n >= 0 {
+		n += 1
+	}
+	rettv.vval = transmute(rawptr)(n)
+}
+
+// "localtime()" function.
+@(export)
+f_localtime :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	rettv.vval = transmute(rawptr)(C.longlong(libc.time(nil)))
+}
+
+// —— Batch 27h: funcs.c col + char leaves ——
+E5070_S :: "E5070: Character number must not be less than zero"
+E5071_S :: "E5071: Character number must not be greater than INT_MAX (%i)"
+
+// Shared col()/charcol() implementation (C-static).
+get_col_o :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, charcol: bool) {
+	context = runtime.default_context()
+	if tv_check_for_string_or_list_arg(argvars, 0) == FAIL_E || tv_check_for_opt_number_arg(argvars, 1) == FAIL_E {
+		return
+	}
+	wp := curwin
+	if ([^]Typval_T)(argvars)[1].v_type != VAR_UNKNOWN {
+		tp: rawptr = nil
+		wp = win_id2wp_tp(C.int(tv_get_number((^Typval_T)(uintptr(argvars) + 16))), &tp)
+		if wp == nil || tp == nil {
+			return
+		}
+		check_cursor(wp)
+	}
+	bp := (^rawptr)(uintptr(wp) + W_BUFFER_OFF)^
+	col: C.int = 0
+	fnum := (^C.int)(uintptr(bp) + B_FNUM_OFF)^
+	fp := var2fpos((^Typval_T)(uintptr(argvars)), false, &fnum, charcol, wp)
+	if fp != nil && fnum == (^C.int)(uintptr(bp) + B_FNUM_OFF)^ {
+		fp_col := (^C.int)(uintptr(fp) + 4)^
+		fp_lnum := (^C.int)(uintptr(fp))^
+		if fp_col == MAXCOL {
+			if fp_lnum <= (^C.int)(uintptr(bp) + B_ML_LINE_COUNT)^ {
+				col = ml_get_buf_len(bp, fp_lnum) + 1
+			} else {
+				col = MAXCOL
+			}
+		} else {
+			col = fp_col + 1
+			if virtual_active_r(wp) && uintptr(fp) == uintptr(wp) + W_CURSOR_OFF {
+				w_lnum := (^C.int)(uintptr(wp) + W_CURSOR_OFF)^
+				w_col := (^C.int)(uintptr(wp) + W_CURSOR_OFF + 4)^
+				w_coladd := (^C.int)(uintptr(wp) + W_CURSOR_OFF + 8)^
+				w_virtcol := (^C.int)(uintptr(wp) + W_VIRTCOL_OFF)^
+				p := rawptr(uintptr(ml_get_buf(bp, w_lnum)) + uintptr(w_col))
+				if w_coladd >= win_chartabsize_r(wp, transmute(^u8)(p), w_virtcol - w_coladd) {
+					if ([^]u8)(p)[0] != 0 {
+						l := utfc_ptr2len(transmute(cstring)(p))
+						if ([^]u8)(p)[uintptr(l)] == 0 {
+							col += l
+						}
+					}
+				}
+			}
+		}
+	}
+	rettv.vval = transmute(rawptr)(C.longlong(col))
+}
+
+// "charcol()" function.
+@(export)
+f_charcol :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	get_col_o(argvars, rettv, true)
+}
+
+// "col(string)" function.
+@(export)
+f_col :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	get_col_o(argvars, rettv, false)
+}
+
+// "char2nr(string)" function.
+@(export)
+f_char2nr :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	if ([^]Typval_T)(argvars)[1].v_type != VAR_UNKNOWN {
+		if !tv_check_num((^Typval_T)(uintptr(argvars) + 16)) {
+			return
+		}
+	}
+	rettv.vval = transmute(rawptr)(C.longlong(utf_ptr2char(tv_get_string((^Typval_T)(uintptr(argvars))))))
+}
+
+// "nr2char()" function.
+@(export)
+f_nr2char :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	if ([^]Typval_T)(argvars)[1].v_type != VAR_UNKNOWN {
+		if !tv_check_num((^Typval_T)(uintptr(argvars) + 16)) {
+			return
+		}
+	}
+	error := false
+	num := tv_get_number_chk((^Typval_T)(uintptr(argvars)), &error)
+	if error {
+		return
+	}
+	if num < 0 {
+		emsg(cstring(E5070_S))
+		return
+	}
+	if num > C.longlong(max(C.int)) {
+		semsg(cstring(E5071_S), max(C.int))
+		return
+	}
+	buf: [6]u8
+	length := utf_char2bytes(C.int(num), &buf[0])
+	rettv.v_type = VAR_STRING
+	rettv.vval = transmute(rawptr)(xmemdupz_o2(&buf[0], C.size_t(length)))
+}
+
+// —— Batch 27i: funcs.c getpos cluster (FFI fully rewired) ——
+
+// Shared getpos()/getcurpos()/getcharpos()/getcursorcharpos() engine (C-static).
+getpos_both_o :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, getcurpos: bool, charcol: bool) {
+	context = runtime.default_context()
+	fp: rawptr = nil
+	pos: Pos_T
+	wp := curwin
+	fnum: C.int = -1
+	if getcurpos {
+		if ([^]Typval_T)(argvars)[0].v_type != VAR_UNKNOWN {
+			wp = find_win_by_nr_or_id((^Typval_T)(uintptr(argvars)))
+			if wp != nil {
+				fp = rawptr(uintptr(wp) + W_CURSOR_OFF)
+			}
+		} else {
+			fp = rawptr(uintptr(curwin) + W_CURSOR_OFF)
+		}
+		if fp != nil && charcol {
+			pos = (cast(^Pos_T)(fp))^
+			pos.col = buf_byteidx_to_charidx((^rawptr)(uintptr(wp) + W_BUFFER_OFF)^, pos.lnum, pos.col)
+			fp = rawptr(&pos)
+		}
+	} else {
+		fp = var2fpos((^Typval_T)(uintptr(argvars)), true, &fnum, charcol, curwin)
+	}
+	l_size: C.int = 4
+	if getcurpos {
+		l_size = 5
+	}
+	l := tv_list_alloc_ret(transmute(^Typval)(rettv), l_size)
+	if fnum != -1 {
+		tv_list_append_number(l, C.longlong(fnum))
+	} else {
+		tv_list_append_number(l, C.longlong(0))
+	}
+	if fp != nil {
+		tv_list_append_number(l, C.longlong((^C.int)(uintptr(fp))^))
+	} else {
+		tv_list_append_number(l, C.longlong(0))
+	}
+	if fp != nil {
+		fp_col := (^C.int)(uintptr(fp) + 4)^
+		if fp_col == MAXCOL {
+			tv_list_append_number(l, C.longlong(MAXCOL))
+		} else {
+			tv_list_append_number(l, C.longlong(fp_col + 1))
+		}
+	} else {
+		tv_list_append_number(l, C.longlong(0))
+	}
+	if fp != nil {
+		tv_list_append_number(l, C.longlong((^C.int)(uintptr(fp) + 8)^))
+	} else {
+		tv_list_append_number(l, C.longlong(0))
+	}
+	if getcurpos {
+		save_set_curswant := (^bool)(uintptr(curwin) + W_SET_CURSWANT_OFF)^
+		save_curswant := (^C.int)(uintptr(curwin) + W_CURSWANT_OFF)^
+		save_virtcol := (^C.int)(uintptr(curwin) + W_VIRTCOL_OFF)^
+		if wp == curwin {
+			update_curswant_r()
+		}
+		if wp == nil {
+			tv_list_append_number(l, C.longlong(0))
+		} else {
+			w_curswant := (^C.int)(uintptr(wp) + W_CURSWANT_OFF)^
+			if w_curswant == MAXCOL {
+				tv_list_append_number(l, C.longlong(MAXCOL))
+			} else {
+				tv_list_append_number(l, C.longlong(w_curswant + 1))
+			}
+		}
+		if wp == curwin && save_set_curswant {
+			(^bool)(uintptr(curwin) + W_SET_CURSWANT_OFF)^ = save_set_curswant
+			(^C.int)(uintptr(curwin) + W_CURSWANT_OFF)^ = save_curswant
+			(^C.int)(uintptr(curwin) + W_VIRTCOL_OFF)^ = save_virtcol
+			(^C.int)(uintptr(curwin) + W_VALID_OFF)^ &= ~C.int(VALID_VIRTCOL_O)
+		}
+	}
+}
+
+// "getcurpos(string)" function.
+@(export)
+f_getcurpos :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	getpos_both_o(argvars, rettv, true, false)
+}
+
+// "getcursorcharpos()" function.
+@(export)
+f_getcursorcharpos :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	getpos_both_o(argvars, rettv, true, true)
+}
+
+// "getpos(string)" function.
+@(export)
+f_getpos :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	getpos_both_o(argvars, rettv, false, false)
+}
+
+// "getcharpos()" function.
+@(export)
+f_getcharpos :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	getpos_both_o(argvars, rettv, false, true)
+}
+
+// —— Batch 27j: funcs.c cursor/position setters (FFI fully rewired) ——
+
+// Shared cursor()/setcursorcharpos() engine (C-static).
+set_cursorpos_o :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, charcol: bool) {
+	context = runtime.default_context()
+	lnum: C.int = 0
+	col: C.int = 0
+	coladd: C.int = 0
+	set_curswant := true
+	rettv.vval = transmute(rawptr)(C.longlong(-1))
+	if ([^]Typval_T)(argvars)[0].v_type == VAR_LIST {
+		pos: Pos_T
+		curswant: C.int = -1
+		if list2fpos((^Typval_T)(uintptr(argvars)), &pos, nil, &curswant, charcol) == FAIL_E {
+			emsg(e_invarg)
+			return
+		}
+		lnum = pos.lnum
+		col = pos.col
+		coladd = pos.coladd
+		if curswant >= 0 {
+			(^C.int)(uintptr(curwin) + W_CURSWANT_OFF)^ = curswant - 1
+			set_curswant = false
+		}
+	} else if (([^]Typval_T)(argvars)[0].v_type == VAR_NUMBER || ([^]Typval_T)(argvars)[0].v_type == VAR_STRING) && (([^]Typval_T)(argvars)[1].v_type == VAR_NUMBER || ([^]Typval_T)(argvars)[1].v_type == VAR_STRING) {
+		lnum = tv_get_lnum((^Typval_T)(uintptr(argvars)))
+		if lnum < 0 {
+			semsg(e_invarg2, tv_get_string((^Typval_T)(uintptr(argvars))))
+		} else if lnum == 0 {
+			lnum = (^C.int)(uintptr(curwin) + W_CURSOR_OFF)^
+		}
+		col = C.int(tv_get_number_chk((^Typval_T)(uintptr(argvars) + 16), nil))
+		if charcol {
+			col = buf_charidx_to_byteidx(curbuf, lnum, C.int(col)) + 1
+		}
+		if ([^]Typval_T)(argvars)[2].v_type != VAR_UNKNOWN {
+			coladd = C.int(tv_get_number_chk((^Typval_T)(uintptr(argvars) + 32), nil))
+		}
+	} else {
+		emsg(e_invarg)
+		return
+	}
+	if lnum < 0 || col < 0 || coladd < 0 {
+		return
+	}
+	if lnum > 0 {
+		(^C.int)(uintptr(curwin) + W_CURSOR_OFF)^ = lnum
+	}
+	if col != MAXCOL {
+		col -= 1
+		if col < 0 {
+			col = 0
+		}
+	}
+	(^C.int)(uintptr(curwin) + W_CURSOR_OFF + 4)^ = col
+	(^C.int)(uintptr(curwin) + W_CURSOR_OFF + 8)^ = coladd
+	check_cursor(curwin)
+	mb_adjust_cursor_r()
+	(^bool)(uintptr(curwin) + W_SET_CURSWANT_OFF)^ = set_curswant
+	rettv.vval = transmute(rawptr)(C.longlong(0))
+}
+
+// Shared setpos()/setcharpos() engine (C-static).
+set_position_o :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, charpos: bool) {
+	context = runtime.default_context()
+	curswant: C.int = -1
+	rettv.vval = transmute(rawptr)(C.longlong(-1))
+	name := tv_get_string_chk((^Typval_T)(uintptr(argvars)))
+	if name == nil {
+		return
+	}
+	pos: Pos_T
+	fnum: C.int = 0
+	if list2fpos((^Typval_T)(uintptr(argvars) + 16), &pos, &fnum, &curswant, charpos) != OK_E {
+		return
+	}
+	if pos.col != MAXCOL {
+		pos.col -= 1
+		if pos.col < 0 {
+			pos.col = 0
+		}
+	}
+	nm := ([^]u8)(name)
+	if nm[0] == '.' && nm[1] == 0 {
+		(^Pos_T)(uintptr(curwin) + W_CURSOR_OFF)^ = pos
+		if curswant >= 0 {
+			(^C.int)(uintptr(curwin) + W_CURSWANT_OFF)^ = curswant - 1
+			(^bool)(uintptr(curwin) + W_SET_CURSWANT_OFF)^ = false
+		}
+		check_cursor(curwin)
+		rettv.vval = transmute(rawptr)(C.longlong(0))
+	} else if nm[0] == '\'' && nm[1] != 0 && nm[2] == 0 {
+		if setmark_pos(C.int(nm[1]), &pos, fnum, nil) == OK_E {
+			rettv.vval = transmute(rawptr)(C.longlong(0))
+		}
+	} else {
+		emsg(e_invarg)
+	}
+}
+
+// "cursor(lnum, col)" function.
+@(export)
+f_cursor :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	set_cursorpos_o(argvars, rettv, false)
+}
+
+// "setcursorcharpos" function.
+@(export)
+f_setcursorcharpos :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	set_cursorpos_o(argvars, rettv, true)
+}
+
+// "setcharpos()" function.
+@(export)
+f_setcharpos :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	set_position_o(argvars, rettv, true)
+}
+
+// "setpos()" function.
+@(export)
+f_setpos :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	set_position_o(argvars, rettv, false)
+}
+
+// —— Batch 27k: funcs.c flatten + index ——
+E900_S :: "E900: maxdepth must be non-negative number"
+
+// Normalize index (typval.h static inline).
+tv_list_uidx_o :: proc "c" (l: rawptr, n_in: C.int) -> C.int {
+	context = runtime.default_context()
+	n := n_in
+	if n < 0 {
+		n += tv_list_len_o(l)
+	}
+	if n < 0 || n >= tv_list_len_o(l) {
+		return -1
+	}
+	return n
+}
+
+// Shared flatten()/flattennew() engine (C-static).
+flatten_common_o :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, make_copy: bool) {
+	context = runtime.default_context()
+	error := false
+	if ([^]Typval_T)(argvars)[0].v_type != VAR_LIST {
+		semsg(cstring(E_LISTARG_S), cstring("flatten()"))
+		return
+	}
+	maxdepth: C.int = 999999
+	if ([^]Typval_T)(argvars)[1].v_type == VAR_UNKNOWN {
+	} else {
+		maxdepth = C.int(tv_get_number_chk((^Typval_T)(uintptr(argvars) + 16), &error))
+		if error {
+			return
+		}
+		if maxdepth < 0 {
+			emsg(cstring(E900_S))
+			return
+		}
+	}
+	list := rawptr(([^]Typval_T)(argvars)[0].vval)
+	rettv.v_type = VAR_LIST
+	rettv.vval = transmute(rawptr)(list)
+	if list == nil {
+		return
+	}
+	if make_copy {
+		list = tv_list_copy(nil, list, false, get_copyID())
+		rettv.vval = transmute(rawptr)(list)
+		if list == nil {
+			return
+		}
+	} else {
+		if value_check_lock(tv_list_locked_o(list), cstring("flatten() argument"), max(C.size_t)) {
+			return
+		}
+		tv_list_ref_o(list)
+	}
+	tv_list_flatten(list, nil, C.longlong(tv_list_len_o(list)), C.longlong(maxdepth))
+}
+
+// "flatten(list[, {maxdepth}])" function.
+@(export)
+f_flatten :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	flatten_common_o(argvars, rettv, false)
+}
+
+// "flattennew(list[, {maxdepth}])" function.
+@(export)
+f_flattennew :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	flatten_common_o(argvars, rettv, true)
+}
+
+// "index()" function.
+@(export)
+f_index :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	idx: C.int = 0
+	ic := false
+	rettv.vval = transmute(rawptr)(C.longlong(-1))
+	if ([^]Typval_T)(argvars)[0].v_type == VAR_BLOB {
+		error := false
+		start: C.int = 0
+		if ([^]Typval_T)(argvars)[2].v_type != VAR_UNKNOWN {
+			start = C.int(tv_get_number_chk((^Typval_T)(uintptr(argvars) + 32), &error))
+			if error {
+				return
+			}
+		}
+		b := rawptr(([^]Typval_T)(argvars)[0].vval)
+		if b == nil {
+			return
+		}
+		if start < 0 {
+			start = tv_blob_len_o(b) + start
+			if start < 0 {
+				start = 0
+			}
+		}
+		for idx = start; idx < tv_blob_len_o(b); idx += 1 {
+			tv := Typval_T{v_type = VAR_NUMBER, v_lock = VAR_UNLOCKED, vval = transmute(rawptr)(C.longlong(tv_blob_get_o(b, idx)))}
+			if tv_equal(&tv, (^Typval_T)(uintptr(argvars) + 16), ic) {
+				rettv.vval = transmute(rawptr)(C.longlong(idx))
+				return
+			}
+		}
+		return
+	} else if ([^]Typval_T)(argvars)[0].v_type != VAR_LIST {
+		emsg(cstring(E_LISTBLOBREQ_S))
+		return
+	}
+	l := rawptr(([^]Typval_T)(argvars)[0].vval)
+	if l == nil {
+		return
+	}
+	item := tv_list_first_o(l)
+	if ([^]Typval_T)(argvars)[2].v_type != VAR_UNKNOWN {
+		error := false
+		idx = tv_list_uidx_o(l, C.int(tv_get_number_chk((^Typval_T)(uintptr(argvars) + 32), &error)))
+		if error || idx == -1 {
+			item = nil
+		} else {
+			item = tv_list_find(l, idx)
+			if item == nil {
+				libc.abort()
+			}
+		}
+		if ([^]Typval_T)(argvars)[3].v_type != VAR_UNKNOWN {
+			ic = tv_get_number_chk((^Typval_T)(uintptr(argvars) + 48), &error) != 0
+			if error {
+				item = nil
+			}
+		}
+	}
+	for item != nil {
+		if tv_equal((^Typval_T)(uintptr(item) + 16), (^Typval_T)(uintptr(argvars) + 16), ic) {
+			rettv.vval = transmute(rawptr)(C.longlong(idx))
+			break
+		}
+		item = (^rawptr)(uintptr(item))^
+		idx += 1
+	}
+}
+
+// —— Batch 27b: funcs.c window/line/execute leaves ——
+foreign _ {
+	@(link_name = "emsg_noredir")
+	emsg_noredir_g: bool
+	@(link_name = "redir_off")
+	redir_off_g: bool
+	@(link_name = "capture_ga")
+	capture_ga_g: rawptr
+}
+
+E957_S :: "E957: Invalid window number"
+DOCMD_KEYTYPED_O :: 0x08
+
+// LineGetter cookie for execute() over a list.
+GetListLineCookie :: struct {
+	l:  rawptr,
+	li: rawptr,
+}
+#assert(size_of(GetListLineCookie) == 16)
+
+// Find an optional window argument (curwin when missing).
+@(export)
+get_optional_window :: proc "c" (argvars: ^Typval_T, idx: C.int) -> rawptr {
+	context = runtime.default_context()
+	av := ([^]Typval_T)(argvars)[idx]
+	if av.v_type == VAR_UNKNOWN {
+		return curwin
+	}
+	win := find_win_by_nr_or_id((^Typval_T)(uintptr(argvars) + uintptr(idx) * 16))
+	if win == nil {
+		emsg(cstring(E957_S))
+		return nil
+	}
+	return win
+}
+
+// Next list line for execute() (LineGetter).
+@(export)
+get_list_line :: proc "c" (c: C.int, cookie: rawptr, indent: C.int, do_concat: bool) -> cstring {
+	context = runtime.default_context()
+	p := (^GetListLineCookie)(cookie)
+	item := p.li
+	if item == nil {
+		return nil
+	}
+	buf: [65]u8
+	s := tv_get_string_buf_chk((^Typval_T)(uintptr(item) + 16), &buf[0])
+	p.li = (^rawptr)(uintptr(item) + 0)^
+	if s == nil {
+		return nil
+	}
+	return transmute(cstring)(xstrdup_o(transmute(^u8)(s)))
+}
+
+// Shared execute()/execute-command implementation.
+@(export)
+execute_common :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, arg_off: C.int) {
+	context = runtime.default_context()
+	save_msg_silent := msg_silent
+	save_emsg_silent := emsg_silent
+	save_emsg_noredir := emsg_noredir_g
+	save_redir_off := redir_off_g
+	save_capture := capture_ga_g
+	save_msg_col := msg_col
+	echo_output := false
+	if check_secure() {
+		return
+	}
+	av1 := ([^]Typval_T)(argvars)[arg_off + 1]
+	if av1.v_type != VAR_UNKNOWN {
+		buf: [65]u8
+		s := tv_get_string_buf_chk((^Typval_T)(uintptr(argvars) + uintptr(arg_off + 1) * 16), &buf[0])
+		if s == nil {
+			return
+		}
+		if ([^]u8)(s)[0] == 0 {
+			echo_output = true
+		}
+		if libc.strncmp(s, cstring("silent"), 6) == 0 {
+			msg_silent += 1
+		}
+		if libc.strcmp(s, cstring("silent!")) == 0 {
+			emsg_silent = 1
+			emsg_noredir_g = true
+		}
+	} else {
+		msg_silent += 1
+	}
+	capture_local := Garray{}
+	ga_init_r2(&capture_local, 1, 80)
+	capture_ga_g = rawptr(&capture_local)
+	redir_off_g = false
+	if !echo_output {
+		msg_col = 0
+	}
+	av0 := ([^]Typval_T)(argvars)[arg_off]
+	if av0.v_type != VAR_LIST {
+		do_cmdline_cmd(transmute(^u8)(tv_get_string((^Typval_T)(uintptr(argvars) + uintptr(arg_off) * 16))))
+	} else if rawptr(av0.vval) != nil {
+		list := rawptr(av0.vval)
+		tv_list_ref_o(list)
+		cookie := GetListLineCookie{l = list, li = tv_list_first_o(list)}
+		do_cmdline_e(nil, get_list_line, rawptr(&cookie), DOCMD_NOWAIT_O | DOCMD_VERBOSE_O | DOCMD_REPEAT_O | DOCMD_KEYTYPED_O)
+		tv_list_unref(list)
+	}
+	msg_silent = save_msg_silent
+	emsg_silent = save_emsg_silent
+	emsg_noredir_g = save_emsg_noredir
+	redir_off_g = save_redir_off
+	if echo_output {
+		msg_col = 0
+	} else {
+		msg_col = save_msg_col
+	}
+	ga_append_e(&capture_local, 0)
+	rettv.v_type = VAR_STRING
+	rettv.vval = transmute(rawptr)(capture_local.ga_data)
+	capture_ga_g = save_capture
+}
+
+// Like tv_get_buf with a type error on misuse.
+@(export)
+tv_get_buf_from_arg :: proc "c" (tv: ^Typval_T) -> rawptr {
+	context = runtime.default_context()
+	if !tv_check_str_or_nr(tv) {
+		return nil
+	}
+	emsg_off += 1
+	buf := tv_get_buf(tv, 0)
+	emsg_off -= 1
+	return buf
+}
+
+// Get a buffer or error when the name is invalid.
+@(export)
+get_buf_arg :: proc "c" (arg: ^Typval_T) -> rawptr {
+	context = runtime.default_context()
+	emsg_off += 1
+	buf := tv_get_buf(arg, 0)
+	emsg_off -= 1
+	if buf == nil {
+		semsg(cstring(E158_S), tv_get_string(arg))
+	}
+	return buf
+}
+
+// —— Batch 27l: funcs.c env/perm/csearch leaves ——
+
+// "setenv()" function.
+@(export)
+f_setenv :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	namebuf: [65]u8
+	valbuf: [65]u8
+	name := tv_get_string_buf((^Typval_T)(uintptr(argvars)), &namebuf[0])
+	if check_secure() {
+		return
+	}
+	if ([^]Typval_T)(argvars)[1].v_type == VAR_SPECIAL && C.int(transmute(C.longlong)(([^]Typval_T)(argvars)[1].vval)) == KSPECIALVARNULL_O {
+		vim_unsetenv_ext(name)
+	} else {
+		vim_setenv_ext(name, tv_get_string_buf((^Typval_T)(uintptr(argvars) + 16), &valbuf[0]))
+	}
+}
+
+// "setfperm({fname}, {mode})" function.
+@(export)
+f_setfperm :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	rettv.vval = transmute(rawptr)(C.longlong(0))
+	fname := tv_get_string_chk((^Typval_T)(uintptr(argvars)))
+	if fname == nil {
+		return
+	}
+	modebuf: [65]u8
+	mode_str := tv_get_string_buf_chk((^Typval_T)(uintptr(argvars) + 16), &modebuf[0])
+	if mode_str == nil {
+		return
+	}
+	if libc.strlen(mode_str) != 9 {
+		semsg(e_invarg2, mode_str)
+		return
+	}
+	mask: C.int = 1
+	mode: C.int = 0
+	i := 8
+	for i >= 0 {
+		if ([^]u8)(mode_str)[uintptr(i)] != '-' {
+			mode |= mask
+		}
+		mask <<= 1
+		i -= 1
+	}
+	if os_setperm(fname, mode) == OK {
+		rettv.vval = transmute(rawptr)(C.longlong(1))
+	} else {
+		rettv.vval = transmute(rawptr)(C.longlong(0))
+	}
+}
+
+// "getcharsearch()" function.
+@(export)
+f_getcharsearch :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	tv_dict_alloc_ret(rettv)
+	dict := rawptr(rettv.vval)
+	tv_dict_add_str(dict, cstring("char"), 4, transmute(cstring)(last_csearch()))
+	tv_dict_add_nr(dict, cstring("forward"), 7, C.longlong(last_csearch_forward()))
+	tv_dict_add_nr(dict, cstring("until"), 5, C.longlong(last_csearch_until()))
+}
+
+// "setcharsearch()" function.
+@(export)
+f_setcharsearch :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	if tv_check_for_dict_arg(argvars, 0) == FAIL_E {
+		return
+	}
+	d := rawptr(([^]Typval_T)(argvars)[0].vval)
+	if d == nil {
+		return
+	}
+	csearch := tv_dict_get_string(d, cstring("char"), false)
+	if csearch != nil {
+		c := utf_ptr2char(csearch)
+		set_last_csearch(c, transmute(^u8)(csearch), utfc_ptr2len(csearch))
+	}
+	di := tv_dict_find(d, cstring("forward"), 7)
+	if di != nil {
+		if tv_get_number((^Typval_T)(uintptr(di))) != 0 {
+			set_csearch_direction(.FORWARD)
+		} else {
+			set_csearch_direction(.BACKWARD)
+		}
+	}
+	di = tv_dict_find(d, cstring("until"), 5)
+	if di != nil {
+		if tv_get_number((^Typval_T)(uintptr(di))) != 0 {
+			set_csearch_until(true)
+		} else {
+			set_csearch_until(false)
+		}
+	}
+}
+
+// —— Batch 27m: funcs.c highlight + fontname + interrupt leaves ——
+foreign _ {
+	@(link_name = "syn_name2id")
+	syn_name2id_e :: proc "c" (name: cstring) -> C.int ---
+	@(link_name = "highlight_exists")
+	highlight_exists_e :: proc "c" (name: cstring) -> C.int ---
+}
+
+// "hlID()" function.
+@(export)
+f_hlID :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	rettv.vval = transmute(rawptr)(C.longlong(syn_name2id_e(tv_get_string((^Typval_T)(uintptr(argvars))))))
+}
+
+// "highlight_exists()" function.
+@(export)
+f_hlexists :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	rettv.vval = transmute(rawptr)(C.longlong(highlight_exists_e(tv_get_string((^Typval_T)(uintptr(argvars))))))
+}
+
+// "getfontname()" function.
+@(export)
+f_getfontname :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	rettv.v_type = VAR_STRING
+	rettv.vval = transmute(rawptr)(cstring(nil))
+}
+
+// "interrupt()" function.
+@(export)
+f_interrupt :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	got_int = true
+}
+
+// —— Batch 27r: funcs.c gettext/keytrans/libcall ——
+foreign _ {
+	@(link_name = "str2special_save")
+	str2special_save_e :: proc "c" (str: cstring, replace_spaces: bool, replace_others: TriState) -> cstring ---
+}
+
+E364_S :: "E364: Library call failed for \"%s()\""
+
+// "gettext()" function.
+@(export)
+f_gettext :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	if tv_check_for_nonempty_string_arg(argvars, 0) == FAIL_E {
+		return
+	}
+	rettv.v_type = VAR_STRING
+	rettv.vval = transmute(rawptr)(xstrdup_o(transmute(^u8)(([^]Typval_T)(argvars)[0].vval)))
+}
+
+// "keytrans()" function.
+@(export)
+f_keytrans :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	rettv.v_type = VAR_STRING
+	if tv_check_for_string_arg(argvars, 0) == FAIL_E || rawptr(([^]Typval_T)(argvars)[0].vval) == nil {
+		return
+	}
+	escaped := vim_strsave_escape_ks_r(transmute(^u8)(([^]Typval_T)(argvars)[0].vval))
+	rettv.vval = transmute(rawptr)(str2special_save_e(transmute(cstring)(escaped), true, TriState.kTrue))
+	xfree(rawptr(escaped))
+}
+
+// Shared libcall()/libcallnr() engine (C-static).
+libcall_common_o :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, out_type: C.int) {
+	context = runtime.default_context()
+	rettv.v_type = out_type
+	if out_type != VAR_NUMBER {
+		rettv.vval = transmute(rawptr)(cstring(nil))
+	}
+	if check_secure() {
+		return
+	}
+	if ([^]Typval_T)(argvars)[0].v_type != VAR_STRING || ([^]Typval_T)(argvars)[1].v_type != VAR_STRING {
+		return
+	}
+	libname := transmute(cstring)(([^]Typval_T)(argvars)[0].vval)
+	funcname := transmute(cstring)(([^]Typval_T)(argvars)[1].vval)
+	in_type := ([^]Typval_T)(argvars)[2].v_type
+	str_in: cstring = nil
+	if in_type == VAR_STRING {
+		str_in = transmute(cstring)(([^]Typval_T)(argvars)[2].vval)
+	}
+	int_in := C.int(transmute(C.longlong)(([^]Typval_T)(argvars)[2].vval))
+	str_out: cstring = nil
+	outp: ^cstring = nil
+	if out_type == VAR_STRING {
+		outp = &str_out
+	}
+	int_out: C.int = 0
+	if !os_libcall(libname, funcname, str_in, int_in, outp, &int_out) {
+		semsg(cstring(E364_S), funcname)
+		return
+	}
+	if out_type == VAR_NUMBER {
+		rettv.vval = transmute(rawptr)(C.longlong(int_out))
+	} else {
+		rettv.vval = transmute(rawptr)(str_out)
+	}
+}
+
+// "libcall()" function.
+@(export)
+f_libcall :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	libcall_common_o(argvars, rettv, VAR_STRING)
+}
+
+// "libcallnr()" function.
+@(export)
+f_libcallnr :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	libcall_common_o(argvars, rettv, VAR_NUMBER)
+}
+
+// —— Batch 27s: funcs.c getreg pair ——
+
+// Register-name resolver (C-static in funcs.c).
+getreg_get_regname_o :: proc "c" (argvars: ^Typval_T) -> C.int {
+	context = runtime.default_context()
+	strregname: cstring = nil
+	if ([^]Typval_T)(argvars)[0].v_type != VAR_UNKNOWN {
+		strregname = tv_get_string_chk((^Typval_T)(uintptr(argvars)))
+		if strregname == nil {
+			return 0
+		}
+	} else {
+		strregname = get_vim_var_str(VV_REG_O)
+	}
+	if ([^]u8)(strregname)[0] == 0 {
+		return '"'
+	}
+	return C.int(([^]u8)(strregname)[0])
+}
+
+// "getreg()" function.
+@(export)
+f_getreg :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	arg2 := false
+	return_list := false
+	regname := getreg_get_regname_o(argvars)
+	if regname == 0 {
+		return
+	}
+	if ([^]Typval_T)(argvars)[0].v_type != VAR_UNKNOWN && ([^]Typval_T)(argvars)[1].v_type != VAR_UNKNOWN {
+		error := false
+		arg2 = tv_get_number_chk((^Typval_T)(uintptr(argvars) + 16), &error) != 0
+		if !error && ([^]Typval_T)(argvars)[2].v_type != VAR_UNKNOWN {
+			return_list = tv_get_number_chk((^Typval_T)(uintptr(argvars) + 32), &error) != 0
+		}
+		if error {
+			return
+		}
+	}
+	flags: C.int = 0
+	if arg2 {
+		flags = kGRegExprSrc
+	}
+	if return_list {
+		rettv.v_type = VAR_LIST
+		rettv.vval = get_reg_contents(regname, flags | kGRegList)
+		if rawptr(rettv.vval) == nil {
+			rettv.vval = tv_list_alloc(0)
+		}
+		tv_list_ref_o(rawptr(rettv.vval))
+	} else {
+		rettv.v_type = VAR_STRING
+		rettv.vval = get_reg_contents(regname, flags)
+	}
+}
+
+// "getregtype()" function.
+@(export)
+f_getregtype :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	rettv.v_type = VAR_STRING
+	rettv.vval = transmute(rawptr)(cstring(nil))
+	regname := getreg_get_regname_o(argvars)
+	if regname == 0 {
+		return
+	}
+	reglen: C.int = 0
+	buf: [67]u8
+	reg_type := get_reg_type(regname, &reglen)
+	format_reg_type(reg_type, reglen, &buf[0], 67)
+	rettv.vval = transmute(rawptr)(xstrdup_o(&buf[0]))
+}
+
+// —— Batch 27t: funcs.c expand + expandcmd ——
+foreign _ {
+	@(link_name = "eval_vars")
+	eval_vars_e :: proc "c" (src: cstring, srcstart: cstring, usedlen: ^C.size_t, lnump: ^C.int, errormsg: ^cstring, escaped: ^C.int, empty_is_error: bool) -> cstring ---
+	@(link_name = "expand_filename")
+	expand_filename_e :: proc "c" (eap: rawptr, cmdlinep: ^cstring, errormsgp: ^cstring) -> C.int ---
+}
+
+WILD_LIST_NOTFOUND_O :: 0x01
+EXARG_ARGT_OFF :: 68
+CMD_USER_O :: -1
+EX_NOSPC_O :: 0x010
+
+// "expand()" function.
+@(export)
+f_expand :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	options: C.int = 0x40 | WILD_USE_NL_O | WILD_LIST_NOTFOUND_O
+	error := false
+	rettv.v_type = VAR_STRING
+	if ([^]Typval_T)(argvars)[1].v_type != VAR_UNKNOWN && ([^]Typval_T)(argvars)[2].v_type != VAR_UNKNOWN && tv_get_number_chk((^Typval_T)(uintptr(argvars) + 32), &error) != 0 && !error {
+		tv_list_set_ret_o(rettv, nil)
+	}
+	s := tv_get_string((^Typval_T)(uintptr(argvars)))
+	if ([^]u8)(s)[0] == '%' || ([^]u8)(s)[0] == '#' || ([^]u8)(s)[0] == '<' {
+		if p_verbose == 0 {
+			emsg_off += 1
+		}
+		usedlen: C.size_t = 0
+		errormsg: cstring = nil
+		result := eval_vars_e(transmute(cstring)(s), s, &usedlen, nil, &errormsg, nil, false)
+		if p_verbose == 0 {
+			emsg_off -= 1
+		} else if errormsg != nil {
+			emsg(errormsg)
+		}
+		if rettv.v_type == VAR_LIST {
+			n: C.int = 0
+			if result != nil {
+				n = 1
+			}
+			tv_list_alloc_ret(transmute(^Typval)(rettv), n)
+			if result != nil {
+				tv_list_append_string(rawptr(rettv.vval), transmute(^u8)(result), -1)
+			}
+			xfree(rawptr(result))
+		} else {
+			rettv.vval = transmute(rawptr)(result)
+		}
+	} else {
+		if ([^]Typval_T)(argvars)[1].v_type != VAR_UNKNOWN && tv_get_number_chk((^Typval_T)(uintptr(argvars) + 16), &error) != 0 {
+			options |= WILD_KEEP_ALL_O
+		}
+		if !error {
+			xpc: expand_T
+			_ExpandInit(transmute(rawptr)(&xpc))
+			xpc.xp_context = 2
+			if p_wic_g != 0 {
+				options += WILD_ICASE_O
+			}
+			if rettv.v_type == VAR_STRING {
+				rettv.vval = transmute(rawptr)(_ExpandOne(transmute(rawptr)(&xpc), transmute(cstring)(s), nil, options, WILD_ALL_O))
+			} else {
+				_ExpandOne(transmute(rawptr)(&xpc), transmute(cstring)(s), nil, options, WILD_ALL_KEEP_O)
+				tv_list_alloc_ret(transmute(^Typval)(rettv), xpc.xp_numfiles)
+				i: C.int = 0
+				for i < xpc.xp_numfiles {
+					tv_list_append_string(rawptr(rettv.vval), transmute(^u8)(([^]cstring)(xpc.xp_files)[uintptr(i)]), -1)
+					i += 1
+				}
+				ExpandCleanup_e(transmute(rawptr)(&xpc))
+			}
+		} else {
+			rettv.vval = nil
+		}
+	}
+}
+
+// "expandcmd()" function.
+@(export)
+f_expandcmd :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	errormsg: cstring = nil
+	emsgoff := true
+	if ([^]Typval_T)(argvars)[1].v_type == VAR_DICT && tv_dict_get_bool(rawptr(([^]Typval_T)(argvars)[1].vval), cstring("errmsg"), kBoolVarFalse) != 0 {
+		emsgoff = false
+	}
+	rettv.v_type = VAR_STRING
+	cmdstr := xstrdup_o(transmute(^u8)(tv_get_string((^Typval_T)(uintptr(argvars)))))
+	eap: [192]u8
+	libc.memset(&eap[0], 0, 192)
+	(^cstring)(rawptr(&eap[EXARG_CMD_OFF]))^ = transmute(cstring)(cmdstr)
+	(^cstring)(rawptr(&eap[EXARG_ARG_OFF_O]))^ = transmute(cstring)(cmdstr)
+	(^C.int)(rawptr(&eap[EXARG_CMDIDX_OFF]))^ = CMD_USER_O
+	(^u32)(rawptr(&eap[EXARG_ARGT_OFF]))^ |= EX_NOSPC_O
+	if emsgoff {
+		emsg_off += 1
+	}
+	cmdline := transmute(cstring)(cmdstr)
+	if expand_filename_e(rawptr(&eap[0]), &cmdline, &errormsg) == FAIL_E {
+		if !emsgoff && errormsg != nil && ([^]u8)(errormsg)[0] != 0 {
+			emsg(errormsg)
+		}
+	}
+	if emsgoff {
+		emsg_off -= 1
+	}
+	rettv.vval = transmute(rawptr)(cmdline)
+}
+
+// —— Batch 27u: funcs.c changelist/jumplist/marklist getters ——
+foreign _ {
+	@(link_name = "vim_ignored")
+	vim_ignored_g: C.int
+}
+
+// "getchangelist()" function.
+@(export)
+f_getchangelist :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	tv_list_alloc_ret(transmute(^Typval)(rettv), 2)
+	buf := curbuf
+	if ([^]Typval_T)(argvars)[0].v_type == VAR_UNKNOWN {
+	} else {
+		vim_ignored_g = C.int(tv_get_number((^Typval_T)(uintptr(argvars))))
+		emsg_off += 1
+		buf = tv_get_buf((^Typval_T)(uintptr(argvars)), 0)
+		emsg_off -= 1
+	}
+	if buf == nil {
+		return
+	}
+	clen := (^C.int)(uintptr(buf) + B_CHANGELISTLEN)^
+	l := tv_list_alloc(C.ssize_t(clen))
+	tv_list_append_list(rawptr(rettv.vval), l)
+	changelistindex := clen
+	if buf == (^rawptr)(uintptr(curwin) + W_BUFFER_OFF)^ {
+		changelistindex = (^C.int)(uintptr(curwin) + W_CHANGELISTIDX_OFF)^
+	} else {
+		n := (^C.size_t)(uintptr(buf) + B_WINFOFF_SIZE)^
+		items := ([^]rawptr)((^rawptr)(rawptr(uintptr(buf) + B_WINFOFF_ITEMS))^)
+		for i: C.size_t = 0; i < n; i += 1 {
+			wip := items[i]
+			if (^rawptr)(uintptr(wip) + WI_WIN_OFF)^ == curwin {
+				changelistindex = (^C.int)(uintptr(wip) + WI_CHANGELISTIDX_OFF)^
+				break
+			}
+		}
+	}
+	tv_list_append_number(rawptr(rettv.vval), C.longlong(changelistindex))
+	i: C.int = 0
+	for i < clen {
+		e := uintptr(buf) + B_CHANGELIST + uintptr(i) * 40
+		if (^C.int)(e)^ != 0 {
+			d := tv_dict_alloc()
+			tv_list_append_dict(l, d)
+			tv_dict_add_nr(d, cstring("lnum"), 4, C.longlong((^C.int)(e)^))
+			tv_dict_add_nr(d, cstring("col"), 3, C.longlong((^C.int)(e + 4)^))
+			tv_dict_add_nr(d, cstring("coladd"), 6, C.longlong((^C.int)(e + 8)^))
+		}
+		i += 1
+	}
+}
+
+// "getjumplist()" function.
+@(export)
+f_getjumplist :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	tv_list_alloc_ret(transmute(^Typval)(rettv), KLISTLEN_MAYKNOW_O)
+	wp := find_tabwin((^Typval_T)(uintptr(argvars)), (^Typval_T)(uintptr(argvars) + 16))
+	if wp == nil {
+		return
+	}
+	cleanup_jumplist(wp, true)
+	jlen := (^C.int)(uintptr(wp) + W_JUMPLISTLEN)^
+	l := tv_list_alloc(C.ssize_t(jlen))
+	tv_list_append_list(rawptr(rettv.vval), l)
+	tv_list_append_number(rawptr(rettv.vval), C.longlong((^C.int)(uintptr(wp) + W_JUMPLISTIDX)^))
+	i: C.int = 0
+	for i < jlen {
+		e := uintptr(wp) + W_JUMPLIST + uintptr(i) * 48
+		if (^C.int)(e)^ != 0 {
+			d := tv_dict_alloc()
+			tv_list_append_dict(l, d)
+			tv_dict_add_nr(d, cstring("lnum"), 4, C.longlong((^C.int)(e)^))
+			tv_dict_add_nr(d, cstring("col"), 3, C.longlong((^C.int)(e + 4)^))
+			tv_dict_add_nr(d, cstring("coladd"), 6, C.longlong((^C.int)(e + 8)^))
+			tv_dict_add_nr(d, cstring("bufnr"), 5, C.longlong((^C.int)(e + 12)^))
+			fn := (^cstring)(e + 40)^
+			if fn != nil {
+				tv_dict_add_str(d, cstring("filename"), 8, fn)
+			}
+		}
+		i += 1
+	}
+}
+
+// "getmarklist()" function.
+@(export)
+f_getmarklist :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	tv_list_alloc_ret(transmute(^Typval)(rettv), KLISTLEN_MAYKNOW_O)
+	if ([^]Typval_T)(argvars)[0].v_type == VAR_UNKNOWN {
+		get_global_marks(rawptr(rettv.vval))
+		return
+	}
+	buf := tv_get_buf((^Typval_T)(uintptr(argvars)), 0)
+	if buf == nil {
+		return
+	}
+	get_buf_local_marks(buf, rawptr(rettv.vval))
+}
+
+// —— Batch 27q: funcs.c has() + has_wsl ——
+foreign _ {
+	@(link_name = "has_nvim_version")
+	has_nvim_version_e :: proc "c" (version_str: cstring) -> bool ---
+	@(link_name = "has_vim_patch")
+	has_vim_patch_e :: proc "c" (n: C.int, major_minor_version: C.int) -> bool ---
+	@(link_name = "ui_gui_attached")
+	ui_gui_attached_e :: proc "c" () -> bool ---
+	@(link_name = "nlua_exec")
+	nlua_exec_e :: proc "c" (str: NvimString, chunkname: cstring, args: Api_Array, mode: C.int, arena: rawptr, err: rawptr) -> Api_Object ---
+	@(link_name = "strtoul")
+	c_strtoul :: proc "c" (s: cstring, end: ^cstring, base: C.int) -> C.ulong ---
+}
+
+has_wsl_state_g: TriState = TriState.kNone
+
+// WSL detection via lua uv (C-static in funcs.c).
+has_wsl_o :: proc "c" () -> bool {
+	context = runtime.default_context()
+	if has_wsl_state_g == TriState.kNone {
+		err := Api_Error{typ = -1, msg = nil}
+		args := Api_Array{}
+		code := cstring("return vim.uv.os_uname()['release']:lower():match('microsoft')")
+		s := NvimString{data = code, size = C.size_t(libc.strlen(code))}
+		o := nlua_exec_e(s, nil, args, 1, nil, rawptr(&err))
+		if err.typ != -1 {
+			libc.abort()
+		}
+		if o.t == 1 && o.data[0] != 0 {
+			has_wsl_state_g = TriState.kTrue
+		} else {
+			has_wsl_state_g = TriState.kFalse
+		}
+	}
+	return has_wsl_state_g == TriState.kTrue
+}
+
+// "has()" function.
+@(export)
+f_has :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	has_list := []cstring{
+		cstring("linux"), cstring("unix"), cstring("fname_case"), cstring("acl"), cstring("autochdir"),
+		cstring("arabic"), cstring("autocmd"), cstring("browsefilter"), cstring("byte_offset"),
+		cstring("cindent"), cstring("cmdline_compl"), cstring("cmdline_hist"), cstring("cmdwin"),
+		cstring("comments"), cstring("conceal"), cstring("cursorbind"), cstring("cursorshape"),
+		cstring("dialog_con"), cstring("diff"), cstring("digraphs"), cstring("eval"),
+		cstring("ex_extra"), cstring("extra_search"), cstring("file_in_path"), cstring("filterpipe"),
+		cstring("find_in_path"), cstring("float"), cstring("folding"), cstring("fork"),
+		cstring("gettext"), cstring("iconv"), cstring("insert_expand"), cstring("jumplist"),
+		cstring("keymap"), cstring("lambda"), cstring("langmap"), cstring("libcall"),
+		cstring("linebreak"), cstring("lispindent"), cstring("listcmds"), cstring("localmap"),
+		cstring("menu"), cstring("mksession"), cstring("modify_fname"), cstring("mouse"),
+		cstring("multi_byte"), cstring("multi_lang"), cstring("nanotime"), cstring("num64"),
+		cstring("packages"), cstring("path_extra"), cstring("persistent_undo"), cstring("profile"),
+		cstring("reltime"), cstring("quickfix"), cstring("rightleft"), cstring("scrollbind"),
+		cstring("showcmd"), cstring("cmdline_info"), cstring("shada"), cstring("signs"),
+		cstring("smartindent"), cstring("startuptime"), cstring("statusline"), cstring("spell"),
+		cstring("syntax"), cstring("tablineat"), cstring("tag_binary"), cstring("termguicolors"),
+		cstring("terminfo"), cstring("termresponse"), cstring("textobjects"), cstring("timers"),
+		cstring("title"), cstring("user-commands"), cstring("user_commands"), cstring("vartabs"),
+		cstring("vertsplit"), cstring("vimscript-1"), cstring("virtualedit"), cstring("visual"),
+		cstring("visualextra"), cstring("vreplace"), cstring("wildignore"), cstring("wildmenu"),
+		cstring("windows"), cstring("winaltkeys"), cstring("writebackup"), cstring("xattr"), cstring("nvim"),
+	}
+	x := false
+	n := false
+	name := tv_get_string((^Typval_T)(uintptr(argvars)))
+	nm := ([^]u8)(name)
+	if strncasecmp_o(name, cstring("patch"), 5) == 0 {
+		x = true
+		if nm[5] == '-' && libc.strlen(name) >= 11 && nm[6] >= '1' && nm[6] <= '9' {
+			end: cstring = nil
+			major := C.int(c_strtoul(transmute(cstring)(rawptr(uintptr(rawptr(name)) + 6)), &end, 10))
+			en := ([^]u8)(end)
+			if en[0] == '.' && en[1] >= '0' && en[1] <= '9' && en[2] == '.' && en[3] >= '0' && en[3] <= '9' {
+				minor := C.int(libc.atoi(transmute(cstring)(rawptr(uintptr(rawptr(end)) + 1))))
+				n = has_vim_patch_e(C.int(libc.atoi(transmute(cstring)(rawptr(uintptr(rawptr(end)) + 3)))), major * 100 + minor)
+			}
+		} else if nm[5] >= '0' && nm[5] <= '9' {
+			n = has_vim_patch_e(C.int(libc.atoi(transmute(cstring)(rawptr(uintptr(rawptr(name)) + 5)))), 0)
+		}
+	} else if strncasecmp_o(name, cstring("nvim-"), 5) == 0 {
+		x = true
+		n = has_nvim_version_e(transmute(cstring)(rawptr(uintptr(rawptr(name)) + 5)))
+	} else if _strcasecmp(name, cstring("vim_starting")) == 0 {
+		x = true
+		n = starting != 0
+	} else if _strcasecmp(name, cstring("ttyin")) == 0 {
+		x = true
+		n = stdin_isatty
+	} else if _strcasecmp(name, cstring("ttyout")) == 0 {
+		x = true
+		n = stdout_isatty
+	} else if _strcasecmp(name, cstring("multi_byte_encoding")) == 0 {
+		x = true
+		n = true
+	} else if _strcasecmp(name, cstring("gui_running")) == 0 {
+		x = true
+		n = ui_gui_attached_e()
+	} else if _strcasecmp(name, cstring("syntax_items")) == 0 {
+		x = true
+		n = syntax_present_r(curwin)
+	} else if _strcasecmp(name, cstring("wsl")) == 0 {
+		x = true
+		n = has_wsl_o()
+	}
+	if !x {
+		for h in has_list {
+			if _strcasecmp(name, h) == 0 {
+				x = true
+				n = true
+				break
+			}
+		}
+	}
+	if !x {
+		save_shell_error := get_vim_var_nr(VV_SHELL_ERROR)
+		if _strcasecmp(name, cstring("clipboard_working")) == 0 {
+			n = eval_has_provider(cstring("clipboard"), true)
+		} else if _strcasecmp(name, cstring("unnamedplus")) == 0 {
+			n = eval_has_provider(cstring("clipboard"), true)
+		} else if _strcasecmp(name, cstring("pythonx")) == 0 {
+			n = eval_has_provider(cstring("python3"), true)
+		} else if eval_has_provider(name, true) {
+			n = true
+		}
+		set_vim_var_nr(VV_SHELL_ERROR, save_shell_error)
+	}
+	if n {
+		rettv.vval = transmute(rawptr)(C.longlong(1))
+	} else {
+		rettv.vval = transmute(rawptr)(C.longlong(0))
+	}
+}
+
+// —— Batch 27n: funcs.c execute/garbagecollect/eval/debugbreak ——
+foreign _ {
+	@(link_name = "garbage_collect_at_exit")
+	garbage_collect_at_exit_g: bool
+	@(link_name = "need_clr_eos")
+	need_clr_eos_g: bool
+}
+
+EINVEXPR2_S :: "E15: Invalid expression: \"%s\""
+
+// "execute(command)" function.
+@(export)
+f_execute :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	execute_common(argvars, rettv, 0)
+}
+
+// "garbagecollect()" function.
+@(export)
+f_garbagecollect :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	want_garbage_collect_g = true
+	if ([^]Typval_T)(argvars)[0].v_type != VAR_UNKNOWN && tv_get_number((^Typval_T)(uintptr(argvars))) == 1 {
+		garbage_collect_at_exit_g = true
+	}
+}
+
+// "eval()" function.
+@(export)
+f_eval :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	s := tv_get_string_chk((^Typval_T)(uintptr(argvars)))
+	if s != nil {
+		s = skipwhite(s)
+	}
+	expr_start := s
+	evarg := Evalarg_T{eval_flags = 1}
+	if s == nil || eval1(&s, rettv, rawptr(&evarg)) == FAIL_E {
+		if expr_start != nil && !aborting_r() {
+			semsg(cstring(EINVEXPR2_S), expr_start)
+		}
+		need_clr_eos_g = false
+		rettv.v_type = VAR_NUMBER
+		rettv.vval = transmute(rawptr)(C.longlong(0))
+	} else if ([^]u8)(s)[0] != 0 {
+		semsg(cstring(E488_S), s)
+	}
+}
+
+// "debugbreak()" function.
+@(export)
+f_debugbreak :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	rettv.vval = transmute(rawptr)(C.longlong(FAIL_E))
+	pid := C.int(tv_get_number((^Typval_T)(uintptr(argvars))))
+	if pid == 0 {
+		emsg(e_invarg)
+		return
+	}
+	uv_kill(pid, SIGINT)
+}
+
+// —— Batch 27o: funcs.c dictwatcher pair ——
+E46_READONLY_S :: "E46: Cannot change read-only variable \"%.*s\""
+E_NOWATCHER_S :: "Couldn't find a watcher matching key and callback"
+
+// "dictwatcheradd(dict, key, funcref)" function.
+@(export)
+f_dictwatcheradd :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	if check_secure() {
+		return
+	}
+	if ([^]Typval_T)(argvars)[0].v_type != VAR_DICT {
+		semsg(e_invarg2, cstring("dict"))
+		return
+	} else if rawptr(([^]Typval_T)(argvars)[0].vval) == nil {
+		arg_errmsg := cstring("dictwatcheradd() argument")
+		semsg(cstring(E46_READONLY_S), C.int(libc.strlen(arg_errmsg)), arg_errmsg)
+		return
+	}
+	if ([^]Typval_T)(argvars)[1].v_type != VAR_STRING && ([^]Typval_T)(argvars)[1].v_type != VAR_NUMBER {
+		semsg(e_invarg2, cstring("key"))
+		return
+	}
+	key_pattern := tv_get_string_chk((^Typval_T)(uintptr(argvars) + 16))
+	if key_pattern == nil {
+		return
+	}
+	callback: Callback_E
+	if !callback_from_typval(&callback, (^Typval_T)(uintptr(argvars) + 32)) {
+		semsg(e_invarg2, cstring("funcref"))
+		return
+	}
+	tv_dict_watcher_add(rawptr(([^]Typval_T)(argvars)[0].vval), key_pattern, C.size_t(libc.strlen(key_pattern)), callback)
+}
+
+// "dictwatcherdel(dict, key, funcref)" function.
+@(export)
+f_dictwatcherdel :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	if check_secure() {
+		return
+	}
+	if ([^]Typval_T)(argvars)[0].v_type != VAR_DICT {
+		semsg(e_invarg2, cstring("dict"))
+		return
+	}
+	if ([^]Typval_T)(argvars)[2].v_type != VAR_FUNC && ([^]Typval_T)(argvars)[2].v_type != VAR_STRING {
+		semsg(e_invarg2, cstring("funcref"))
+		return
+	}
+	key_pattern := tv_get_string_chk((^Typval_T)(uintptr(argvars) + 16))
+	if key_pattern == nil {
+		return
+	}
+	callback: Callback_E
+	if !callback_from_typval(&callback, (^Typval_T)(uintptr(argvars) + 32)) {
+		return
+	}
+	if !tv_dict_watcher_remove(rawptr(([^]Typval_T)(argvars)[0].vval), key_pattern, C.size_t(libc.strlen(key_pattern)), callback) {
+		emsg(cstring(E_NOWATCHER_S))
+	}
+	callback_free(&callback)
+}
+
+// —— Batch 27p: funcs.c exists() ——
+foreign _ {
+	@(link_name = "nlua_func_exists")
+	nlua_func_exists_e :: proc "c" (lua_funcname: cstring) -> bool ---
+	@(link_name = "cmd_exists")
+	cmd_exists_e :: proc "c" (name: cstring) -> C.int ---
+	@(link_name = "autocmd_supported")
+	autocmd_supported_e :: proc "c" (event: cstring) -> bool ---
+	@(link_name = "au_exists")
+	au_exists_e :: proc "c" (arg: cstring) -> bool ---
+}
+
+// "exists()" function.
+@(export)
+f_exists :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	n: C.longlong = 0
+	p := tv_get_string((^Typval_T)(uintptr(argvars)))
+	if ([^]u8)(p)[0] == '$' {
+		if os_env_exists(transmute(cstring)(rawptr(uintptr(rawptr(p)) + 1)), false) {
+			n = 1
+		} else {
+			exp := expand_env_save(transmute(cstring)(p))
+			if exp != nil && ([^]u8)(exp)[0] != '$' {
+				n = 1
+			}
+			xfree(rawptr(exp))
+		}
+	} else if ([^]u8)(p)[0] == '&' || ([^]u8)(p)[0] == '+' {
+		pc := p
+		if eval_option(&pc, nil, true) == OK_E {
+			n = 1
+		}
+		if ([^]u8)(skipwhite(pc))[0] != 0 {
+			n = 0
+		}
+	} else if ([^]u8)(p)[0] == '*' {
+		if strnequal_e(p, cstring("*v:lua."), 7) {
+			if nlua_func_exists_e(transmute(cstring)(rawptr(uintptr(rawptr(p)) + 7))) {
+				n = 1
+			}
+		} else if function_exists(transmute(cstring)(rawptr(uintptr(rawptr(p)) + 1)), false) {
+			n = 1
+		}
+	} else if ([^]u8)(p)[0] == ':' {
+		n = C.longlong(cmd_exists_e(transmute(cstring)(rawptr(uintptr(rawptr(p)) + 1))))
+	} else if ([^]u8)(p)[0] == '#' {
+		if ([^]u8)(p)[1] == '#' {
+			if autocmd_supported_e(transmute(cstring)(rawptr(uintptr(rawptr(p)) + 2))) {
+				n = 1
+			}
+		} else if au_exists_e(transmute(cstring)(rawptr(uintptr(rawptr(p)) + 1))) {
+			n = 1
+		}
+	} else if var_exists(p) {
+		n = 1
+	}
+	rettv.vval = transmute(rawptr)(n)
+}
+
+// —— Batch 27v: funcs.c foreground/tagstack/menu_get ——
+foreign _ {
+	@(link_name = "get_tagstack")
+	get_tagstack_e :: proc "c" (wp: rawptr, retdict: rawptr) ---
+	@(link_name = "menu_get")
+	menu_get_e :: proc "c" (path_name: cstring, modes: C.int, list: rawptr) -> bool ---
+	@(link_name = "get_menu_cmd_modes")
+	get_menu_cmd_modes_e :: proc "c" (cmd: cstring, forceit: bool, noremap: ^C.int, unmenu: ^bool) -> C.int ---
+}
+
+MENU_ALL_MODES_O :: 127
+
+// "foreground()" function (empty on Unix).
+@(export)
+f_foreground :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+}
+
+// "gettagstack()" function.
+@(export)
+f_gettagstack :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	wp := curwin
+	tv_dict_alloc_ret(rettv)
+	if ([^]Typval_T)(argvars)[0].v_type != VAR_UNKNOWN {
+		wp = find_win_by_nr_or_id((^Typval_T)(uintptr(argvars)))
+		if wp == nil {
+			return
+		}
+	}
+	get_tagstack_e(wp, rawptr(rettv.vval))
+}
+
+// "menu_get(path [, modes])" function.
+@(export)
+f_menu_get :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	tv_list_alloc_ret(transmute(^Typval)(rettv), KLISTLEN_MAYKNOW_O)
+	modes: C.int = MENU_ALL_MODES_O
+	if ([^]Typval_T)(argvars)[1].v_type == VAR_STRING {
+		modes = get_menu_cmd_modes_e(tv_get_string((^Typval_T)(uintptr(argvars) + 16)), false, nil, nil)
+	}
+	menu_get_e(transmute(cstring)(tv_get_string((^Typval_T)(uintptr(argvars)))), modes, rawptr(rettv.vval))
+}
+
+// —— Batch 27w: funcs.c feedkeys + eventhandler ——
+foreign _ {
+	@(link_name = "nvim_feedkeys")
+	nvim_feedkeys_e :: proc "c" (keys: NvimString, mode: NvimString, escape_ks: bool) ---
+}
+
+// "feedkeys()" function.
+@(export)
+f_feedkeys :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	if check_secure() {
+		return
+	}
+	keys := tv_get_string((^Typval_T)(uintptr(argvars)))
+	nbuf: [65]u8
+	flags: cstring = nil
+	if ([^]Typval_T)(argvars)[1].v_type != VAR_UNKNOWN {
+		flags = tv_get_string_buf((^Typval_T)(uintptr(argvars) + 16), &nbuf[0])
+	}
+	ks := NvimString{data = keys, size = 0}
+	if keys != nil {
+		ks.size = C.size_t(libc.strlen(keys))
+	}
+	md := NvimString{data = flags, size = 0}
+	if flags != nil {
+		md.size = C.size_t(libc.strlen(flags))
+	}
+	nvim_feedkeys_e(ks, md, true)
+}
+
+// "eventhandler()" function.
+@(export)
+f_eventhandler :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	rettv.vval = transmute(rawptr)(C.longlong(vgetc_busy_g))
+}
+
+// —— Batch 27x: funcs.c confirm() ——
+foreign _ {
+	@(link_name = "do_dialog")
+	do_dialog_e :: proc "c" (type: C.int, title: cstring, message: cstring, buttons: cstring, dfltbutton: C.int, textfield: cstring, ex_cmd: C.int) -> C.int ---
+}
+
+VIM_GENERIC_O :: 0
+VIM_ERROR_O :: 1
+VIM_WARNING_O :: 2
+VIM_INFO_O :: 3
+
+// "confirm(message, buttons[, default [, type]])" function.
+@(export)
+f_confirm :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	buf: [65]u8
+	buf2: [65]u8
+	buttons: cstring = nil
+	def: C.int = 1
+	type: C.int = VIM_GENERIC_O
+	error := false
+	message := tv_get_string_chk((^Typval_T)(uintptr(argvars)))
+	if message == nil {
+		error = true
+	}
+	if ([^]Typval_T)(argvars)[1].v_type != VAR_UNKNOWN {
+		buttons = tv_get_string_buf_chk((^Typval_T)(uintptr(argvars) + 16), &buf[0])
+		if buttons == nil {
+			error = true
+		}
+		if ([^]Typval_T)(argvars)[2].v_type != VAR_UNKNOWN {
+			def = C.int(tv_get_number_chk((^Typval_T)(uintptr(argvars) + 32), &error))
+			if ([^]Typval_T)(argvars)[3].v_type != VAR_UNKNOWN {
+				typestr := tv_get_string_buf_chk((^Typval_T)(uintptr(argvars) + 48), &buf2[0])
+				if typestr == nil {
+					error = true
+				} else {
+					ch := ([^]u8)(typestr)[0]
+					if ch >= 'a' && ch <= 'z' {
+						ch -= ('a' - 'A')
+					}
+					switch ch {
+					case 'E':
+						type = VIM_ERROR_O
+					case 'Q':
+						type = VIM_QUESTION_O
+					case 'I':
+						type = VIM_INFO_O
+					case 'W':
+						type = VIM_WARNING_O
+					case 'G':
+						type = VIM_GENERIC_O
+					}
+				}
+			}
+		}
+	}
+	if buttons == nil || ([^]u8)(buttons)[0] == 0 {
+		buttons = cstring("&Ok")
+	}
+	if !error {
+		rettv.vval = transmute(rawptr)(C.longlong(do_dialog_e(type, nil, message, buttons, def, nil, 0)))
+	}
+}
+
+// —— Batch 27y: funcs.c indexof cluster ——
+
+// Evaluate expr with v:key/v:val (C-static).
+indexof_eval_expr_o :: proc "c" (expr: ^Typval_T) -> C.longlong {
+	context = runtime.default_context()
+	argv: [3]Typval_T
+	argv[0] = (get_vim_var_tv(VV_KEY_O))^
+	argv[1] = (get_vim_var_tv(VV_VAL_O))^
+	newtv := Typval_T{v_type = VAR_UNKNOWN, v_lock = VAR_UNLOCKED}
+	if eval_expr_typval(expr, false, &argv[0], 2, &newtv) == FAIL_E {
+		return 0
+	}
+	error := false
+	found := tv_get_bool_chk(&newtv, &error)
+	tv_clear(&newtv)
+	if error {
+		return 0
+	}
+	return found
+}
+
+// indexof() over a Blob (C-static).
+indexof_blob_o :: proc "c" (b: rawptr, startidx_in: C.longlong, expr: ^Typval_T) -> C.longlong {
+	context = runtime.default_context()
+	startidx := startidx_in
+	if b == nil {
+		return -1
+	}
+	if startidx < 0 {
+		startidx = C.longlong(tv_blob_len_o(b)) + startidx
+		if startidx < 0 {
+			startidx = 0
+		}
+	}
+	set_vim_var_type(VV_KEY_O, VAR_NUMBER)
+	set_vim_var_type(VV_VAL_O, VAR_NUMBER)
+	called_start := called_emsg
+	idx := startidx
+	for idx < C.longlong(tv_blob_len_o(b)) {
+		set_vim_var_nr(VV_KEY_O, i64(idx))
+		set_vim_var_nr(VV_VAL_O, i64(tv_blob_get_o(b, C.int(idx))))
+		if indexof_eval_expr_o(expr) != 0 {
+			return idx
+		}
+		if called_emsg != called_start {
+			return -1
+		}
+		idx += 1
+	}
+	return -1
+}
+
+// indexof() over a List (C-static).
+indexof_list_o :: proc "c" (l: rawptr, startidx: C.longlong, expr: ^Typval_T) -> C.longlong {
+	context = runtime.default_context()
+	if l == nil {
+		return -1
+	}
+	item: rawptr = nil
+	idx: C.longlong = 0
+	if startidx == 0 {
+		item = tv_list_first_o(l)
+	} else {
+		idx = C.longlong(tv_list_uidx_o(l, C.int(startidx)))
+		if idx == -1 {
+			item = nil
+		} else {
+			item = tv_list_find(l, C.int(idx))
+			if item == nil {
+				libc.abort()
+			}
+		}
+	}
+	set_vim_var_type(VV_KEY_O, VAR_NUMBER)
+	called_start := called_emsg
+	for item != nil {
+		set_vim_var_nr(VV_KEY_O, i64(idx))
+		tv_copy((^Typval_T)(uintptr(item) + 16), get_vim_var_tv(VV_VAL_O))
+		found := indexof_eval_expr_o(expr)
+		tv_clear(get_vim_var_tv(VV_VAL_O))
+		if found != 0 {
+			return idx
+		}
+		if called_emsg != called_start {
+			return -1
+		}
+		item = (^rawptr)(uintptr(item))^
+		idx += 1
+	}
+	return -1
+}
+
+// "indexof()" function.
+@(export)
+f_indexof :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	rettv.vval = transmute(rawptr)(C.longlong(-1))
+	if tv_check_for_list_or_blob_arg(argvars, 0) == FAIL_E || tv_check_for_string_or_func_arg(argvars, 1) == FAIL_E || tv_check_for_opt_dict_arg(argvars, 2) == FAIL_E {
+		return
+	}
+	if (([^]Typval_T)(argvars)[1].v_type == VAR_STRING && (rawptr(([^]Typval_T)(argvars)[1].vval) == nil || ([^]u8)(([^]Typval_T)(argvars)[1].vval)[0] == 0)) || (([^]Typval_T)(argvars)[1].v_type == VAR_FUNC && rawptr(([^]Typval_T)(argvars)[1].vval) == nil) {
+		return
+	}
+	startidx: C.longlong = 0
+	if ([^]Typval_T)(argvars)[2].v_type == VAR_DICT {
+		startidx = tv_dict_get_number_def(rawptr(([^]Typval_T)(argvars)[2].vval), cstring("startidx"), 0)
+	}
+	save_val := Typval_T{}
+	save_key := Typval_T{}
+	prepare_vimvar(VV_VAL_O, &save_val)
+	prepare_vimvar(VV_KEY_O, &save_key)
+	save_did_emsg := did_emsg_flag
+	did_emsg_flag = 0
+	if ([^]Typval_T)(argvars)[0].v_type == VAR_BLOB {
+		rettv.vval = transmute(rawptr)(indexof_blob_o(rawptr(([^]Typval_T)(argvars)[0].vval), startidx, (^Typval_T)(uintptr(argvars) + 16)))
+	} else {
+		rettv.vval = transmute(rawptr)(indexof_list_o(rawptr(([^]Typval_T)(argvars)[0].vval), startidx, (^Typval_T)(uintptr(argvars) + 16)))
+	}
+	restore_vimvar(VV_KEY_O, &save_key)
+	restore_vimvar(VV_VAL_O, &save_val)
+	did_emsg_flag |= save_did_emsg
+}
+
+// —— Batch 27z: funcs.c call() ——
+foreign _ {
+	@(link_name = "nlua_is_table_from_lua")
+	nlua_is_table_from_lua_e :: proc "c" (arg: ^Typval_T) -> bool ---
+	@(link_name = "nlua_register_table_as_callable")
+	nlua_register_table_as_callable_e :: proc "c" (arg: ^Typval_T) -> cstring ---
+}
+
+E117_S :: "E117: Unknown function: %s"
+
+// "call()" function.
+@(export)
+f_call :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	if tv_check_for_list_arg(argvars, 1) == FAIL_E {
+		return
+	}
+	if rawptr(([^]Typval_T)(argvars)[1].vval) == nil {
+		return
+	}
+	owned := false
+	func: cstring = nil
+	partial: rawptr = nil
+	if ([^]Typval_T)(argvars)[0].v_type == VAR_FUNC {
+		func = transmute(cstring)(([^]Typval_T)(argvars)[0].vval)
+	} else if ([^]Typval_T)(argvars)[0].v_type == VAR_PARTIAL {
+		partial = rawptr(([^]Typval_T)(argvars)[0].vval)
+		func = partial_name(partial)
+	} else if nlua_is_table_from_lua_e((^Typval_T)(uintptr(argvars))) {
+		func = nlua_register_table_as_callable_e((^Typval_T)(uintptr(argvars)))
+		owned = true
+	} else {
+		func = tv_get_string((^Typval_T)(uintptr(argvars)))
+	}
+	if func == nil || ([^]u8)(func)[0] == 0 {
+		return
+	}
+	tofree: cstring = nil
+	if ([^]Typval_T)(argvars)[0].v_type == VAR_STRING {
+		p := func
+		tofree = trans_function_name(&p, false, TFN_INT_O | TFN_QUIET_O, nil, nil)
+		if tofree == nil {
+			emsg_funcname(cstring(E117_S), func)
+			return
+		}
+		func = tofree
+	}
+	selfdict: rawptr = nil
+	if ([^]Typval_T)(argvars)[2].v_type != VAR_UNKNOWN {
+		if tv_check_for_dict_arg(argvars, 2) == FAIL_E {
+			if owned {
+				func_unref(func)
+			}
+			xfree(rawptr(tofree))
+			return
+		}
+		selfdict = rawptr(([^]Typval_T)(argvars)[2].vval)
+	}
+	func_call(func, rawptr((^Typval_T)(uintptr(argvars) + 16)), partial, selfdict, rettv)
+	if owned {
+		func_unref(func)
+	}
+	xfree(rawptr(tofree))
+}
+
+// —— Batch 27aa: funcs.c mode/pumvisible/nonblank ——
+foreign _ {
+	@(link_name = "get_mode")
+	get_mode_e :: proc "c" (buf: ^u8) ---
+	@(link_name = "pum_visible")
+	pum_visible_e :: proc "c" () -> bool ---
+}
+
+// Number-or-nonempty-string test (C-static in funcs.c).
+non_zero_arg_o :: proc "c" (argvars: ^Typval_T) -> bool {
+	context = runtime.default_context()
+	av0 := ([^]Typval_T)(argvars)[0]
+	if av0.v_type == VAR_NUMBER && transmute(C.longlong)(av0.vval) != 0 {
+		return true
+	}
+	if av0.v_type == VAR_BOOL && C.int(transmute(C.longlong)(av0.vval)) == kBoolVarTrue {
+		return true
+	}
+	if av0.v_type == VAR_STRING && rawptr(av0.vval) != nil && ([^]u8)(av0.vval)[0] != 0 {
+		return true
+	}
+	return false
+}
+
+// "mode()" function.
+@(export)
+f_mode :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	buf: [4]u8
+	get_mode_e(&buf[0])
+	if !non_zero_arg_o(argvars) {
+		buf[1] = 0
+	}
+	rettv.vval = transmute(rawptr)(xstrdup_o(&buf[0]))
+	rettv.v_type = VAR_STRING
+}
+
+// "pumvisible()" function.
+@(export)
+f_pumvisible :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	if pum_visible_e() {
+		rettv.vval = transmute(rawptr)(C.longlong(1))
+	}
+}
+
+// "nextnonblank()" function.
+@(export)
+f_nextnonblank :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	linecount := (^C.int)(uintptr(curbuf) + B_ML_LINE_COUNT)^
+	lnum := tv_get_lnum((^Typval_T)(uintptr(argvars)))
+	for {
+		if lnum < 0 || lnum > linecount {
+			lnum = 0
+			break
+		}
+		if ([^]u8)(skipwhite(transmute(cstring)(ml_get(lnum))))[0] != 0 {
+			break
+		}
+		lnum += 1
+	}
+	rettv.vval = transmute(rawptr)(C.longlong(lnum))
+}
+
+// "prevnonblank()" function.
+@(export)
+f_prevnonblank :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	linecount := (^C.int)(uintptr(curbuf) + B_ML_LINE_COUNT)^
+	lnum := tv_get_lnum((^Typval_T)(uintptr(argvars)))
+	if lnum < 1 || lnum > linecount {
+		lnum = 0
+	} else {
+		for lnum >= 1 && ([^]u8)(skipwhite(transmute(cstring)(ml_get(lnum))))[0] == 0 {
+			lnum -= 1
+		}
+	}
+	rettv.vval = transmute(rawptr)(C.longlong(lnum))
+}
+
+// —— Batch 27ab: funcs.c max/min ——
+VARNUMBER_MIN_O :: -9223372036854775808
+
+// Shared max()/min() engine (C-static in funcs.c).
+max_min_o :: proc "c" (tv: ^Typval_T, rettv: ^Typval_T, domax: bool) {
+	context = runtime.default_context()
+	error := false
+	rettv.vval = transmute(rawptr)(C.longlong(0))
+	n: C.longlong = 0
+	if domax {
+		n = VARNUMBER_MIN_O
+	} else {
+		n = VARNUMBER_MAX_O
+	}
+	if tv.v_type == VAR_LIST {
+		l := rawptr(tv.vval)
+		if tv_list_len_o(l) == 0 {
+			return
+		}
+		item := tv_list_first_o(l)
+		for item != nil {
+			i := tv_get_number_chk((^Typval_T)(uintptr(item) + 16), &error)
+			if error {
+				return
+			}
+			if (domax && i > n) || (!domax && i < n) {
+				n = i
+			}
+			item = (^rawptr)(uintptr(item))^
+		}
+	} else if tv.v_type == VAR_DICT {
+		d := rawptr(tv.vval)
+		if tv_dict_len_o(d) == 0 {
+			return
+		}
+		todo := (^C.size_t)(uintptr(d) + 24)^
+		hi := uintptr((^rawptr)(rawptr(uintptr(d) + 48))^)
+		for todo > 0 {
+			key := ([^]rawptr)(hi)[1]
+			hi += 16
+			if key == nil || key == rawptr(&hash_removed_c) {
+				continue
+			}
+			todo -= 1
+			i := tv_get_number_chk((^Typval_T)(uintptr(key) - 17), &error)
+			if error {
+				return
+			}
+			if (domax && i > n) || (!domax && i < n) {
+				n = i
+			}
+		}
+	} else {
+		if domax {
+			semsg(cstring(E_LISTDICTARG_S), cstring("max()"))
+		} else {
+			semsg(cstring(E_LISTDICTARG_S), cstring("min()"))
+		}
+		return
+	}
+	rettv.vval = transmute(rawptr)(n)
+}
+
+// "max()" function.
+@(export)
+f_max :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	max_min_o((^Typval_T)(uintptr(argvars)), rettv, true)
+}
+
+// "min()" function.
+@(export)
+f_min :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	max_min_o((^Typval_T)(uintptr(argvars)), rettv, false)
+}
+
+// —— Batch 27ac: funcs.c state() ——
+foreign _ {
+	@(link_name = "stuff_empty")
+	stuff_empty_e :: proc "c" () -> bool ---
+	@(link_name = "using_script")
+	using_script_e :: proc "c" () -> C.int ---
+	@(link_name = "op_pending")
+	op_pending_e :: proc "c" () -> bool ---
+	@(link_name = "get_was_safe_state")
+	get_was_safe_state_e :: proc "c" () -> bool ---
+}
+
+// Conditionally append a state char (C-static in funcs.c).
+may_add_state_char_o :: proc "c" (gap: ^Garray, include: cstring, ch: u8) {
+	context = runtime.default_context()
+	if include == nil || _vim_strchr(include, C.int(ch)) != nil {
+		ga_append_r(gap, ch)
+	}
+}
+
+// "state()" function.
+@(export)
+f_state :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	ga := Garray{}
+	ga_init_r2(&ga, 1, 20)
+	include: cstring = nil
+	if ([^]Typval_T)(argvars)[0].v_type != VAR_UNKNOWN {
+		include = tv_get_string((^Typval_T)(uintptr(argvars)))
+	}
+	if !(stuff_empty_e() && typebuf.tb_len == 0 && using_script_e() == 0) {
+		may_add_state_char_o(&ga, include, 'm')
+	}
+	if op_pending_e() {
+		may_add_state_char_o(&ga, include, 'o')
+	}
+	if autocmd_busy_g {
+		may_add_state_char_o(&ga, include, 'x')
+	}
+	if ins_compl_active() {
+		may_add_state_char_o(&ga, include, 'a')
+	}
+	if !get_was_safe_state_e() {
+		may_add_state_char_o(&ga, include, 'S')
+	}
+	i: C.int = 0
+	for i < get_callback_depth() && i < 3 {
+		may_add_state_char_o(&ga, include, 'c')
+		i += 1
+	}
+	if msg_scrolled > 0 {
+		may_add_state_char_o(&ga, include, 's')
+	}
+	rettv.v_type = VAR_STRING
+	rettv.vval = transmute(rawptr)(ga.ga_data)
+}
+
+// —— Batch 27ad: funcs.c rand/srand ——
+foreign _ {
+	@(link_name = "uv_random")
+	uv_random_e :: proc "c" (loop: rawptr, req: rawptr, buf: rawptr, buflen: C.size_t, flags: C.uint, cb: rawptr) -> C.int ---
+}
+
+rand_gx_g: u32 = 0
+rand_gy_g: u32 = 0
+rand_gz_g: u32 = 0
+rand_gw_g: u32 = 0
+rand_initialized_g: bool = false
+
+// splitmix32 (static inline in funcs.c).
+splitmix32_o :: proc "c" (x: ^u32) -> u32 {
+	context = runtime.default_context()
+	x^ += 0x9e3779b9
+	z := x^
+	z = (z ~ (z >> 16)) * 0x85ebca6b
+	z = (z ~ (z >> 13)) * 0xc2b2ae35
+	return z ~ (z >> 16)
+}
+
+// xoshiro128** (static inline in funcs.c).
+shuffle_xoshiro128starstar_o :: proc "c" (x, y, z, w: ^u32) -> u32 {
+	context = runtime.default_context()
+	rotl := #force_inline proc "c" (v: u32, k: u32) -> u32 {
+		return (v << k) | (v >> (32 - k))
+	}
+	result := rotl(y^ * 5, 7) * 9
+	t := y^ << 9
+	z^ ~= x^
+	w^ ~= y^
+	y^ ~= z^
+	x^ ~= w^
+	z^ ~= t
+	w^ = rotl(w^, 11)
+	return result
+}
+
+// Seed init with fallback (static in funcs.c).
+init_srand_o :: proc "c" (x: ^u32) {
+	context = runtime.default_context()
+	buf: [4]u8
+	if uv_random_e(nil, nil, rawptr(&buf[0]), 4, 0, nil) == 0 {
+		x^ = (^u32)(rawptr(&buf[0]))^
+		return
+	}
+	x^ = u32(os_hrtime()) ~ u32(os_get_pid())
+}
+
+// "rand()" function.
+@(export)
+f_rand :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	result: u32 = 0
+	ok := false
+	if ([^]Typval_T)(argvars)[0].v_type == VAR_UNKNOWN {
+		if !rand_initialized_g {
+			x: u32 = 0
+			init_srand_o(&x)
+			rand_gx_g = splitmix32_o(&x)
+			rand_gy_g = splitmix32_o(&x)
+			rand_gz_g = splitmix32_o(&x)
+			rand_gw_g = splitmix32_o(&x)
+			rand_initialized_g = true
+		}
+		result = shuffle_xoshiro128starstar_o(&rand_gx_g, &rand_gy_g, &rand_gz_g, &rand_gw_g)
+		ok = true
+	} else if ([^]Typval_T)(argvars)[0].v_type == VAR_LIST {
+		l := rawptr(([^]Typval_T)(argvars)[0].vval)
+		if tv_list_len_o(l) == 4 {
+			tvx := (^Typval_T)(uintptr(tv_list_find(l, 0)) + 16)
+			tvy := (^Typval_T)(uintptr(tv_list_find(l, 1)) + 16)
+			tvz := (^Typval_T)(uintptr(tv_list_find(l, 2)) + 16)
+			tvw := (^Typval_T)(uintptr(tv_list_find(l, 3)) + 16)
+			if tvx.v_type == VAR_NUMBER && tvy.v_type == VAR_NUMBER && tvz.v_type == VAR_NUMBER && tvw.v_type == VAR_NUMBER {
+				x := u32(transmute(C.longlong)(tvx.vval))
+				y := u32(transmute(C.longlong)(tvy.vval))
+				z := u32(transmute(C.longlong)(tvz.vval))
+				w := u32(transmute(C.longlong)(tvw.vval))
+				result = shuffle_xoshiro128starstar_o(&x, &y, &z, &w)
+				tvx.vval = transmute(rawptr)(C.longlong(x))
+				tvy.vval = transmute(rawptr)(C.longlong(y))
+				tvz.vval = transmute(rawptr)(C.longlong(z))
+				tvw.vval = transmute(rawptr)(C.longlong(w))
+				ok = true
+			}
+		}
+	}
+	if ok {
+		rettv.v_type = VAR_NUMBER
+		rettv.vval = transmute(rawptr)(C.longlong(result))
+	} else {
+		semsg(e_invarg2, tv_get_string((^Typval_T)(uintptr(argvars))))
+		rettv.v_type = VAR_NUMBER
+		rettv.vval = transmute(rawptr)(C.longlong(-1))
+	}
+}
+
+// "srand()" function.
+@(export)
+f_srand :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	x: u32 = 0
+	tv_list_alloc_ret(transmute(^Typval)(rettv), 4)
+	if ([^]Typval_T)(argvars)[0].v_type == VAR_UNKNOWN {
+		init_srand_o(&x)
+	} else {
+		error := false
+		x = u32(tv_get_number_chk((^Typval_T)(uintptr(argvars)), &error))
+		if error {
+			return
+		}
+	}
+	tv_list_append_number(rawptr(rettv.vval), C.longlong(splitmix32_o(&x)))
+	tv_list_append_number(rawptr(rettv.vval), C.longlong(splitmix32_o(&x)))
+	tv_list_append_number(rawptr(rettv.vval), C.longlong(splitmix32_o(&x)))
+	tv_list_append_number(rawptr(rettv.vval), C.longlong(splitmix32_o(&x)))
+}
+
+// —— Batch 27am: funcs.c api_info + chanclose ——
+foreign _ {
+	@(link_name = "api_metadata")
+	api_metadata_e :: proc "c" () -> Api_Object ---
+	@(link_name = "object_to_vim")
+	object_to_vim_e :: proc "c" (obj: Api_Object, tv: ^Typval_T, err: rawptr) ---
+}
+
+KCHPART_STDIN_O :: 0
+KCHPART_STDOUT_O :: 1
+KCHPART_STDERR_O :: 2
+KCHPART_RPC_O :: 3
+KCHPART_ALL_O :: 4
+E_BADSTREAM_S :: "Invalid channel stream \"%s\""
+
+// "api_info()" function.
+@(export)
+f_api_info :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	object_to_vim_e(api_metadata_e(), rettv, nil)
+}
+
+// "chanclose(id[, stream])" function.
+@(export)
+f_chanclose :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	rettv.v_type = VAR_NUMBER
+	rettv.vval = transmute(rawptr)(C.longlong(0))
+	if check_secure() {
+		return
+	}
+	if ([^]Typval_T)(argvars)[0].v_type != VAR_NUMBER || (([^]Typval_T)(argvars)[1].v_type != VAR_STRING && ([^]Typval_T)(argvars)[1].v_type != VAR_UNKNOWN) {
+		emsg(e_invarg)
+		return
+	}
+	part: C.int = KCHPART_ALL_O
+	if ([^]Typval_T)(argvars)[1].v_type == VAR_STRING {
+		stream := tv_get_string((^Typval_T)(uintptr(argvars) + 16))
+		if libc.strcmp(stream, cstring("stdin")) == 0 {
+			part = KCHPART_STDIN_O
+		} else if libc.strcmp(stream, cstring("stdout")) == 0 {
+			part = KCHPART_STDOUT_O
+		} else if libc.strcmp(stream, cstring("stderr")) == 0 {
+			part = KCHPART_STDERR_O
+		} else if libc.strcmp(stream, cstring("rpc")) == 0 {
+			part = KCHPART_RPC_O
+		} else {
+			semsg(cstring("Invalid channel stream \"%s\""), stream)
+			return
+		}
+	}
+	err: cstring = nil
+	if channel_close_e(C.ulonglong(transmute(C.longlong)(([^]Typval_T)(argvars)[0].vval)), part, &err) {
+		rettv.vval = transmute(rawptr)(C.longlong(1))
+	} else {
+		emsg(err)
+	}
+}
+
+// —— Batch 27al: funcs.c match engine ——
+foreign _ {
+	@(link_name = "vim_regexec_nl")
+	vim_regexec_nl_e :: proc "c" (rmp: ^Regmatch_T, line: cstring, col: C.int) -> bool ---
+}
+
+SOMEMATCH_O :: 0
+RE_STRING_O :: 2
+SOMEMATCHEND_O :: 1
+SOMEMATCHLIST_O :: 2
+SOMEMATCHSTR_O :: 3
+SOMEMATCHSTRPOS_O :: 4
+
+// Shared match()/matchend()/matchlist()/matchstr()/matchstrpos() engine (C-static).
+find_some_match_o :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, type: C.int) {
+	context = runtime.default_context()
+	str: [^]u8 = nil
+	length: i64 = 0
+	expr: [^]u8 = nil
+	regmatch := Regmatch_T{}
+	start: i64 = 0
+	nth: i64 = 1
+	startcol: C.int = 0
+	match := false
+	l: rawptr = nil
+	idx: C.int = 0
+	tofree: ^u8 = nil
+	save_cpo := p_cpo
+	p_cpo = empty_string_opt()
+	rettv.vval = transmute(rawptr)(C.longlong(-1))
+	done := false
+	if type == SOMEMATCHLIST_O {
+		tv_list_alloc_ret(transmute(^Typval)(rettv), KLISTLEN_MAYKNOW_O)
+	} else if type == SOMEMATCHSTRPOS_O {
+		tv_list_alloc_ret(transmute(^Typval)(rettv), 4)
+		tv_list_append_string(rawptr(rettv.vval), nil, 0)
+		tv_list_append_number(rawptr(rettv.vval), C.longlong(-1))
+		tv_list_append_number(rawptr(rettv.vval), C.longlong(-1))
+		tv_list_append_number(rawptr(rettv.vval), C.longlong(-1))
+	} else if type == SOMEMATCHSTR_O {
+		rettv.v_type = VAR_STRING
+		rettv.vval = transmute(rawptr)(cstring(nil))
+	}
+	li: rawptr = nil
+	if ([^]Typval_T)(argvars)[0].v_type == VAR_LIST {
+		l = rawptr(([^]Typval_T)(argvars)[0].vval)
+		if l == nil {
+			done = true
+		} else {
+			li = tv_list_first_o(l)
+		}
+	} else {
+		expr = transmute([^]u8)(tv_get_string((^Typval_T)(uintptr(argvars))))
+		str = expr
+		length = i64(libc.strlen(transmute(cstring)(str)))
+	}
+	patbuf: [65]u8
+	pat: cstring = nil
+	if !done {
+		pat = tv_get_string_buf_chk((^Typval_T)(uintptr(argvars) + 16), &patbuf[0])
+		if pat == nil {
+			done = true
+		}
+	}
+	if !done && ([^]Typval_T)(argvars)[2].v_type != VAR_UNKNOWN {
+		error := false
+		start = i64(tv_get_number_chk((^Typval_T)(uintptr(argvars) + 32), &error))
+		if error {
+			done = true
+		} else {
+			if l != nil {
+				idx = tv_list_uidx_o(l, C.int(start))
+				if idx == -1 {
+					done = true
+				} else {
+					li = tv_list_find(l, idx)
+				}
+			} else {
+				if start < 0 {
+					start = 0
+				}
+				if start > length {
+					done = true
+				} else {
+					if ([^]Typval_T)(argvars)[3].v_type != VAR_UNKNOWN {
+						startcol = C.int(start)
+					} else {
+						str = ([^]u8)(uintptr(str) + uintptr(start))
+						length -= start
+					}
+				}
+			}
+			if !done && ([^]Typval_T)(argvars)[3].v_type != VAR_UNKNOWN {
+				nth = i64(tv_get_number_chk((^Typval_T)(uintptr(argvars) + 48), &error))
+			}
+			if error {
+				done = true
+			}
+		}
+	}
+	if !done {
+		regmatch.regprog = vim_regcomp(pat, RE_MAGIC + RE_STRING_O)
+		if regmatch.regprog != nil {
+			regmatch.rm_ic = p_ic
+			for {
+				if l != nil {
+					if li == nil {
+						match = false
+						break
+					}
+					xfree(rawptr(tofree))
+					tofree = encode_tv2echo((^Typval_T)(uintptr(li) + 16), nil)
+					expr = transmute([^]u8)(tofree)
+					str = expr
+					if str == nil {
+						break
+					}
+				}
+				match = vim_regexec_nl_e(&regmatch, transmute(cstring)(str), startcol)
+				if match {
+					nth -= 1
+					if nth <= 0 {
+						break
+					}
+				}
+				if l == nil && !match {
+					break
+				}
+				if l != nil {
+					li = (^rawptr)(uintptr(li))^
+					idx += 1
+				} else {
+					startcol = C.int(uintptr(regmatch.startp[0]) + uintptr(utfc_ptr2len(transmute(cstring)(regmatch.startp[0]))) - uintptr(str))
+					if C.longlong(startcol) > length || uintptr(str) + uintptr(startcol) <= uintptr(regmatch.startp[0]) {
+						match = false
+						break
+					}
+				}
+			}
+		}
+		if match {
+			if type == SOMEMATCHSTRPOS_O {
+				ret_l := rawptr(rettv.vval)
+				li1 := tv_list_first_o(ret_l)
+				li2 := (^rawptr)(uintptr(li1))^
+				li3 := (^rawptr)(uintptr(li2))^
+				li4 := (^rawptr)(uintptr(li3))^
+				tv1 := (^Typval_T)(uintptr(li1) + 16)
+				xfree(rawptr(tv1.vval))
+				rd := uintptr(regmatch.endp[0]) - uintptr(regmatch.startp[0])
+				tv1.vval = transmute(rawptr)(xmemdupz_o2(regmatch.startp[0], C.size_t(rd)))
+				(^Typval_T)(uintptr(li3) + 16).vval = transmute(rawptr)(C.longlong(C.longlong(uintptr(regmatch.startp[0]) - uintptr(expr))))
+				(^Typval_T)(uintptr(li4) + 16).vval = transmute(rawptr)(C.longlong(C.longlong(uintptr(regmatch.endp[0]) - uintptr(expr))))
+				if l != nil {
+					(^Typval_T)(uintptr(li2) + 16).vval = transmute(rawptr)(C.longlong(idx))
+				}
+			} else if type == SOMEMATCHLIST_O {
+				i: C.int = 0
+				for i < NSUBEXP {
+					if regmatch.endp[i] == nil {
+						tv_list_append_string(rawptr(rettv.vval), nil, 0)
+					} else {
+						tv_list_append_string(rawptr(rettv.vval), regmatch.startp[i], C.ssize_t(uintptr(regmatch.endp[i]) - uintptr(regmatch.startp[i])))
+					}
+					i += 1
+				}
+			} else if type == SOMEMATCHSTR_O {
+				if l != nil {
+					tv_copy((^Typval_T)(uintptr(li) + 16), rettv)
+				} else {
+					rettv.vval = transmute(rawptr)(xmemdupz_o2(regmatch.startp[0], C.size_t(uintptr(regmatch.endp[0]) - uintptr(regmatch.startp[0]))))
+				}
+			} else {
+				if l != nil {
+					rettv.vval = transmute(rawptr)(C.longlong(idx))
+				} else {
+					if type == SOMEMATCH_O {
+						rettv.vval = transmute(rawptr)(C.longlong(C.longlong(uintptr(regmatch.startp[0]) - uintptr(str))))
+					} else {
+						rettv.vval = transmute(rawptr)(C.longlong(C.longlong(uintptr(regmatch.endp[0]) - uintptr(str))))
+					}
+					rettv.vval = transmute(rawptr)(C.longlong(transmute(C.longlong)(rettv.vval) + C.longlong(uintptr(str) - uintptr(expr))))
+				}
+			}
+		}
+		vim_regfree(regmatch.regprog)
+	}
+	if type == SOMEMATCHSTRPOS_O && l == nil && rawptr(rettv.vval) != nil {
+		ret_l := rawptr(rettv.vval)
+		tv_list_item_remove(ret_l, (^rawptr)(uintptr(tv_list_first_o(ret_l)))^)
+	}
+	xfree(rawptr(tofree))
+	p_cpo = save_cpo
+}
+
+// "match()" function.
+@(export)
+f_match :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	find_some_match_o(argvars, rettv, SOMEMATCH_O)
+}
+
+// "matchend()" function.
+@(export)
+f_matchend :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	find_some_match_o(argvars, rettv, SOMEMATCHEND_O)
+}
+
+// "matchlist()" function.
+@(export)
+f_matchlist :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	find_some_match_o(argvars, rettv, SOMEMATCHLIST_O)
+}
+
+// "matchstr()" function.
+@(export)
+f_matchstr :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	find_some_match_o(argvars, rettv, SOMEMATCHSTR_O)
+}
+
+// "matchstrpos()" function.
+@(export)
+f_matchstrpos :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	find_some_match_o(argvars, rettv, SOMEMATCHSTRPOS_O)
+}
+
+// —— Batch 27ak: funcs.c range + getreginfo ——
+foreign _ {
+	@(link_name = "get_unname_register")
+	get_unname_register_e :: proc "c" () -> C.int ---
+}
+
+E726_S :: "E726: Stride is zero"
+E727_S :: "E727: Start past end"
+DELETION_REGISTER_O :: 36
+STAR_REGISTER_O :: 37
+PLUS_REGISTER_O :: 38
+
+// Register index to name (register.h static inline).
+get_register_name_o :: proc "c" (num: C.int) -> C.int {
+	context = runtime.default_context()
+	if num == -1 {
+		return '"'
+	} else if num < 10 {
+		return num + '0'
+	} else if num == DELETION_REGISTER_O {
+		return '-'
+	} else if num == STAR_REGISTER_O {
+		return '*'
+	} else if num == PLUS_REGISTER_O {
+		return '+'
+	}
+	return num + 'a' - 10
+}
+
+// "range()" function.
+@(export)
+f_range :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	end: C.longlong = 0
+	stride: C.longlong = 1
+	error := false
+	start := tv_get_number_chk((^Typval_T)(uintptr(argvars)), &error)
+	if ([^]Typval_T)(argvars)[1].v_type == VAR_UNKNOWN {
+		end = start - 1
+		start = 0
+	} else {
+		end = tv_get_number_chk((^Typval_T)(uintptr(argvars) + 16), &error)
+		if ([^]Typval_T)(argvars)[2].v_type != VAR_UNKNOWN {
+			stride = tv_get_number_chk((^Typval_T)(uintptr(argvars) + 32), &error)
+		}
+	}
+	if error {
+		return
+	}
+	if stride == 0 {
+		emsg(cstring(E726_S))
+		return
+	}
+	if (stride > 0 && end + 1 < start) || (stride < 0 && end - 1 > start) {
+		emsg(cstring(E727_S))
+		return
+	}
+	tv_list_alloc_ret(transmute(^Typval)(rettv), C.int((end - start) / stride))
+	i := start
+	for (stride > 0 && i <= end) || (stride < 0 && i >= end) {
+		tv_list_append_number(rawptr(rettv.vval), i)
+		i += stride
+	}
+}
+
+// "getreginfo()" function.
+@(export)
+f_getreginfo :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	regname := getreg_get_regname_o(argvars)
+	if regname == 0 {
+		return
+	}
+	if regname == '@' {
+		regname = '"'
+	}
+	tv_dict_alloc_ret(rettv)
+	dict := rawptr(rettv.vval)
+	list := get_reg_contents(regname, kGRegExprSrc | kGRegList)
+	if list == nil {
+		return
+	}
+	tv_dict_add_list(dict, cstring("regcontents"), 11, list)
+	buf: [67]u8
+	buflen: C.size_t = 0
+	reglen: C.int = 0
+	rt := get_reg_type(regname, &reglen)
+	if rt == kMTLineWise {
+		buf[0] = 'V'
+		buf[1] = 0
+		buflen = 1
+	} else if rt == kMTCharWise {
+		buf[0] = 'v'
+		buf[1] = 0
+		buflen = 1
+	} else if rt == kMTBlockWise {
+		n := libc.snprintf(&buf[0], 67, cstring("%c%d"), C.int(Ctrl_V), reglen + 1)
+		buflen = C.size_t(n)
+		if buflen > 66 {
+			buflen = 66
+		}
+	} else {
+		libc.abort()
+	}
+	tv_dict_add_str_len(dict, cstring("regtype"), 7, transmute(cstring)(&buf[0]), C.int(buflen))
+	buf[0] = u8(get_register_name_o(get_unname_register_e()))
+	buf[1] = 0
+	if buf[0] == 0 {
+		buflen = 0
+	} else {
+		buflen = 1
+	}
+	if regname == '"' {
+		tv_dict_add_str_len(dict, cstring("points_to"), 9, transmute(cstring)(&buf[0]), C.int(buflen))
+	} else {
+		v: C.int = kBoolVarFalse
+		if regname == C.int(buf[0]) {
+			v = kBoolVarTrue
+		}
+		tv_dict_add_bool(dict, cstring("isunnamed"), 9, v)
+	}
+}
+
+// —— Batch 27ae: funcs.c luaeval + id ——
+foreign _ {
+	@(link_name = "nlua_call_luaeval")
+	nlua_call_luaeval_e :: proc "c" (str: NvimString, arg: ^Typval_T, ret_tv: ^Typval_T) ---
+}
+
+// "luaeval()" function.
+@(export)
+f_luaeval :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	str := tv_get_string_chk((^Typval_T)(uintptr(argvars)))
+	if str == nil {
+		return
+	}
+	s := NvimString{data = str, size = C.size_t(libc.strlen(str))}
+	nlua_call_luaeval_e(s, (^Typval_T)(uintptr(argvars) + 16), rettv)
+}
+
+// "id()" function (address identity via %p; va_list bypassed with snprintf).
+@(export)
+f_id :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	length := libc.snprintf(nil, 0, cstring("%p"), rawptr(argvars))
+	rettv.v_type = VAR_STRING
+	rettv.vval = transmute(rawptr)(xmalloc(C.size_t(length) + 1))
+	libc.snprintf(transmute([^]u8)(rettv.vval), C.size_t(length) + 1, cstring("%p"), rawptr(argvars))
+}
+
+// —— Batch 27af: funcs.c prompt/pum/py3eval (FFI fully rewired) ——
+foreign _ {
+	@(link_name = "pum_set_event_info")
+	pum_set_event_info_e :: proc "c" (dict: rawptr) ---
+}
+
+// "prompt_getprompt({buffer})" function.
+@(export)
+f_prompt_getprompt :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	rettv.v_type = VAR_STRING
+	rettv.vval = transmute(rawptr)(cstring(nil))
+	buf := tv_get_buf_from_arg((^Typval_T)(uintptr(argvars)))
+	if buf == nil {
+		return
+	}
+	if !bt_prompt(buf) {
+		return
+	}
+	rettv.vval = transmute(rawptr)(xstrdup_o(transmute(^u8)(buf_prompt_text_e(buf))))
+}
+
+// "prompt_getinput({buffer})" function.
+@(export)
+f_prompt_getinput :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	rettv.v_type = VAR_STRING
+	rettv.vval = transmute(rawptr)(cstring(nil))
+	buf := tv_get_buf_from_arg((^Typval_T)(uintptr(argvars)))
+	if buf == nil {
+		return
+	}
+	if !bt_prompt(buf) {
+		return
+	}
+	rettv.vval = transmute(rawptr)(prompt_get_input(buf))
+}
+
+// "pum_getpos()" function.
+@(export)
+f_pum_getpos :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	tv_dict_alloc_ret(rettv)
+	pum_set_event_info_e(rawptr(rettv.vval))
+}
+
+// "py3eval()" function.
+@(export)
+f_py3eval :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	script_host_eval(cstring("python3"), argvars, rettv)
+}
+
+// —— Batch 27ag: funcs.c reg_* readers ——
+
+// Shared reg_executing/recording/recorded engine (C-static in funcs.c).
+return_register_o :: proc "c" (regname: C.int, rettv: ^Typval_T) {
+	context = runtime.default_context()
+	buf: [2]u8
+	buf[0] = u8(regname)
+	buf[1] = 0
+	rettv.v_type = VAR_STRING
+	n: C.size_t = 0
+	if buf[0] != 0 {
+		n = 1
+	}
+	rettv.vval = transmute(rawptr)(xmemdupz_o2(&buf[0], n))
+}
+
+// "reg_executing()" function.
+@(export)
+f_reg_executing :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	return_register_o(reg_executing, rettv)
+}
+
+// "reg_recording()" function.
+@(export)
+f_reg_recording :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	return_register_o(reg_recording, rettv)
+}
+
+// "reg_recorded()" function.
+@(export)
+f_reg_recorded :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	return_register_o(reg_recorded, rettv)
+}
+
+// —— Batch 27ah: funcs.c reltime trio + shellescape ——
+foreign _ {
+	@(link_name = "profile_sub")
+	profile_sub_e :: proc "c" (tm1: u64, tm2: u64) -> u64 ---
+	@(link_name = "profile_msg")
+	profile_msg_e :: proc "c" (tm: u64) -> cstring ---
+	@(link_name = "profile_signed")
+	profile_signed_e :: proc "c" (tm: u64) -> i64 ---
+	@(link_name = "vim_strsave_shellescape")
+	vim_strsave_shellescape_e :: proc "c" (str: cstring, do_special: bool, do_newline: bool) -> ^u8 ---
+}
+
+// List-to-proftime conversion (C-static in funcs.c).
+list2proftime_o :: proc "c" (arg: ^Typval_T, tm: ^u64) -> C.int {
+	context = runtime.default_context()
+	if arg.v_type != VAR_LIST || tv_list_len_o(rawptr(arg.vval)) != 2 {
+		return FAIL_E
+	}
+	error := false
+	n1 := tv_list_find_nr(rawptr(arg.vval), 0, &error)
+	n2 := tv_list_find_nr(rawptr(arg.vval), 1, &error)
+	if error {
+		return FAIL_E
+	}
+	tm^ = u64((i64(i32(n1)) << 32) | i64(u32(n2)))
+	return OK_E
+}
+
+// "reltime()" function.
+@(export)
+f_reltime :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	res: u64 = 0
+	start: u64 = 0
+	if ([^]Typval_T)(argvars)[0].v_type == VAR_UNKNOWN {
+		res = profile_start_e()
+	} else if ([^]Typval_T)(argvars)[1].v_type == VAR_UNKNOWN {
+		if list2proftime_o((^Typval_T)(uintptr(argvars)), &res) == FAIL_E {
+			return
+		}
+		res = profile_end_e(res)
+	} else {
+		if list2proftime_o((^Typval_T)(uintptr(argvars)), &start) == FAIL_E || list2proftime_o((^Typval_T)(uintptr(argvars) + 16), &res) == FAIL_E {
+			return
+		}
+		res = profile_sub_e(res, start)
+	}
+	tv_list_alloc_ret(transmute(^Typval)(rettv), 2)
+	tv_list_append_number(rawptr(rettv.vval), C.longlong(i32(u64(res) >> 32)))
+	tv_list_append_number(rawptr(rettv.vval), C.longlong(i32(u64(res) & 0xffffffff)))
+}
+
+// "reltimestr()" function.
+@(export)
+f_reltimestr :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	tm: u64 = 0
+	rettv.v_type = VAR_STRING
+	rettv.vval = transmute(rawptr)(cstring(nil))
+	if list2proftime_o((^Typval_T)(uintptr(argvars)), &tm) == OK_E {
+		rettv.vval = transmute(rawptr)(xstrdup_o(transmute(^u8)(profile_msg_e(tm))))
+	}
+}
+
+// "reltimefloat()" function.
+@(export)
+f_reltimefloat :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	tm: u64 = 0
+	rettv.v_type = VAR_FLOAT
+	rettv.vval = transmute(rawptr)(f64(0))
+	if list2proftime_o((^Typval_T)(uintptr(argvars)), &tm) == OK_E {
+		rettv.vval = transmute(rawptr)(f64(profile_signed_e(tm)) / 1000000000.0)
+	}
+}
+
+// "shellescape()" function.
+@(export)
+f_shellescape :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	do_special := non_zero_arg_o((^Typval_T)(uintptr(argvars) + 16))
+	rettv.vval = transmute(rawptr)(vim_strsave_shellescape_e(tv_get_string((^Typval_T)(uintptr(argvars))), do_special, do_special))
+	rettv.v_type = VAR_STRING
+}
+
+// —— Batch 27ai: funcs.c sha256 + shiftwidth ——
+foreign _ {
+	@(link_name = "sha256_bytes")
+	sha256_bytes_e :: proc "c" (buf: ^u8, buflen: C.size_t, salt: ^u8, saltlen: C.size_t) -> cstring ---
+	@(link_name = "get_sw_value_col")
+	get_sw_value_col_e :: proc "c" (buf: rawptr, col: C.int, left: bool) -> C.int ---
+}
+
+// "sha256()" function.
+@(export)
+f_sha256 :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	rettv.v_type = VAR_STRING
+	rettv.vval = transmute(rawptr)(cstring(nil))
+	if ([^]Typval_T)(argvars)[0].v_type == VAR_BLOB {
+		blob := rawptr(([^]Typval_T)(argvars)[0].vval)
+		p := transmute(^u8)(cstring(""))
+		length: C.size_t = 0
+		if blob != nil {
+			p = (^u8)((^rawptr)(uintptr(blob) + 16)^)
+			length = C.size_t((^C.int)(uintptr(blob) + 0)^)
+		}
+		rettv.vval = transmute(rawptr)(xstrdup_o(transmute(^u8)(sha256_bytes_e(p, length, nil, 0))))
+	} else {
+		p := tv_get_string((^Typval_T)(uintptr(argvars)))
+		rettv.vval = transmute(rawptr)(xstrdup_o(transmute(^u8)(sha256_bytes_e(transmute(^u8)(p), C.size_t(libc.strlen(p)), nil, 0))))
+	}
+}
+
+// "shiftwidth()" function.
+@(export)
+f_shiftwidth :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	rettv.vval = transmute(rawptr)(C.longlong(0))
+	if ([^]Typval_T)(argvars)[0].v_type != VAR_UNKNOWN {
+		col := C.int(tv_get_number_chk((^Typval_T)(uintptr(argvars)), nil))
+		if col < 0 {
+			return
+		}
+		rettv.vval = transmute(rawptr)(C.longlong(get_sw_value_col_e(curbuf, col, false)))
+		return
+	}
+	rettv.vval = transmute(rawptr)(C.longlong(get_sw_value_r(curbuf)))
+}
+
+// —— Batch 27aj: funcs.c repeat ——
+
+// repeat_list (C-static in funcs.c).
+repeat_list_o :: proc "c" (l: rawptr, n_in: C.longlong, rettv: ^Typval_T) {
+	context = runtime.default_context()
+	n := n_in
+	size: C.longlong = 0
+	if n > 0 {
+		size = n * C.longlong(tv_list_len_o(l))
+	}
+	tv_list_alloc_ret(transmute(^Typval)(rettv), C.int(size))
+	for n > 0 {
+		tv_list_extend(rawptr(rettv.vval), l, nil)
+		n -= 1
+	}
+}
+
+// repeat_blob (C-static in funcs.c).
+repeat_blob_o :: proc "c" (blob_tv: ^Typval_T, n: C.longlong, rettv: ^Typval_T) {
+	context = runtime.default_context()
+	blob := rawptr(blob_tv.vval)
+	tv_blob_alloc_ret(rettv)
+	if blob == nil || n <= 0 {
+		return
+	}
+	slen := C.longlong((^C.int)(uintptr(blob) + 0)^)
+	length := slen * n
+	if length <= 0 {
+		return
+	}
+	newblob := rawptr(rettv.vval)
+	ga_grow_r((^Garray)(uintptr(newblob)), C.int(length))
+	(^C.int)(uintptr(newblob))^ = C.int(length)
+	i: C.longlong = 0
+	for i < slen {
+		if tv_blob_get_o(blob, C.int(i)) != 0 {
+			break
+		}
+		i += 1
+	}
+	if i == slen {
+		return
+	}
+	i = 0
+	for i < n {
+		tv_blob_set_range(newblob, i * slen, (i + 1) * slen - 1, blob_tv)
+		i += 1
+	}
+}
+
+// repeat_string (C-static in funcs.c).
+repeat_string_o :: proc "c" (str_tv: ^Typval_T, n_in: C.longlong, rettv: ^Typval_T) {
+	context = runtime.default_context()
+	n := n_in
+	rettv.v_type = VAR_STRING
+	rettv.vval = transmute(rawptr)(cstring(nil))
+	if n <= 0 {
+		return
+	}
+	p := tv_get_string(str_tv)
+	slen := C.size_t(libc.strlen(p))
+	if slen == 0 {
+		return
+	}
+	length := slen * C.size_t(n)
+	if length / C.size_t(n) != slen {
+		return
+	}
+	r := xmallocz_r(length)
+	libc.memmove(rawptr(r), rawptr(transmute(^u8)(p)), slen)
+	done := slen
+	for done < length {
+		copy_len := done
+		if copy_len > length - done {
+			copy_len = length - done
+		}
+		libc.memmove(rawptr(uintptr(r) + uintptr(done)), rawptr(r), copy_len)
+		done += copy_len
+	}
+	rettv.vval = transmute(rawptr)(r)
+}
+
+// "repeat()" function.
+@(export)
+f_repeat :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	n := tv_get_number((^Typval_T)(uintptr(argvars) + 16))
+	if ([^]Typval_T)(argvars)[0].v_type == VAR_LIST {
+		repeat_list_o(rawptr(([^]Typval_T)(argvars)[0].vval), n, rettv)
+	} else if ([^]Typval_T)(argvars)[0].v_type == VAR_BLOB {
+		repeat_blob_o((^Typval_T)(uintptr(argvars)), n, rettv)
+	} else {
+		repeat_string_o((^Typval_T)(uintptr(argvars)), n, rettv)
+	}
+}
+
+// —— Batch 27an: funcs.c chansend (FFI fully rewired) ——
+foreign _ {
+	@(link_name = "channel_send")
+	channel_send_e :: proc "c" (id: C.ulonglong, data: ^u8, len: C.size_t, data_owned: bool, error: ^cstring) -> C.size_t ---
+}
+
+// "chansend(id, data)" function.
+@(export)
+f_chansend :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	rettv.v_type = VAR_NUMBER
+	rettv.vval = transmute(rawptr)(C.longlong(0))
+	if check_secure() {
+		return
+	}
+	if ([^]Typval_T)(argvars)[0].v_type != VAR_NUMBER || ([^]Typval_T)(argvars)[1].v_type == VAR_UNKNOWN {
+		emsg(e_invarg)
+		return
+	}
+	input_len: C.ptrdiff_t = 0
+	input: ^u8 = nil
+	id := C.ulonglong(transmute(C.longlong)(([^]Typval_T)(argvars)[0].vval))
+	if ([^]Typval_T)(argvars)[1].v_type == VAR_BLOB {
+		b := rawptr(([^]Typval_T)(argvars)[1].vval)
+		input_len = C.ptrdiff_t(tv_blob_len_o(b))
+		if input_len > 0 {
+			input = xmemdupz_o2((^u8)((^rawptr)(uintptr(b) + 16)^), C.size_t(input_len))
+		}
+	} else {
+		input = save_tv_as_string((^Typval_T)(uintptr(argvars) + 16), &input_len, false, false)
+	}
+	if input == nil {
+		return
+	}
+	err: cstring = nil
+	rettv.vval = transmute(rawptr)(C.longlong(channel_send_e(id, input, C.size_t(input_len), true, &err)))
+	if err != nil {
+		emsg(err)
+	}
+}
+
+// —— Batch 27ao: funcs.c ctx cluster ——
+foreign _ {
+	@(link_name = "ctx_size")
+	ctx_size_e :: proc "c" () -> C.size_t ---
+	@(link_name = "ctx_get")
+	ctx_get_e :: proc "c" (index: C.size_t) -> rawptr ---
+	@(link_name = "ctx_save")
+	ctx_save_e :: proc "c" (ctx: rawptr, flags: C.int) ---
+	@(link_name = "ctx_restore")
+	ctx_restore_e :: proc "c" (ctx: rawptr, flags: C.int) -> bool ---
+	@(link_name = "ctx_to_dict")
+	ctx_to_dict_e :: proc "c" (ctx: rawptr, arena: rawptr) -> Api_Dict ---
+	@(link_name = "ctx_from_dict")
+	ctx_from_dict_e :: proc "c" (dict: Api_Dict, ctx: rawptr, err: rawptr) -> C.int ---
+	@(link_name = "ctx_free")
+	ctx_free_e :: proc "c" (ctx: rawptr) ---
+	@(link_name = "vim_to_object")
+	vim_to_object_e :: proc "c" (obj: ^Typval_T, arena: rawptr, reuse_strdata: bool) -> Api_Object ---
+	@(link_name = "arena_finish")
+	arena_finish_e :: proc "c" (arena: rawptr) -> rawptr ---
+	@(link_name = "arena_mem_free")
+	arena_mem_free_e :: proc "c" (mem: rawptr) ---
+	@(link_name = "kCtxAll")
+	kCtxAll_g: C.int
+}
+
+KCTXREGS_O :: 1
+KCTXJUMPS_O :: 2
+KCTXBUFS_O :: 4
+KCTXGVARS_O :: 8
+KCTXSFUNCS_O :: 16
+KCTXFUNCS_O :: 32
+E_INVARG_NVAL_S :: "E475: Invalid value for argument %s: %s"
+E_CTXEMPTY_S :: "Context stack is empty"
+
+// Context mirror (context.h): 4×String + Array = 88B.
+Context_O :: struct {
+	regs:   NvimString,
+	jumps:  NvimString,
+	bufs:   NvimString,
+	gvars:  NvimString,
+	funcs:  Api_Array,
+}
+#assert(size_of(Context_O) == 88)
+
+// Arena mirror (memory_defs.h): 24B, empty = zeros.
+Arena_O :: struct {
+	cur_blk: rawptr,
+	pos:     C.size_t,
+	size:    C.size_t,
+}
+#assert(size_of(Arena_O) == 24)
+
+// "ctxget([{index}])" function.
+@(export)
+f_ctxget :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	index: C.size_t = 0
+	if ([^]Typval_T)(argvars)[0].v_type == VAR_NUMBER {
+		index = C.size_t(transmute(C.longlong)(([^]Typval_T)(argvars)[0].vval))
+	} else if ([^]Typval_T)(argvars)[0].v_type != VAR_UNKNOWN {
+		semsg(e_invarg2, cstring("expected nothing or a Number as an argument"))
+		return
+	}
+	ctx := ctx_get_e(index)
+	if ctx == nil {
+		semsg(cstring(E_INVARG_NVAL_S), cstring("index"), cstring("out of bounds"))
+		return
+	}
+	arena := Arena_O{}
+	d := ctx_to_dict_e(ctx, rawptr(&arena))
+	obj := Api_Object{}
+	obj.t = 6
+	(^Api_Dict)(&obj.data[0])^ = d
+	err := Api_Error{typ = -1, msg = nil}
+	object_to_vim_e(obj, rettv, rawptr(&err))
+	arena_mem_free_e(arena_finish_e(rawptr(&arena)))
+	api_clear_error_r(&err)
+}
+
+// "ctxpop()" function.
+@(export)
+f_ctxpop :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	if !ctx_restore_e(nil, kCtxAll_g) {
+		emsg(cstring(E_CTXEMPTY_S))
+	}
+}
+
+// "ctxpush([{types}])" function.
+@(export)
+f_ctxpush :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	types := kCtxAll_g
+	if ([^]Typval_T)(argvars)[0].v_type == VAR_LIST {
+		types = 0
+		l := rawptr(([^]Typval_T)(argvars)[0].vval)
+		li := tv_list_first_o(l)
+		for li != nil {
+			tv := (^Typval_T)(uintptr(li) + 16)
+			if tv.v_type == VAR_STRING {
+				s := transmute(cstring)(tv.vval)
+				if libc.strcmp(s, cstring("regs")) == 0 {
+					types |= KCTXREGS_O
+				} else if libc.strcmp(s, cstring("jumps")) == 0 {
+					types |= KCTXJUMPS_O
+				} else if libc.strcmp(s, cstring("bufs")) == 0 {
+					types |= KCTXBUFS_O
+				} else if libc.strcmp(s, cstring("gvars")) == 0 {
+					types |= KCTXGVARS_O
+				} else if libc.strcmp(s, cstring("sfuncs")) == 0 {
+					types |= KCTXSFUNCS_O
+				} else if libc.strcmp(s, cstring("funcs")) == 0 {
+					types |= KCTXFUNCS_O
+				}
+			}
+			li = (^rawptr)(uintptr(li))^
+		}
+	} else if ([^]Typval_T)(argvars)[0].v_type != VAR_UNKNOWN {
+		semsg(e_invarg2, cstring("expected nothing or a List as an argument"))
+		return
+	}
+	ctx_save_e(nil, types)
+}
+
+// "ctxset({context}[, {index}])" function.
+@(export)
+f_ctxset :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	if ([^]Typval_T)(argvars)[0].v_type != VAR_DICT {
+		semsg(e_invarg2, cstring("expected dictionary as first argument"))
+		return
+	}
+	index: C.size_t = 0
+	if ([^]Typval_T)(argvars)[1].v_type == VAR_NUMBER {
+		index = C.size_t(transmute(C.longlong)(([^]Typval_T)(argvars)[1].vval))
+	} else if ([^]Typval_T)(argvars)[1].v_type != VAR_UNKNOWN {
+		semsg(e_invarg2, cstring("expected nothing or a Number as second argument"))
+		return
+	}
+	ctx := ctx_get_e(index)
+	if ctx == nil {
+		semsg(cstring(E_INVARG_NVAL_S), cstring("index"), cstring("out of bounds"))
+		return
+	}
+	save_did_emsg := did_emsg_flag
+	did_emsg_flag = 0
+	arena := Arena_O{}
+	obj := vim_to_object_e((^Typval_T)(uintptr(argvars)), rawptr(&arena), true)
+	tmp := Context_O{}
+	err := Api_Error{typ = -1, msg = nil}
+	ctx_from_dict_e((^Api_Dict)(&obj.data[0])^, rawptr(&tmp), rawptr(&err))
+	if err.typ != -1 {
+		semsg(cstring("%s"), transmute(cstring)(err.msg))
+		ctx_free_e(rawptr(&tmp))
+	} else {
+		ctx_free_e(ctx)
+		(^Context_O)(ctx)^ = tmp
+	}
+	arena_mem_free_e(arena_finish_e(rawptr(&arena)))
+	api_clear_error_r(&err)
+	did_emsg_flag = save_did_emsg
+}
+
+// "ctxsize()" function.
+@(export)
+f_ctxsize :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	rettv.v_type = VAR_NUMBER
+	rettv.vval = transmute(rawptr)(C.longlong(ctx_size_e()))
+}
+
+// —— Batch 27ar: funcs.c screen cluster ——
+foreign _ {
+	@(link_name = "msg_scroll_flush")
+	msg_scroll_flush_e :: proc "c" () ---
+	@(link_name = "ui_comp_get_grid_at_coord")
+	ui_comp_get_grid_at_coord_e :: proc "c" (row: C.int, col: C.int) -> ^ScreenGrid ---
+	@(link_name = "ui_current_row")
+	ui_current_row_e :: proc "c" () -> C.int ---
+	@(link_name = "ui_current_col")
+	ui_current_col_e :: proc "c" () -> C.int ---
+}
+
+// Grid adjust for screen*() (C-static in funcs.c).
+screenchar_adjust_o :: proc "c" (grid: ^rawptr, row: ^C.int, col: ^C.int) {
+	context = runtime.default_context()
+	msg_scroll_flush_e()
+	g := ui_comp_get_grid_at_coord_e(row^, col^)
+	grid^ = rawptr(g)
+	row^ -= g.comp_row
+	col^ -= g.comp_col
+}
+
+// "screenattr()" function.
+@(export)
+f_screenattr :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	row := C.int(tv_get_number_chk((^Typval_T)(uintptr(argvars)), nil)) - 1
+	col := C.int(tv_get_number_chk((^Typval_T)(uintptr(argvars) + 16), nil)) - 1
+	grid: rawptr = nil
+	screenchar_adjust_o(&grid, &row, &col)
+	g := (^ScreenGrid)(grid)
+	c: C.int = -1
+	if row >= 0 && row < g.rows && col >= 0 && col < g.cols {
+		c = g.attrs[g.line_offset[row] + C.size_t(col)]
+	}
+	rettv.vval = transmute(rawptr)(C.longlong(c))
+}
+
+// "screenchar()" function.
+@(export)
+f_screenchar :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	row := C.int(tv_get_number_chk((^Typval_T)(uintptr(argvars)), nil)) - 1
+	col := C.int(tv_get_number_chk((^Typval_T)(uintptr(argvars) + 16), nil)) - 1
+	grid: rawptr = nil
+	screenchar_adjust_o(&grid, &row, &col)
+	g := (^ScreenGrid)(grid)
+	n: C.longlong = -1
+	if row >= 0 && row < g.rows && col >= 0 && col < g.cols {
+		n = C.longlong(schar_get_first_codepoint(grid_getchar(g, row, col, nil)))
+	}
+	rettv.vval = transmute(rawptr)(n)
+}
+
+// "screenstring()" function.
+@(export)
+f_screenstring :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	rettv.vval = transmute(rawptr)(cstring(nil))
+	rettv.v_type = VAR_STRING
+	row := C.int(tv_get_number_chk((^Typval_T)(uintptr(argvars)), nil)) - 1
+	col := C.int(tv_get_number_chk((^Typval_T)(uintptr(argvars) + 16), nil)) - 1
+	grid: rawptr = nil
+	screenchar_adjust_o(&grid, &row, &col)
+	g := (^ScreenGrid)(grid)
+	if row < 0 || row >= g.rows || col < 0 || col >= g.cols {
+		return
+	}
+	buf: [33]u8
+	schar_get(&buf[0], grid_getchar(g, row, col, nil))
+	rettv.vval = transmute(rawptr)(xstrdup_o(&buf[0]))
+}
+
+// "screenchars()" function.
+@(export)
+f_screenchars :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	row := C.int(tv_get_number_chk((^Typval_T)(uintptr(argvars)), nil)) - 1
+	col := C.int(tv_get_number_chk((^Typval_T)(uintptr(argvars) + 16), nil)) - 1
+	grid: rawptr = nil
+	screenchar_adjust_o(&grid, &row, &col)
+	g := (^ScreenGrid)(grid)
+	tv_list_alloc_ret(transmute(^Typval)(rettv), KLISTLEN_MAYKNOW_O)
+	if row < 0 || row >= g.rows || col < 0 || col >= g.cols {
+		return
+	}
+	buf: [33]u8
+	schar_get(&buf[0], grid_getchar(g, row, col, nil))
+	i: C.size_t = 0
+	for {
+		tv_list_append_number(rawptr(rettv.vval), C.longlong(utf_ptr2char(transmute(cstring)(&buf[i]))))
+		i += C.size_t(utf_ptr2len_o(transmute(cstring)(&buf[i])))
+		if buf[i] == 0 {
+			break
+		}
+	}
+}
+
+// "screencol()" function.
+@(export)
+f_screencol :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	rettv.vval = transmute(rawptr)(C.longlong(ui_current_col_e() + 1))
+}
+
+// "screenrow()" function.
+@(export)
+f_screenrow :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	rettv.vval = transmute(rawptr)(C.longlong(ui_current_row_e() + 1))
+}
+
+// —— Batch 27ba: funcs.c tagfiles + taglist ——
+foreign _ {
+	@(link_name = "get_tagfname")
+	get_tagfname_e :: proc "c" (tnp: rawptr, first: C.int, buf: cstring) -> C.int ---
+	@(link_name = "tagname_free")
+	tagname_free_e :: proc "c" (tnp: rawptr) ---
+	@(link_name = "get_tags")
+	get_tags_e :: proc "c" (list: rawptr, pat: cstring, buf_fname: cstring) -> C.int ---
+}
+
+KLISTLEN_UNKNOWN_O :: -1
+
+// tagname_T mirror (tag.h): 32B.
+Tagname_O :: struct {
+	tn_tags:            ^u8,   // 0
+	tn_np:              ^u8,   // 8
+	tn_did_filefind_init: C.int, // 16
+	tn_hf_idx:          C.int, // 20
+	tn_search_ctx:      rawptr, // 24
+}
+#assert(size_of(Tagname_O) == 32)
+
+// "tagfiles()" function.
+@(export)
+f_tagfiles :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	tv_list_alloc_ret(transmute(^Typval)(rettv), KLISTLEN_UNKNOWN_O)
+	fname := (^u8)(xmalloc(MAXPATHL_O))
+	first := true
+	tn := Tagname_O{}
+	for get_tagfname_e(rawptr(&tn), C.int(first), transmute(cstring)(fname)) == OK_E {
+		tv_list_append_string(rawptr(rettv.vval), fname, -1)
+		first = false
+	}
+	tagname_free_e(rawptr(&tn))
+	xfree(rawptr(fname))
+}
+
+// "taglist()" function.
+@(export)
+f_taglist :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	tag_pattern := tv_get_string((^Typval_T)(uintptr(argvars)))
+	rettv.vval = transmute(rawptr)(C.longlong(0))
+	if ([^]u8)(tag_pattern)[0] == 0 {
+		return
+	}
+	fname: cstring = nil
+	if ([^]Typval_T)(argvars)[1].v_type != VAR_UNKNOWN {
+		fname = tv_get_string((^Typval_T)(uintptr(argvars) + 16))
+	}
+	l := tv_list_alloc_ret(transmute(^Typval)(rettv), KLISTLEN_UNKNOWN_O)
+	get_tags_e(l, transmute(cstring)(tag_pattern), fname)
+}
+
+// —— Batch 27bv: funcs.c rpcrequest ——
+foreign _ {
+	@(link_name = "rpc_send_call")
+	rpc_send_call_e :: proc "c" (id: C.ulonglong, method_name: cstring, args: Api_Array, result_mem: ^rawptr, err: rawptr) -> Api_Object ---
+	@(link_name = "get_client_info")
+	get_client_info_e :: proc "c" (chan: rawptr, key: cstring) -> cstring ---
+	@(link_name = "provider_call_nesting")
+	provider_call_nesting_g: C.int
+	@(link_name = "provider_caller_scope")
+	provider_caller_scope_g: CallerScope_O
+	@(link_name = "autocmd_fname")
+	autocmd_fname_g: cstring
+	@(link_name = "autocmd_match")
+	autocmd_match_g: cstring
+	@(link_name = "autocmd_fname_full")
+	autocmd_fname_full_g: bool
+	@(link_name = "autocmd_bufnr")
+	autocmd_bufnr_g: C.int
+	@(link_name = "semsg_multiline")
+	semsg_multiline_e :: proc "c" (kind: cstring, fmt: cstring, #c_vararg args: ..any) ---
+}
+
+// caller_scope mirror (globals.h): 88B.
+CallerScope_O :: struct {
+	script_ctx:        sctx_T,   // 0..24
+	es_entry:          Estack,   // 24..56
+	autocmd_fname:     cstring,  // 56
+	autocmd_match:     cstring,  // 64
+	autocmd_fname_full: bool,    // 72
+	_pad:              [3]u8,
+	autocmd_bufnr:     C.int,    // 76
+	funccalp:          rawptr,   // 80..88
+}
+#assert(size_of(CallerScope_O) == 88)
+
+// "rpcrequest()" function.
+@(export)
+f_rpcrequest :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	rettv.v_type = VAR_NUMBER
+	rettv.vval = transmute(rawptr)(C.longlong(0))
+	l_nesting := provider_call_nesting_g
+	if check_secure() {
+		return
+	}
+	if ([^]Typval_T)(argvars)[0].v_type != VAR_NUMBER || transmute(C.longlong)(([^]Typval_T)(argvars)[0].vval) <= 0 {
+		semsg(e_invarg2, cstring("Channel id must be a positive integer"))
+		return
+	}
+	if ([^]Typval_T)(argvars)[1].v_type != VAR_STRING {
+		semsg(e_invarg2, cstring("Method name must be a string"))
+		return
+	}
+	items: [MAX_FUNC_ARGS_O]Api_Object
+	args := Api_Array{size = 0, capacity = MAX_FUNC_ARGS_O, items = (^Api_Object)(&items[0])}
+	arena := Arena_O{}
+	tv := (^Typval_T)(uintptr(argvars) + 32)
+	for tv.v_type != VAR_UNKNOWN {
+		([^]Api_Object)(args.items)[args.size] = vim_to_object_e(tv, rawptr(&arena), true)
+		args.size += 1
+		tv = (^Typval_T)(uintptr(tv) + 16)
+	}
+	funccal_entry: [16]u8
+	saved_sctx: [24]u8
+	saved_fname: cstring = nil
+	saved_match: cstring = nil
+	saved_full := false
+	saved_bufnr: C.int = 0
+	if l_nesting != 0 {
+		libc.memcpy(rawptr(&saved_sctx[0]), rawptr(&current_sctx_buf[0]), 24)
+		saved_fname = autocmd_fname_g
+		saved_match = autocmd_match_g
+		saved_full = autocmd_fname_full_g
+		saved_bufnr = autocmd_bufnr_g
+		save_funccal(rawptr(&funccal_entry[0]))
+		libc.memcpy(rawptr(&current_sctx_buf[0]), rawptr(&provider_caller_scope_g.script_ctx), 24)
+		ga_grow_r(&exestack, 1)
+		(^Estack)(rawptr(uintptr(exestack.ga_data) + uintptr(exestack.ga_len) * 32))^ = provider_caller_scope_g.es_entry
+		exestack.ga_len += 1
+		autocmd_fname_g = provider_caller_scope_g.autocmd_fname
+		autocmd_match_g = provider_caller_scope_g.autocmd_match
+		autocmd_fname_full_g = provider_caller_scope_g.autocmd_fname_full
+		autocmd_bufnr_g = provider_caller_scope_g.autocmd_bufnr
+		set_current_funccal(provider_caller_scope_g.funccalp)
+	}
+	err := Api_Error{typ = -1, msg = nil}
+	chan_id := C.ulonglong(transmute(C.longlong)(([^]Typval_T)(argvars)[0].vval))
+	method := tv_get_string((^Typval_T)(uintptr(argvars) + 16))
+	res_mem: rawptr = nil
+	result := rpc_send_call_e(chan_id, method, args, &res_mem, rawptr(&err))
+	arena_mem_free_e(arena_finish_e(rawptr(&arena)))
+	if l_nesting != 0 {
+		libc.memcpy(rawptr(&current_sctx_buf[0]), rawptr(&saved_sctx[0]), 24)
+		exestack.ga_len -= 1
+		autocmd_fname_g = saved_fname
+		autocmd_match_g = saved_match
+		autocmd_fname_full_g = saved_full
+		autocmd_bufnr_g = saved_bufnr
+		restore_funccal()
+	}
+	if err.typ != -1 {
+		name: cstring = nil
+		chan := find_channel_o(u64(chan_id))
+		if chan != nil {
+			name = get_client_info_e(chan, cstring("name"))
+		}
+		if name != nil {
+			semsg_multiline_e(cstring("rpc_error"), cstring("Invoking '%s' on channel %llu (%s):\n%s"), method, chan_id, name, transmute(cstring)(err.msg))
+		} else {
+			semsg_multiline_e(cstring("rpc_error"), cstring("Invoking '%s' on channel %llu:\n%s"), method, chan_id, transmute(cstring)(err.msg))
+		}
+	} else {
+		object_to_vim_e(result, rettv, rawptr(&err))
+	}
+	arena_mem_free_e(res_mem)
+	api_clear_error_r(&err)
+}
+
+// —— Batch 27bu: funcs.c jobwait ——
+foreign _ {
+	@(link_name = "channels")
+	channels_g: PMap_uint64_t
+	@(link_name = "channel_incref")
+	channel_incref_e :: proc "c" (chan: rawptr) ---
+	@(link_name = "channel_decref")
+	channel_decref_e :: proc "c" (chan: rawptr) ---
+}
+
+PROC_STATUS_OFF :: 28
+PROC_STOPTIME_OFF :: 40
+CHAN_STREAMTYPE_OFF :: 24
+CHAN_EVENTS_OFF :: 16
+KCHSTREAM_PROC_O :: 0
+
+// pmap lookup (channel.h static inline).
+find_channel_o :: proc "c" (id: u64) -> rawptr {
+	context = runtime.default_context()
+	k := mh_get(&channels_g.set, id, hash_uint64_t, equal_uint64_t)
+	if k == MH_TOMBSTONE {
+		return nil
+	}
+	return channels_g.values[uintptr(k)]
+}
+
+// proc_is_stopped (proc.h static inline).
+proc_is_stopped_o :: proc "c" (pr: rawptr) -> bool {
+	context = runtime.default_context()
+	if (^C.int)(uintptr(pr) + PROC_STATUS_OFF)^ >= 0 {
+		return true
+	}
+	return (^u64)(uintptr(pr) + PROC_STOPTIME_OFF)^ != 0
+}
+
+// "jobwait()" function.
+@(export)
+f_jobwait :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	rettv.v_type = VAR_NUMBER
+	rettv.vval = transmute(rawptr)(C.longlong(0))
+	if check_secure() {
+		return
+	}
+	if ([^]Typval_T)(argvars)[0].v_type != VAR_LIST || (([^]Typval_T)(argvars)[1].v_type != VAR_NUMBER && ([^]Typval_T)(argvars)[1].v_type != VAR_UNKNOWN) {
+		emsg(e_invarg)
+		return
+	}
+	args := rawptr(([^]Typval_T)(argvars)[0].vval)
+	n := tv_list_len_o(args)
+	jobs := ([^]rawptr)(xcalloc(C.size_t(n), 8))
+	waiting_jobs := multiqueue_new(loop_on_put, rawptr(&main_loop))
+	i: C.int = 0
+	li := tv_list_first_o(args)
+	for li != nil {
+		chan: rawptr = nil
+		itv := (^Typval_T)(uintptr(li) + 16)
+		if itv.v_type == VAR_NUMBER {
+			chan = find_channel_o(u64(transmute(C.longlong)(itv.vval)))
+			if chan != nil && (^C.int)(uintptr(chan) + CHAN_STREAMTYPE_OFF)^ != KCHSTREAM_PROC_O {
+				chan = nil
+			} else if chan != nil && proc_is_stopped_o(rawptr(uintptr(chan) + CHAN_STREAM_OFF)) {
+				proc_wait((^Proc)(rawptr(uintptr(chan) + CHAN_STREAM_OFF)), -1, nil)
+				chan = nil
+			}
+		}
+		if chan == nil {
+			jobs[i] = nil
+		} else {
+			jobs[i] = chan
+			channel_incref_e(chan)
+			if (^C.int)(uintptr(chan) + CHAN_STREAM_OFF + PROC_STATUS_OFF)^ < 0 {
+				multiqueue_process_events((^MultiQueue)((^rawptr)(uintptr(chan) + CHAN_EVENTS_OFF)^))
+				multiqueue_replace_parent((^MultiQueue)((^rawptr)(uintptr(chan) + CHAN_EVENTS_OFF)^), waiting_jobs)
+			}
+		}
+		i += 1
+		li = (^rawptr)(uintptr(li))^
+	}
+	remaining: C.int = -1
+	before: u64 = 0
+	if ([^]Typval_T)(argvars)[1].v_type == VAR_NUMBER && transmute(C.longlong)(([^]Typval_T)(argvars)[1].vval) >= 0 {
+		remaining = C.int(transmute(C.longlong)(([^]Typval_T)(argvars)[1].vval))
+		before = os_hrtime()
+	}
+	busy := remaining != 0
+	if busy {
+		ui_busy_start()
+		ui_flush()
+	}
+	i = 0
+	for i < n {
+		if remaining == 0 {
+			break
+		}
+		if jobs[i] == nil {
+			i += 1
+			continue
+		}
+		status := proc_wait((^Proc)(rawptr(uintptr(jobs[i]) + CHAN_STREAM_OFF)), remaining, waiting_jobs)
+		if status < 0 {
+			break
+		}
+		if remaining > 0 {
+			now := os_hrtime()
+			remaining = min(C.int(0), remaining - C.int((now - before) / 1000000))
+			before = now
+		}
+		i += 1
+	}
+	rv := tv_list_alloc(C.ssize_t(n))
+	i = 0
+	for i < n {
+		if jobs[i] == nil {
+			tv_list_append_number(rv, C.longlong(-3))
+		} else {
+			multiqueue_process_events((^MultiQueue)((^rawptr)(uintptr(jobs[i]) + CHAN_EVENTS_OFF)^))
+			multiqueue_replace_parent((^MultiQueue)((^rawptr)(uintptr(jobs[i]) + CHAN_EVENTS_OFF)^), main_loop.events)
+			tv_list_append_number(rv, C.longlong((^C.int)(uintptr(jobs[i]) + CHAN_STREAM_OFF + PROC_STATUS_OFF)^))
+			channel_decref_e(jobs[i])
+		}
+		i += 1
+	}
+	multiqueue_free(waiting_jobs)
+	xfree(rawptr(jobs))
+	if busy {
+		ui_busy_stop()
+	}
+	tv_list_ref_o(rv)
+	rettv.v_type = VAR_LIST
+	rettv.vval = transmute(rawptr)(rv)
+}
+
+// —— Batch 27bt: funcs.c input family ——
+foreign _ {
+	@(link_name = "get_user_input")
+	get_user_input_e :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, inputdialog: bool, secret: bool) ---
+	@(link_name = "prompt_for_input")
+	prompt_for_input_e :: proc "c" (prompt: cstring, hl_id: C.int, one_key: bool, mouse_used: ^bool) -> C.int ---
+	@(link_name = "verb_msg")
+	verb_msg_e :: proc "c" (s: cstring) -> C.int ---
+	@(link_name = "save_typeahead")
+	save_typeahead_e :: proc "c" (tp: rawptr) ---
+	@(link_name = "restore_typeahead")
+	restore_typeahead_e :: proc "c" (tp: rawptr) ---
+}
+
+TASAVE_SIZE :: 192
+E_INRESTORE_S :: "called inputrestore() more often than inputsave()"
+
+ga_userinput_g := Garray{ga_itemsize = TASAVE_SIZE, ga_growsize = 4}
+inputsecret_flag_g := false
+
+// "input()" function.
+@(export)
+f_input :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	get_user_input_e(argvars, rettv, false, inputsecret_flag_g)
+}
+
+// "inputdialog()" function.
+@(export)
+f_inputdialog :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	get_user_input_e(argvars, rettv, true, inputsecret_flag_g)
+}
+
+// "inputlist()" function.
+@(export)
+f_inputlist :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	if ([^]Typval_T)(argvars)[0].v_type != VAR_LIST {
+		semsg(cstring(E_LISTARG_S), cstring("inputlist()"))
+		return
+	}
+	msg_ext_set_kind(cstring("confirm"))
+	msg_start()
+	msg_row = Rows - 1
+	lines_left = Rows
+	msg_scroll = true
+	msg_clr_eos_r()
+	l := rawptr(([^]Typval_T)(argvars)[0].vval)
+	li := tv_list_first_o(l)
+	for li != nil {
+		msg_puts(tv_get_string((^Typval_T)(uintptr(li) + 16)))
+		if !ui_has(K_UIMESSAGES_O) || (^rawptr)(uintptr(li))^ != nil {
+			msg_putchar('\n')
+		}
+		li = (^rawptr)(uintptr(li))^
+	}
+	mouse_used := false
+	selected := prompt_for_input_e(nil, 0, false, &mouse_used)
+	if mouse_used {
+		selected = tv_list_len_o(l) - (cmdline_row - mouse_row)
+	}
+	rettv.vval = transmute(rawptr)(C.longlong(selected))
+}
+
+// "inputrestore()" function.
+@(export)
+f_inputrestore :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	if ga_userinput_g.ga_len > 0 {
+		ga_userinput_g.ga_len -= 1
+		restore_typeahead_e(rawptr(uintptr(ga_userinput_g.ga_data) + uintptr(ga_userinput_g.ga_len) * TASAVE_SIZE))
+	} else if p_verbose > 1 {
+		verb_msg_e(cstring(E_INRESTORE_S))
+		rettv.vval = transmute(rawptr)(C.longlong(1))
+	}
+}
+
+// "inputsave()" function.
+@(export)
+f_inputsave :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	ga_grow_r(&ga_userinput_g, 1)
+	p := rawptr(uintptr(ga_userinput_g.ga_data) + uintptr(ga_userinput_g.ga_len) * TASAVE_SIZE)
+	ga_userinput_g.ga_len += 1
+	save_typeahead_e(p)
+}
+
+// "inputsecret()" function.
+@(export)
+f_inputsecret :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	cmdline_star += 1
+	inputsecret_flag_g = true
+	f_input(argvars, rettv, fptr)
+	cmdline_star -= 1
+	inputsecret_flag_g = false
+}
+
+// —— Batch 27bs: funcs.c get() ——
+
+// "get()" function.
+@(export)
+f_get :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	tv: ^Typval_T = nil
+	what_is_dict := false
+	if ([^]Typval_T)(argvars)[0].v_type == VAR_BLOB {
+		error := false
+		idx := C.int(tv_get_number_chk((^Typval_T)(uintptr(argvars) + 16), &error))
+		if !error {
+			rettv.v_type = VAR_NUMBER
+			b := rawptr(([^]Typval_T)(argvars)[0].vval)
+			if idx < 0 {
+				idx = tv_blob_len_o(b) + idx
+			}
+			if idx < 0 || idx >= tv_blob_len_o(b) {
+				rettv.vval = transmute(rawptr)(C.longlong(-1))
+			} else {
+				rettv.vval = transmute(rawptr)(C.longlong(tv_blob_get_o(b, idx)))
+				tv = rettv
+			}
+		}
+	} else if ([^]Typval_T)(argvars)[0].v_type == VAR_LIST {
+		l := rawptr(([^]Typval_T)(argvars)[0].vval)
+		if l != nil {
+			error := false
+			li := tv_list_find(l, C.int(tv_get_number_chk((^Typval_T)(uintptr(argvars) + 16), &error)))
+			if !error && li != nil {
+				tv = (^Typval_T)(uintptr(li) + 16)
+			}
+		}
+	} else if ([^]Typval_T)(argvars)[0].v_type == VAR_DICT {
+		d := rawptr(([^]Typval_T)(argvars)[0].vval)
+		if d != nil {
+			di := tv_dict_find(d, tv_get_string((^Typval_T)(uintptr(argvars) + 16)), -1)
+			if di != nil {
+				tv = (^Typval_T)(uintptr(di))
+			}
+		}
+	} else if tv_is_func_o(([^]Typval_T)(argvars)[0]) {
+		pt: rawptr = nil
+		fref_buf: [48]u8
+		if ([^]Typval_T)(argvars)[0].v_type == VAR_PARTIAL {
+			pt = rawptr(([^]Typval_T)(argvars)[0].vval)
+		} else {
+			libc.memset(&fref_buf[0], 0, 48)
+			(^rawptr)(rawptr(&fref_buf[PT_NAME_OFF_O]))^ = rawptr(([^]Typval_T)(argvars)[0].vval)
+			pt = rawptr(&fref_buf[0])
+		}
+		if pt != nil {
+			what := tv_get_string((^Typval_T)(uintptr(argvars) + 16))
+			if libc.strcmp(what, cstring("func")) == 0 || libc.strcmp(what, cstring("name")) == 0 {
+				pname := partial_name(pt)
+				if ([^]u8)(what)[0] == 'f' {
+					rettv.v_type = VAR_FUNC
+				} else {
+					rettv.v_type = VAR_STRING
+				}
+				if rettv.v_type == VAR_FUNC {
+					func_ref(transmute(cstring)(pname))
+				}
+				if ([^]u8)(what)[0] == 'n' && (^rawptr)(uintptr(pt) + PT_NAME_OFF_O)^ == nil && (^rawptr)(uintptr(pt) + PT_FUNC_OFF_O)^ != nil {
+					pname = printable_func_name((^rawptr)(uintptr(pt) + PT_FUNC_OFF_O)^)
+				}
+				rettv.vval = transmute(rawptr)(xstrdup_o(transmute(^u8)(pname)))
+			} else if libc.strcmp(what, cstring("dict")) == 0 {
+				what_is_dict = true
+				if (^rawptr)(uintptr(pt) + PT_DICT_OFF_O)^ != nil {
+					tv_dict_set_ret_o(rettv, (^rawptr)(uintptr(pt) + PT_DICT_OFF_O)^)
+				}
+			} else if libc.strcmp(what, cstring("args")) == 0 {
+				rettv.v_type = VAR_LIST
+				pargc := (^C.int)(uintptr(pt) + PT_ARGC_OFF_O)^
+				l := tv_list_alloc_ret(transmute(^Typval)(rettv), pargc)
+				argv := ([^]Typval_T)((^rawptr)(uintptr(pt) + PT_ARGV_OFF_O)^)
+				i: C.int = 0
+				for i < pargc {
+					tv_list_append_tv(l, &argv[i])
+					i += 1
+				}
+			} else if libc.strcmp(what, cstring("arity")) == 0 {
+				required: C.int = 0
+				optional: C.int = 0
+				varargs := false
+				pname := partial_name(pt)
+				get_func_arity(pname, &required, &optional, &varargs)
+				rettv.v_type = VAR_DICT
+				tv_dict_alloc_ret(rettv)
+				dict := rawptr(rettv.vval)
+				pargc := (^C.int)(uintptr(pt) + PT_ARGC_OFF_O)^
+				if pargc >= required + optional {
+					required = 0
+					optional = 0
+				} else if pargc > required {
+					optional -= pargc - required
+					required = 0
+				} else {
+					required -= pargc
+				}
+				tv_dict_add_nr(dict, cstring("required"), 8, C.longlong(required))
+				tv_dict_add_nr(dict, cstring("optional"), 8, C.longlong(optional))
+				vb: C.int = 0
+				if varargs {
+					vb = 1
+				}
+				tv_dict_add_bool(dict, cstring("varargs"), 7, vb)
+			} else {
+				semsg(e_invarg2, what)
+			}
+			if !what_is_dict {
+				return
+			}
+		}
+	} else {
+		semsg(cstring(E_LISTDICTBLOBARG_S), cstring("get()"))
+	}
+	if tv == nil {
+		if ([^]Typval_T)(argvars)[2].v_type != VAR_UNKNOWN {
+			tv_copy((^Typval_T)(uintptr(argvars) + 32), rettv)
+		}
+	} else {
+		tv_copy(tv, rettv)
+	}
+}
+
+// —— Batch 27br: funcs.c getregion engine ——
+foreign _ {
+	@(link_name = "block_prep")
+	block_prep_e :: proc "c" (oap: rawptr, bdp: rawptr, lnum: C.int, is_del: bool) ---
+	@(link_name = "charwise_block_prep")
+	charwise_block_prep_e :: proc "c" (start: Pos_T, end: Pos_T, bdp: rawptr, lnum: C.int, inclusive: bool) ---
+	@(link_name = "mb_prevptr")
+	mb_prevptr_e :: proc "c" (line: ^u8, p: ^u8) -> ^u8 ---
+	@(link_name = "ml_get_pos")
+	ml_get_pos_e :: proc "c" (pos: ^Pos_T) -> ^u8 ---
+	@(link_name = "unadjust_for_sel_inner")
+	unadjust_for_sel_inner_e :: proc "c" (pp: ^Pos_T) -> bool ---
+	@(link_name = "reset_lbr")
+	reset_lbr_e :: proc "c" () -> bool ---
+	@(link_name = "restore_lbr")
+	restore_lbr_e :: proc "c" (lbr_saved: bool) ---
+	@(link_name = "virtual_op")
+	virtual_op_g: TriState
+}
+
+E966_S :: "E966: Invalid line number: %ld"
+E964_S :: "E964: Invalid column number: %ld"
+OP_NOP_O :: 0
+
+// block_def mirror (register_defs.h): 64B.
+Block_Def_O :: struct {
+	startspaces:    C.int, // 0
+	endspaces:      C.int, // 4
+	textlen:        C.int, // 8
+	_pad8:          [4]u8,
+	textstart:      ^u8,   // 16
+	textcol:        C.int, // 24
+	start_vcol:     C.int, // 28
+	end_vcol:       C.int, // 32
+	is_short:       C.int, // 36
+	is_MAX:         C.int, // 40
+	is_oneChar:     C.int, // 44
+	pre_whitesp:    C.int, // 48
+	pre_whitesp_c:  C.int, // 52
+	end_char_vcols: C.int, // 56
+	start_char_vcols: C.int, // 60
+}
+#assert(size_of(Block_Def_O) == 64)
+
+// block_def to String (C-static in funcs.c).
+block_def2str_o :: proc "c" (bd: ^Block_Def_O) -> NvimString {
+	context = runtime.default_context()
+	size := C.size_t(bd.startspaces) + C.size_t(bd.endspaces) + C.size_t(bd.textlen)
+	ret_data := (^u8)(xmalloc(size + 1))
+	libc.memset(rawptr(ret_data), ' ', C.size_t(bd.startspaces))
+	sz: C.size_t = C.size_t(bd.startspaces)
+	libc.memmove(rawptr(uintptr(ret_data) + uintptr(sz)), rawptr(bd.textstart), C.size_t(bd.textlen))
+	sz += C.size_t(bd.textlen)
+	libc.memset(rawptr(uintptr(ret_data) + uintptr(sz)), ' ', C.size_t(bd.endspaces))
+	sz += C.size_t(bd.endspaces)
+	([^]u8)(ret_data)[sz] = 0
+	return NvimString{data = transmute(cstring)(ret_data), size = sz}
+}
+
+// pos_T less-than (mark_defs.h static inline).
+lt_pos_o :: proc "c" (a: Pos_T, b: Pos_T) -> bool {
+	context = runtime.default_context()
+	if a.lnum != b.lnum {
+		return a.lnum < b.lnum
+	} else if a.col != b.col {
+		return a.col < b.col
+	}
+	return a.coladd < b.coladd
+}
+
+// Shared getregion()/getregionpos() position engine (C-static in funcs.c).
+getregionpos_o :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, p1: ^Pos_T, p2: ^Pos_T, inclusive: ^bool, region_type: ^C.int, oap: rawptr) -> C.int {
+	context = runtime.default_context()
+	tv_list_alloc_ret(transmute(^Typval)(rettv), KLISTLEN_MAYKNOW_O)
+	if tv_check_for_list_arg(argvars, 0) == FAIL_E || tv_check_for_list_arg(argvars, 1) == FAIL_E || tv_check_for_opt_dict_arg(argvars, 2) == FAIL_E {
+		return FAIL_E
+	}
+	fnum1: C.int = -1
+	fnum2: C.int = -1
+	if list2fpos((^Typval_T)(uintptr(argvars)), p1, &fnum1, nil, false) != OK_E || list2fpos((^Typval_T)(uintptr(argvars) + 16), p2, &fnum2, nil, false) != OK_E || fnum1 != fnum2 {
+		return FAIL_E
+	}
+	is_select_exclusive := false
+	type: cstring = nil
+	default_type := cstring("v")
+	if ([^]Typval_T)(argvars)[2].v_type == VAR_DICT {
+		d := rawptr(([^]Typval_T)(argvars)[2].vval)
+		def_excl: C.int = 0
+		if ([^]u8)(p_sel)[0] == 'e' {
+			def_excl = 1
+		}
+		if tv_dict_get_bool(d, cstring("exclusive"), def_excl) != 0 {
+			is_select_exclusive = true
+		}
+		type = tv_dict_get_string(d, cstring("type"), false)
+		if type == nil {
+			type = default_type
+		}
+	} else {
+		is_select_exclusive = ([^]u8)(p_sel)[0] == 'e'
+		type = default_type
+	}
+	block_width: C.int = 0
+	t := ([^]u8)(type)
+	if t[0] == 'v' && t[1] == 0 {
+		region_type^ = kMTCharWise
+	} else if t[0] == 'V' && t[1] == 0 {
+		region_type^ = kMTLineWise
+	} else if t[0] == 22 {
+		pp := transmute(cstring)(rawptr(uintptr(rawptr(type)) + 1))
+		if ([^]u8)(pp)[0] != 0 {
+			ppu := transmute(^u8)(pp)
+			block_width = getdigits_int_r(&ppu, false, 0)
+			pp = transmute(cstring)(ppu)
+			if block_width <= 0 || ([^]u8)(pp)[0] != 0 {
+				semsg(cstring(E_INVARG_NVAL_S), cstring("type"), type)
+				return FAIL_E
+			}
+		}
+		region_type^ = kMTBlockWise
+	} else {
+		semsg(cstring(E_INVARG_NVAL_S), cstring("type"), type)
+		return FAIL_E
+	}
+	findbuf := curbuf
+	if fnum1 != 0 {
+		findbuf = buflist_findnr(fnum1)
+	}
+	if findbuf == nil || (^rawptr)(uintptr(findbuf) + B_ML_MFP_OFF)^ == nil {
+		emsg(cstring(E681_S))
+		return FAIL_E
+	}
+	linecount := (^C.int)(uintptr(findbuf) + B_ML_LINE_COUNT)^
+	if p1.lnum < 1 || p1.lnum > linecount {
+		semsg(cstring(E966_S), C.longlong(p1.lnum))
+		return FAIL_E
+	}
+	if p1.col == MAXCOL {
+		p1.col = ml_get_buf_len(findbuf, p1.lnum) + 1
+	} else if p1.col < 1 || p1.col > ml_get_buf_len(findbuf, p1.lnum) + 1 {
+		semsg(cstring(E964_S), C.longlong(p1.col))
+		return FAIL_E
+	}
+	if p2.lnum < 1 || p2.lnum > linecount {
+		semsg(cstring(E966_S), C.longlong(p2.lnum))
+		return FAIL_E
+	}
+	if p2.col == MAXCOL {
+		p2.col = ml_get_buf_len(findbuf, p2.lnum) + 1
+	} else if p2.col < 1 || p2.col > ml_get_buf_len(findbuf, p2.lnum) + 1 {
+		semsg(cstring(E964_S), C.longlong(p2.col))
+		return FAIL_E
+	}
+	curbuf = findbuf
+	(^rawptr)(uintptr(curwin) + W_BUFFER_OFF)^ = curbuf
+	if virtual_active_r(curwin) {
+		virtual_op_g = TriState.kTrue
+	} else {
+		virtual_op_g = TriState.kFalse
+	}
+	p1.col -= 1
+	p2.col -= 1
+	if !lt_pos_o(p1^, p2^) {
+		tmp := p1^
+		p1^ = p2^
+		p2^ = tmp
+	}
+	if region_type^ == kMTCharWise {
+		if is_select_exclusive && !pos_equal_o(p1^, p2^) {
+			inclusive^ = !unadjust_for_sel_inner_e(p2)
+		}
+		if inclusive^ && virtual_op_g != TriState.kTrue && ([^]u8)(ml_get_pos_e(p2))[0] == 0 {
+			inclusive^ = false
+		}
+	} else if region_type^ == kMTBlockWise {
+		sc1, ec1, sc2, ec2: C.int = 0, 0, 0, 0
+		lbr_saved := reset_lbr_e()
+		getvvcol_e(curwin, rawptr(p1), &sc1, nil, &ec1, 0)
+		getvvcol_e(curwin, rawptr(p2), &sc2, nil, &ec2, 0)
+		restore_lbr_e(lbr_saved)
+		(^C.int)(uintptr(oap) + OAP_MOTION_TYPE)^ = kMTBlockWise
+		(^bool)(uintptr(oap) + OAP_INCLUSIVE)^ = true
+		(^C.int)(uintptr(oap) + OAP_OP_TYPE)^ = OP_NOP_O
+		(^Pos_T)(uintptr(oap) + OAP_START)^ = p1^
+		(^Pos_T)(uintptr(oap) + OAP_END)^ = p2^
+		(^C.int)(uintptr(oap) + OAP_START_VCOL)^ = sc1 if sc1 < sc2 else sc2
+		if block_width > 0 {
+			(^C.int)(uintptr(oap) + OAP_END_VCOL)^ = (^C.int)(uintptr(oap) + OAP_START_VCOL)^ + block_width - 1
+		} else if is_select_exclusive && ec1 < sc2 && 0 < sc2 && ec2 > ec1 {
+			(^C.int)(uintptr(oap) + OAP_END_VCOL)^ = sc2 - 1
+		} else {
+			(^C.int)(uintptr(oap) + OAP_END_VCOL)^ = ec1 if ec1 > ec2 else ec2
+		}
+	}
+	l := C.int(utfc_ptr2len(transmute(cstring)(ml_get_pos_e(p2))))
+	if l > 1 {
+		p2.col += l - 1
+	}
+	return OK_E
+}
+
+// Range-list builder (C-static in funcs.c).
+add_regionpos_range_o :: proc "c" (rettv: ^Typval_T, p1: Pos_T, p2: Pos_T) {
+	context = runtime.default_context()
+	l1 := tv_list_alloc(2)
+	tv_list_append_list(rawptr(rettv.vval), l1)
+	l2 := tv_list_alloc(4)
+	tv_list_append_list(l1, l2)
+	l3 := tv_list_alloc(4)
+	tv_list_append_list(l1, l3)
+	bf := (^C.int)(uintptr(curbuf) + B_FNUM_OFF)^
+	tv_list_append_number(l2, C.longlong(bf))
+	tv_list_append_number(l2, C.longlong(p1.lnum))
+	tv_list_append_number(l2, C.longlong(p1.col))
+	tv_list_append_number(l2, C.longlong(p1.coladd))
+	tv_list_append_number(l3, C.longlong(bf))
+	tv_list_append_number(l3, C.longlong(p2.lnum))
+	tv_list_append_number(l3, C.longlong(p2.col))
+	tv_list_append_number(l3, C.longlong(p2.coladd))
+}
+
+// "getregion()" function.
+@(export)
+f_getregion :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	save_curbuf := curbuf
+	save_virtual := virtual_op_g
+	p1 := Pos_T{}
+	p2 := Pos_T{}
+	inclusive := true
+	region_type: C.int = kMTUnknown
+	oa: [88]u8
+	libc.memset(&oa[0], 0, 88)
+	if getregionpos_o(argvars, rettv, &p1, &p2, &inclusive, &region_type, rawptr(&oa[0])) == FAIL_E {
+		return
+	}
+	lnum := p1.lnum
+	for lnum <= p2.lnum {
+		akt := NvimString{}
+		if region_type == kMTBlockWise {
+			bd := Block_Def_O{}
+			block_prep_e(rawptr(&oa[0]), rawptr(&bd), lnum, false)
+			akt = block_def2str_o(&bd)
+		} else if region_type == kMTLineWise || (p1.lnum < lnum && lnum < p2.lnum) {
+			akt = transmute(NvimString)(cbuf_to_string_r(transmute(cstring)(ml_get(lnum)), C.size_t(ml_get_len_r2(lnum))))
+		} else {
+			bd := Block_Def_O{}
+			charwise_block_prep_e(p1, p2, rawptr(&bd), lnum, inclusive)
+			akt = block_def2str_o(&bd)
+		}
+		tv_list_append_allocated_string(rawptr(rettv.vval), transmute(^u8)(akt.data))
+		lnum += 1
+	}
+	curbuf = save_curbuf
+	(^rawptr)(uintptr(curwin) + W_BUFFER_OFF)^ = curbuf
+	virtual_op_g = save_virtual
+}
+
+// "getregionpos()" function.
+@(export)
+f_getregionpos :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	save_curbuf := curbuf
+	save_virtual := virtual_op_g
+	p1 := Pos_T{}
+	p2 := Pos_T{}
+	inclusive := true
+	region_type: C.int = kMTUnknown
+	allow_eol := false
+	oa: [88]u8
+	libc.memset(&oa[0], 0, 88)
+	if getregionpos_o(argvars, rettv, &p1, &p2, &inclusive, &region_type, rawptr(&oa[0])) == FAIL_E {
+		return
+	}
+	if ([^]Typval_T)(argvars)[2].v_type == VAR_DICT {
+		if tv_dict_get_bool(rawptr(([^]Typval_T)(argvars)[2].vval), cstring("eol"), 0) != 0 {
+			allow_eol = true
+		}
+	}
+	lnum := p1.lnum
+	for lnum <= p2.lnum {
+		ret_p1 := Pos_T{}
+		ret_p2 := Pos_T{}
+		line := ml_get(lnum)
+		line_len := ml_get_len_r2(lnum)
+		if region_type == kMTLineWise {
+			ret_p1.col = 1
+			ret_p1.coladd = 0
+			ret_p2.col = MAXCOL
+			ret_p2.coladd = 0
+		} else {
+			bd := Block_Def_O{}
+			if region_type == kMTBlockWise {
+				block_prep_e(rawptr(&oa[0]), rawptr(&bd), lnum, false)
+			} else {
+				charwise_block_prep_e(p1, p2, rawptr(&bd), lnum, inclusive)
+			}
+			if bd.is_oneChar != 0 {
+				if region_type == kMTBlockWise {
+					ret_p1.col = C.int(uintptr(mb_prevptr_e(line, bd.textstart)) - uintptr(line)) + 1
+					ret_p1.coladd = bd.start_char_vcols - (bd.start_vcol - (^C.int)(uintptr(&oa[0]) + OAP_START_VCOL)^)
+				} else {
+					ret_p1.col = p1.col + 1
+					ret_p1.coladd = p1.coladd
+				}
+			} else if region_type == kMTBlockWise && (^C.int)(uintptr(&oa[0]) + OAP_START_VCOL)^ > bd.start_vcol {
+				ret_p1.col = MAXCOL
+				ret_p1.coladd = (^C.int)(uintptr(&oa[0]) + OAP_START_VCOL)^ - bd.start_vcol
+				bd.is_oneChar = 1
+			} else if bd.startspaces > 0 {
+				ret_p1.col = C.int(uintptr(mb_prevptr_e(line, bd.textstart)) - uintptr(line)) + 1
+				ret_p1.coladd = bd.start_char_vcols - bd.startspaces
+			} else {
+				ret_p1.col = bd.textcol + 1
+				ret_p1.coladd = 0
+			}
+			if bd.is_oneChar != 0 {
+				ret_p2.col = ret_p1.col
+				ret_p2.coladd = ret_p1.coladd + bd.startspaces + bd.endspaces
+			} else if bd.endspaces > 0 {
+				ret_p2.col = bd.textcol + bd.textlen + 1
+				ret_p2.coladd = bd.endspaces
+			} else {
+				ret_p2.col = bd.textcol + bd.textlen
+				ret_p2.coladd = 0
+			}
+		}
+		if !allow_eol && ret_p1.col > line_len {
+			ret_p1.col = 0
+			ret_p1.coladd = 0
+		} else if ret_p1.col > line_len + 1 {
+			ret_p1.col = line_len + 1
+		}
+		if !allow_eol && ret_p2.col > line_len {
+			if ret_p1.col == 0 {
+				ret_p2.col = 0
+			} else {
+				ret_p2.col = line_len
+			}
+			ret_p2.coladd = 0
+		} else if ret_p2.col > line_len + 1 {
+			ret_p2.col = line_len + 1
+		}
+		ret_p1.lnum = lnum
+		ret_p2.lnum = lnum
+		add_regionpos_range_o(rettv, ret_p1, ret_p2)
+		lnum += 1
+	}
+	curbuf = save_curbuf
+	(^rawptr)(uintptr(curwin) + W_BUFFER_OFF)^ = curbuf
+	virtual_op_g = save_virtual
+}
+
+// —— Batch 27bq: funcs.c searchpair ——
+foreign _ {
+	@(link_name = "do_searchpair")
+	do_searchpair_e :: proc "c" (spat: cstring, mpat: cstring, epat: cstring, dir: C.int, skip: ^Typval_T, flags: C.int, match_pos: ^Pos_T, lnum_stop: C.int, time_limit: i64) -> C.int ---
+}
+
+// Shared searchpair()/searchpairpos() engine (C-static in funcs.c).
+searchpair_cmn_o :: proc "c" (argvars: ^Typval_T, match_pos: ^Pos_T) -> C.int {
+	context = runtime.default_context()
+	save_p_ws := p_ws_g
+	flags: C.int = 0
+	retval: C.int = 0
+	lnum_stop: C.int = 0
+	time_limit: i64 = 0
+	nbuf1: [65]u8
+	nbuf2: [65]u8
+	spat := tv_get_string_chk((^Typval_T)(uintptr(argvars)))
+	mpat := tv_get_string_buf_chk((^Typval_T)(uintptr(argvars) + 16), &nbuf1[0])
+	epat := tv_get_string_buf_chk((^Typval_T)(uintptr(argvars) + 32), &nbuf2[0])
+	done := false
+	if spat == nil || mpat == nil || epat == nil {
+		done = true
+	}
+	dir: C.int = 0
+	if !done {
+		dir = get_search_arg_o((^Typval_T)(uintptr(argvars) + 48), &flags)
+		if dir == 0 {
+			done = true
+		} else if ((flags & (SP_END_O | SP_SUBPAT_O)) != 0) || (((flags & SP_NOMOVE_O) != 0) && ((flags & SP_SETPCMARK_O) != 0)) {
+			semsg(e_invarg2, tv_get_string((^Typval_T)(uintptr(argvars) + 48)))
+			done = true
+		} else {
+			if (flags & SP_REPEAT_O) != 0 {
+				p_ws_g = 0
+			}
+			skip: ^Typval_T = nil
+			if ([^]Typval_T)(argvars)[3].v_type == VAR_UNKNOWN || ([^]Typval_T)(argvars)[4].v_type == VAR_UNKNOWN {
+				skip = nil
+			} else {
+				skip = (^Typval_T)(uintptr(argvars) + 64)
+				if ([^]Typval_T)(argvars)[5].v_type != VAR_UNKNOWN {
+					lnum_stop = C.int(tv_get_number_chk((^Typval_T)(uintptr(argvars) + 80), nil))
+					if lnum_stop < 0 {
+						semsg(e_invarg2, tv_get_string((^Typval_T)(uintptr(argvars) + 80)))
+						done = true
+					} else if ([^]Typval_T)(argvars)[6].v_type != VAR_UNKNOWN {
+						time_limit = i64(tv_get_number_chk((^Typval_T)(uintptr(argvars) + 96), nil))
+						if time_limit < 0 {
+							semsg(e_invarg2, tv_get_string((^Typval_T)(uintptr(argvars) + 96)))
+							done = true
+						}
+					}
+				}
+			}
+			if !done {
+				retval = do_searchpair_e(transmute(cstring)(spat), transmute(cstring)(mpat), transmute(cstring)(epat), dir, skip, flags, match_pos, lnum_stop, time_limit)
+			}
+		}
+	}
+	p_ws_g = save_p_ws
+	return retval
+}
+
+// "searchpair()" function.
+@(export)
+f_searchpair :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	rettv.vval = transmute(rawptr)(C.longlong(searchpair_cmn_o(argvars, nil)))
+}
+
+// "searchpairpos()" function.
+@(export)
+f_searchpairpos :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	match_pos := Pos_T{}
+	lnum: C.int = 0
+	col: C.int = 0
+	tv_list_alloc_ret(transmute(^Typval)(rettv), 2)
+	if searchpair_cmn_o(argvars, &match_pos) > 0 {
+		lnum = match_pos.lnum
+		col = match_pos.col
+	}
+	tv_list_append_number(rawptr(rettv.vval), C.longlong(lnum))
+	tv_list_append_number(rawptr(rettv.vval), C.longlong(col))
+}
+
+// —— Batch 27bo: funcs.c search engine ——
+foreign _ {
+	@(link_name = "profile_setlimit")
+	profile_setlimit_e :: proc "c" (msec: i64) -> u64 ---
+}
+
+SP_NOMOVE_O :: 0x01
+SP_REPEAT_O :: 0x02
+SP_RETCOUNT_O :: 0x04
+SP_SETPCMARK_O :: 0x08
+SP_START_O :: 0x10
+SP_SUBPAT_O :: 0x20
+SP_END_O :: 0x40
+SP_COLUMN_O :: 0x80
+SEARCH_START_O :: 0x100
+SEARCH_END_O :: 0x40
+SEARCH_COL_O :: 0x1000
+
+// Search flags parser (C-static in funcs.c).
+get_search_arg_o :: proc "c" (varp: ^Typval_T, flagsp: ^C.int) -> C.int {
+	context = runtime.default_context()
+	dir: C.int = 1
+	if varp.v_type == VAR_UNKNOWN {
+		return 1
+	}
+	nbuf: [65]u8
+	flags := tv_get_string_buf_chk(varp, &nbuf[0])
+	if flags == nil {
+		return 0
+	}
+	f := transmute([^]u8)(flags)
+	for f[0] != 0 {
+		if f[0] == 'b' {
+			dir = -1
+		} else if f[0] == 'w' {
+			p_ws_g = 1
+		} else if f[0] == 'W' {
+			p_ws_g = 0
+		} else {
+			mask: C.int = 0
+			if flagsp != nil {
+				if f[0] == 'c' {
+					mask = SP_START_O
+				} else if f[0] == 'e' {
+					mask = SP_END_O
+				} else if f[0] == 'm' {
+					mask = SP_RETCOUNT_O
+				} else if f[0] == 'n' {
+					mask = SP_NOMOVE_O
+				} else if f[0] == 'p' {
+					mask = SP_SUBPAT_O
+				} else if f[0] == 'r' {
+					mask = SP_REPEAT_O
+				} else if f[0] == 's' {
+					mask = SP_SETPCMARK_O
+				} else if f[0] == 'z' {
+					mask = SP_COLUMN_O
+				}
+			}
+			if mask == 0 {
+				semsg(e_invarg2, flags)
+				dir = 0
+			} else {
+				flagsp^ |= mask
+			}
+		}
+		if dir == 0 {
+			break
+		}
+		f = ([^]u8)(uintptr(f) + 1)
+	}
+	return dir
+}
+
+// Shared search()/searchpos() engine (C-static in funcs.c).
+search_cmn_o :: proc "c" (argvars: ^Typval_T, match_pos: ^Pos_T, flagsp: ^C.int) -> C.int {
+	context = runtime.default_context()
+	save_p_ws := p_ws_g
+	retval: C.int = 0
+	lnum_stop: C.int = 0
+	time_limit: i64 = 0
+	options: C.int = SEARCH_KEEP_O
+	use_skip := false
+	pat := tv_get_string((^Typval_T)(uintptr(argvars)))
+	dir := get_search_arg_o((^Typval_T)(uintptr(argvars) + 16), flagsp)
+	done := false
+	if dir == 0 {
+		done = true
+	}
+	flags: C.int = 0
+	tm: u64 = 0
+	sia := searchit_arg_T{}
+	pos := Pos_T{}
+	save_cursor := Pos_T{}
+	firstpos := Pos_T{}
+	if !done {
+		flags = flagsp^
+		if (flags & SP_START_O) != 0 {
+			options |= SEARCH_START_O
+		}
+		if (flags & SP_END_O) != 0 {
+			options |= SEARCH_END_O
+		}
+		if (flags & SP_COLUMN_O) != 0 {
+			options |= SEARCH_COL_O
+		}
+		if ([^]Typval_T)(argvars)[1].v_type != VAR_UNKNOWN && ([^]Typval_T)(argvars)[2].v_type != VAR_UNKNOWN {
+			lnum_stop = C.int(tv_get_number_chk((^Typval_T)(uintptr(argvars) + 32), nil))
+			if lnum_stop < 0 {
+				done = true
+			} else if ([^]Typval_T)(argvars)[3].v_type != VAR_UNKNOWN {
+				time_limit = i64(tv_get_number_chk((^Typval_T)(uintptr(argvars) + 48), nil))
+				if time_limit < 0 {
+					done = true
+				} else {
+					use_skip = eval_expr_valid_arg((^Typval_T)(uintptr(argvars) + 64))
+				}
+			}
+		}
+	}
+	if !done {
+		tm = profile_setlimit_e(time_limit)
+		if ((flags & (SP_REPEAT_O | SP_RETCOUNT_O)) != 0) || (((flags & SP_NOMOVE_O) != 0) && ((flags & SP_SETPCMARK_O) != 0)) {
+			semsg(e_invarg2, tv_get_string((^Typval_T)(uintptr(argvars) + 16)))
+			done = true
+		}
+	}
+	if !done {
+		save_cursor = (^Pos_T)(uintptr(curwin) + W_CURSOR_OFF)^
+		pos = save_cursor
+		sia.sa_stop_lnum = lnum_stop
+		sia.sa_tm = &tm
+		patlen := C.size_t(libc.strlen(pat))
+		subpatnum: C.int = 0
+		for {
+			subpatnum = searchit(curwin, curbuf, &pos, nil, Direction(dir), transmute(^u8)(pat), patlen, 1, options, 0, &sia)
+			if firstpos.lnum != 0 && pos_equal_o(pos, firstpos) {
+				subpatnum = 0
+			}
+			if subpatnum == 0 || !use_skip {
+				break
+			}
+			if firstpos.lnum == 0 {
+				firstpos = pos
+			}
+			save_wcur := (^Pos_T)(uintptr(curwin) + W_CURSOR_OFF)^
+			(^Pos_T)(uintptr(curwin) + W_CURSOR_OFF)^ = pos
+			err := false
+			do_skip := eval_expr_to_bool((^Typval_T)(uintptr(argvars) + 64), &err)
+			(^Pos_T)(uintptr(curwin) + W_CURSOR_OFF)^ = save_wcur
+			if err {
+				subpatnum = 0
+				break
+			}
+			if !do_skip {
+				break
+			}
+			options &= ~C.int(SEARCH_START_O)
+		}
+		if subpatnum != 0 {
+			if (flags & SP_SUBPAT_O) != 0 {
+				retval = subpatnum
+			} else {
+				retval = pos.lnum
+			}
+			if (flags & SP_SETPCMARK_O) != 0 {
+				setpcmark()
+			}
+			(^Pos_T)(uintptr(curwin) + W_CURSOR_OFF)^ = pos
+			if match_pos != nil {
+				match_pos.lnum = pos.lnum
+				match_pos.col = pos.col + 1
+			}
+			check_cursor(curwin)
+		}
+		if (flags & SP_NOMOVE_O) != 0 {
+			(^Pos_T)(uintptr(curwin) + W_CURSOR_OFF)^ = save_cursor
+		} else {
+			(^bool)(uintptr(curwin) + W_SET_CURSWANT_OFF)^ = true
+		}
+	}
+	p_ws_g = save_p_ws
+	return retval
+}
+
+// "search()" function.
+@(export)
+f_search :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	flags: C.int = 0
+	rettv.vval = transmute(rawptr)(C.longlong(search_cmn_o(argvars, nil, &flags)))
+}
+
+// "searchpos()" function.
+@(export)
+f_searchpos :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	match_pos := Pos_T{}
+	flags: C.int = 0
+	n := search_cmn_o(argvars, &match_pos, &flags)
+	tv_list_alloc_ret(transmute(^Typval)(rettv), 2 + (1 if (flags & SP_SUBPAT_O) != 0 else 0))
+	lnum: C.int = 0
+	col: C.int = 0
+	if n > 0 {
+		lnum = match_pos.lnum
+		col = match_pos.col
+	}
+	tv_list_append_number(rawptr(rettv.vval), C.longlong(lnum))
+	tv_list_append_number(rawptr(rettv.vval), C.longlong(col))
+	if (flags & SP_SUBPAT_O) != 0 {
+		tv_list_append_number(rawptr(rettv.vval), C.longlong(n))
+	}
+}
+
+// —— Batch 27bl: funcs.c wait() ——
+foreign _ {
+	@(link_name = "vgetc")
+	vgetc_e :: proc "c" () -> C.int ---
+	@(link_name = "ui_flush")
+	ui_flush_e :: proc "c" () ---
+}
+
+// Dummy timer due callback (C-static in funcs.c).
+dummy_timer_due_cb_o :: proc "c" (tw: ^TimeWatcher, data: rawptr) {
+	context = runtime.default_context()
+	if main_loop.closing {
+		time_watcher_stop(tw)
+		time_watcher_close(tw, dummy_timer_close_cb_o)
+	}
+}
+
+// Dummy timer close callback (C-static in funcs.c).
+dummy_timer_close_cb_o :: proc "c" (tw: ^TimeWatcher, data: rawptr) {
+	context = runtime.default_context()
+	xfree(rawptr(tw))
+}
+
+// "wait(timeout, condition[, interval])" function.
+@(export)
+f_wait :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	rettv.v_type = VAR_NUMBER
+	rettv.vval = transmute(rawptr)(C.longlong(-1))
+	if ([^]Typval_T)(argvars)[0].v_type != VAR_NUMBER {
+		semsg(cstring(E475_VAL_S), cstring("1"))
+		return
+	}
+	if (([^]Typval_T)(argvars)[2].v_type != VAR_NUMBER && ([^]Typval_T)(argvars)[2].v_type != VAR_UNKNOWN) || (([^]Typval_T)(argvars)[2].v_type == VAR_NUMBER && transmute(C.longlong)(([^]Typval_T)(argvars)[2].vval) <= 0) {
+		semsg(cstring(E475_VAL_S), cstring("3"))
+		return
+	}
+	timeout := C.longlong(transmute(C.longlong)(([^]Typval_T)(argvars)[0].vval))
+	expr := ([^]Typval_T)(argvars)[1]
+	interval: C.longlong = 200
+	if ([^]Typval_T)(argvars)[2].v_type == VAR_NUMBER {
+		interval = transmute(C.longlong)(([^]Typval_T)(argvars)[2].vval)
+	}
+	tw := (^TimeWatcher)(xmalloc(C.size_t(size_of(TimeWatcher))))
+	time_watcher_init(&main_loop, tw, nil)
+	tw.events = nil
+	time_watcher_start(tw, dummy_timer_due_cb_o, u64(interval), u64(interval))
+	argv := Typval_T{v_type = VAR_UNKNOWN, v_lock = VAR_UNLOCKED}
+	exprval := Typval_T{v_type = VAR_UNKNOWN, v_lock = VAR_UNLOCKED}
+	error := false
+	called_before := called_emsg
+	ui_flush_e()
+	remaining := timeout
+	before: u64 = 0
+	if remaining > 0 {
+		before = os_hrtime()
+	}
+	for {
+		cond := eval_expr_typval(&expr, false, &argv, 0, &exprval) != OK_E || tv_get_number_chk(&exprval, &error) != 0 || called_emsg > called_before || error || got_int
+		if cond {
+			break
+		}
+		loop_process_events_q(&main_loop, main_loop.events, i64(remaining))
+		if remaining == 0 {
+			break
+		} else if remaining > 0 {
+			now := os_hrtime()
+			remaining -= C.longlong((now - before) / 1000000)
+			before = now
+			if remaining <= 0 {
+				break
+			}
+		}
+	}
+	if called_emsg > called_before || error {
+		rettv.vval = transmute(rawptr)(C.longlong(-3))
+	} else if got_int {
+		got_int = false
+		vgetc_e()
+		rettv.vval = transmute(rawptr)(C.longlong(-2))
+	} else if tv_get_number_chk(&exprval, &error) != 0 {
+		rettv.vval = transmute(rawptr)(C.longlong(0))
+	}
+	time_watcher_stop(tw)
+	time_watcher_close(tw, dummy_timer_close_cb_o)
+}
+
+// —— Batch 27bk: funcs.c sockconnect + stdioopen ——
+foreign _ {
+	@(link_name = "channel_connect")
+	channel_connect_e :: proc "c" (tcp: bool, address: cstring, rpc: bool, on_output: CallbackReader_E, timeout: C.int, error: ^cstring) -> C.ulonglong ---
+	@(link_name = "channel_from_stdio")
+	channel_from_stdio_e :: proc "c" (rpc: bool, on_output: CallbackReader_E, error: ^cstring) -> C.ulonglong ---
+	@(link_name = "on_print")
+	on_print_g: Callback_E
+}
+
+E905_S :: "E905: Couldn't open stdio channel: %s"
+E_CONNFAIL_S :: "connection failed: %s"
+
+// "sockconnect()" function.
+@(export)
+f_sockconnect :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	if ([^]Typval_T)(argvars)[0].v_type != VAR_STRING || ([^]Typval_T)(argvars)[1].v_type != VAR_STRING {
+		emsg(e_invarg)
+		return
+	}
+	if ([^]Typval_T)(argvars)[2].v_type != VAR_DICT && ([^]Typval_T)(argvars)[2].v_type != VAR_UNKNOWN {
+		semsg(e_invarg2, cstring("expected dictionary"))
+		return
+	}
+	mode := tv_get_string((^Typval_T)(uintptr(argvars)))
+	address := tv_get_string((^Typval_T)(uintptr(argvars) + 16))
+	tcp := false
+	if libc.strcmp(mode, cstring("tcp")) == 0 {
+		tcp = true
+	} else if libc.strcmp(mode, cstring("pipe")) == 0 {
+		tcp = false
+	} else {
+		semsg(e_invarg2, cstring("invalid mode"))
+		return
+	}
+	rpc := false
+	on_data := CallbackReader_E{}
+	if ([^]Typval_T)(argvars)[2].v_type == VAR_DICT {
+		opts := rawptr(([^]Typval_T)(argvars)[2].vval)
+		if tv_dict_get_number(opts, cstring("rpc")) != 0 {
+			rpc = true
+		}
+		if !tv_dict_get_callback(opts, cstring("on_data"), 7, &on_data.cb) {
+			return
+		}
+		on_data.buffered = tv_dict_get_number(opts, cstring("data_buffered")) != 0
+		if on_data.buffered && on_data.cb.type == KCB_NONE_O {
+			on_data.self = opts
+		}
+	}
+	err: cstring = nil
+	id := channel_connect_e(tcp, address, rpc, on_data, 50, &err)
+	if err != nil {
+		semsg(cstring(E_CONNFAIL_S), err)
+	}
+	rettv.vval = transmute(rawptr)(C.longlong(id))
+	rettv.v_type = VAR_NUMBER
+}
+
+// "stdioopen()" function.
+@(export)
+f_stdioopen :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	if ([^]Typval_T)(argvars)[0].v_type != VAR_DICT {
+		emsg(e_invarg)
+		return
+	}
+	on_stdin := CallbackReader_E{}
+	opts := rawptr(([^]Typval_T)(argvars)[0].vval)
+	rpc := tv_dict_get_number(opts, cstring("rpc")) != 0
+	if !tv_dict_get_callback(opts, cstring("on_stdin"), 8, &on_stdin.cb) {
+		return
+	}
+	if !tv_dict_get_callback(opts, cstring("on_print"), 8, &on_print_g) {
+		return
+	}
+	on_stdin.buffered = tv_dict_get_number(opts, cstring("stdin_buffered")) != 0
+	if on_stdin.buffered && on_stdin.cb.type == KCB_NONE_O {
+		on_stdin.self = opts
+	}
+	err: cstring = nil
+	id := channel_from_stdio_e(rpc, on_stdin, &err)
+	if id == 0 {
+		semsg(cstring(E905_S), err)
+	}
+	rettv.vval = transmute(rawptr)(C.longlong(id))
+	rettv.v_type = VAR_NUMBER
+}
+
+// —— Batch 27bj: funcs.c settagstack ——
+foreign _ {
+	@(link_name = "set_tagstack")
+	set_tagstack_e :: proc "c" (wp: rawptr, d: rawptr, action: C.int) -> C.int ---
+}
+
+E962_S :: "E962: Invalid action: '%s'"
+
+// "settagstack()" function.
+@(export)
+f_settagstack :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	action: u8 = 'r'
+	rettv.vval = transmute(rawptr)(C.longlong(-1))
+	wp := find_win_by_nr_or_id((^Typval_T)(uintptr(argvars)))
+	if wp == nil {
+		return
+	}
+	if tv_check_for_dict_arg(argvars, 1) == FAIL_E {
+		return
+	}
+	d := rawptr(([^]Typval_T)(argvars)[1].vval)
+	if d == nil {
+		return
+	}
+	if ([^]Typval_T)(argvars)[2].v_type == VAR_UNKNOWN {
+	} else if tv_check_for_string_arg(argvars, 2) == FAIL_E {
+		return
+	} else {
+		actstr := tv_get_string_chk((^Typval_T)(uintptr(argvars) + 32))
+		if actstr == nil {
+			return
+		}
+		if (([^]u8)(actstr)[0] == 'r' || ([^]u8)(actstr)[0] == 'a' || ([^]u8)(actstr)[0] == 't') && ([^]u8)(actstr)[1] == 0 {
+			action = ([^]u8)(actstr)[0]
+		} else {
+			semsg(cstring(E962_S), actstr)
+			return
+		}
+	}
+	if set_tagstack_e(wp, d, C.int(action)) == OK_E {
+		rettv.vval = transmute(rawptr)(C.longlong(0))
+	}
+}
+
+// —— Batch 27bi: funcs.c spellsuggest ——
+foreign _ {
+	@(link_name = "spell_suggest_list")
+	spell_suggest_list_e :: proc "c" (gap: ^Garray, word: cstring, maxcount: C.int, need_cap: bool, interactive: bool) ---
+}
+
+// "spellsuggest()" function.
+@(export)
+f_spellsuggest :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	ga := Garray{}
+	wo_spell_save := w_p_spell_r(curwin)
+	if wo_spell_save == 0 {
+		parse_spelllang(curwin)
+		(^C.int)(uintptr(curwin) + W_P_SPELL_OFF)^ = 1
+	}
+	done := false
+	if ([^]u8)((^rawptr)(uintptr(win_s_r(curwin)) + SB_P_SPL_OFF)^)[0] == 0 {
+		emsg(cstring(e_no_spell_txt))
+		(^C.int)(uintptr(curwin) + W_P_SPELL_OFF)^ = wo_spell_save
+		done = true
+	}
+	maxcount: C.int = 0
+	need_capital := false
+	str: cstring = nil
+	if !done {
+		str = tv_get_string((^Typval_T)(uintptr(argvars)))
+		if ([^]Typval_T)(argvars)[1].v_type != VAR_UNKNOWN {
+			typeerr := false
+			maxcount = C.int(tv_get_number_chk((^Typval_T)(uintptr(argvars) + 16), &typeerr))
+			if maxcount <= 0 {
+				done = true
+			} else if ([^]Typval_T)(argvars)[2].v_type != VAR_UNKNOWN {
+				need_capital = tv_get_number_chk((^Typval_T)(uintptr(argvars) + 32), &typeerr) != 0
+				if typeerr {
+					done = true
+				}
+			}
+		} else {
+			maxcount = 25
+		}
+	}
+	if !done {
+		spell_suggest_list_e(&ga, transmute(cstring)(str), maxcount, need_capital, false)
+	}
+	tv_list_alloc_ret(transmute(^Typval)(rettv), C.int(ga.ga_len))
+	i: C.int = 0
+	for i < ga.ga_len {
+		p := ([^]rawptr)(ga.ga_data)[i]
+		tv_list_append_allocated_string(rawptr(rettv.vval), transmute(^u8)(p))
+		i += 1
+	}
+	ga_clear_r(&ga)
+	(^C.int)(uintptr(curwin) + W_P_SPELL_OFF)^ = wo_spell_save
+}
+
+// —— Batch 27bh: funcs.c matchstrlist + matchbufline ——
+E681_S :: "E681: Buffer is not loaded"
+E475_VAL_S :: "E475: Invalid value for argument %s"
+
+// Match collector shared by matchstrlist()/matchbufline() (C-static).
+get_matches_in_str_o :: proc "c" (str: cstring, rmp: ^Regmatch_T, mlist: rawptr, idx: C.int, submatches: bool, matchbuf: bool) {
+	context = runtime.default_context()
+	length := C.size_t(libc.strlen(str))
+	match := false
+	startidx: C.int = 0
+	for {
+		match = vim_regexec_nl_e(rmp, str, startidx)
+		if !match {
+			break
+		}
+		d := tv_dict_alloc()
+		tv_list_append_dict(mlist, d)
+		if matchbuf {
+			tv_dict_add_nr(d, cstring("lnum"), 4, C.longlong(idx))
+		} else {
+			tv_dict_add_nr(d, cstring("idx"), 3, C.longlong(idx))
+		}
+		tv_dict_add_nr(d, cstring("byteidx"), 7, C.longlong(C.longlong(uintptr(rmp.startp[0]) - uintptr(rawptr(transmute(^u8)(str))))))
+		tv_dict_add_str_len(d, cstring("text"), 4, transmute(cstring)(rmp.startp[0]), C.int(uintptr(rmp.endp[0]) - uintptr(rmp.startp[0])))
+		if submatches {
+			sml := tv_list_alloc(NSUBEXP - 1)
+			tv_dict_add_list(d, cstring("submatches"), 10, sml)
+			i: C.int = 1
+			for i < NSUBEXP {
+				if rmp.endp[i] == nil {
+					tv_list_append_string(sml, transmute(^u8)(cstring("")), 0)
+				} else {
+					tv_list_append_string(sml, rmp.startp[i], C.ssize_t(uintptr(rmp.endp[i]) - uintptr(rmp.startp[i])))
+				}
+				i += 1
+			}
+		}
+		startidx = C.int(uintptr(rmp.endp[0]) - uintptr(rawptr(transmute(^u8)(str))))
+		if C.size_t(startidx) >= length || uintptr(rawptr(transmute(^u8)(str))) + uintptr(startidx) <= uintptr(rmp.startp[0]) {
+			break
+		}
+	}
+}
+
+// "matchstrlist()" function.
+@(export)
+f_matchstrlist :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	rettv.vval = transmute(rawptr)(C.longlong(-1))
+	retlist := tv_list_alloc_ret(transmute(^Typval)(rettv), KLISTLEN_UNKNOWN_O)
+	if tv_check_for_list_arg(argvars, 0) == FAIL_E || tv_check_for_string_arg(argvars, 1) == FAIL_E || tv_check_for_opt_dict_arg(argvars, 2) == FAIL_E {
+		return
+	}
+	l: rawptr = nil
+	if rawptr(([^]Typval_T)(argvars)[0].vval) == nil {
+		return
+	}
+	l = rawptr(([^]Typval_T)(argvars)[0].vval)
+	patbuf: [65]u8
+	pat := tv_get_string_buf_chk((^Typval_T)(uintptr(argvars) + 16), &patbuf[0])
+	if pat == nil {
+		return
+	}
+	save_cpo := p_cpo
+	p_cpo = empty_string_opt()
+	regmatch := Regmatch_T{regprog = vim_regcomp(pat, RE_MAGIC + RE_STRING_O), rm_ic = 0}
+	done := false
+	if regmatch.regprog == nil {
+		done = true
+	} else {
+		regmatch.rm_ic = p_ic
+		submatches := false
+		if ([^]Typval_T)(argvars)[2].v_type != VAR_UNKNOWN {
+			d := rawptr(([^]Typval_T)(argvars)[2].vval)
+			if d != nil {
+				di := tv_dict_find(d, cstring("submatches"), 10)
+				if di != nil {
+					if (^C.int)(uintptr(di))^ != VAR_BOOL {
+						semsg(cstring(E475_VAL_S), cstring("submatches"))
+						done = true
+					} else {
+						submatches = tv_get_bool((^Typval_T)(uintptr(di))) != 0
+					}
+				}
+			}
+		}
+		if !done {
+			idx: C.int = 0
+			li := tv_list_first_o(l)
+			for li != nil {
+				li_tv := (^Typval_T)(uintptr(li) + 16)
+				if li_tv.v_type == VAR_STRING && rawptr(li_tv.vval) != nil {
+					get_matches_in_str_o(transmute(cstring)(li_tv.vval), &regmatch, retlist, idx, submatches, false)
+				}
+				idx += 1
+				li = (^rawptr)(uintptr(li))^
+			}
+		}
+		vim_regfree(regmatch.regprog)
+	}
+	p_cpo = save_cpo
+}
+
+// "matchbufline()" function.
+@(export)
+f_matchbufline :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	rettv.vval = transmute(rawptr)(C.longlong(-1))
+	retlist := tv_list_alloc_ret(transmute(^Typval)(rettv), KLISTLEN_UNKNOWN_O)
+	if tv_check_for_buffer_arg(argvars, 0) == FAIL_E || tv_check_for_string_arg(argvars, 1) == FAIL_E || tv_check_for_lnum_arg(argvars, 2) == FAIL_E || tv_check_for_lnum_arg(argvars, 3) == FAIL_E || tv_check_for_opt_dict_arg(argvars, 4) == FAIL_E {
+		return
+	}
+	prev_did_emsg := did_emsg_flag
+	buf := tv_get_buf((^Typval_T)(uintptr(argvars)), 0)
+	done := false
+	if buf == nil {
+		if did_emsg_flag == prev_did_emsg {
+			semsg(cstring(E158_S), tv_get_string((^Typval_T)(uintptr(argvars))))
+		}
+		done = true
+	} else if (^rawptr)(uintptr(buf) + B_ML_MFP_OFF)^ == nil {
+		emsg(cstring(E681_S))
+		done = true
+	}
+	patbuf: [65]u8
+	pat := tv_get_string_buf((^Typval_T)(uintptr(argvars) + 16), &patbuf[0])
+	did_before := did_emsg_flag
+	slnum := tv_get_lnum_buf((^Typval_T)(uintptr(argvars) + 32), buf)
+	if !done && did_emsg_flag > did_before {
+		done = true
+	}
+	if !done && slnum < 1 {
+		semsg(cstring(E475_VAL_S), cstring("lnum"))
+		done = true
+	}
+	elnum := tv_get_lnum_buf((^Typval_T)(uintptr(argvars) + 48), buf)
+	if !done && did_emsg_flag > did_before {
+		done = true
+	}
+	if !done && (elnum < 1 || elnum < slnum) {
+		semsg(cstring(E475_VAL_S), cstring("end_lnum"))
+		done = true
+	}
+	if !done {
+		linecount := (^C.int)(uintptr(buf) + B_ML_LINE_COUNT)^
+		if elnum > linecount {
+			elnum = linecount
+		}
+		submatches := false
+		if ([^]Typval_T)(argvars)[4].v_type != VAR_UNKNOWN {
+			d := rawptr(([^]Typval_T)(argvars)[4].vval)
+			if d != nil {
+				di := tv_dict_find(d, cstring("submatches"), 10)
+				if di != nil {
+					if (^C.int)(uintptr(di))^ != VAR_BOOL {
+						semsg(cstring(E475_VAL_S), cstring("submatches"))
+						done = true
+					} else {
+						submatches = tv_get_bool((^Typval_T)(uintptr(di))) != 0
+					}
+				}
+			}
+		}
+		if !done {
+			save_cpo := p_cpo
+			p_cpo = empty_string_opt()
+			regmatch := Regmatch_T{regprog = vim_regcomp(pat, RE_MAGIC + RE_STRING_O), rm_ic = 0}
+			if regmatch.regprog == nil {
+				p_cpo = save_cpo
+				return
+			}
+			regmatch.rm_ic = p_ic
+			for slnum <= elnum {
+				str := ml_get_buf(buf, slnum)
+				get_matches_in_str_o(transmute(cstring)(str), &regmatch, retlist, slnum, submatches, true)
+				slnum += 1
+			}
+			vim_regfree(regmatch.regprog)
+			p_cpo = save_cpo
+		}
+	}
+}
+
+// —— Batch 27bg: funcs.c synconcealed + virtcol ——
+foreign _ {
+	@(link_name = "get_syntax_info")
+	get_syntax_info_e :: proc "c" (seqnrp: ^C.int) -> C.int ---
+	@(link_name = "syn_get_sub_char")
+	syn_get_sub_char_e :: proc "c" () -> C.int ---
+	@(link_name = "getvvcol")
+	getvvcol_e :: proc "c" (wp: rawptr, pos: rawptr, start: ^C.int, cursor: ^C.int, end: ^C.int, flags: C.int) ---
+}
+
+// "synconcealed(lnum, col)" function.
+@(export)
+f_synconcealed :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	syntax_flags: C.int = 0
+	matchid: C.int = 0
+	str: [65]u8
+	libc.memset(&str[0], 0, 65)
+	tv_list_set_ret_o(rettv, nil)
+	lnum := tv_get_lnum((^Typval_T)(uintptr(argvars)))
+	col := C.int(tv_get_number((^Typval_T)(uintptr(argvars) + 16))) - 1
+	if lnum >= 1 && lnum <= (^C.int)(uintptr(curbuf) + B_ML_LINE_COUNT)^ && col >= 0 && col <= ml_get_len_r2(lnum) && (^C.int)(uintptr(curwin) + W_P_COLE_OFF)^ > 0 {
+		syn_get_id_r(curwin, lnum, col, false, nil, false)
+		syntax_flags = get_syntax_info_e(&matchid)
+		if (syntax_flags & HL_CONCEAL_O) != 0 && (^C.int)(uintptr(curwin) + W_P_COLE_OFF)^ < 3 {
+			cchar := schar_from_char(syn_get_sub_char_e())
+			if cchar == 0 && (^C.int)(uintptr(curwin) + W_P_COLE_OFF)^ == 1 {
+				conceal := (^u32)(uintptr(curwin) + W_P_LCS_CHARS_OFF + LCS_CONCEAL_OFF)^
+				if conceal == 0 {
+					cchar = 32
+				} else {
+					cchar = conceal
+				}
+			}
+			if cchar != 0 {
+				schar_get(&str[0], cchar)
+			}
+		}
+	}
+	tv_list_alloc_ret(transmute(^Typval)(rettv), 3)
+	if (syntax_flags & HL_CONCEAL_O) != 0 {
+		tv_list_append_number(rawptr(rettv.vval), C.longlong(1))
+	} else {
+		tv_list_append_number(rawptr(rettv.vval), C.longlong(0))
+	}
+	tv_list_append_string(rawptr(rettv.vval), &str[0], -1)
+	tv_list_append_number(rawptr(rettv.vval), C.longlong(matchid))
+}
+
+// "virtcol({expr}, [, {list} [, {winid}]])" function.
+@(export)
+f_virtcol :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	vcol_start: C.int = 0
+	vcol_end: C.int = 0
+	wp := curwin
+	theend := false
+	if ([^]Typval_T)(argvars)[1].v_type != VAR_UNKNOWN && ([^]Typval_T)(argvars)[2].v_type != VAR_UNKNOWN {
+		tp: rawptr = nil
+		wp = win_id2wp_tp(C.int(tv_get_number((^Typval_T)(uintptr(argvars) + 32))), &tp)
+		if wp == nil || tp == nil {
+			theend = true
+		} else {
+			check_cursor(wp)
+		}
+	}
+	if !theend {
+		bp := (^rawptr)(uintptr(wp) + W_BUFFER_OFF)^
+		fnum := (^C.int)(uintptr(bp) + B_FNUM_OFF)^
+		fp := var2fpos((^Typval_T)(uintptr(argvars)), false, &fnum, false, wp)
+		if fp != nil && (^C.int)(uintptr(fp))^ <= (^C.int)(uintptr(bp) + B_ML_LINE_COUNT)^ && fnum == (^C.int)(uintptr(bp) + B_FNUM_OFF)^ {
+			if (^C.int)(uintptr(fp) + 4)^ < 0 {
+				(^C.int)(uintptr(fp) + 4)^ = 0
+			} else {
+				length := ml_get_buf_len(bp, (^C.int)(uintptr(fp))^)
+				if (^C.int)(uintptr(fp) + 4)^ > length {
+					(^C.int)(uintptr(fp) + 4)^ = length
+				}
+			}
+			getvvcol_e(wp, fp, &vcol_start, nil, &vcol_end, 0)
+			vcol_start += 1
+			vcol_end += 1
+		}
+		if ([^]Typval_T)(argvars)[1].v_type != VAR_UNKNOWN && tv_get_bool((^Typval_T)(uintptr(argvars) + 16)) != 0 {
+			tv_list_alloc_ret(transmute(^Typval)(rettv), 2)
+			tv_list_append_number(rawptr(rettv.vval), C.longlong(vcol_start))
+			tv_list_append_number(rawptr(rettv.vval), C.longlong(vcol_end))
+		} else {
+			rettv.vval = transmute(rawptr)(C.longlong(vcol_end))
+		}
+	}
+}
+
+// —— Batch 27bc: funcs.c timer cluster (FFI removed, exports below) ——
+
+TIMER_TW_OFF :: 0
+TIMER_REFCOUNT_OFF :: 200
+TIMER_TIMEOUT_OFF :: 208
+TIMER_STOPPED_OFF :: 216
+TIMER_PAUSED_OFF :: 217
+E39_S :: "E39: Number expected"
+
+// "timer_start()" function.
+@(export)
+f_timer_start :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	repeat: C.int = 1
+	rettv.vval = transmute(rawptr)(C.longlong(-1))
+	if check_secure() {
+		return
+	}
+	if ([^]Typval_T)(argvars)[2].v_type != VAR_UNKNOWN {
+		if tv_check_for_nonnull_dict_arg(argvars, 2) == FAIL_E {
+			return
+		}
+		d := rawptr(([^]Typval_T)(argvars)[2].vval)
+		di := tv_dict_find(d, cstring("repeat"), 6)
+		if di != nil {
+			repeat = C.int(tv_get_number((^Typval_T)(uintptr(di))))
+			if repeat == 0 {
+				repeat = 1
+			}
+		}
+	}
+	callback := Callback_E{}
+	if !callback_from_typval(&callback, (^Typval_T)(uintptr(argvars) + 16)) {
+		return
+	}
+	rettv.vval = transmute(rawptr)(C.longlong(timer_start(tv_get_number((^Typval_T)(uintptr(argvars))), repeat, &callback)))
+}
+
+// "timer_stop(timerid)" function.
+@(export)
+f_timer_stop :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	if tv_check_for_number_arg(argvars, 0) == FAIL_E {
+		return
+	}
+	timer := find_timer_by_nr(tv_get_number((^Typval_T)(uintptr(argvars))))
+	if timer == nil {
+		return
+	}
+	timer_stop(timer)
+}
+
+// "timer_stopall()" function.
+@(export)
+f_timer_stopall :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	timer_stop_all()
+}
+
+// "timer_pause(timer, paused)" function.
+@(export)
+f_timer_pause :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	if ([^]Typval_T)(argvars)[0].v_type != VAR_NUMBER {
+		emsg(cstring(E39_S))
+		return
+	}
+	paused := tv_get_number((^Typval_T)(uintptr(argvars) + 16)) != 0
+	timer := find_timer_by_nr(tv_get_number((^Typval_T)(uintptr(argvars))))
+	if timer != nil {
+		if !(^bool)(uintptr(timer) + TIMER_PAUSED_OFF)^ && paused {
+			time_watcher_stop((^TimeWatcher)(uintptr(timer) + TIMER_TW_OFF))
+		} else if (^bool)(uintptr(timer) + TIMER_PAUSED_OFF)^ && !paused {
+			timeout := (^i64)(uintptr(timer) + TIMER_TIMEOUT_OFF)^
+			time_watcher_start((^TimeWatcher)(uintptr(timer) + TIMER_TW_OFF), timer_due_cb, u64(timeout), u64(timeout))
+		}
+		(^bool)(uintptr(timer) + TIMER_PAUSED_OFF)^ = paused
+	}
+}
+
+// "timer_info([timer])" function.
+@(export)
+f_timer_info :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	tv_list_alloc_ret(transmute(^Typval)(rettv), KLISTLEN_UNKNOWN_O)
+	if tv_check_for_opt_number_arg(argvars, 0) == FAIL_E {
+		return
+	}
+	if ([^]Typval_T)(argvars)[0].v_type != VAR_UNKNOWN {
+		timer := find_timer_by_nr(tv_get_number((^Typval_T)(uintptr(argvars))))
+		if timer != nil && (!(^bool)(uintptr(timer) + TIMER_STOPPED_OFF)^ || (^C.int)(uintptr(timer) + TIMER_REFCOUNT_OFF)^ > 1) {
+			add_timer_info(rettv, timer)
+		}
+	} else {
+		add_timer_info_all(rettv)
+	}
+}
+
+// —— Batch 27bb: funcs.c swapinfo cluster ——
+foreign _ {
+	@(link_name = "recover_names")
+	recover_names_e :: proc "c" (fname: cstring, skip_curbuf: bool, ret_list: rawptr) ---
+	@(link_name = "swapfile_dict")
+	swapfile_dict_e :: proc "c" (fname: cstring, d: rawptr) ---
+}
+
+// "swapfilelist()" function.
+@(export)
+f_swapfilelist :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	l := tv_list_alloc_ret(transmute(^Typval)(rettv), KLISTLEN_UNKNOWN_O)
+	recover_names_e(nil, false, l)
+}
+
+// "swapinfo(swap_filename)" function.
+@(export)
+f_swapinfo :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	tv_dict_alloc_ret(rettv)
+	swapfile_dict_e(tv_get_string((^Typval_T)(uintptr(argvars))), rawptr(rettv.vval))
+}
+
+// "swapname(expr)" function.
+@(export)
+f_swapname :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	rettv.v_type = VAR_STRING
+	buf := tv_get_buf((^Typval_T)(uintptr(argvars)), 0)
+	if buf == nil {
+		rettv.vval = transmute(rawptr)(cstring(nil))
+		return
+	}
+	mfp := (^rawptr)(uintptr(buf) + B_ML_MFP_OFF)^
+	if mfp == nil {
+		rettv.vval = transmute(rawptr)(cstring(nil))
+		return
+	}
+	fname := (^cstring)(uintptr(mfp))^
+	if fname == nil {
+		rettv.vval = transmute(rawptr)(cstring(nil))
+		return
+	}
+	rettv.vval = transmute(rawptr)(xstrdup_o(transmute(^u8)(fname)))
+}
+
+// —— Batch 27as: funcs.c serverlist + serverstop ——
+foreign _ {
+	@(link_name = "server_address_list")
+	server_address_list_e :: proc "c" (size: ^C.size_t) -> [^]cstring ---
+	@(link_name = "server_stop")
+	server_stop_e :: proc "c" (endpoint: cstring, keep_vservername: bool) -> bool ---
+	@(link_name = "nlua_call_typval")
+	nlua_call_typval_e :: proc "c" (module: cstring, func: cstring, argvars: ^Typval_T, rettv: ^Typval_T) ---
+}
+
+// "serverlist()" function.
+@(export)
+f_serverlist :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	n: C.size_t = 0
+	addrs := server_address_list_e(&n)
+	addrs_tv := Typval_T{}
+	tv_list_alloc_ret(transmute(^Typval)(&addrs_tv), C.int(n))
+	i: C.size_t = 0
+	for i < n {
+		tv_list_append_allocated_string(rawptr(addrs_tv.vval), transmute(^u8)(addrs[i]))
+		i += 1
+	}
+	xfree(rawptr(addrs))
+	opts := ([^]Typval_T)(argvars)[0]
+	if ([^]Typval_T)(argvars)[0].v_type == VAR_UNKNOWN {
+		opts = Typval_T{v_type = VAR_SPECIAL, v_lock = VAR_UNLOCKED, vval = transmute(rawptr)(C.longlong(KSPECIALVARNULL_O))}
+	}
+	lua_args: [3]Typval_T
+	lua_args[0] = opts
+	lua_args[1] = addrs_tv
+	lua_args[2] = Typval_T{v_type = VAR_UNKNOWN, v_lock = VAR_UNLOCKED}
+	nlua_call_typval_e(cstring("vim._core.server"), cstring("serverlist"), &lua_args[0], rettv)
+	tv_clear(&addrs_tv)
+}
+
+// "serverstop()" function.
+@(export)
+f_serverstop :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	if check_secure() {
+		return
+	}
+	if ([^]Typval_T)(argvars)[0].v_type != VAR_STRING {
+		emsg(e_invarg)
+		return
+	}
+	rettv.v_type = VAR_NUMBER
+	rettv.vval = transmute(rawptr)(C.longlong(0))
+	if rawptr(([^]Typval_T)(argvars)[0].vval) != nil {
+		if server_stop_e(transmute(cstring)(([^]Typval_T)(argvars)[0].vval), false) {
+			rettv.vval = transmute(rawptr)(C.longlong(1))
+		}
+	}
+}
+
+// —— Batch 27bn: funcs.c searchdecl ——
+foreign _ {
+	@(link_name = "find_decl")
+	find_decl_e :: proc "c" (ptr: cstring, len: C.size_t, locally: bool, thisblock: bool, flags_arg: C.int) -> bool ---
+}
+
+SEARCH_KEEP_O :: 0x400
+
+// "searchdecl()" function.
+@(export)
+f_searchdecl :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	locally := true
+	thisblock := false
+	error := false
+	rettv.vval = transmute(rawptr)(C.longlong(1))
+	name := tv_get_string_chk((^Typval_T)(uintptr(argvars)))
+	if ([^]Typval_T)(argvars)[1].v_type != VAR_UNKNOWN {
+		locally = tv_get_number_chk((^Typval_T)(uintptr(argvars) + 16), &error) == 0
+		if !error && ([^]Typval_T)(argvars)[2].v_type != VAR_UNKNOWN {
+			thisblock = tv_get_number_chk((^Typval_T)(uintptr(argvars) + 32), &error) != 0
+		}
+	}
+	if !error && name != nil {
+		if find_decl_e(transmute(cstring)(name), C.size_t(libc.strlen(name)), locally, thisblock, SEARCH_KEEP_O) {
+			rettv.vval = transmute(rawptr)(C.longlong(0))
+		}
+	}
+}
+
+// —— Batch 27bm: funcs.c serverstart ——
+foreign _ {
+	@(link_name = "server_address_new")
+	server_address_new_e :: proc "c" (name: cstring) -> cstring ---
+	@(link_name = "server_start")
+	server_start_e :: proc "c" (addr: cstring) -> C.int ---
+}
+
+E_SRVFAIL_S :: "Failed to start server: %s"
+E_UNKERR_S :: "Unknown system error"
+
+// "serverstart()" function.
+@(export)
+f_serverstart :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	rettv.v_type = VAR_STRING
+	rettv.vval = transmute(rawptr)(cstring(nil))
+	if check_secure() {
+		return
+	}
+	address: cstring = nil
+	if ([^]Typval_T)(argvars)[0].v_type != VAR_UNKNOWN {
+		if ([^]Typval_T)(argvars)[0].v_type != VAR_STRING {
+			emsg(e_invarg)
+			return
+		}
+		address = transmute(cstring)(xstrdup_o(transmute(^u8)(tv_get_string((^Typval_T)(uintptr(argvars))))))
+	} else {
+		address = server_address_new_e(nil)
+	}
+	result := server_start_e(address)
+	xfree(rawptr(transmute(^u8)(address)))
+	if result != 0 {
+		if result > 0 {
+			semsg(cstring(E_SRVFAIL_S), cstring(E_UNKERR_S))
+		} else {
+			semsg(cstring(E_SRVFAIL_S), os_strerror(result))
+		}
+		return
+	}
+	n: C.size_t = 0
+	addrs := server_address_list_e(&n)
+	rettv.vval = transmute(rawptr)(addrs[n - 1])
+	i: C.size_t = 0
+	for i < n - 1 {
+		xfree(rawptr(transmute(^u8)(addrs[i])))
+		i += 1
+	}
+	xfree(rawptr(addrs))
+}
+
+// —— Batch 27bf: funcs.c synIDattr ——
+foreign _ {
+	@(link_name = "highlight_has_attr")
+	highlight_has_attr_e :: proc "c" (id: C.int, flag: C.int, modec: C.int) -> cstring ---
+	@(link_name = "highlight_color")
+	highlight_color_e :: proc "c" (id: C.int, what: cstring, modec: C.int) -> cstring ---
+	@(link_name = "get_highlight_name_ext")
+	get_highlight_name_ext_e :: proc "c" (xp: rawptr, idx: C.int, skip_cleared: bool) -> cstring ---
+}
+
+HL_INVERSE_O :: 0x01
+HL_BOLD_O :: 0x02
+HL_ITALIC_O :: 0x04
+HL_UNDERLINE_O :: 0x08
+HL_UNDERCURL_O :: 0x10
+HL_UNDERDOUBLE_O :: 0x18
+HL_UNDERDOTTED_O :: 0x20
+HL_UNDERDASHED_O :: 0x28
+HL_STANDOUT_O :: 0x40
+HL_STRIKETHROUGH_O :: 0x80
+HL_DIM_O :: 0x200
+HL_NOCOMBINE_O :: 0x400
+HL_BLINK_O :: 0x8000
+HL_CONCEALED_O :: 0x10000
+HL_OVERLINE_O :: 0x20000
+
+// TOLOWER_ASC mirror (ascii_defs.h).
+tolower_asc_o :: #force_inline proc "c" (c: u8) -> u8 {
+	if c >= 'A' && c <= 'Z' {
+		return c + 32
+	}
+	return c
+}
+
+// "synIDattr(id, what [, mode])" function.
+@(export)
+f_synIDattr :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	id := C.int(tv_get_number((^Typval_T)(uintptr(argvars))))
+	what := tv_get_string((^Typval_T)(uintptr(argvars) + 16))
+	modec: C.int = 0
+	if ([^]Typval_T)(argvars)[2].v_type != VAR_UNKNOWN {
+		modebuf: [65]u8
+		mode := tv_get_string_buf((^Typval_T)(uintptr(argvars) + 32), &modebuf[0])
+		modec = C.int(tolower_asc_o(([^]u8)(mode)[0]))
+		if modec != 'c' && modec != 'g' {
+			modec = 0
+		}
+	} else if ui_rgb_attached_r() {
+		modec = 'g'
+	} else {
+		modec = 'c'
+	}
+	w := ([^]u8)(what)
+	p: cstring = nil
+	if tolower_asc_o(w[0]) == 'b' {
+		if tolower_asc_o(w[1]) == 'g' {
+			p = highlight_color_e(id, what, modec)
+		} else if tolower_asc_o(w[1]) == 'l' {
+			p = highlight_has_attr_e(id, HL_BLINK_O, modec)
+		} else {
+			p = highlight_has_attr_e(id, HL_BOLD_O, modec)
+		}
+	} else if tolower_asc_o(w[0]) == 'c' {
+		p = highlight_has_attr_e(id, HL_CONCEALED_O, modec)
+	} else if tolower_asc_o(w[0]) == 'd' {
+		p = highlight_has_attr_e(id, HL_DIM_O, modec)
+	} else if tolower_asc_o(w[0]) == 'o' {
+		p = highlight_has_attr_e(id, HL_OVERLINE_O, modec)
+	} else if tolower_asc_o(w[0]) == 'f' {
+		p = highlight_color_e(id, what, modec)
+	} else if tolower_asc_o(w[0]) == 'i' {
+		if tolower_asc_o(w[1]) == 'n' {
+			p = highlight_has_attr_e(id, HL_INVERSE_O, modec)
+		} else {
+			p = highlight_has_attr_e(id, HL_ITALIC_O, modec)
+		}
+	} else if tolower_asc_o(w[0]) == 'n' {
+		if tolower_asc_o(w[1]) == 'o' {
+			p = highlight_has_attr_e(id, HL_NOCOMBINE_O, modec)
+		} else {
+			p = get_highlight_name_ext_e(nil, id - 1, false)
+		}
+	} else if tolower_asc_o(w[0]) == 'r' {
+		p = highlight_has_attr_e(id, HL_INVERSE_O, modec)
+	} else if tolower_asc_o(w[0]) == 's' {
+		if tolower_asc_o(w[1]) == 'p' {
+			p = highlight_color_e(id, what, modec)
+		} else if tolower_asc_o(w[1]) == 't' && tolower_asc_o(w[2]) == 'r' {
+			p = highlight_has_attr_e(id, HL_STRIKETHROUGH_O, modec)
+		} else {
+			p = highlight_has_attr_e(id, HL_STANDOUT_O, modec)
+		}
+	} else if tolower_asc_o(w[0]) == 'u' {
+		if C.size_t(libc.strlen(what)) >= 9 {
+			if tolower_asc_o(w[5]) == 'l' {
+				p = highlight_has_attr_e(id, HL_UNDERLINE_O, modec)
+			} else if tolower_asc_o(w[5]) != 'd' {
+				p = highlight_has_attr_e(id, HL_UNDERCURL_O, modec)
+			} else if tolower_asc_o(w[6]) != 'o' {
+				p = highlight_has_attr_e(id, HL_UNDERDASHED_O, modec)
+			} else if tolower_asc_o(w[7]) == 'u' {
+				p = highlight_has_attr_e(id, HL_UNDERDOUBLE_O, modec)
+			} else {
+				p = highlight_has_attr_e(id, HL_UNDERDOTTED_O, modec)
+			}
+		} else {
+			p = highlight_color_e(id, what, modec)
+		}
+	}
+	rettv.v_type = VAR_STRING
+	if p == nil {
+		rettv.vval = transmute(rawptr)(cstring(nil))
+	} else {
+		rettv.vval = transmute(rawptr)(xstrdup_o(transmute(^u8)(p)))
+	}
+}
+
+// —— Batch 27be: funcs.c jobpid + jobresize ——
+CHAN_STREAM_OFF :: 32
+PROC_PID_OFF :: 24
+PROC_TYPE_OFF :: 0
+KPROCTYPE_PTY_O :: 1
+E904_S :: "E904: channel is not a pty"
+
+// "jobpid(id)" function.
+@(export)
+f_jobpid :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	rettv.v_type = VAR_NUMBER
+	rettv.vval = transmute(rawptr)(C.longlong(0))
+	if check_secure() {
+		return
+	}
+	if ([^]Typval_T)(argvars)[0].v_type != VAR_NUMBER {
+		emsg(e_invarg)
+		return
+	}
+	data := find_job(C.ulonglong(transmute(C.longlong)(([^]Typval_T)(argvars)[0].vval)), true)
+	if data == nil {
+		return
+	}
+	rettv.vval = transmute(rawptr)(C.longlong((^C.int)(uintptr(data) + CHAN_STREAM_OFF + PROC_PID_OFF)^))
+}
+
+// "jobresize(job, width, height)" function.
+@(export)
+f_jobresize :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	rettv.v_type = VAR_NUMBER
+	rettv.vval = transmute(rawptr)(C.longlong(0))
+	if check_secure() {
+		return
+	}
+	if ([^]Typval_T)(argvars)[0].v_type != VAR_NUMBER || ([^]Typval_T)(argvars)[1].v_type != VAR_NUMBER || ([^]Typval_T)(argvars)[2].v_type != VAR_NUMBER {
+		emsg(e_invarg)
+		return
+	}
+	data := find_job(C.ulonglong(transmute(C.longlong)(([^]Typval_T)(argvars)[0].vval)), true)
+	if data == nil {
+		return
+	}
+	if (^C.int)(uintptr(data) + CHAN_STREAM_OFF + PROC_TYPE_OFF)^ != KPROCTYPE_PTY_O {
+		emsg(cstring(E904_S))
+		return
+	}
+	av1 := ([^]Typval_T)(argvars)[1]
+	av2 := ([^]Typval_T)(argvars)[2]
+	w := C.ushort(C.int(transmute(C.longlong)(av1.vval)))
+	h := C.ushort(C.int(transmute(C.longlong)(av2.vval)))
+	pty_proc_resize((^PtyProc)(rawptr(uintptr(data) + CHAN_STREAM_OFF)), w, h)
+	rettv.vval = transmute(rawptr)(C.longlong(1))
+}
+
+// —— Batch 27bd: funcs.c rpcnotify ——
+foreign _ {
+	@(link_name = "rpc_send_event")
+	rpc_send_event_e :: proc "c" (id: C.ulonglong, name: cstring, args: Api_Array) -> bool ---
+}
+
+// "rpcnotify()" function.
+@(export)
+f_rpcnotify :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	rettv.v_type = VAR_NUMBER
+	rettv.vval = transmute(rawptr)(C.longlong(0))
+	if check_secure() {
+		return
+	}
+	if ([^]Typval_T)(argvars)[0].v_type != VAR_NUMBER || transmute(C.longlong)(([^]Typval_T)(argvars)[0].vval) < 0 {
+		semsg(e_invarg2, cstring("Channel id must be a positive integer"))
+		return
+	}
+	if ([^]Typval_T)(argvars)[1].v_type != VAR_STRING {
+		semsg(e_invarg2, cstring("Event type must be a string"))
+		return
+	}
+	items: [MAX_FUNC_ARGS_O]Api_Object
+	args := Api_Array{size = 0, capacity = MAX_FUNC_ARGS_O, items = (^Api_Object)(&items[0])}
+	arena := Arena_O{}
+	tv := (^Typval_T)(uintptr(argvars) + 32)
+	for tv.v_type != VAR_UNKNOWN {
+		([^]Api_Object)(args.items)[args.size] = vim_to_object_e(tv, rawptr(&arena), true)
+		args.size += 1
+		tv = (^Typval_T)(uintptr(tv) + 16)
+	}
+	ok := rpc_send_event_e(C.ulonglong(transmute(C.longlong)(([^]Typval_T)(argvars)[0].vval)), tv_get_string((^Typval_T)(uintptr(argvars) + 16)), args)
+	arena_mem_free_e(arena_finish_e(rawptr(&arena)))
+	if !ok {
+		semsg(e_invarg2, cstring("Channel doesn't exist"))
+		return
+	}
+	rettv.vval = transmute(rawptr)(C.longlong(1))
+}
+
+// —— Batch 27av: funcs.c strftime + strptime ——
+foreign _ {
+	@(link_name = "enc_locale")
+	enc_locale_e :: proc "c" () -> cstring ---
+	@(link_name = "convert_setup")
+	convert_setup_e :: proc "c" (vcp: rawptr, from: cstring, to: cstring) -> C.int ---
+	@(link_name = "mktime")
+	mktime_e :: proc "c" (tm: ^posix.tm) -> posix.time_t ---
+}
+
+CONV_NONE_O :: 0
+
+// vimconv_T mirror (mbyte_defs.h): 24B.
+Vimconv_T :: struct {
+	vc_type:   C.int,  // 0
+	vc_factor: C.int,  // 4
+	vc_fd:     rawptr, // 8
+	vc_fail:   bool,   // 16
+	_pad:      [7]u8,
+}
+#assert(size_of(Vimconv_T) == 24)
+
+// "strftime({format}[, {time}])" function.
+@(export)
+f_strftime :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	rettv.v_type = VAR_STRING
+	p := tv_get_string((^Typval_T)(uintptr(argvars)))
+	seconds: posix.time_t = 0
+	if ([^]Typval_T)(argvars)[1].v_type == VAR_UNKNOWN {
+		seconds = posix.time_t(libc.time(nil))
+	} else {
+		seconds = posix.time_t(tv_get_number((^Typval_T)(uintptr(argvars) + 16)))
+	}
+	curtime: posix.tm
+	curtime_ptr := os_localtime_r(&seconds, &curtime)
+	if curtime_ptr == nil {
+		rettv.vval = transmute(rawptr)(xstrdup_o(transmute(^u8)(cstring("(Invalid)"))))
+		return
+	}
+	conv := Vimconv_T{vc_type = CONV_NONE_O}
+	enc := enc_locale_e()
+	convert_setup_e(rawptr(&conv), transmute(cstring)(p_enc), enc)
+	if conv.vc_type != CONV_NONE_O {
+		p = transmute(cstring)(string_convert_e(rawptr(&conv), p, nil))
+	}
+	result_buf: [256]u8
+	if p == nil || libc.strftime(transmute([^]u8)(&result_buf[0]), 256, p, transmute(^libc.tm)(curtime_ptr)) == 0 {
+		result_buf[0] = 0
+	}
+	if conv.vc_type != CONV_NONE_O {
+		xfree(rawptr(transmute(^u8)(p)))
+	}
+	convert_setup_e(rawptr(&conv), enc, transmute(cstring)(p_enc))
+	if conv.vc_type != CONV_NONE_O {
+		rettv.vval = transmute(rawptr)(string_convert_e(rawptr(&conv), transmute(cstring)(&result_buf[0]), nil))
+	} else {
+		rettv.vval = transmute(rawptr)(xstrdup_o(&result_buf[0]))
+	}
+	convert_setup_e(rawptr(&conv), nil, nil)
+	xfree(rawptr(enc))
+}
+
+// "strptime({format}, {timestring})" function.
+@(export)
+f_strptime :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	fmtbuf: [65]u8
+	strbuf: [65]u8
+	tmval: posix.tm
+	libc.memset(&tmval, 0, size_of(posix.tm))
+	tmval.tm_isdst = -1
+	fmt := tv_get_string_buf((^Typval_T)(uintptr(argvars)), &fmtbuf[0])
+	str := tv_get_string_buf((^Typval_T)(uintptr(argvars) + 16), &strbuf[0])
+	conv := Vimconv_T{vc_type = CONV_NONE_O}
+	enc := enc_locale_e()
+	convert_setup_e(rawptr(&conv), transmute(cstring)(p_enc), enc)
+	if conv.vc_type != CONV_NONE_O {
+		fmt = transmute(cstring)(string_convert_e(rawptr(&conv), fmt, nil))
+	}
+	if fmt == nil || os_strptime(str, fmt, &tmval) == nil {
+		rettv.vval = transmute(rawptr)(C.longlong(0))
+	} else {
+		t := C.longlong(mktime_e(&tmval))
+		if t == -1 {
+			rettv.vval = transmute(rawptr)(C.longlong(0))
+		} else {
+			rettv.vval = transmute(rawptr)(t)
+		}
+	}
+	if conv.vc_type != CONV_NONE_O {
+		xfree(rawptr(transmute(^u8)(fmt)))
+	}
+	convert_setup_e(rawptr(&conv), nil, nil)
+	xfree(rawptr(enc))
+}
+
+// —— Batch 27az: funcs.c synID + tabpagebuflist ——
+foreign _ {
+	@(link_name = "syn_get_final_id")
+	syn_get_final_id_e :: proc "c" (hl_id: C.int) -> C.int ---
+	@(link_name = "syn_get_stack_item")
+	syn_get_stack_item_e :: proc "c" (i: C.int) -> C.int ---
+}
+
+// "synID()" function.
+@(export)
+f_synID :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	lnum := tv_get_lnum((^Typval_T)(uintptr(argvars)))
+	col := C.int(tv_get_number((^Typval_T)(uintptr(argvars) + 16))) - 1
+	transerr := false
+	trans := C.int(tv_get_number_chk((^Typval_T)(uintptr(argvars) + 32), &transerr))
+	id: C.int = 0
+	if !transerr && lnum >= 1 && lnum <= (^C.int)(uintptr(curbuf) + B_ML_LINE_COUNT)^ && col >= 0 && col < ml_get_len_r2(lnum) {
+		id = syn_get_id_r(curwin, lnum, col, trans != 0, nil, false)
+	}
+	rettv.vval = transmute(rawptr)(C.longlong(id))
+}
+
+// "synIDtrans()" function.
+@(export)
+f_synIDtrans :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	id := C.int(tv_get_number((^Typval_T)(uintptr(argvars))))
+	if id > 0 {
+		id = syn_get_final_id_e(id)
+	} else {
+		id = 0
+	}
+	rettv.vval = transmute(rawptr)(C.longlong(id))
+}
+
+// "synstack()" function.
+@(export)
+f_synstack :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	tv_list_set_ret_o(rettv, nil)
+	lnum := tv_get_lnum((^Typval_T)(uintptr(argvars)))
+	col := C.int(tv_get_number((^Typval_T)(uintptr(argvars) + 16))) - 1
+	if lnum >= 1 && lnum <= (^C.int)(uintptr(curbuf) + B_ML_LINE_COUNT)^ && col >= 0 && col <= ml_get_len_r2(lnum) {
+		tv_list_alloc_ret(transmute(^Typval)(rettv), KLISTLEN_MAYKNOW_O)
+		syn_get_id_r(curwin, lnum, col, false, nil, true)
+		id: C.int = 0
+		i: C.int = 0
+		for {
+			id = syn_get_stack_item_e(i)
+			i += 1
+			if id < 0 {
+				break
+			}
+			tv_list_append_number(rawptr(rettv.vval), C.longlong(id))
+		}
+	}
+}
+
+// "tabpagebuflist()" function.
+@(export)
+f_tabpagebuflist :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	wp: rawptr = nil
+	if ([^]Typval_T)(argvars)[0].v_type == VAR_UNKNOWN {
+		wp = firstwin
+	} else {
+		tp := find_tabpage(C.int(tv_get_number((^Typval_T)(uintptr(argvars)))))
+		if tp != nil {
+			if tp == curtab {
+				wp = firstwin
+			} else {
+				wp = (^rawptr)(uintptr(tp) + TP_FIRSTWIN_OFF)^
+			}
+		}
+	}
+	if wp != nil {
+		tv_list_alloc_ret(transmute(^Typval)(rettv), KLISTLEN_MAYKNOW_O)
+		for wp != nil {
+			buf := (^rawptr)(uintptr(wp) + W_BUFFER_OFF)^
+			tv_list_append_number(rawptr(rettv.vval), C.longlong((^C.int)(uintptr(buf) + B_FNUM_OFF)^))
+			wp = (^rawptr)(uintptr(wp) + W_NEXT_OFF)^
+		}
+	}
+}
+
+// —— Batch 27aw: funcs.c submatch + substitute ——
+foreign _ {
+	@(link_name = "reg_submatch")
+	reg_submatch_e :: proc "c" (no: C.int) -> cstring ---
+	@(link_name = "reg_submatch_list")
+	reg_submatch_list_e :: proc "c" (no: C.int) -> rawptr ---
+}
+
+E935_S :: "E935: Invalid submatch number: %d"
+
+// typval.h static inline.
+tv_is_func_o :: proc "c" (tv: Typval_T) -> bool {
+	context = runtime.default_context()
+	return tv.v_type == VAR_FUNC || tv.v_type == VAR_PARTIAL
+}
+
+// "submatch()" function.
+@(export)
+f_submatch :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	error := false
+	no := C.int(tv_get_number_chk((^Typval_T)(uintptr(argvars)), &error))
+	if error {
+		return
+	}
+	if no < 0 || no >= NSUBEXP {
+		semsg(cstring(E935_S), no)
+		return
+	}
+	retList: C.int = 0
+	if ([^]Typval_T)(argvars)[1].v_type != VAR_UNKNOWN {
+		retList = C.int(tv_get_number_chk((^Typval_T)(uintptr(argvars) + 16), &error))
+		if error {
+			return
+		}
+	}
+	if retList == 0 {
+		rettv.v_type = VAR_STRING
+		rettv.vval = transmute(rawptr)(reg_submatch_e(no))
+	} else {
+		rettv.v_type = VAR_LIST
+		rettv.vval = transmute(rawptr)(reg_submatch_list_e(no))
+	}
+}
+
+// "substitute()" function.
+@(export)
+f_substitute :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	patbuf: [65]u8
+	subbuf: [65]u8
+	flagsbuf: [65]u8
+	str := tv_get_string_chk((^Typval_T)(uintptr(argvars)))
+	pat := tv_get_string_buf_chk((^Typval_T)(uintptr(argvars) + 16), &patbuf[0])
+	sub: cstring = nil
+	flg := tv_get_string_buf_chk((^Typval_T)(uintptr(argvars) + 48), &flagsbuf[0])
+	expr: ^Typval_T = nil
+	if tv_is_func_o(([^]Typval_T)(argvars)[2]) {
+		expr = (^Typval_T)(uintptr(argvars) + 32)
+	} else {
+		sub = tv_get_string_buf_chk((^Typval_T)(uintptr(argvars) + 32), &subbuf[0])
+	}
+	rettv.v_type = VAR_STRING
+	if str == nil || pat == nil || (sub == nil && expr == nil) || flg == nil {
+		rettv.vval = transmute(rawptr)(cstring(nil))
+	} else {
+		rettv.vval = transmute(rawptr)(do_string_sub(transmute(cstring)(str), C.size_t(libc.strlen(str)), transmute(cstring)(pat), transmute(cstring)(sub), expr, flg, nil))
+	}
+}
+
+// —— Batch 27ax: funcs.c split() ——
+
+// "split()" function.
+@(export)
+f_split :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	col: C.int = 0
+	keepempty := false
+	typeerr := false
+	save_cpo := p_cpo
+	p_cpo = empty_string_opt()
+	str := transmute([^]u8)(tv_get_string((^Typval_T)(uintptr(argvars))))
+	pat: cstring = nil
+	patbuf: [65]u8
+	if ([^]Typval_T)(argvars)[1].v_type != VAR_UNKNOWN {
+		pat = tv_get_string_buf_chk((^Typval_T)(uintptr(argvars) + 16), &patbuf[0])
+		if pat == nil {
+			typeerr = true
+		}
+		if ([^]Typval_T)(argvars)[2].v_type != VAR_UNKNOWN {
+			keepempty = tv_get_bool_chk((^Typval_T)(uintptr(argvars) + 32), &typeerr) != 0
+		}
+	}
+	if pat == nil || ([^]u8)(pat)[0] == 0 {
+		pat = cstring("[\\x01- ]\\+")
+	}
+	tv_list_alloc_ret(transmute(^Typval)(rettv), KLISTLEN_MAYKNOW_O)
+	done := typeerr
+	if !done {
+		regmatch := Regmatch_T{regprog = vim_regcomp(pat, RE_MAGIC + RE_STRING_O), rm_ic = 0}
+		if regmatch.regprog != nil {
+			for str[0] != 0 || keepempty {
+				match := false
+				if str[0] == 0 {
+					match = false
+				} else {
+					match = vim_regexec_nl_e(&regmatch, transmute(cstring)(str), col)
+				}
+				end := str
+				if match {
+					end = transmute([^]u8)(regmatch.startp[0])
+				} else {
+					end = ([^]u8)(uintptr(str) + uintptr(libc.strlen(transmute(cstring)(str))))
+				}
+				if keepempty || uintptr(end) > uintptr(str) || (tv_list_len_o(rawptr(rettv.vval)) > 0 && str[0] != 0 && match && uintptr(end) < uintptr(regmatch.endp[0])) {
+					tv_list_append_string(rawptr(rettv.vval), str, C.ssize_t(uintptr(end) - uintptr(str)))
+				}
+				if !match {
+					break
+				}
+				if uintptr(regmatch.endp[0]) > uintptr(str) {
+					col = 0
+				} else {
+					col = utfc_ptr2len(transmute(cstring)(regmatch.endp[0]))
+				}
+				str = transmute([^]u8)(regmatch.endp[0])
+			}
+			vim_regfree(regmatch.regprog)
+		}
+	}
+	p_cpo = save_cpo
+}
+
+// —— Batch 27au: funcs.c stdpath + str2float (FFI fully rewired) ——
+
+E6100_S :: "E6100: \"%s\" is not a valid stdpath"
+
+// XDG dir-list builder (C-static in funcs.c).
+get_xdg_var_list_o :: proc "c" (xdg: C.int, rettv: ^Typval_T) {
+	context = runtime.default_context()
+	list := tv_list_alloc(-2)
+	rettv.v_type = VAR_LIST
+	rettv.vval = transmute(rawptr)(list)
+	tv_list_ref_o(list)
+	dirs := stdpaths_get_xdg_var(xdg)
+	if dirs == nil {
+		return
+	}
+	iter: rawptr = nil
+	appname := get_appname(false)
+	for {
+		dir_len: C.size_t = 0
+		dir: cstring = nil
+		iter = vim_env_iter(':', dirs, iter, &dir, &dir_len)
+		if dir != nil && dir_len > 0 {
+			dir_with_nvim := concat_paths(transmute(cstring)(xmemdupz_o2(transmute(^u8)(dir), dir_len)), appname, true)
+			tv_list_append_allocated_string(list, transmute(^u8)(dir_with_nvim))
+		}
+		if iter == nil {
+			break
+		}
+	}
+	xfree(rawptr(dirs))
+}
+
+// "stdpath(type)" function.
+@(export)
+f_stdpath :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	rettv.v_type = VAR_STRING
+	rettv.vval = transmute(rawptr)(cstring(nil))
+	p := tv_get_string_chk((^Typval_T)(uintptr(argvars)))
+	if p == nil {
+		return
+	}
+	if _strequal(p, cstring("config")) {
+		rettv.vval = transmute(rawptr)(get_xdg_home(C.int(XDGVarType.kXDGConfigHome)))
+	} else if _strequal(p, cstring("data")) {
+		rettv.vval = transmute(rawptr)(get_xdg_home(C.int(XDGVarType.kXDGDataHome)))
+	} else if _strequal(p, cstring("cache")) {
+		rettv.vval = transmute(rawptr)(get_xdg_home(C.int(XDGVarType.kXDGCacheHome)))
+	} else if _strequal(p, cstring("state")) {
+		rettv.vval = transmute(rawptr)(get_xdg_home(C.int(XDGVarType.kXDGStateHome)))
+	} else if _strequal(p, cstring("log")) {
+		rettv.vval = transmute(rawptr)(concat_paths(get_xdg_home(C.int(XDGVarType.kXDGStateHome)), cstring("logs"), true))
+	} else if _strequal(p, cstring("run")) {
+		rettv.vval = transmute(rawptr)(stdpaths_get_xdg_var(C.int(XDGVarType.kXDGRuntimeDir)))
+	} else if _strequal(p, cstring("config_dirs")) {
+		get_xdg_var_list_o(C.int(XDGVarType.kXDGConfigDirs), rettv)
+	} else if _strequal(p, cstring("data_dirs")) {
+		get_xdg_var_list_o(C.int(XDGVarType.kXDGDataDirs), rettv)
+	} else {
+		semsg(cstring(E6100_S), p)
+	}
+}
+
+// "str2float()" function.
+@(export)
+f_str2float :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	p := skipwhite(tv_get_string((^Typval_T)(uintptr(argvars))))
+	isneg := ([^]u8)(p)[0] == '-'
+	if ([^]u8)(p)[0] == '+' || ([^]u8)(p)[0] == '-' {
+		p = skipwhite(transmute(cstring)(rawptr(uintptr(rawptr(p)) + 1)))
+	}
+	f: f64 = 0
+	string2float(p, &f)
+	rettv.vval = transmute(rawptr)(f)
+	if isneg {
+		rettv.vval = transmute(rawptr)(-f)
+	}
+	rettv.v_type = VAR_FLOAT
+}
+
+// —— Batch 27at: funcs.c visualmode/wildmenumode/windowsversion/wordcount/perleval/rubyeval ——
+foreign _ {
+	@(link_name = "wild_menu_showing")
+	wild_menu_showing_g: C.int
+	@(link_name = "cmdline_pum_active")
+	cmdline_pum_active_e :: proc "c" () -> bool ---
+	@(link_name = "windowsVersion")
+	windowsVersion_g: [20]u8
+	@(link_name = "cursor_pos_info")
+	cursor_pos_info_e :: proc "c" (dict: rawptr) ---
+}
+
+B_VISUAL_MODE_EVAL :: 1456
+
+// "visualmode()" function.
+@(export)
+f_visualmode :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	rettv.v_type = VAR_STRING
+	mode := u8((^C.int)(uintptr(curbuf) + B_VISUAL_MODE_EVAL)^)
+	buf: [2]u8
+	buf[0] = mode
+	buf[1] = 0
+	rettv.vval = transmute(rawptr)(xstrdup_o(&buf[0]))
+	if non_zero_arg_o(argvars) {
+		(^C.int)(uintptr(curbuf) + B_VISUAL_MODE_EVAL)^ = 0
+	}
+}
+
+// "wildmenumode()" function.
+@(export)
+f_wildmenumode :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	if wild_menu_showing_g != 0 || ((State & MODE_CMDLINE_O) != 0 && cmdline_pum_active_e()) {
+		rettv.vval = transmute(rawptr)(C.longlong(1))
+	}
+}
+
+// "windowsversion()" function.
+@(export)
+f_windowsversion :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	rettv.v_type = VAR_STRING
+	rettv.vval = transmute(rawptr)(xstrdup_o(&windowsVersion_g[0]))
+}
+
+// "wordcount()" function.
+@(export)
+f_wordcount :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	tv_dict_alloc_ret(rettv)
+	cursor_pos_info_e(rawptr(rettv.vval))
+}
+
+// "perleval()" function.
+@(export)
+f_perleval :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	script_host_eval(cstring("perl"), argvars, rettv)
+}
+
+// "rubyeval()" function.
+@(export)
+f_rubyeval :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	script_host_eval(cstring("ruby"), argvars, rettv)
+}
+
+// —— Batch 27ap: funcs.c function/funcref ——
+E700_S :: "E700: Unknown function: %s"
+E923_S :: "E923: Second argument of function() must be a list or a dict"
+
+// Shared function()/funcref() engine (C-static in funcs.c).
+common_function_o :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, is_funcref: bool) {
+	context = runtime.default_context()
+	s: cstring = nil
+	name: cstring = nil
+	use_string := false
+	arg_pt: rawptr = nil
+	trans_name: cstring = nil
+	if ([^]Typval_T)(argvars)[0].v_type == VAR_FUNC {
+		s = transmute(cstring)(([^]Typval_T)(argvars)[0].vval)
+	} else if ([^]Typval_T)(argvars)[0].v_type == VAR_PARTIAL && rawptr(([^]Typval_T)(argvars)[0].vval) != nil {
+		arg_pt = rawptr(([^]Typval_T)(argvars)[0].vval)
+		s = partial_name(arg_pt)
+	} else {
+		s = tv_get_string((^Typval_T)(uintptr(argvars)))
+		use_string = true
+	}
+	if ((use_string && _vim_strchr(s, C.int(u8('#'))) == nil) || is_funcref) {
+		name = s
+		trans_name = save_function_name(&name, false, TFN_INT_O | TFN_QUIET_O | TFN_NO_AUTOLOAD_O | TFN_NO_DEREF_O, nil)
+		if name != nil && ([^]u8)(name)[0] != 0 {
+			s = nil
+		}
+	}
+	if s == nil || ([^]u8)(s)[0] == 0 || (use_string && ascii_isdigit_o(([^]u8)(s)[0])) || (is_funcref && trans_name == nil) {
+		if use_string {
+			semsg(e_invarg2, tv_get_string((^Typval_T)(uintptr(argvars))))
+		} else {
+			semsg(e_invarg2, s)
+		}
+	} else if trans_name != nil && ((is_funcref && find_func(trans_name) == nil) || (!is_funcref && !translated_function_exists(trans_name))) {
+		semsg(cstring(E700_S), s)
+	} else {
+		dict_idx: C.int = 0
+		arg_idx: C.int = 0
+		list: rawptr = nil
+		if libc.strncmp(s, cstring("s:"), 2) == 0 || libc.strncmp(s, cstring("<SID>"), 5) == 0 {
+			name = get_scriptlocal_funcname(s)
+		} else {
+			name = transmute(cstring)(xstrdup_o(transmute(^u8)(s)))
+		}
+		if ([^]Typval_T)(argvars)[1].v_type != VAR_UNKNOWN {
+			if ([^]Typval_T)(argvars)[2].v_type != VAR_UNKNOWN {
+				arg_idx = 1
+				dict_idx = 2
+			} else if ([^]Typval_T)(argvars)[1].v_type == VAR_DICT {
+				dict_idx = 1
+			} else {
+				arg_idx = 1
+			}
+			if dict_idx > 0 {
+				if tv_check_for_dict_arg(argvars, dict_idx) == FAIL_E {
+					xfree(rawptr(name))
+					xfree(rawptr(trans_name))
+					return
+				}
+				if rawptr(([^]Typval_T)(argvars)[dict_idx].vval) == nil {
+					dict_idx = 0
+				}
+			}
+			if arg_idx > 0 {
+				if ([^]Typval_T)(argvars)[arg_idx].v_type != VAR_LIST {
+					emsg(cstring(E923_S))
+					xfree(rawptr(name))
+					xfree(rawptr(trans_name))
+					return
+				}
+				list = rawptr(([^]Typval_T)(argvars)[arg_idx].vval)
+				if tv_list_len_o(list) == 0 {
+					arg_idx = 0
+				} else if tv_list_len_o(list) > MAX_FUNC_ARGS_O {
+					emsg_funcname(cstring(E_TOOMANYARG_S), s)
+					xfree(rawptr(name))
+					xfree(rawptr(trans_name))
+					return
+				}
+			}
+		}
+		if dict_idx > 0 || arg_idx > 0 || arg_pt != nil || is_funcref {
+			pt := rawptr(xcalloc(1, 48))
+			if arg_idx > 0 || (arg_pt != nil && (^C.int)(uintptr(arg_pt) + PT_ARGC_OFF_O)^ > 0) {
+				arg_len: C.int = 0
+				if arg_pt != nil {
+					arg_len = (^C.int)(uintptr(arg_pt) + PT_ARGC_OFF_O)^
+				}
+				lv_len := tv_list_len_o(list)
+				pt_argc := arg_len + lv_len
+				(^C.int)(uintptr(pt) + PT_ARGC_OFF_O)^ = pt_argc
+				pt_argv := rawptr(xmalloc(C.size_t(16 * pt_argc)))
+				(^rawptr)(uintptr(pt) + PT_ARGV_OFF_O)^ = pt_argv
+				i: C.int = 0
+				for i < arg_len {
+					tv_copy((^Typval_T)(uintptr((^rawptr)(uintptr(arg_pt) + PT_ARGV_OFF_O)^) + uintptr(i) * 16), (^Typval_T)(uintptr(pt_argv) + uintptr(i) * 16))
+					i += 1
+				}
+				if lv_len > 0 {
+					li := tv_list_first_o(list)
+					for li != nil {
+						tv_copy((^Typval_T)(uintptr(li) + 16), (^Typval_T)(uintptr(pt_argv) + uintptr(i) * 16))
+						i += 1
+						li = (^rawptr)(uintptr(li))^
+					}
+				}
+			}
+			if dict_idx > 0 {
+				d := rawptr(([^]Typval_T)(argvars)[dict_idx].vval)
+				(^rawptr)(uintptr(pt) + PT_DICT_OFF_O)^ = d
+				(^C.int)(uintptr(d) + 8)^ += 1
+			} else if arg_pt != nil {
+				ad := (^rawptr)(uintptr(arg_pt) + PT_DICT_OFF_O)^
+				(^rawptr)(uintptr(pt) + PT_DICT_OFF_O)^ = ad
+				(^bool)(uintptr(pt) + PT_AUTO_OFF_O)^ = (^bool)(uintptr(arg_pt) + PT_AUTO_OFF_O)^
+				if ad != nil {
+					(^C.int)(uintptr(ad) + 8)^ += 1
+				}
+			}
+			(^C.int)(uintptr(pt) + 0)^ = 1
+			if arg_pt != nil && (^rawptr)(uintptr(arg_pt) + PT_FUNC_OFF_O)^ != nil {
+				(^rawptr)(uintptr(pt) + PT_FUNC_OFF_O)^ = (^rawptr)(uintptr(arg_pt) + PT_FUNC_OFF_O)^
+				func_ptr_ref((^rawptr)(uintptr(pt) + PT_FUNC_OFF_O)^)
+				xfree(rawptr(name))
+			} else if is_funcref {
+				(^rawptr)(uintptr(pt) + PT_FUNC_OFF_O)^ = find_func(trans_name)
+				func_ptr_ref((^rawptr)(uintptr(pt) + PT_FUNC_OFF_O)^)
+				xfree(rawptr(name))
+			} else {
+				(^rawptr)(uintptr(pt) + PT_NAME_OFF_O)^ = rawptr(name)
+				func_ref(name)
+			}
+			rettv.v_type = VAR_PARTIAL
+			rettv.vval = transmute(rawptr)(pt)
+		} else {
+			rettv.v_type = VAR_FUNC
+			rettv.vval = transmute(rawptr)(name)
+			func_ref(name)
+		}
+	}
+	xfree(rawptr(trans_name))
+}
+
+// "funcref()" function.
+@(export)
+f_funcref :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	common_function_o(argvars, rettv, true)
+}
+
+// "function()" function.
+@(export)
+f_function :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	common_function_o(argvars, rettv, false)
+}
+
+// —— Batch 27aq: funcs.c reduce ——
+E998_S :: "E998: Reduce of an empty %s with no initial value"
+E1098_S :: "E1098: String, List or Blob required"
+E1132_S :: "E1132: Missing function argument"
+
+// reduce() over a List (C-static in funcs.c).
+reduce_list_o :: proc "c" (argvars: ^Typval_T, expr: ^Typval_T, rettv: ^Typval_T) {
+	context = runtime.default_context()
+	l := rawptr(([^]Typval_T)(argvars)[0].vval)
+	called_start := called_emsg
+	initial := Typval_T{}
+	li: rawptr = nil
+	if ([^]Typval_T)(argvars)[2].v_type == VAR_UNKNOWN {
+		if tv_list_len_o(l) == 0 {
+			semsg(cstring(E998_S), cstring("List"))
+			return
+		}
+		first := tv_list_first_o(l)
+		initial = (^Typval_T)(uintptr(first) + 16)^
+		li = (^rawptr)(uintptr(first))^
+	} else {
+		initial = ([^]Typval_T)(argvars)[2]
+		li = tv_list_first_o(l)
+	}
+	tv_copy(&initial, rettv)
+	if l == nil {
+		return
+	}
+	prev_locked := tv_list_locked_o(l)
+	(^C.int)(uintptr(l) + 72)^ = VAR_FIXED_O
+	for li != nil {
+		argv: [3]Typval_T
+		argv[0] = rettv^
+		argv[1] = (^Typval_T)(uintptr(li) + 16)^
+		rettv.v_type = VAR_UNKNOWN
+		r := eval_expr_typval(expr, true, &argv[0], 2, rettv)
+		tv_clear(&argv[0])
+		if r == FAIL_E || called_emsg != called_start {
+			break
+		}
+		li = (^rawptr)(uintptr(li))^
+	}
+	(^C.int)(uintptr(l) + 72)^ = prev_locked
+}
+
+// reduce() over a String (C-static in funcs.c).
+reduce_string_o :: proc "c" (argvars: ^Typval_T, expr: ^Typval_T, rettv: ^Typval_T) {
+	context = runtime.default_context()
+	p := transmute([^]u8)(tv_get_string((^Typval_T)(uintptr(argvars))))
+	length: C.int = 0
+	called_start := called_emsg
+	if ([^]Typval_T)(argvars)[2].v_type == VAR_UNKNOWN {
+		if p[0] == 0 {
+			semsg(cstring(E998_S), cstring("String"))
+			return
+		}
+		length = utfc_ptr2len(transmute(cstring)(p))
+		rettv^ = Typval_T{v_type = VAR_STRING, v_lock = VAR_UNLOCKED, vval = transmute(rawptr)(xmemdupz_o2(p, C.size_t(length)))}
+		p = ([^]u8)(uintptr(p) + uintptr(length))
+	} else if tv_check_for_string_arg(argvars, 2) == FAIL_E {
+		return
+	} else {
+		tv_copy((^Typval_T)(uintptr(argvars) + 32), rettv)
+	}
+	for p[0] != 0 {
+		argv: [3]Typval_T
+		argv[0] = rettv^
+		length = utfc_ptr2len(transmute(cstring)(p))
+		argv[1] = Typval_T{v_type = VAR_STRING, v_lock = VAR_UNLOCKED, vval = transmute(rawptr)(xmemdupz_o2(p, C.size_t(length)))}
+		r := eval_expr_typval(expr, true, &argv[0], 2, rettv)
+		tv_clear(&argv[0])
+		tv_clear(&argv[1])
+		if r == FAIL_E || called_emsg != called_start {
+			break
+		}
+		p = ([^]u8)(uintptr(p) + uintptr(length))
+	}
+}
+
+// reduce() over a Blob (C-static in funcs.c).
+reduce_blob_o :: proc "c" (argvars: ^Typval_T, expr: ^Typval_T, rettv: ^Typval_T) {
+	context = runtime.default_context()
+	b := rawptr(([^]Typval_T)(argvars)[0].vval)
+	called_start := called_emsg
+	initial := Typval_T{}
+	i: C.int = 0
+	if ([^]Typval_T)(argvars)[2].v_type == VAR_UNKNOWN {
+		if tv_blob_len_o(b) == 0 {
+			semsg(cstring(E998_S), cstring("Blob"))
+			return
+		}
+		initial = Typval_T{v_type = VAR_NUMBER, v_lock = VAR_UNLOCKED, vval = transmute(rawptr)(C.longlong(tv_blob_get_o(b, 0)))}
+		i = 1
+	} else if tv_check_for_number_arg(argvars, 2) == FAIL_E {
+		return
+	} else {
+		initial = ([^]Typval_T)(argvars)[2]
+		i = 0
+	}
+	tv_copy(&initial, rettv)
+	for i < tv_blob_len_o(b) {
+		argv: [3]Typval_T
+		argv[0] = rettv^
+		argv[1] = Typval_T{v_type = VAR_NUMBER, v_lock = VAR_UNLOCKED, vval = transmute(rawptr)(C.longlong(tv_blob_get_o(b, i)))}
+		r := eval_expr_typval(expr, true, &argv[0], 2, rettv)
+		if r == FAIL_E || called_emsg != called_start {
+			return
+		}
+		i += 1
+	}
+}
+
+// "reduce()" function.
+@(export)
+f_reduce :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	if ([^]Typval_T)(argvars)[0].v_type != VAR_STRING && ([^]Typval_T)(argvars)[0].v_type != VAR_LIST && ([^]Typval_T)(argvars)[0].v_type != VAR_BLOB {
+		emsg(cstring(E1098_S))
+		return
+	}
+	func_name: cstring = nil
+	if ([^]Typval_T)(argvars)[1].v_type == VAR_FUNC {
+		func_name = transmute(cstring)(([^]Typval_T)(argvars)[1].vval)
+	} else if ([^]Typval_T)(argvars)[1].v_type == VAR_PARTIAL {
+		func_name = partial_name(rawptr(([^]Typval_T)(argvars)[1].vval))
+	} else {
+		func_name = tv_get_string((^Typval_T)(uintptr(argvars) + 16))
+	}
+	if func_name == nil || ([^]u8)(func_name)[0] == 0 {
+		emsg(cstring(E1132_S))
+		return
+	}
+	if ([^]Typval_T)(argvars)[0].v_type == VAR_LIST {
+		reduce_list_o(argvars, (^Typval_T)(uintptr(argvars) + 16), rettv)
+	} else if ([^]Typval_T)(argvars)[0].v_type == VAR_STRING {
+		reduce_string_o(argvars, (^Typval_T)(uintptr(argvars) + 16), rettv)
+	} else {
+		reduce_blob_o(argvars, (^Typval_T)(uintptr(argvars) + 16), rettv)
+	}
+}
+
+// —— Batch 27ay: funcs.c soundfold + spellbadword ——
+
+// "soundfold({word})" function.
+@(export)
+f_soundfold :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	rettv.v_type = VAR_STRING
+	rettv.vval = transmute(rawptr)(eval_soundfold(tv_get_string((^Typval_T)(uintptr(argvars)))))
+}
+
+// "spellbadword()" function.
+@(export)
+f_spellbadword :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	wo_spell_save := w_p_spell_r(curwin)
+	if wo_spell_save == 0 {
+		parse_spelllang(curwin)
+		(^C.int)(uintptr(curwin) + W_P_SPELL_OFF)^ = 1
+	}
+	ws := win_s_r(curwin)
+	if ([^]u8)((^rawptr)(uintptr(ws) + SB_P_SPL_OFF)^)[0] == 0 {
+		emsg(cstring(e_no_spell_txt))
+		(^C.int)(uintptr(curwin) + W_P_SPELL_OFF)^ = wo_spell_save
+		return
+	}
+	word: cstring = ""
+	attr: C.int = HLF_COUNT_O
+	length: C.size_t = 0
+	if ([^]Typval_T)(argvars)[0].v_type == VAR_UNKNOWN {
+		length = spell_move_to(curwin, FORWARD_O, SMT_ALL_O, true, &attr)
+		if length != 0 {
+			word = transmute(cstring)(get_cursor_pos_ptr_r())
+			(^bool)(uintptr(curwin) + W_SET_CURSWANT)^ = true
+		}
+	} else if ([^]u8)((^rawptr)(uintptr(curbuf) + SB_P_SPL)^)[0] != 0 {
+		str := tv_get_string_chk((^Typval_T)(uintptr(argvars)))
+		capcol: C.int = -1
+		if str != nil {
+			s := transmute([^]u8)(str)
+			for s[0] != 0 {
+				length = spell_check(curwin, &s[0], &attr, &capcol, false)
+				if attr != HLF_COUNT_O {
+					word = transmute(cstring)(s)
+					break
+				}
+				s = ([^]u8)(uintptr(s) + uintptr(length))
+				capcol -= C.int(length)
+				length = 0
+			}
+		}
+	}
+	(^C.int)(uintptr(curwin) + W_P_SPELL_OFF)^ = wo_spell_save
+	tv_list_alloc_ret(transmute(^Typval)(rettv), 2)
+	tv_list_append_string(rawptr(rettv.vval), transmute(^u8)(word), C.ssize_t(length))
+	if attr == HLF_SPB {
+		tv_list_append_string(rawptr(rettv.vval), transmute(^u8)(cstring("bad")), 3)
+	} else if attr == HLF_SPR {
+		tv_list_append_string(rawptr(rettv.vval), transmute(^u8)(cstring("rare")), 4)
+	} else if attr == HLF_SPL {
+		tv_list_append_string(rawptr(rettv.vval), transmute(^u8)(cstring("local")), 5)
+	} else if attr == HLF_SPC {
+		tv_list_append_string(rawptr(rettv.vval), transmute(^u8)(cstring("caps")), 4)
+	} else {
+		tv_list_append_string(rawptr(rettv.vval), nil, -1)
+	}
+}
+
+// —— Batch 27bp: funcs.c setreg ——
+
+// Yank-type parser (C-static in funcs.c).
+get_yank_type_o :: proc "c" (pp: ^cstring, yank_type: ^C.int, block_len: ^C.int) -> C.int {
+	context = runtime.default_context()
+	stropt := ([^]u8)(pp^)
+	if stropt[0] == 'v' || stropt[0] == 'c' {
+		yank_type^ = kMTCharWise
+	} else if stropt[0] == 'V' || stropt[0] == 'l' {
+		yank_type^ = kMTLineWise
+	} else if stropt[0] == 'b' || stropt[0] == Ctrl_V {
+		yank_type^ = kMTBlockWise
+		if ascii_isdigit_o(stropt[1]) {
+			stropt = ([^]u8)(uintptr(stropt) + 1)
+			block_len^ = getdigits_int_r(transmute(^^u8)(&stropt), false, 0) - 1
+			stropt = ([^]u8)(uintptr(stropt) - 1)
+		}
+	} else {
+		return FAIL_E
+	}
+	pp^ = transmute(cstring)(stropt)
+	return OK_E
+}
+
+// "setreg()" function.
+@(export)
+f_setreg :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	append := false
+	block_len: C.int = -1
+	yank_type: C.int = kMTUnknown
+	rettv.vval = transmute(rawptr)(C.longlong(1))
+	strregname := tv_get_string_chk(argvars)
+	if strregname == nil {
+		return
+	}
+	regname := ([^]u8)(strregname)[0]
+	if regname == 0 || regname == '@' {
+		regname = '"'
+	}
+	regcontents: ^Typval_T = nil
+	pointreg: u8 = 0
+	if ([^]Typval_T)(argvars)[1].v_type == VAR_DICT {
+		d := rawptr(([^]Typval_T)(argvars)[1].vval)
+		if tv_dict_len_o(d) == 0 {
+			lstval := ([^]cstring)(xmalloc(8 * 2))
+			lstval[0] = nil
+			lstval[1] = nil
+			write_reg_contents_lst(C.int(regname), transmute(^rawptr)(lstval), false, kMTUnknown, -1)
+			return
+		}
+		di := tv_dict_find(d, cstring("regcontents"), 11)
+		if di != nil {
+			regcontents = (^Typval_T)(uintptr(di))
+		}
+		stropt := tv_dict_get_string(d, cstring("regtype"), false)
+		if stropt != nil {
+			sp := stropt
+			if get_yank_type_o(&sp, &yank_type, &block_len) == FAIL_E || ([^]u8)(sp)[1] != 0 {
+				semsg(cstring(E475_VAL_S), cstring("value"))
+				return
+			}
+		}
+		if regname == '"' {
+			stropt = tv_dict_get_string(d, cstring("points_to"), false)
+			if stropt != nil {
+				pointreg = ([^]u8)(stropt)[0]
+				regname = pointreg
+			}
+		} else if tv_dict_get_number(d, cstring("isunnamed")) != 0 {
+			pointreg = regname
+		}
+	} else {
+		regcontents = (^Typval_T)(uintptr(argvars) + 16)
+	}
+	set_unnamed := false
+	if ([^]Typval_T)(argvars)[2].v_type != VAR_UNKNOWN {
+		if yank_type != kMTUnknown {
+			semsg(cstring(E_TOOMANYARG_S), cstring("setreg"))
+			return
+		}
+		stropt := tv_get_string_chk((^Typval_T)(uintptr(argvars) + 32))
+		if stropt == nil {
+			return
+		}
+		sp := transmute([^]u8)(stropt)
+		for sp[0] != 0 {
+			if sp[0] == 'a' || sp[0] == 'A' {
+				append = true
+			} else if sp[0] == 'u' || sp[0] == '"' {
+				set_unnamed = true
+			} else {
+				spc := transmute(cstring)(sp)
+				get_yank_type_o(&spc, &yank_type, &block_len)
+				sp = transmute([^]u8)(spc)
+			}
+			sp = ([^]u8)(uintptr(sp) + 1)
+		}
+	}
+	if regcontents != nil && regcontents.v_type == VAR_LIST {
+		ll := rawptr(regcontents.vval)
+		length := tv_list_len_o(ll)
+		nslots := (length + 1) * 2
+		lstval := ([^]cstring)(xmalloc(8 * C.size_t(nslots)))
+		curval: C.int = 0
+		nalloc := length + 2
+		nac: C.int = 0
+		li := tv_list_first_o(ll)
+		ok := true
+		for li != nil {
+			buf: [65]u8
+			s := tv_get_string_buf_chk((^Typval_T)(uintptr(li) + 16), &buf[0])
+			if s == nil {
+				ok = false
+				break
+			}
+			if s == transmute(cstring)(&buf[0]) {
+				s = transmute(cstring)(xstrdup_o(transmute(^u8)(s)))
+				lstval[nalloc + nac] = s
+				nac += 1
+			}
+			lstval[curval] = s
+			curval += 1
+			li = (^rawptr)(uintptr(li))^
+		}
+		lstval[curval] = nil
+		curval += 1
+		if ok {
+			write_reg_contents_lst(C.int(regname), transmute(^rawptr)(lstval), append, yank_type, block_len)
+		}
+		i: C.int = 0
+		for i < nac {
+			xfree(rawptr(transmute(^u8)(lstval[nalloc + i])))
+			i += 1
+		}
+		xfree(rawptr(lstval))
+	} else if regcontents != nil {
+		strval := tv_get_string_chk(regcontents)
+		if strval == nil {
+			return
+		}
+		write_reg_contents_ex(C.int(regname), strval, i64(libc.strlen(strval)), append, yank_type, block_len)
+	}
+	if pointreg != 0 {
+		get_yank_register(C.int(pointreg), YREG_YANK)
+	}
+	rettv.vval = transmute(rawptr)(C.longlong(0))
+	if set_unnamed {
+		op_reg_set_previous(regname)
+	}
+}
+
+// —— Batch 27bw: funcs.c json pair ——
+
+// "json_decode()" function.
+@(export)
+f_json_decode :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	numbuf: [65]u8
+	s: cstring = nil
+	tofree: cstring = nil
+	length: C.size_t = 0
+	if ([^]Typval_T)(argvars)[0].v_type == VAR_LIST {
+		l := rawptr(([^]Typval_T)(argvars)[0].vval)
+		tofree_raw: rawptr = nil
+		if !encode_vim_list_to_buf(l, &length, &tofree_raw) {
+			emsg(cstring("E474: Failed to convert list to string"))
+			return
+		}
+		tofree = transmute(cstring)(tofree_raw)
+		s = tofree
+		if s == nil {
+			s = cstring("")
+		}
+	} else {
+		s = tv_get_string_buf_chk((^Typval_T)(uintptr(argvars)), &numbuf[0])
+		if s != nil {
+			length = C.size_t(libc.strlen(s))
+		} else {
+			return
+		}
+	}
+	if json_decode_string(s, length, rettv) == FAIL_E {
+		semsg(cstring("E474: Failed to parse %.*s"), C.int(length), s)
+		rettv.v_type = VAR_NUMBER
+		rettv.vval = transmute(rawptr)(C.longlong(0))
+	}
+	xfree(rawptr(tofree))
+}
+
+// "json_encode()" function.
+@(export)
+f_json_encode :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	rettv.v_type = VAR_STRING
+	rettv.vval = transmute(rawptr)(encode_tv2json((^Typval_T)(uintptr(argvars)), nil))
+}
+
+// —— Batch 27bx: funcs.c printf ——
+foreign _ {
+	@(link_name = "vim_vsnprintf_typval")
+	vim_vsnprintf_typval_e :: proc "c" (str: ^u8, str_m: C.size_t, fmt: cstring, ap: rawptr, tvs: ^Typval_T) -> C.int ---
+}
+
+// "printf()" function (va_list bypassed with zeroed dummy, same as C static).
+@(export)
+f_printf :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	rettv.v_type = VAR_STRING
+	rettv.vval = transmute(rawptr)(cstring(nil))
+	saved_did_emsg := did_emsg_flag
+	did_emsg_flag = 0
+	buf: [65]u8
+	fmt := tv_get_string_buf((^Typval_T)(uintptr(argvars)), &buf[0])
+	dummy: [24]u8
+	length := vim_vsnprintf_typval_e(nil, 0, fmt, rawptr(&dummy[0]), (^Typval_T)(uintptr(argvars) + 16))
+	if did_emsg_flag == 0 {
+		s := (^u8)(xmalloc(C.size_t(length) + 1))
+		rettv.vval = transmute(rawptr)(s)
+		vim_vsnprintf_typval_e(s, C.size_t(length) + 1, fmt, rawptr(&dummy[0]), (^Typval_T)(uintptr(argvars) + 16))
+	}
+	did_emsg_flag |= saved_did_emsg
+}
+
+// —— Batch 27by: funcs.c msgpackdump ——
+foreign _ {
+	@(link_name = "packer_string_buffer")
+	packer_string_buffer_e :: proc "c" () -> PackerBuffer_O ---
+	@(link_name = "packer_take_string")
+	packer_take_string_e :: proc "c" (buffer: ^PackerBuffer_O) -> NvimString ---
+}
+
+// PackerBuffer mirror (packer_defs.h): 48B cc-probed.
+PackerBuffer_O :: struct {
+	startptr:    ^u8,   // 0
+	ptr:         ^u8,   // 8
+	endptr:      ^u8,   // 16
+	anydata:     rawptr, // 24
+	anyint:      i64,    // 32
+	packer_flush: rawptr, // 40
+}
+#assert(size_of(PackerBuffer_O) == 48)
+
+// "msgpackdump()" function.
+@(export)
+f_msgpackdump :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	if ([^]Typval_T)(argvars)[0].v_type != VAR_LIST {
+		semsg(cstring(E_LISTARG_S), cstring("msgpackdump()"))
+		return
+	}
+	list := rawptr(([^]Typval_T)(argvars)[0].vval)
+	packer := packer_string_buffer_e()
+	idx: C.int = 0
+	li := tv_list_first_o(list)
+	for li != nil {
+		msgbuf: [256]u8
+		libc.snprintf(&msgbuf[0], 256, cstring("msgpackdump() argument, index %i"), idx)
+		idx += 1
+		if encode_vim_to_msgpack_o(&packer, (^Typval_T)(uintptr(li) + 16), transmute(cstring)(&msgbuf[0])) == FAIL_E {
+			break
+		}
+		li = (^rawptr)(uintptr(li))^
+	}
+	data := packer_take_string_e(&packer)
+	if ([^]Typval_T)(argvars)[1].v_type != VAR_UNKNOWN && _strequal(tv_get_string((^Typval_T)(uintptr(argvars) + 16)), cstring("B")) {
+		b := tv_blob_alloc_ret(rettv)
+		(^rawptr)(uintptr(b) + 16)^ = rawptr(data.data)
+		(^C.int)(uintptr(b) + 0)^ = C.int(data.size)
+		(^C.int)(uintptr(b) + 4)^ = C.int(uintptr(packer.endptr) - uintptr(packer.startptr))
+	} else {
+		encode_list_write(tv_list_alloc_ret(transmute(^Typval)(rettv), KLISTLEN_MAYKNOW_O), transmute(cstring)(data.data), C.size_t(data.size))
+		api_free_string_r(data)
+	}
+}
+
+// —— Batch 27bz: funcs.c msgpackparse ——
+foreign _ {
+	@(link_name = "mpack_parser_init")
+	mpack_parser_init_e :: proc "c" (p: rawptr, c: u32) ---
+	@(link_name = "alloc_block")
+	alloc_block_e :: proc "c" () -> rawptr ---
+	@(link_name = "free_block")
+	free_block_e :: proc "c" (block: rawptr) ---
+}
+
+MPACK_OK_O :: 0
+MPACK_EOF_O :: 1
+MPACK_ERROR_O :: 2
+MPACK_NOMEM_O :: 3
+ARENA_BLOCK_SIZE_O :: 4096
+MPARSER_SIZE_O :: 1664
+
+// mpack error reporter (C-static in funcs.c).
+emsg_mpack_error_o :: proc "c" (status: C.int) {
+	context = runtime.default_context()
+	if status == MPACK_ERROR_O {
+		semsg(e_invarg2, cstring("Failed to parse msgpack string"))
+	} else if status == MPACK_EOF_O {
+		semsg(e_invarg2, cstring("Incomplete msgpack string"))
+	} else if status == MPACK_NOMEM_O {
+		semsg(e_invarg2, cstring("object was too deep to unpack"))
+	}
+}
+
+// List-based msgpack unpacker (C-static in funcs.c).
+msgpackparse_unpack_list_o :: proc "c" (list: rawptr, ret_list: rawptr) {
+	context = runtime.default_context()
+	if tv_list_len_o(list) == 0 {
+		return
+	}
+	first := tv_list_first_o(list)
+	if (^C.int)(uintptr((^Typval_T)(uintptr(first) + 16))) ^ != VAR_STRING {
+		semsg(e_invarg2, cstring("List item is not a string"))
+		return
+	}
+	lrstate := encode_init_lrstate(list)
+	buf := (^u8)(alloc_block_e())
+	buf_size: C.size_t = 0
+	cur_item := Typval_T{v_type = VAR_UNKNOWN, v_lock = VAR_UNLOCKED}
+	parser: [MPARSER_SIZE_O]u8
+	mpack_parser_init_e(rawptr(&parser[0]), 0)
+	(^rawptr)(rawptr(&parser[0]))^ = rawptr(&cur_item)
+	status: C.int = MPACK_OK_O
+	for {
+		read_bytes: C.size_t = 0
+		rlret := encode_read_from_list(&lrstate, buf, ARENA_BLOCK_SIZE_O - buf_size, &read_bytes)
+		if rlret == FAIL_E {
+			semsg(e_invarg2, cstring("List item is not a string"))
+			break
+		}
+		buf_size += read_bytes
+		ptr := transmute(cstring)(rawptr(uintptr(buf)))
+		for buf_size > 0 {
+			status = mpack_parse_typval(rawptr(&parser[0]), &ptr, &buf_size)
+			if status == MPACK_OK_O {
+				tv_list_append_owned_tv(ret_list, cur_item)
+				cur_item.v_type = VAR_UNKNOWN
+			} else {
+				break
+			}
+		}
+		if rlret == OK_E {
+			break
+		}
+		if status == MPACK_EOF_O {
+			if buf_size > 0 && uintptr(rawptr(ptr)) > uintptr(buf) {
+				libc.memmove(rawptr(buf), rawptr(ptr), buf_size)
+			}
+		} else if status != MPACK_OK_O {
+			break
+		}
+	}
+	if status != MPACK_OK_O {
+		typval_parser_error_free(rawptr(&parser[0]))
+		emsg_mpack_error_o(status)
+	}
+	free_block_e(rawptr(buf))
+}
+
+// Blob-based msgpack unpacker (C-static in funcs.c).
+msgpackparse_unpack_blob_o :: proc "c" (blob: rawptr, ret_list: rawptr) {
+	context = runtime.default_context()
+	length := tv_blob_len_o(blob)
+	if length == 0 {
+		return
+	}
+	data := transmute(cstring)((^rawptr)(uintptr(blob) + 16)^)
+	remaining: C.size_t = C.size_t(length)
+	for remaining > 0 {
+		tv := Typval_T{}
+		status := unpack_typval(&data, &remaining, &tv)
+		if status != MPACK_OK_O {
+			emsg_mpack_error_o(status)
+			return
+		}
+		tv_list_append_owned_tv(ret_list, tv)
+	}
+}
+
+// "msgpackparse()" function.
+@(export)
+f_msgpackparse :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	if ([^]Typval_T)(argvars)[0].v_type != VAR_LIST && ([^]Typval_T)(argvars)[0].v_type != VAR_BLOB {
+		semsg(cstring(E_LISTBLOBARG_S), cstring("msgpackparse()"))
+		return
+	}
+	ret_list := tv_list_alloc_ret(transmute(^Typval)(rettv), KLISTLEN_MAYKNOW_O)
+	if ([^]Typval_T)(argvars)[0].v_type == VAR_LIST {
+		msgpackparse_unpack_list_o(rawptr(([^]Typval_T)(argvars)[0].vval), ret_list)
+	} else {
+		msgpackparse_unpack_blob_o(rawptr(([^]Typval_T)(argvars)[0].vval), ret_list)
+	}
+}
+
+// —— Batch 23d: eval/typval_encode walker foundation (dormant) ——
+
+// Stack entry types (typval_encode.h).
+MPConvStackValType_O :: enum C.int {
+	kMPConvDict        = 0,
+	kMPConvList        = 1,
+	kMPConvPairs       = 2,
+	kMPConvPartial     = 3,
+	kMPConvPartialList = 4,
+}
+
+// Partial conversion stages.
+MPConvPartialStage_O :: enum C.int {
+	kMPConvPartialArgs = 0,
+	kMPConvPartialSelf = 1,
+	kMPConvPartialEnd  = 2,
+}
+
+// MPConvStackVal mirror (typval_encode.h): 56B cc-probed.
+MPConvStackVal_O :: struct {
+	type:         C.int,  // 0
+	_pad4:        [4]u8,
+	tv:           rawptr, // 8
+	saved_copyID: C.int,  // 16
+	_pad20:       [4]u8,
+	data:         [32]u8, // 24..56
+}
+#assert(size_of(MPConvStackVal_O) == 56)
+
+// MPConvStack mirror (kvec_withinit 8 inline): 472B cc-probed.
+MPConvStack_O :: struct {
+	size:       C.size_t, // 0
+	capacity:   C.size_t, // 8
+	items:      ^MPConvStackVal_O, // 16
+	init_items: [8]MPConvStackVal_O, // 24..472
+}
+#assert(size_of(MPConvStack_O) == 472)
+
+// Stack data accessors (union fields inside data[32]).
+mpconv_d_dict_o :: #force_inline proc "c" (v: ^MPConvStackVal_O) -> rawptr {
+	return (^rawptr)(&v.data[0])^
+}
+mpconv_d_dictp_o :: #force_inline proc "c" (v: ^MPConvStackVal_O) -> rawptr {
+	return (^rawptr)(&v.data[8])^
+}
+mpconv_d_hi_o :: #force_inline proc "c" (v: ^MPConvStackVal_O) -> rawptr {
+	return (^rawptr)(&v.data[16])^
+}
+mpconv_d_todo_o :: #force_inline proc "c" (v: ^MPConvStackVal_O) -> C.size_t {
+	return (^C.size_t)(&v.data[24])^
+}
+mpconv_l_list_o :: #force_inline proc "c" (v: ^MPConvStackVal_O) -> rawptr {
+	return (^rawptr)(&v.data[0])^
+}
+mpconv_l_li_o :: #force_inline proc "c" (v: ^MPConvStackVal_O) -> rawptr {
+	return (^rawptr)(&v.data[8])^
+}
+
+// kvec stack ops over the mirror (kvec.h semantics).
+mpconv_stack_init_o :: proc "c" (st: ^MPConvStack_O) {
+	context = runtime.default_context()
+	st.size = 0
+	st.capacity = 8
+	st.items = &st.init_items[0]
+}
+mpconv_stack_push_o :: proc "c" (st: ^MPConvStack_O, v: MPConvStackVal_O) {
+	context = runtime.default_context()
+	if st.size >= st.capacity {
+		newcap := st.capacity * 2
+		nbytes := C.size_t(newcap) * 56
+		if st.items == &st.init_items[0] {
+			nb := (^u8)(xmalloc(nbytes))
+			libc.memcpy(rawptr(nb), rawptr(st.items), C.size_t(st.size) * 56)
+			st.items = (^MPConvStackVal_O)(nb)
+		} else {
+			st.items = (^MPConvStackVal_O)(xrealloc(rawptr(st.items), nbytes))
+		}
+		st.capacity = newcap
+	}
+	([^]MPConvStackVal_O)(st.items)[st.size] = v
+	st.size += 1
+}
+mpconv_stack_pop_o :: proc "c" (st: ^MPConvStack_O) {
+	context = runtime.default_context()
+	st.size -= 1
+}
+mpconv_stack_last_o :: proc "c" (st: ^MPConvStack_O) -> ^MPConvStackVal_O {
+	context = runtime.default_context()
+	return &([^]MPConvStackVal_O)(st.items)[st.size - 1]
+}
+mpconv_stack_destroy_o :: proc "c" (st: ^MPConvStack_O) {
+	context = runtime.default_context()
+	if st.items != &st.init_items[0] {
+		xfree(rawptr(st.items))
+	}
+}
+
+// Self-reference check (TYPVAL_ENCODE_CHECK_SELF_REFERENCE without the
+// mode-specific RECURSE emit: true = already seen, caller emits + returns OK).
+typval_encode_check_self_reference_o :: proc "c" (val_copyID: ^C.int, copyID: C.int) -> bool {
+	context = runtime.default_context()
+	if val_copyID^ == copyID {
+		return true
+	}
+	val_copyID^ = copyID
+	return false
+}
+
+// list_T copyID inline accessors (typval.h:88/111, lv_copyID@68).
+tv_list_copyid_o :: proc "c" (l: rawptr) -> C.int {
+	context = runtime.default_context()
+	return (^C.int)(uintptr(l) + 68)^
+}
+tv_list_set_copyid_o :: proc "c" (l: rawptr, copyid: C.int) {
+	context = runtime.default_context()
+	(^C.int)(uintptr(l) + 68)^ = copyid
+}
+
+// —— Batch 23e: string-mode scalar emits + CONVERT_ONE_VALUE (dormant) ——
+foreign _ {
+	@(link_name = "xfpclassify")
+	xfpclassify_e :: proc "c" (d: f64) -> C.int ---
+	@(link_name = "vim_snprintf_safelen")
+	vim_snprintf_safelen_e :: proc "c" (str: ^u8, str_m: C.size_t, fmt: cstring, #c_vararg args: ..any) -> C.size_t ---
+	@(link_name = "nvim_odin_get_echo_emsg")
+	nvim_odin_get_echo_emsg_e :: proc "c" () -> bool ---
+	@(link_name = "nvim_odin_set_echo_emsg")
+	nvim_odin_set_echo_emsg_e :: proc "c" (v: bool) ---
+	@(link_name = "utf_printable")
+	utf_printable_e :: proc "c" (c: C.int) -> bool ---
+}
+
+// —— Batch 23h: json-mode engine ——
+
+KMPNIL_O :: 0
+KMPBOOLEAN_O :: 1
+KMPINTEGER_O :: 2
+KMPFLOAT_O :: 3
+KMPARRAY_O :: 5
+KMPEXT_O :: 7
+
+// Hex digits for \u escapes (string literals can't take variable index).
+xdigits_o := [16]u8{'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F'}
+
+// JSON string escaper (convert_to_json_string, two-pass).
+convert_to_json_string_o :: proc "c" (gap: ^Garray, buf: cstring, length: C.size_t) -> C.int {
+	context = runtime.default_context()
+	if buf == nil {
+		ga_concat_len_r(gap, cstring("\"\""), 2)
+		return OK_E
+	}
+	utf_len := C.size_t(length)
+	str_len: C.size_t = 0
+	i: C.size_t = 0
+	for i < utf_len {
+		ch := utf_ptr2char(transmute(cstring)(rawptr(uintptr(rawptr(buf)) + uintptr(i))))
+		shift := C.size_t(utf_ptr2len_o(transmute(cstring)(rawptr(uintptr(rawptr(buf)) + uintptr(i)))))
+		if ch == 0 {
+			shift = 1
+		}
+		i += shift
+		if ch == 8 || ch == 9 || ch == 10 || ch == 12 || ch == 13 || ch == '"' || ch == '\\' {
+			str_len += 2
+		} else if ch > 0x7F && shift == 1 {
+			semsg(cstring("E474: String \"%.*s\" contains byte that does not start any UTF-8 character"), C.int(utf_len - (i - shift)), rawptr(uintptr(rawptr(buf)) + uintptr(i - shift)))
+			return FAIL_E
+		} else if (ch >= 0xD800 && ch <= 0xDBFF) || (ch >= 0xDC00 && ch <= 0xDFFF) {
+			semsg(cstring("E474: UTF-8 string contains code point which belongs to a surrogate pair: %.*s"), C.int(utf_len - (i - shift)), rawptr(uintptr(rawptr(buf)) + uintptr(i - shift)))
+			return FAIL_E
+		} else if ch >= 0x20 && utf_printable_e(C.int(ch)) {
+			str_len += shift
+		} else {
+			str_len += 6
+			if ch >= 0x10000 {
+				str_len += 6
+			}
+		}
+	}
+	ga_append_r(gap, '"')
+	ga_grow_r(gap, C.int(str_len))
+	i = 0
+	for i < utf_len {
+		ch := utf_ptr2char(transmute(cstring)(rawptr(uintptr(rawptr(buf)) + uintptr(i))))
+		shift := C.size_t(utf_char2len_r(ch))
+		if ch == 0 {
+			shift = 1
+		}
+		if ch == 8 {
+			ga_concat_len_r(gap, cstring("\\b"), 2)
+		} else if ch == 9 {
+			ga_concat_len_r(gap, cstring("\\t"), 2)
+		} else if ch == 10 {
+			ga_concat_len_r(gap, cstring("\\n"), 2)
+		} else if ch == 12 {
+			ga_concat_len_r(gap, cstring("\\f"), 2)
+		} else if ch == 13 {
+			ga_concat_len_r(gap, cstring("\\r"), 2)
+		} else if ch == '"' {
+			ga_concat_len_r(gap, cstring("\\\""), 2)
+		} else if ch == '\\' {
+			ga_concat_len_r(gap, cstring("\\\\"), 2)
+		} else if ch >= 0x20 && utf_printable_e(C.int(ch)) {
+			ga_concat_len_r(gap, transmute(cstring)(rawptr(uintptr(rawptr(buf)) + uintptr(i))), shift)
+		} else if ch < 0x10000 {
+			eb: [6]u8
+			eb[0] = '\\'; eb[1] = 'u'
+			eb[2] = u8(xdigits_o[(ch >> 12) & 0xF])
+			eb[3] = u8(xdigits_o[(ch >> 8) & 0xF])
+			eb[4] = u8(xdigits_o[(ch >> 4) & 0xF])
+			eb[5] = u8(xdigits_o[ch & 0xF])
+			ga_concat_len_r(gap, transmute(cstring)(&eb[0]), 6)
+		} else {
+			tmp := ch - 0x10000
+			hi := 0xD800 + ((tmp >> 10) & 0x3FF)
+			lo := 0xDC00 + (tmp & 0x3FF)
+			eb: [12]u8
+			eb[0] = '\\'; eb[1] = 'u'
+			eb[2] = u8(xdigits_o[(hi >> 12) & 0xF])
+			eb[3] = u8(xdigits_o[(hi >> 8) & 0xF])
+			eb[4] = u8(xdigits_o[(hi >> 4) & 0xF])
+			eb[5] = u8(xdigits_o[hi & 0xF])
+			eb[6] = '\\'; eb[7] = 'u'
+			eb[8] = u8(xdigits_o[(lo >> 12) & 0xF])
+			eb[9] = u8(xdigits_o[(lo >> 8) & 0xF])
+			eb[10] = u8(xdigits_o[(lo >> 4) & 0xF])
+			eb[11] = u8(xdigits_o[lo & 0xF])
+			ga_concat_len_r(gap, transmute(cstring)(&eb[0]), 12)
+		}
+		i += shift
+	}
+	ga_append_r(gap, '"')
+	return OK_E
+}
+
+// Location-reporting error (conv_error, shared by json/msgpack modes).
+conv_error_o :: proc "c" (msg: cstring, mpstack: ^MPConvStack_O, objname: cstring) -> C.int {
+	context = runtime.default_context()
+	msg_ga := Garray{}
+	ga_init_r2(&msg_ga, 1, 80)
+	i: C.size_t = 0
+	for i < mpstack.size {
+		if i != 0 {
+			ga_concat_len_r(&msg_ga, cstring(", "), 2)
+		}
+		v := ([^]MPConvStackVal_O)(mpstack.items)[i]
+		if v.type == C.int(MPConvStackValType_O.kMPConvDict) {
+			hi := (^rawptr)(&v.data[16])^
+			key: cstring = nil
+			if hi == nil {
+				d := (^rawptr)(&v.data[0])^
+				arra := (^rawptr)(rawptr(uintptr(d) + 48))^
+				key = transmute(cstring)((^rawptr)(uintptr(arra) + 8)^)
+			} else {
+				key = transmute(cstring)((^rawptr)(uintptr(hi) - 16 + 8)^)
+			}
+			ktv := Typval_T{v_type = VAR_STRING, v_lock = VAR_UNLOCKED, vval = transmute(rawptr)(key)}
+			kstr := encode_tv2string(&ktv, nil)
+			libc.snprintf(transmute([^]u8)(&IObuff[0]), 1025, cstring("key %s"), kstr)
+			xfree(rawptr(transmute(^u8)(kstr)))
+			ga_concat_e(&msg_ga, transmute(cstring)(&IObuff[0]))
+		} else if v.type == C.int(MPConvStackValType_O.kMPConvPairs) || v.type == C.int(MPConvStackValType_O.kMPConvList) {
+			l := (^rawptr)(&v.data[0])^
+			cursor := (^rawptr)(&v.data[8])^
+			idx: C.int = 0
+			if cursor == tv_list_first_o(l) {
+				idx = 0
+			} else if cursor == nil {
+				idx = tv_list_len_o(l) - 1
+			} else {
+				idx = tv_list_idx_of_item(l, (^rawptr)(uintptr(cursor) + 8)^)
+			}
+			tgt: rawptr = nil
+			if cursor == nil {
+				tgt = tv_list_last_o(l)
+			} else {
+				tgt = (^rawptr)(uintptr(cursor) + 8)^
+			}
+			ttv: ^Typval_T = nil
+			if tgt != nil {
+				ttv = (^Typval_T)(uintptr(tgt) + 16)
+			}
+			if v.type == C.int(MPConvStackValType_O.kMPConvList) || tgt == nil || (ttv.v_type != VAR_LIST && tv_list_len_o(rawptr(ttv.vval)) <= 0) {
+				libc.snprintf(transmute([^]u8)(&IObuff[0]), 1025, cstring("index %i"), idx)
+				ga_concat_e(&msg_ga, transmute(cstring)(&IObuff[0]))
+			} else {
+				first := tv_list_first_o(rawptr(ttv.vval))
+				ktv := (^Typval_T)(uintptr(first) + 16)^
+				key := encode_tv2echo(&ktv, nil)
+				libc.snprintf(transmute([^]u8)(&IObuff[0]), 1025, cstring("key %s at index %i from special map"), key, idx)
+				xfree(rawptr(transmute(^u8)(key)))
+				ga_concat_e(&msg_ga, transmute(cstring)(&IObuff[0]))
+			}
+		} else if v.type == C.int(MPConvStackValType_O.kMPConvPartial) {
+			if (^C.int)(&v.data[0])^ == C.int(MPConvPartialStage_O.kMPConvPartialSelf) {
+				ga_concat_len_r(&msg_ga, cstring("partial"), 7)
+			} else if (^C.int)(&v.data[0])^ == C.int(MPConvPartialStage_O.kMPConvPartialEnd) {
+				ga_concat_len_r(&msg_ga, cstring("partial self dictionary"), 23)
+			}
+		} else {
+			arg := (^rawptr)(&v.data[0])^
+			argv := (^rawptr)(&v.data[8])^
+			idx := C.int(uintptr(arg) - uintptr(argv)) / 16 - 1
+			libc.snprintf(transmute([^]u8)(&IObuff[0]), 1025, cstring("argument %i"), idx)
+			ga_concat_e(&msg_ga, transmute(cstring)(&IObuff[0]))
+		}
+		i += 1
+	}
+	if mpstack.size == 0 {
+		semsg(msg, objname, cstring("itself"))
+	} else {
+		semsg(msg, objname, transmute(cstring)(msg_ga.ga_data))
+	}
+	ga_clear_r(&msg_ga)
+	return FAIL_E
+}
+
+FP_NAN_O :: 0
+FP_INFINITE_O :: 1
+
+// String-mode CONV_STRING (quote + ''-escape).
+encode_str_string_o :: proc "c" (gap: ^Garray, buf: cstring, length: C.size_t) {
+	context = runtime.default_context()
+	if buf == nil {
+		ga_concat_len_r(gap, cstring("''"), 2)
+		return
+	}
+	ga_grow_r(gap, C.int(2 + length + _memcnt(rawptr(transmute(^u8)(buf)), C.int('\''), length)))
+	ga_append_r(gap, '\'')
+	i: C.size_t = 0
+	for i < length {
+		if ([^]u8)(buf)[i] == '\'' {
+			ga_append_r(gap, '\'')
+		}
+		ga_append_r(gap, ([^]u8)(buf)[i])
+		i += 1
+	}
+	ga_append_r(gap, '\'')
+}
+
+// String-mode CONV_BLOB (0z hex with dots).
+encode_str_blob_o :: proc "c" (gap: ^Garray, blob: rawptr, length: C.int) {
+	context = runtime.default_context()
+	if length == 0 {
+		ga_concat_len_r(gap, cstring("0z"), 2)
+		return
+	}
+	ga_grow_r(gap, 2 + 2 * length + (length - 1) / 4)
+	ga_concat_len_r(gap, cstring("0z"), 2)
+	numbuf: [65]u8
+	i: C.int = 0
+	for i < length {
+		if i > 0 && (i & 3) == 0 {
+			ga_append_r(gap, '.')
+		}
+		n := libc.snprintf(&numbuf[0], 65, cstring("%02X"), C.int(tv_blob_get_o(blob, i)))
+		ga_concat_len_r(gap, transmute(cstring)(&numbuf[0]), C.size_t(n))
+		i += 1
+	}
+}
+
+// String-mode CONV_NUMBER (%PRId64).
+encode_str_number_o :: proc "c" (gap: ^Garray, num: C.longlong) {
+	context = runtime.default_context()
+	numbuf: [65]u8
+	n := libc.snprintf(&numbuf[0], 65, cstring("%ld"), num)
+	ga_concat_len_r(gap, transmute(cstring)(&numbuf[0]), C.size_t(n))
+}
+
+// String-mode CONV_FLOAT (nan/inf/%g).
+encode_str_float_o :: proc "c" (gap: ^Garray, flt: f64) {
+	context = runtime.default_context()
+	if xfpclassify_e(flt) == FP_NAN_O {
+		ga_concat_len_r(gap, cstring("str2float('nan')"), 16)
+	} else if xfpclassify_e(flt) == FP_INFINITE_O {
+		if flt < 0 {
+			ga_append_r(gap, '-')
+		}
+		ga_concat_len_r(gap, cstring("str2float('inf')"), 16)
+	} else {
+		numbuf: [65]u8
+		n := vim_snprintf_safelen_e(&numbuf[0], 65, cstring("%g"), flt)
+		ga_concat_len_r(gap, transmute(cstring)(&numbuf[0]), n)
+	}
+}
+
+// String-mode CONVERT_ONE_VALUE (scalars immediate, containers pushed).
+// Returns OK_E/FAIL_E; mode RECURSE never triggers (ALLOW_SPECIALS=false,
+// string self-ref handled by walker via check helper).
+convert_one_value_string_o :: proc "c" (gap: ^Garray, mpstack: ^MPConvStack_O, cur_mpsv: ^MPConvStackVal_O, tv: ^Typval_T, copyID: C.int, objname: cstring) -> C.int {
+	context = runtime.default_context()
+	if tv.v_type == VAR_STRING {
+		s := transmute(cstring)(tv.vval)
+		if s == nil {
+			encode_str_string_o(gap, nil, 0)
+		} else {
+			encode_str_string_o(gap, s, C.size_t(libc.strlen(s)))
+		}
+	} else if tv.v_type == VAR_NUMBER {
+		encode_str_number_o(gap, transmute(C.longlong)(tv.vval))
+	} else if tv.v_type == VAR_FLOAT {
+		encode_str_float_o(gap, transmute(f64)(tv.vval))
+	} else if tv.v_type == VAR_BLOB {
+		b := rawptr(tv.vval)
+		encode_str_blob_o(gap, b, tv_blob_len_o(b))
+	} else if tv.v_type == VAR_FUNC {
+		s := transmute(cstring)(tv.vval)
+		if s == nil {
+			_internal_error(cstring("string(): NULL function name"))
+			ga_concat_len_r(gap, cstring("function(NULL"), 13)
+		} else {
+			ga_concat_len_r(gap, cstring("function("), 9)
+			encode_str_string_o(gap, s, C.size_t(libc.strlen(s)))
+		}
+		ga_append_r(gap, ')')
+	} else if tv.v_type == VAR_PARTIAL {
+		pt := rawptr(tv.vval)
+		fun: cstring = nil
+		if pt != nil {
+			fun = partial_name(pt)
+		}
+		prefix := cstring("")
+		if fun != nil && pt != nil && (^rawptr)(uintptr(pt) + PT_NAME_OFF_O)^ == nil && ([^]u8)(fun)[0] >= 'A' && ([^]u8)(fun)[0] <= 'Z' {
+			prefix = cstring("g:")
+		}
+		if fun == nil {
+			_internal_error(cstring("string(): NULL function name"))
+			ga_concat_len_r(gap, cstring("function(NULL"), 13)
+		} else {
+			ga_concat_len_r(gap, cstring("function("), 9)
+			name_off := gap.ga_len
+			ga_concat_e(gap, prefix)
+			encode_str_string_o(gap, fun, C.size_t(libc.strlen(fun)))
+			([^]u8)(gap.ga_data)[uintptr(name_off)] = '\''
+			plen := C.size_t(libc.strlen(prefix))
+			if plen > 0 {
+				libc.memcpy(rawptr(uintptr(gap.ga_data) + uintptr(name_off) + 1), rawptr(transmute(^u8)(prefix)), plen)
+			}
+		}
+		v := MPConvStackVal_O{}
+		v.type = C.int(MPConvStackValType_O.kMPConvPartial)
+		v.tv = tv
+		v.saved_copyID = copyID - 1
+		(^C.int)(&v.data[0])^ = C.int(MPConvPartialStage_O.kMPConvPartialArgs)
+		(^rawptr)(&v.data[8])^ = pt
+		mpconv_stack_push_o(mpstack, v)
+	} else if tv.v_type == VAR_LIST {
+		l := rawptr(tv.vval)
+		if l == nil || tv_list_len_o(l) == 0 {
+			ga_concat_len_r(gap, cstring("[]"), 2)
+		} else {
+			saved := tv_list_copyid_o(l)
+			if (^C.int)(uintptr(l) + 68)^ == copyID {
+				encode_recurse_o(gap, mpstack, l, C.int(MPConvStackValType_O.kMPConvList))
+			} else {
+				(^C.int)(uintptr(l) + 68)^ = copyID
+				ga_append_r(gap, '[')
+				v := MPConvStackVal_O{}
+				v.type = C.int(MPConvStackValType_O.kMPConvList)
+				v.tv = tv
+				v.saved_copyID = saved
+				(^rawptr)(&v.data[0])^ = l
+				(^rawptr)(&v.data[8])^ = tv_list_first_o(l)
+				mpconv_stack_push_o(mpstack, v)
+			}
+		}
+	} else if tv.v_type == VAR_BOOL {
+		if C.int(transmute(C.longlong)(tv.vval)) != 0 {
+			ga_concat_len_r(gap, cstring("v:true"), 6)
+		} else {
+			ga_concat_len_r(gap, cstring("v:false"), 7)
+		}
+	} else if tv.v_type == VAR_SPECIAL {
+		ga_concat_len_r(gap, cstring("v:null"), 6)
+	} else if tv.v_type == VAR_DICT {
+		d := rawptr(tv.vval)
+		if d == nil || (^C.size_t)(uintptr(d) + 24)^ == 0 {
+			ga_concat_len_r(gap, cstring("{}"), 2)
+		} else {
+			saved := (^C.int)(uintptr(d) + 12)^
+			if (^C.int)(uintptr(d) + 12)^ == copyID {
+				encode_recurse_o(gap, mpstack, d, C.int(MPConvStackValType_O.kMPConvDict))
+			} else {
+				(^C.int)(uintptr(d) + 12)^ = copyID
+				ga_append_r(gap, '{')
+				v := MPConvStackVal_O{}
+				v.type = C.int(MPConvStackValType_O.kMPConvDict)
+				v.tv = tv
+				v.saved_copyID = saved
+				(^rawptr)(&v.data[0])^ = d
+				(^rawptr)(&v.data[8])^ = rawptr(uintptr(tv) + 8)
+				(^rawptr)(&v.data[16])^ = (^rawptr)(rawptr(uintptr(d) + 48))^
+				(^C.size_t)(&v.data[24])^ = (^C.size_t)(uintptr(d) + 24)^
+				mpconv_stack_push_o(mpstack, v)
+			}
+		}
+	}
+	return OK_E
+}
+
+// Echo-mode shares the string walker; only RECURSE differs
+// (backref {...@N}/[...@N}, no E724). Selected by flag.
+encode_recurse_echo_g := false
+
+// Echo-mode CONV_RECURSE (backref emit, no error).
+encode_echo_recurse_o :: proc "c" (gap: ^Garray, mpstack: ^MPConvStack_O, val: rawptr, conv_type: C.int) {
+	context = runtime.default_context()
+	backref: C.size_t = 0
+	for backref < mpstack.size {
+		mpval := ([^]MPConvStackVal_O)(mpstack.items)[backref]
+		if mpval.type == conv_type {
+			hit := false
+			if conv_type == C.int(MPConvStackValType_O.kMPConvDict) {
+				hit = (^rawptr)(&mpval.data[0])^ == val
+			} else if conv_type == C.int(MPConvStackValType_O.kMPConvList) {
+				hit = (^rawptr)(&mpval.data[0])^ == val
+			}
+			if hit {
+				break
+			}
+		}
+		backref += 1
+	}
+	ebuf: [72]u8
+	if conv_type == C.int(MPConvStackValType_O.kMPConvDict) {
+		libc.snprintf(&ebuf[0], 72, cstring("{...@%zu}"), backref)
+	} else {
+		libc.snprintf(&ebuf[0], 72, cstring("[...@%zu]"), backref)
+	}
+	ga_concat_e(gap, transmute(cstring)(&ebuf[0]))
+}
+
+// Mode-dispatched RECURSE (string default, echo when flagged).
+encode_recurse_o :: proc "c" (gap: ^Garray, mpstack: ^MPConvStack_O, val: rawptr, conv_type: C.int) {
+	context = runtime.default_context()
+	if encode_recurse_echo_g {
+		encode_echo_recurse_o(gap, mpstack, val, conv_type)
+	} else {
+		encode_str_recurse_o(gap, mpstack, val, conv_type)
+	}
+}
+
+// String-mode CONV_RECURSE (E724 once + {E724@backref}).
+encode_str_recurse_o :: proc "c" (gap: ^Garray, mpstack: ^MPConvStack_O, val: rawptr, conv_type: C.int) {
+	context = runtime.default_context()
+	if !nvim_odin_get_echo_emsg_e() {
+		nvim_odin_set_echo_emsg_e(true)
+		emsg(cstring("E724: unable to correctly dump variable with self-referencing container"))
+	}
+	backref: C.size_t = 0
+	for backref < mpstack.size {
+		mpval := ([^]MPConvStackVal_O)(mpstack.items)[backref]
+		if mpval.type == conv_type {
+			hit := false
+			if conv_type == C.int(MPConvStackValType_O.kMPConvDict) {
+				hit = (^rawptr)(&mpval.data[0])^ == val
+			} else if conv_type == C.int(MPConvStackValType_O.kMPConvList) {
+				hit = (^rawptr)(&mpval.data[0])^ == val
+			}
+			if hit {
+				break
+			}
+		}
+		backref += 1
+	}
+	ebuf: [72]u8
+	libc.snprintf(&ebuf[0], 72, cstring("{E724@%zu}"), backref)
+	ga_concat_e(gap, transmute(cstring)(&ebuf[0]))
+}
+
+// —— Batch 23f: string-mode walker loop + driver + encode_tv2string ——
+
+// String-mode walker continuation (TYPVAL_ENCODE_ENCODE loop body).
+encode_str_walker_o :: proc "c" (gap: ^Garray, mpstack: ^MPConvStack_O, tv_top: ^Typval_T, copyID: C.int, objname: cstring) -> C.int {
+	context = runtime.default_context()
+	for mpstack.size > 0 {
+		cur := mpconv_stack_last_o(mpstack)
+		tv: ^Typval_T = nil
+		if cur.type == C.int(MPConvStackValType_O.kMPConvDict) {
+			todo := (^C.size_t)(&cur.data[24])^
+			if todo == 0 {
+				d := (^rawptr)(&cur.data[0])^
+				(^C.int)(uintptr(d) + 12)^ = cur.saved_copyID
+				ga_append_r(gap, '}')
+				mpconv_stack_pop_o(mpstack)
+				continue
+			}
+			d := (^rawptr)(&cur.data[0])^
+			if todo != (^C.size_t)(uintptr(d) + 24)^ {
+				ga_concat_len_r(gap, cstring(", "), 2)
+			}
+			hi := (^rawptr)(&cur.data[16])^
+			for (^rawptr)(uintptr(hi) + 8)^ == nil || (^rawptr)(uintptr(hi) + 8)^ == rawptr(&hash_removed_c) {
+				hi = rawptr(uintptr(hi) + 16)
+			}
+			(^rawptr)(&cur.data[16])^ = hi
+			di := rawptr(uintptr((^rawptr)(uintptr(hi) + 8)^) - 17)
+			(^C.size_t)(&cur.data[24])^ = todo - 1
+			(^rawptr)(&cur.data[16])^ = rawptr(uintptr(hi) + 16)
+			key := transmute(cstring)((^rawptr)(uintptr(hi) + 8)^)
+			encode_str_string_o(gap, key, C.size_t(libc.strlen(key)))
+			ga_concat_len_r(gap, cstring(": "), 2)
+			tv = (^Typval_T)(uintptr(di))
+		} else if cur.type == C.int(MPConvStackValType_O.kMPConvList) {
+			li := (^rawptr)(&cur.data[8])^
+			if li == nil {
+				l := (^rawptr)(&cur.data[0])^
+				tv_list_set_copyid_o(l, cur.saved_copyID)
+				ga_append_r(gap, ']')
+				mpconv_stack_pop_o(mpstack)
+				continue
+			}
+			l := (^rawptr)(&cur.data[0])^
+			if li != tv_list_first_o(l) {
+				ga_concat_len_r(gap, cstring(", "), 2)
+			}
+			tv = (^Typval_T)(uintptr(li) + 16)
+			(^rawptr)(&cur.data[8])^ = (^rawptr)(uintptr(li))^
+		} else if cur.type == C.int(MPConvStackValType_O.kMPConvPairs) {
+			li := (^rawptr)(&cur.data[8])^
+			if li == nil {
+				l := (^rawptr)(&cur.data[0])^
+				tv_list_set_copyid_o(l, cur.saved_copyID)
+				ga_append_r(gap, '}')
+				mpconv_stack_pop_o(mpstack)
+				continue
+			}
+			l := (^rawptr)(&cur.data[0])^
+			if li != tv_list_first_o(l) {
+				ga_concat_len_r(gap, cstring(", "), 2)
+			}
+			pair := rawptr((^Typval_T)(uintptr(li) + 16).vval)
+			if convert_one_value_string_o(gap, mpstack, cur, (^Typval_T)(uintptr(tv_list_first_o(pair)) + 16), copyID, objname) == FAIL_E {
+				mpconv_stack_destroy_o(mpstack)
+				return FAIL_E
+			}
+			ga_concat_len_r(gap, cstring(": "), 2)
+			tv = (^Typval_T)(uintptr(tv_list_last_o(pair)) + 16)
+			(^rawptr)(&cur.data[8])^ = (^rawptr)(uintptr(li))^
+		} else if cur.type == C.int(MPConvStackValType_O.kMPConvPartial) {
+			pt := (^rawptr)(&cur.data[8])^
+			stage := (^C.int)(&cur.data[0])^
+			if stage == C.int(MPConvPartialStage_O.kMPConvPartialArgs) {
+				argc: C.int = 0
+				if pt != nil {
+					argc = (^C.int)(uintptr(pt) + PT_ARGC_OFF_O)^
+				}
+				if argc != 0 {
+					ga_concat_len_r(gap, cstring(", "), 2)
+				}
+				(^C.int)(&cur.data[0])^ = C.int(MPConvPartialStage_O.kMPConvPartialSelf)
+				if pt != nil && argc > 0 {
+					ga_append_r(gap, '[')
+					v := MPConvStackVal_O{}
+					v.type = C.int(MPConvStackValType_O.kMPConvPartialList)
+					v.saved_copyID = copyID - 1
+					argv := (^rawptr)(uintptr(pt) + PT_ARGV_OFF_O)^
+					(^rawptr)(&v.data[0])^ = argv
+					(^rawptr)(&v.data[8])^ = argv
+					(^C.size_t)(&v.data[16])^ = C.size_t(argc)
+					mpconv_stack_push_o(mpstack, v)
+				}
+			} else if stage == C.int(MPConvPartialStage_O.kMPConvPartialSelf) {
+				(^C.int)(&cur.data[0])^ = C.int(MPConvPartialStage_O.kMPConvPartialEnd)
+				dict: rawptr = nil
+				if pt != nil {
+					dict = (^rawptr)(uintptr(pt) + PT_DICT_OFF_O)^
+				}
+				if dict != nil {
+					used := C.int((^C.size_t)(uintptr(dict) + 24)^)
+					ga_concat_len_r(gap, cstring(", "), 2)
+					if used == 0 {
+						ga_concat_len_r(gap, cstring("{}"), 2)
+						continue
+					}
+					saved := (^C.int)(uintptr(dict) + 12)^
+					if (^C.int)(uintptr(dict) + 12)^ == copyID {
+						encode_recurse_o(gap, mpstack, dict, C.int(MPConvStackValType_O.kMPConvDict))
+						continue
+					}
+					(^C.int)(uintptr(dict) + 12)^ = copyID
+					ga_append_r(gap, '{')
+					v := MPConvStackVal_O{}
+					v.type = C.int(MPConvStackValType_O.kMPConvDict)
+					v.saved_copyID = saved
+					(^rawptr)(&v.data[0])^ = dict
+					(^rawptr)(&v.data[8])^ = rawptr(uintptr(pt) + PT_DICT_OFF_O)
+					(^rawptr)(&v.data[16])^ = (^rawptr)(rawptr(uintptr(dict) + 48))^
+					(^C.size_t)(&v.data[24])^ = C.size_t(used)
+					mpconv_stack_push_o(mpstack, v)
+				}
+			} else {
+				ga_append_r(gap, ')')
+				mpconv_stack_pop_o(mpstack)
+			}
+			continue
+		} else {
+			arg := (^rawptr)(&cur.data[0])^
+			todo := (^C.size_t)(&cur.data[16])^
+			if todo == 0 {
+				ga_append_r(gap, ']')
+				mpconv_stack_pop_o(mpstack)
+				continue
+			}
+			if arg != (^rawptr)(&cur.data[8])^ {
+				ga_concat_len_r(gap, cstring(", "), 2)
+			}
+			tv = (^Typval_T)(uintptr(arg))
+			(^rawptr)(&cur.data[0])^ = rawptr(uintptr(arg) + 16)
+			(^C.size_t)(&cur.data[16])^ = todo - 1
+		}
+		if convert_one_value_string_o(gap, mpstack, cur, tv, copyID, objname) == FAIL_E {
+			mpconv_stack_destroy_o(mpstack)
+			return FAIL_E
+		}
+	}
+	mpconv_stack_destroy_o(mpstack)
+	return OK_E
+}
+
+// String-mode driver (encode_vim_to_string).
+encode_vim_to_string_o :: proc "c" (gap: ^Garray, tv: ^Typval_T, objname: cstring) -> C.int {
+	context = runtime.default_context()
+	save_flag := encode_recurse_echo_g
+	encode_recurse_echo_g = false
+	copyID := get_copyID()
+	mpstack := MPConvStack_O{}
+	mpconv_stack_init_o(&mpstack)
+	if convert_one_value_string_o(gap, &mpstack, nil, tv, copyID, objname) == FAIL_E {
+		mpconv_stack_destroy_o(&mpstack)
+		encode_recurse_echo_g = save_flag
+		return FAIL_E
+	}
+	ret := encode_str_walker_o(gap, &mpstack, tv, copyID, objname)
+	encode_recurse_echo_g = save_flag
+	return ret
+}
+
+// String representation with quotes (encode_tv2string).
+@(export)
+encode_tv2string :: proc "c" (tv: ^Typval_T, length: ^C.size_t) -> cstring {
+	context = runtime.default_context()
+	ga := Garray{}
+	ga_init_r2(&ga, 1, 80)
+	evs_ret := encode_vim_to_string_o(&ga, tv, cstring("encode_tv2string() argument"))
+	_ = evs_ret
+	nvim_odin_set_echo_emsg_e(false)
+	if length != nil {
+		length^ = C.size_t(ga.ga_len)
+	}
+	ga_append_r(&ga, 0)
+	return transmute(cstring)(ga.ga_data)
+}
+
+// —— Batch 23h: json-mode engine ——
+
+// JSON float (E474-FAIL on nan/inf, else %g).
+encode_json_float_o :: proc "c" (gap: ^Garray, flt: f64) -> C.int {
+	context = runtime.default_context()
+	if xfpclassify_e(flt) == FP_NAN_O {
+		emsg(cstring("E474: Unable to represent NaN value in JSON"))
+		return FAIL_E
+	}
+	if xfpclassify_e(flt) == FP_INFINITE_O {
+		emsg(cstring("E474: Unable to represent infinity in JSON"))
+		return FAIL_E
+	}
+	numbuf: [65]u8
+	n := vim_snprintf_safelen_e(&numbuf[0], 65, cstring("%g"), flt)
+	ga_concat_len_r(gap, transmute(cstring)(&numbuf[0]), n)
+	return OK_E
+}
+
+// JSON-mode RECURSE (E724 once, no emit).
+encode_json_recurse_o :: proc "c" (mpstack: ^MPConvStack_O, val: rawptr, conv_type: C.int) {
+	context = runtime.default_context()
+	if !nvim_odin_get_echo_emsg_e() {
+		nvim_odin_set_echo_emsg_e(true)
+		emsg(cstring("E724: unable to correctly dump variable with self-referencing container"))
+	}
+}
+
+// JSON-mode CONVERT_ONE_VALUE (ALLOW_SPECIALS=true: full special dispatch).
+convert_one_value_json_o :: proc "c" (gap: ^Garray, mpstack: ^MPConvStack_O, cur_mpsv: ^MPConvStackVal_O, tv: ^Typval_T, copyID: C.int, objname: cstring) -> C.int {
+	context = runtime.default_context()
+	if tv.v_type == VAR_STRING {
+		s := transmute(cstring)(tv.vval)
+		if s == nil {
+			return convert_to_json_string_o(gap, nil, 0)
+		}
+		return convert_to_json_string_o(gap, s, C.size_t(libc.strlen(s)))
+	} else if tv.v_type == VAR_NUMBER {
+		encode_str_number_o(gap, transmute(C.longlong)(tv.vval))
+	} else if tv.v_type == VAR_FLOAT {
+		return encode_json_float_o(gap, transmute(f64)(tv.vval))
+	} else if tv.v_type == VAR_BLOB {
+		b := rawptr(tv.vval)
+		length := tv_blob_len_o(b)
+		if length == 0 {
+			ga_concat_len_r(gap, cstring("[]"), 2)
+		} else {
+			ga_append_r(gap, '[')
+			numbuf: [65]u8
+			i: C.int = 0
+			for i < length {
+				if i > 0 {
+					ga_concat_len_r(gap, cstring(", "), 2)
+				}
+				n := libc.snprintf(&numbuf[0], 65, cstring("%d"), C.int(tv_blob_get_o(b, i)))
+				ga_concat_len_r(gap, transmute(cstring)(&numbuf[0]), C.size_t(n))
+				i += 1
+			}
+			ga_append_r(gap, ']')
+		}
+	} else if tv.v_type == VAR_FUNC || tv.v_type == VAR_PARTIAL {
+		return conv_error_o(cstring("E474: Error while dumping %s, %s: attempt to dump function reference"), mpstack, objname)
+	} else if tv.v_type == VAR_LIST {
+		l := rawptr(tv.vval)
+		if l == nil || tv_list_len_o(l) == 0 {
+			ga_concat_len_r(gap, cstring("[]"), 2)
+		} else {
+			saved := tv_list_copyid_o(l)
+			if (^C.int)(uintptr(l) + 68)^ == copyID {
+				encode_json_recurse_o(mpstack, l, C.int(MPConvStackValType_O.kMPConvList))
+			} else {
+				(^C.int)(uintptr(l) + 68)^ = copyID
+				ga_append_r(gap, '[')
+				v := MPConvStackVal_O{}
+				v.type = C.int(MPConvStackValType_O.kMPConvList)
+				v.tv = tv
+				v.saved_copyID = saved
+				(^rawptr)(&v.data[0])^ = l
+				(^rawptr)(&v.data[8])^ = tv_list_first_o(l)
+				mpconv_stack_push_o(mpstack, v)
+			}
+		}
+	} else if tv.v_type == VAR_BOOL {
+		if C.int(transmute(C.longlong)(tv.vval)) != 0 {
+			ga_concat_len_r(gap, cstring("true"), 4)
+		} else {
+			ga_concat_len_r(gap, cstring("false"), 5)
+		}
+	} else if tv.v_type == VAR_SPECIAL {
+		ga_concat_len_r(gap, cstring("null"), 4)
+	} else if tv.v_type == VAR_DICT {
+		d := rawptr(tv.vval)
+		if d == nil || (^C.size_t)(uintptr(d) + 24)^ == 0 {
+			ga_concat_len_r(gap, cstring("{}"), 2)
+		} else if (^C.size_t)(uintptr(d) + 24)^ == 2 {
+			type_di := tv_dict_find(d, cstring("_TYPE"), 5)
+			val_di := tv_dict_find(d, cstring("_VAL"), 4)
+			special_done := false
+			special_fail := false
+			if type_di != nil && (^C.int)(uintptr(type_di))^ == VAR_LIST && val_di != nil {
+				ttv := (^Typval_T)(uintptr(type_di))
+				tl := rawptr(ttv.vval)
+				i: C.int = 0
+				for i < 8 {
+					if tl == eval_msgpack_type_lists_e[i] {
+						break
+					}
+					i += 1
+				}
+				if i < 8 {
+					vv := (^Typval_T)(uintptr(val_di))
+					if i == KMPNIL_O {
+						ga_concat_len_r(gap, cstring("null"), 4)
+						special_done = true
+					} else if i == KMPBOOLEAN_O {
+						if vv.v_type != VAR_NUMBER {
+							special_fail = true
+						} else {
+							if transmute(C.longlong)(vv.vval) != 0 {
+								ga_concat_len_r(gap, cstring("true"), 4)
+							} else {
+								ga_concat_len_r(gap, cstring("false"), 5)
+							}
+							special_done = true
+						}
+					} else if i == KMPINTEGER_O {
+						if vv.v_type != VAR_LIST {
+							special_fail = true
+						} else {
+							vl := rawptr(vv.vval)
+							if tv_list_len_o(vl) != 4 {
+								special_fail = true
+							} else {
+								sli := tv_list_first_o(vl)
+								stv := (^Typval_T)(uintptr(sli) + 16)
+								hli := (^rawptr)(uintptr(sli))^
+								htv := (^Typval_T)(uintptr(hli) + 16)
+								bli := (^rawptr)(uintptr(hli))^
+								btv := (^Typval_T)(uintptr(bli) + 16)
+								lli := tv_list_last_o(vl)
+								ltv := (^Typval_T)(uintptr(lli) + 16)
+								if stv.v_type != VAR_NUMBER || transmute(C.longlong)(stv.vval) == 0 || htv.v_type != VAR_NUMBER || transmute(C.longlong)(htv.vval) < 0 || btv.v_type != VAR_NUMBER || transmute(C.longlong)(btv.vval) < 0 || ltv.v_type != VAR_NUMBER || transmute(C.longlong)(ltv.vval) < 0 {
+									special_fail = true
+								} else {
+									number := u64(transmute(C.longlong)(htv.vval)) << 62 | u64(transmute(C.longlong)(btv.vval)) << 31 | u64(transmute(C.longlong)(ltv.vval))
+									if transmute(C.longlong)(stv.vval) > 0 {
+										numbuf: [65]u8
+										n := libc.snprintf(&numbuf[0], 65, cstring("%llu"), number)
+										ga_concat_len_r(gap, transmute(cstring)(&numbuf[0]), C.size_t(n))
+									} else {
+										encode_str_number_o(gap, -i64(number))
+									}
+									special_done = true
+								}
+							}
+						}
+					} else if i == KMPFLOAT_O {
+						if vv.v_type != VAR_FLOAT {
+							special_fail = true
+						} else {
+							if encode_json_float_o(gap, transmute(f64)(vv.vval)) == FAIL_E {
+								return FAIL_E
+							}
+							special_done = true
+						}
+					} else if i == KMPSTRING_O {
+						if vv.v_type != VAR_LIST {
+							special_fail = true
+						} else {
+							blen: C.size_t = 0
+							bbuf: rawptr = nil
+							if !encode_vim_list_to_buf(rawptr(vv.vval), &blen, &bbuf) {
+								special_fail = true
+							} else {
+								if convert_to_json_string_o(gap, transmute(cstring)(bbuf), blen) == FAIL_E {
+									xfree(bbuf)
+									return FAIL_E
+								}
+								xfree(bbuf)
+								special_done = true
+							}
+						}
+					} else if i == KMPARRAY_O {
+						if vv.v_type != VAR_LIST {
+							special_fail = true
+						} else {
+							al := rawptr(vv.vval)
+							saved := tv_list_copyid_o(al)
+							if (^C.int)(uintptr(al) + 68)^ == copyID {
+								encode_json_recurse_o(mpstack, al, C.int(MPConvStackValType_O.kMPConvList))
+								special_done = true
+							} else {
+								(^C.int)(uintptr(al) + 68)^ = copyID
+								ga_append_r(gap, '[')
+								v := MPConvStackVal_O{}
+								v.type = C.int(MPConvStackValType_O.kMPConvList)
+								v.tv = tv
+								v.saved_copyID = saved
+								(^rawptr)(&v.data[0])^ = al
+								(^rawptr)(&v.data[8])^ = tv_list_first_o(al)
+								mpconv_stack_push_o(mpstack, v)
+								special_done = true
+							}
+						}
+					} else if i == KMPMAP_O {
+						if vv.v_type != VAR_LIST {
+							special_fail = true
+						} else {
+							vl := rawptr(vv.vval)
+							if vl == nil || tv_list_len_o(vl) == 0 {
+								ga_concat_len_r(gap, cstring("{}"), 2)
+								special_done = true
+							} else {
+								ok := true
+								li := tv_list_first_o(vl)
+								for li != nil {
+									itv := (^Typval_T)(uintptr(li) + 16)
+									if itv.v_type != VAR_LIST || tv_list_len_o(rawptr(itv.vval)) != 2 {
+										ok = false
+										break
+									}
+									li = (^rawptr)(uintptr(li))^
+								}
+								if !ok {
+									special_fail = true
+								} else {
+									saved := tv_list_copyid_o(vl)
+									if (^C.int)(uintptr(vl) + 68)^ == copyID {
+										encode_json_recurse_o(mpstack, vl, C.int(MPConvStackValType_O.kMPConvPairs))
+										special_done = true
+									} else {
+										(^C.int)(uintptr(vl) + 68)^ = copyID
+										ga_append_r(gap, '{')
+										v := MPConvStackVal_O{}
+										v.type = C.int(MPConvStackValType_O.kMPConvPairs)
+										v.tv = tv
+										v.saved_copyID = saved
+										(^rawptr)(&v.data[0])^ = vl
+										(^rawptr)(&v.data[8])^ = tv_list_first_o(vl)
+										mpconv_stack_push_o(mpstack, v)
+										special_done = true
+									}
+								}
+							}
+						}
+					} else {
+						bad := false
+						if vv.v_type != VAR_LIST {
+							bad = true
+						} else {
+							vl := rawptr(vv.vval)
+							if tv_list_len_o(vl) != 2 {
+								bad = true
+							} else {
+								ftv := (^Typval_T)(uintptr(tv_list_first_o(vl)) + 16)
+								ltv := (^Typval_T)(uintptr(tv_list_last_o(vl)) + 16)
+								if ftv.v_type != VAR_NUMBER {
+									bad = true
+								} else {
+									etype := transmute(C.longlong)(ftv.vval)
+									if etype > 127 || etype < -128 || ltv.v_type != VAR_LIST {
+										bad = true
+									}
+								}
+							}
+						}
+						if bad {
+							special_fail = true
+						} else {
+							vl := rawptr(vv.vval)
+							ltv := (^Typval_T)(uintptr(tv_list_last_o(vl)) + 16)
+							blen: C.size_t = 0
+							bbuf: rawptr = nil
+							if !encode_vim_list_to_buf(rawptr(ltv.vval), &blen, &bbuf) {
+								special_fail = true
+							} else {
+								xfree(bbuf)
+								emsg(cstring("E474: Unable to convert EXT string to JSON"))
+								return FAIL_E
+							}
+						}
+					}
+				}
+			}
+			if !special_done && !special_fail {
+				saved := (^C.int)(uintptr(d) + 12)^
+				if (^C.int)(uintptr(d) + 12)^ == copyID {
+					encode_json_recurse_o(mpstack, d, C.int(MPConvStackValType_O.kMPConvDict))
+				} else {
+					(^C.int)(uintptr(d) + 12)^ = copyID
+					ga_append_r(gap, '{')
+					v := MPConvStackVal_O{}
+					v.type = C.int(MPConvStackValType_O.kMPConvDict)
+					v.tv = tv
+					v.saved_copyID = saved
+					(^rawptr)(&v.data[0])^ = d
+					(^rawptr)(&v.data[8])^ = rawptr(uintptr(tv) + 8)
+					(^rawptr)(&v.data[16])^ = (^rawptr)(rawptr(uintptr(d) + 48))^
+					(^C.size_t)(&v.data[24])^ = (^C.size_t)(uintptr(d) + 24)^
+					mpconv_stack_push_o(mpstack, v)
+				}
+			}
+		} else {
+			saved := (^C.int)(uintptr(d) + 12)^
+			if (^C.int)(uintptr(d) + 12)^ == copyID {
+				encode_json_recurse_o(mpstack, d, C.int(MPConvStackValType_O.kMPConvDict))
+			} else {
+				(^C.int)(uintptr(d) + 12)^ = copyID
+				ga_append_r(gap, '{')
+				v := MPConvStackVal_O{}
+				v.type = C.int(MPConvStackValType_O.kMPConvDict)
+				v.tv = tv
+				v.saved_copyID = saved
+				(^rawptr)(&v.data[0])^ = d
+				(^rawptr)(&v.data[8])^ = rawptr(uintptr(tv) + 8)
+				(^rawptr)(&v.data[16])^ = (^rawptr)(rawptr(uintptr(d) + 48))^
+				(^C.size_t)(&v.data[24])^ = (^C.size_t)(uintptr(d) + 24)^
+				mpconv_stack_push_o(mpstack, v)
+			}
+		}
+	}
+	return OK_E
+}
+
+// JSON-mode walker continuation (same shape; json key quoting,
+// pairs key-check, partial conv_error).
+encode_json_walker_o :: proc "c" (gap: ^Garray, mpstack: ^MPConvStack_O, tv_top: ^Typval_T, copyID: C.int, objname: cstring) -> C.int {
+	context = runtime.default_context()
+	for mpstack.size > 0 {
+		cur := mpconv_stack_last_o(mpstack)
+		tv: ^Typval_T = nil
+		if cur.type == C.int(MPConvStackValType_O.kMPConvDict) {
+			todo := (^C.size_t)(&cur.data[24])^
+			if todo == 0 {
+				d := (^rawptr)(&cur.data[0])^
+				(^C.int)(uintptr(d) + 12)^ = cur.saved_copyID
+				ga_append_r(gap, '}')
+				mpconv_stack_pop_o(mpstack)
+				continue
+			}
+			d := (^rawptr)(&cur.data[0])^
+			if todo != (^C.size_t)(uintptr(d) + 24)^ {
+				ga_concat_len_r(gap, cstring(", "), 2)
+			}
+			hi := (^rawptr)(&cur.data[16])^
+			for (^rawptr)(uintptr(hi) + 8)^ == nil || (^rawptr)(uintptr(hi) + 8)^ == rawptr(&hash_removed_c) {
+				hi = rawptr(uintptr(hi) + 16)
+			}
+			(^rawptr)(&cur.data[16])^ = hi
+			di := rawptr(uintptr((^rawptr)(uintptr(hi) + 8)^) - 17)
+			(^C.size_t)(&cur.data[24])^ = todo - 1
+			(^rawptr)(&cur.data[16])^ = rawptr(uintptr(hi) + 16)
+			key := transmute(cstring)((^rawptr)(uintptr(hi) + 8)^)
+			if convert_to_json_string_o(gap, key, C.size_t(libc.strlen(key))) == FAIL_E {
+				mpconv_stack_destroy_o(mpstack)
+				return FAIL_E
+			}
+			ga_concat_len_r(gap, cstring(": "), 2)
+			tv = (^Typval_T)(uintptr(di))
+		} else if cur.type == C.int(MPConvStackValType_O.kMPConvList) {
+			li := (^rawptr)(&cur.data[8])^
+			if li == nil {
+				l := (^rawptr)(&cur.data[0])^
+				tv_list_set_copyid_o(l, cur.saved_copyID)
+				ga_append_r(gap, ']')
+				mpconv_stack_pop_o(mpstack)
+				continue
+			}
+			l := (^rawptr)(&cur.data[0])^
+			if li != tv_list_first_o(l) {
+				ga_concat_len_r(gap, cstring(", "), 2)
+			}
+			tv = (^Typval_T)(uintptr(li) + 16)
+			(^rawptr)(&cur.data[8])^ = (^rawptr)(uintptr(li))^
+		} else if cur.type == C.int(MPConvStackValType_O.kMPConvPairs) {
+			li := (^rawptr)(&cur.data[8])^
+			if li == nil {
+				l := (^rawptr)(&cur.data[0])^
+				tv_list_set_copyid_o(l, cur.saved_copyID)
+				ga_append_r(gap, '}')
+				mpconv_stack_pop_o(mpstack)
+				continue
+			}
+			l := (^rawptr)(&cur.data[0])^
+			if li != tv_list_first_o(l) {
+				ga_concat_len_r(gap, cstring(", "), 2)
+			}
+			pair := rawptr((^Typval_T)(uintptr(li) + 16).vval)
+			ktv := (^Typval_T)(uintptr(tv_list_first_o(pair)) + 16)
+			if !encode_check_json_key(ktv) {
+				emsg(cstring("E474: Invalid key in special dictionary"))
+				mpconv_stack_destroy_o(mpstack)
+				return FAIL_E
+			}
+			if convert_one_value_json_o(gap, mpstack, cur, ktv, copyID, objname) == FAIL_E {
+				mpconv_stack_destroy_o(mpstack)
+				return FAIL_E
+			}
+			ga_concat_len_r(gap, cstring(": "), 2)
+			tv = (^Typval_T)(uintptr(tv_list_last_o(pair)) + 16)
+			(^rawptr)(&cur.data[8])^ = (^rawptr)(uintptr(li))^
+		} else if cur.type == C.int(MPConvStackValType_O.kMPConvPartial) || cur.type == C.int(MPConvStackValType_O.kMPConvPartialList) {
+			mpconv_stack_destroy_o(mpstack)
+			return FAIL_E
+		} else {
+			arg := (^rawptr)(&cur.data[0])^
+			todo := (^C.size_t)(&cur.data[16])^
+			if todo == 0 {
+				ga_append_r(gap, ']')
+				mpconv_stack_pop_o(mpstack)
+				continue
+			}
+			if arg != (^rawptr)(&cur.data[8])^ {
+				ga_concat_len_r(gap, cstring(", "), 2)
+			}
+			tv = (^Typval_T)(uintptr(arg))
+			(^rawptr)(&cur.data[0])^ = rawptr(uintptr(arg) + 16)
+			(^C.size_t)(&cur.data[16])^ = todo - 1
+		}
+		if convert_one_value_json_o(gap, mpstack, cur, tv, copyID, objname) == FAIL_E {
+			mpconv_stack_destroy_o(mpstack)
+			return FAIL_E
+		}
+	}
+	mpconv_stack_destroy_o(mpstack)
+	return OK_E
+}
+
+// JSON-mode driver (encode_vim_to_json).
+encode_vim_to_json_o :: proc "c" (gap: ^Garray, tv: ^Typval_T, objname: cstring) -> C.int {
+	context = runtime.default_context()
+	copyID := get_copyID()
+	mpstack := MPConvStack_O{}
+	mpconv_stack_init_o(&mpstack)
+	if convert_one_value_json_o(gap, &mpstack, nil, tv, copyID, objname) == FAIL_E {
+		mpconv_stack_destroy_o(&mpstack)
+		return FAIL_E
+	}
+	return encode_json_walker_o(gap, &mpstack, tv, copyID, objname)
+}
+
+// JSON string representation (encode_tv2json).
+@(export)
+encode_tv2json :: proc "c" (tv: ^Typval_T, length: ^C.size_t) -> cstring {
+	context = runtime.default_context()
+	ga := Garray{}
+	ga_init_r2(&ga, 1, 80)
+	evj_ret := encode_vim_to_json_o(&ga, tv, cstring("encode_tv2json() argument"))
+	if evj_ret == FAIL_E {
+		ga_clear_r(&ga)
+	}
+	nvim_odin_set_echo_emsg_e(false)
+	if length != nil {
+		length^ = C.size_t(ga.ga_len)
+	}
+	ga_append_r(&ga, 0)
+	return transmute(cstring)(ga.ga_data)
+}
+
+// —— Batch 23i: msgpack-mode engine ——
+foreign _ {
+	@(link_name = "mpack_check_buffer")
+	mpack_check_buffer_e :: proc "c" (packer: ^PackerBuffer_O) ---
+	@(link_name = "mpack_uint64")
+	mpack_uint64_e :: proc "c" (ptr: rawptr, i: u64) ---
+	@(link_name = "mpack_integer")
+	mpack_integer_e :: proc "c" (ptr: rawptr, i: i64) ---
+	@(link_name = "mpack_float8")
+	mpack_float8_e :: proc "c" (ptr: rawptr, d: f64) ---
+	@(link_name = "mpack_str")
+	mpack_str_e :: proc "c" (str: NvimString, packer: ^PackerBuffer_O) ---
+	@(link_name = "mpack_bin")
+	mpack_bin_e :: proc "c" (str: NvimString, packer: ^PackerBuffer_O) ---
+	@(link_name = "mpack_ext")
+	mpack_ext_e :: proc "c" (buf: ^u8, length: C.size_t, type: i8, packer: ^PackerBuffer_O) ---
+}
+
+// packer.h static-inline writers over the mirror.
+mpack_w_o :: #force_inline proc "c" (packer: ^PackerBuffer_O, byte: u8) {
+	packer.ptr^ = byte
+	packer.ptr = (^u8)(uintptr(packer.ptr) + 1)
+}
+mpack_w2_o :: proc "c" (packer: ^PackerBuffer_O, v: u32) {
+	context = runtime.default_context()
+	mpack_w_o(packer, u8((v >> 8) & 0xFF))
+	mpack_w_o(packer, u8(v & 0xFF))
+}
+mpack_w4_o :: proc "c" (packer: ^PackerBuffer_O, v: u32) {
+	context = runtime.default_context()
+	mpack_w_o(packer, u8((v >> 24) & 0xFF))
+	mpack_w_o(packer, u8((v >> 16) & 0xFF))
+	mpack_w_o(packer, u8((v >> 8) & 0xFF))
+	mpack_w_o(packer, u8(v & 0xFF))
+}
+mpack_uint_o :: proc "c" (packer: ^PackerBuffer_O, val: u32) {
+	context = runtime.default_context()
+	if val > 0xFFFF {
+		mpack_w_o(packer, 0xCE)
+		mpack_w4_o(packer, val)
+	} else if val > 0xFF {
+		mpack_w_o(packer, 0xCD)
+		mpack_w2_o(packer, val)
+	} else if val > 0x7F {
+		mpack_w_o(packer, 0xCC)
+		mpack_w_o(packer, u8(val))
+	} else {
+		mpack_w_o(packer, u8(val))
+	}
+}
+mpack_nil_o :: #force_inline proc "c" (packer: ^PackerBuffer_O) {
+	mpack_w_o(packer, 0xC0)
+}
+mpack_bool_o :: proc "c" (packer: ^PackerBuffer_O, val: bool) {
+	context = runtime.default_context()
+	if val {
+		mpack_w_o(packer, 0xC3)
+	} else {
+		mpack_w_o(packer, 0xC2)
+	}
+}
+mpack_array_o :: proc "c" (packer: ^PackerBuffer_O, length: u32) {
+	context = runtime.default_context()
+	if length < 0x10 {
+		mpack_w_o(packer, 0x90 | u8(length))
+	} else if length < 0x10000 {
+		mpack_w_o(packer, 0xDC)
+		mpack_w2_o(packer, length)
+	} else {
+		mpack_w_o(packer, 0xDD)
+		mpack_w4_o(packer, length)
+	}
+}
+mpack_map_o :: proc "c" (packer: ^PackerBuffer_O, length: u32) {
+	context = runtime.default_context()
+	if length < 0x10 {
+		mpack_w_o(packer, 0x80 | u8(length))
+	} else if length < 0x10000 {
+		mpack_w_o(packer, 0xDE)
+		mpack_w2_o(packer, length)
+	} else {
+		mpack_w_o(packer, 0xDF)
+		mpack_w4_o(packer, length)
+	}
+}
+
+// Msgpack-mode RECURSE (conv_error E5005 FAIL).
+encode_msgpack_recurse_o :: proc "c" (packer: ^PackerBuffer_O, mpstack: ^MPConvStack_O, val: rawptr, conv_type: C.int, objname: cstring) -> C.int {
+	context = runtime.default_context()
+	return conv_error_o(cstring("E5005: Unable to dump %s: container references itself in %s"), mpstack, objname)
+}
+
+// Msgpack-mode CONVERT_ONE_VALUE (ALLOW_SPECIALS=true).
+convert_one_value_msgpack_o :: proc "c" (packer: ^PackerBuffer_O, mpstack: ^MPConvStack_O, cur_mpsv: ^MPConvStackVal_O, tv: ^Typval_T, copyID: C.int, objname: cstring) -> C.int {
+	context = runtime.default_context()
+	mpack_check_buffer_e(packer)
+	if tv.v_type == VAR_STRING {
+		s := transmute(^u8)(tv.vval)
+		n: C.size_t = 0
+		if s != nil {
+			n = C.size_t(libc.strlen(transmute(cstring)(s)))
+		}
+		mpack_bin_e(NvimString{data = transmute(cstring)(s), size = n}, packer)
+	} else if tv.v_type == VAR_NUMBER {
+		mpack_integer_e(rawptr(&packer.ptr), transmute(i64)(tv.vval))
+	} else if tv.v_type == VAR_FLOAT {
+		mpack_float8_e(rawptr(&packer.ptr), transmute(f64)(tv.vval))
+	} else if tv.v_type == VAR_BLOB {
+		b := rawptr(tv.vval)
+		length := tv_blob_len_o(b)
+		data: ^u8 = nil
+		if b != nil {
+			data = (^u8)((^rawptr)(uintptr(b) + 16)^)
+		}
+		mpack_bin_e(NvimString{data = transmute(cstring)(data), size = C.size_t(length)}, packer)
+	} else if tv.v_type == VAR_FUNC || tv.v_type == VAR_PARTIAL {
+		return conv_error_o(cstring("E5004: Error while dumping %s, %s: attempt to dump function reference"), mpstack, objname)
+	} else if tv.v_type == VAR_LIST {
+		l := rawptr(tv.vval)
+		if l == nil || tv_list_len_o(l) == 0 {
+			mpack_array_o(packer, 0)
+		} else {
+			saved := tv_list_copyid_o(l)
+			if (^C.int)(uintptr(l) + 68)^ == copyID {
+				return encode_msgpack_recurse_o(packer, mpstack, l, C.int(MPConvStackValType_O.kMPConvList), objname)
+			}
+			(^C.int)(uintptr(l) + 68)^ = copyID
+			mpack_array_o(packer, u32(tv_list_len_o(l)))
+			v := MPConvStackVal_O{}
+			v.type = C.int(MPConvStackValType_O.kMPConvList)
+			v.tv = tv
+			v.saved_copyID = saved
+			(^rawptr)(&v.data[0])^ = l
+			(^rawptr)(&v.data[8])^ = tv_list_first_o(l)
+			mpconv_stack_push_o(mpstack, v)
+		}
+	} else if tv.v_type == VAR_BOOL {
+		mpack_bool_o(packer, transmute(C.longlong)(tv.vval) != 0)
+	} else if tv.v_type == VAR_SPECIAL {
+		mpack_nil_o(packer)
+	} else if tv.v_type == VAR_DICT {
+		d := rawptr(tv.vval)
+		if d == nil || (^C.size_t)(uintptr(d) + 24)^ == 0 {
+			mpack_map_o(packer, 0)
+		} else if (^C.size_t)(uintptr(d) + 24)^ == 2 {
+			type_di := tv_dict_find(d, cstring("_TYPE"), 5)
+			val_di := tv_dict_find(d, cstring("_VAL"), 4)
+			special_done := false
+			special_fail := false
+			if type_di != nil && (^C.int)(uintptr(type_di))^ == VAR_LIST && val_di != nil {
+				ttv := (^Typval_T)(uintptr(type_di))
+				tl := rawptr(ttv.vval)
+				i: C.int = 0
+				for i < 8 {
+					if tl == eval_msgpack_type_lists_e[i] {
+						break
+					}
+					i += 1
+				}
+				if i < 8 {
+					vv := (^Typval_T)(uintptr(val_di))
+					if i == KMPNIL_O {
+						mpack_nil_o(packer)
+						special_done = true
+					} else if i == KMPBOOLEAN_O {
+						if vv.v_type != VAR_NUMBER {
+							special_fail = true
+						} else {
+							mpack_bool_o(packer, transmute(C.longlong)(vv.vval) != 0)
+							special_done = true
+						}
+					} else if i == KMPINTEGER_O {
+						if vv.v_type != VAR_LIST {
+							special_fail = true
+						} else {
+							vl := rawptr(vv.vval)
+							if tv_list_len_o(vl) != 4 {
+								special_fail = true
+							} else {
+								sli := tv_list_first_o(vl)
+								stv := (^Typval_T)(uintptr(sli) + 16)
+								hli := (^rawptr)(uintptr(sli))^
+								htv := (^Typval_T)(uintptr(hli) + 16)
+								bli := (^rawptr)(uintptr(hli))^
+								btv := (^Typval_T)(uintptr(bli) + 16)
+								lli := tv_list_last_o(vl)
+								ltv := (^Typval_T)(uintptr(lli) + 16)
+								if stv.v_type != VAR_NUMBER || transmute(C.longlong)(stv.vval) == 0 || htv.v_type != VAR_NUMBER || transmute(C.longlong)(htv.vval) < 0 || btv.v_type != VAR_NUMBER || transmute(C.longlong)(btv.vval) < 0 || ltv.v_type != VAR_NUMBER || transmute(C.longlong)(ltv.vval) < 0 {
+									special_fail = true
+								} else {
+									number := u64(transmute(C.longlong)(htv.vval)) << 62 | u64(transmute(C.longlong)(btv.vval)) << 31 | u64(transmute(C.longlong)(ltv.vval))
+									if transmute(C.longlong)(stv.vval) > 0 {
+										mpack_uint64_e(rawptr(&packer.ptr), number)
+									} else {
+										mpack_integer_e(rawptr(&packer.ptr), -i64(number))
+									}
+									special_done = true
+								}
+							}
+						}
+					} else if i == KMPFLOAT_O {
+						if vv.v_type != VAR_FLOAT {
+							special_fail = true
+						} else {
+							mpack_float8_e(rawptr(&packer.ptr), transmute(f64)(vv.vval))
+							special_done = true
+						}
+					} else if i == KMPSTRING_O {
+						if vv.v_type != VAR_LIST {
+							special_fail = true
+						} else {
+							blen: C.size_t = 0
+							bbuf: rawptr = nil
+							if !encode_vim_list_to_buf(rawptr(vv.vval), &blen, &bbuf) {
+								special_fail = true
+							} else {
+								mpack_str_e(NvimString{data = transmute(cstring)(bbuf), size = blen}, packer)
+								xfree(bbuf)
+								special_done = true
+							}
+						}
+					} else if i == KMPARRAY_O {
+						if vv.v_type != VAR_LIST {
+							special_fail = true
+						} else {
+							al := rawptr(vv.vval)
+							saved := tv_list_copyid_o(al)
+							if (^C.int)(uintptr(al) + 68)^ == copyID {
+								return encode_msgpack_recurse_o(packer, mpstack, al, C.int(MPConvStackValType_O.kMPConvList), objname)
+							}
+							(^C.int)(uintptr(al) + 68)^ = copyID
+							mpack_array_o(packer, u32(tv_list_len_o(al)))
+							v := MPConvStackVal_O{}
+							v.type = C.int(MPConvStackValType_O.kMPConvList)
+							v.tv = tv
+							v.saved_copyID = saved
+							(^rawptr)(&v.data[0])^ = al
+							(^rawptr)(&v.data[8])^ = tv_list_first_o(al)
+							mpconv_stack_push_o(mpstack, v)
+							special_done = true
+						}
+					} else if i == KMPMAP_O {
+						if vv.v_type != VAR_LIST {
+							special_fail = true
+						} else {
+							vl := rawptr(vv.vval)
+							if vl == nil || tv_list_len_o(vl) == 0 {
+								mpack_map_o(packer, 0)
+								special_done = true
+							} else {
+								ok := true
+								li := tv_list_first_o(vl)
+								for li != nil {
+									itv := (^Typval_T)(uintptr(li) + 16)
+									if itv.v_type != VAR_LIST || tv_list_len_o(rawptr(itv.vval)) != 2 {
+										ok = false
+										break
+									}
+									li = (^rawptr)(uintptr(li))^
+								}
+								if !ok {
+									special_fail = true
+								} else {
+									saved := tv_list_copyid_o(vl)
+									if (^C.int)(uintptr(vl) + 68)^ == copyID {
+										return encode_msgpack_recurse_o(packer, mpstack, vl, C.int(MPConvStackValType_O.kMPConvPairs), objname)
+									}
+									(^C.int)(uintptr(vl) + 68)^ = copyID
+									mpack_map_o(packer, u32(tv_list_len_o(vl)))
+									v := MPConvStackVal_O{}
+									v.type = C.int(MPConvStackValType_O.kMPConvPairs)
+									v.tv = tv
+									v.saved_copyID = saved
+									(^rawptr)(&v.data[0])^ = vl
+									(^rawptr)(&v.data[8])^ = tv_list_first_o(vl)
+									mpconv_stack_push_o(mpstack, v)
+									special_done = true
+								}
+							}
+						}
+					} else {
+						bad := false
+						if vv.v_type != VAR_LIST {
+							bad = true
+						} else {
+							vl := rawptr(vv.vval)
+							if tv_list_len_o(vl) != 2 {
+								bad = true
+							} else {
+								ftv := (^Typval_T)(uintptr(tv_list_first_o(vl)) + 16)
+								ltv := (^Typval_T)(uintptr(tv_list_last_o(vl)) + 16)
+								if ftv.v_type != VAR_NUMBER {
+									bad = true
+								} else {
+									etype := transmute(C.longlong)(ftv.vval)
+									if etype > 127 || etype < -128 || ltv.v_type != VAR_LIST {
+										bad = true
+									}
+								}
+							}
+						}
+						if bad {
+							special_fail = true
+						} else {
+							vl := rawptr(vv.vval)
+							ltv := (^Typval_T)(uintptr(tv_list_last_o(vl)) + 16)
+							ftv := (^Typval_T)(uintptr(tv_list_first_o(vl)) + 16)
+							blen: C.size_t = 0
+							bbuf: rawptr = nil
+							if !encode_vim_list_to_buf(rawptr(ltv.vval), &blen, &bbuf) {
+								special_fail = true
+							} else {
+								mpack_ext_e(transmute(^u8)(bbuf), blen, i8(transmute(C.longlong)(ftv.vval)), packer)
+								xfree(bbuf)
+								special_done = true
+							}
+						}
+					}
+				}
+			}
+			if !special_done && !special_fail {
+				saved := (^C.int)(uintptr(d) + 12)^
+				if (^C.int)(uintptr(d) + 12)^ == copyID {
+					return encode_msgpack_recurse_o(packer, mpstack, d, C.int(MPConvStackValType_O.kMPConvDict), objname)
+				}
+				(^C.int)(uintptr(d) + 12)^ = copyID
+				mpack_map_o(packer, u32((^C.size_t)(uintptr(d) + 24)^))
+				v := MPConvStackVal_O{}
+				v.type = C.int(MPConvStackValType_O.kMPConvDict)
+				v.tv = tv
+				v.saved_copyID = saved
+				(^rawptr)(&v.data[0])^ = d
+				(^rawptr)(&v.data[8])^ = rawptr(uintptr(tv) + 8)
+				(^rawptr)(&v.data[16])^ = (^rawptr)(rawptr(uintptr(d) + 48))^
+				(^C.size_t)(&v.data[24])^ = (^C.size_t)(uintptr(d) + 24)^
+				mpconv_stack_push_o(mpstack, v)
+			}
+		} else {
+			saved := (^C.int)(uintptr(d) + 12)^
+			if (^C.int)(uintptr(d) + 12)^ == copyID {
+				return encode_msgpack_recurse_o(packer, mpstack, d, C.int(MPConvStackValType_O.kMPConvDict), objname)
+			}
+			(^C.int)(uintptr(d) + 12)^ = copyID
+			mpack_map_o(packer, u32((^C.size_t)(uintptr(d) + 24)^))
+			v := MPConvStackVal_O{}
+			v.type = C.int(MPConvStackValType_O.kMPConvDict)
+			v.tv = tv
+			v.saved_copyID = saved
+			(^rawptr)(&v.data[0])^ = d
+			(^rawptr)(&v.data[8])^ = rawptr(uintptr(tv) + 8)
+			(^rawptr)(&v.data[16])^ = (^rawptr)(rawptr(uintptr(d) + 48))^
+			(^C.size_t)(&v.data[24])^ = (^C.size_t)(uintptr(d) + 24)^
+			mpconv_stack_push_o(mpstack, v)
+		}
+	}
+	return OK_E
+}
+
+// Msgpack-mode walker continuation (no separators; str keys).
+encode_msgpack_walker_o :: proc "c" (packer: ^PackerBuffer_O, mpstack: ^MPConvStack_O, tv_top: ^Typval_T, copyID: C.int, objname: cstring) -> C.int {
+	context = runtime.default_context()
+	for mpstack.size > 0 {
+		cur := mpconv_stack_last_o(mpstack)
+		tv: ^Typval_T = nil
+		if cur.type == C.int(MPConvStackValType_O.kMPConvDict) {
+			todo := (^C.size_t)(&cur.data[24])^
+			if todo == 0 {
+				d := (^rawptr)(&cur.data[0])^
+				(^C.int)(uintptr(d) + 12)^ = cur.saved_copyID
+				mpconv_stack_pop_o(mpstack)
+				continue
+			}
+			hi := (^rawptr)(&cur.data[16])^
+			for (^rawptr)(uintptr(hi) + 8)^ == nil || (^rawptr)(uintptr(hi) + 8)^ == rawptr(&hash_removed_c) {
+				hi = rawptr(uintptr(hi) + 16)
+			}
+			(^rawptr)(&cur.data[16])^ = hi
+			di := rawptr(uintptr((^rawptr)(uintptr(hi) + 8)^) - 17)
+			(^C.size_t)(&cur.data[24])^ = todo - 1
+			(^rawptr)(&cur.data[16])^ = rawptr(uintptr(hi) + 16)
+			key := transmute(cstring)((^rawptr)(uintptr(hi) + 8)^)
+			mpack_str_e(NvimString{data = key, size = C.size_t(libc.strlen(key))}, packer)
+			tv = (^Typval_T)(uintptr(di))
+		} else if cur.type == C.int(MPConvStackValType_O.kMPConvList) {
+			li := (^rawptr)(&cur.data[8])^
+			if li == nil {
+				l := (^rawptr)(&cur.data[0])^
+				tv_list_set_copyid_o(l, cur.saved_copyID)
+				mpconv_stack_pop_o(mpstack)
+				continue
+			}
+			l := (^rawptr)(&cur.data[0])^
+			tv = (^Typval_T)(uintptr(li) + 16)
+			(^rawptr)(&cur.data[8])^ = (^rawptr)(uintptr(li))^
+		} else if cur.type == C.int(MPConvStackValType_O.kMPConvPairs) {
+			li := (^rawptr)(&cur.data[8])^
+			if li == nil {
+				l := (^rawptr)(&cur.data[0])^
+				tv_list_set_copyid_o(l, cur.saved_copyID)
+				mpconv_stack_pop_o(mpstack)
+				continue
+			}
+			pair := rawptr((^Typval_T)(uintptr(li) + 16).vval)
+			if convert_one_value_msgpack_o(packer, mpstack, cur, (^Typval_T)(uintptr(tv_list_first_o(pair)) + 16), copyID, objname) == FAIL_E {
+				mpconv_stack_destroy_o(mpstack)
+				return FAIL_E
+			}
+			tv = (^Typval_T)(uintptr(tv_list_last_o(pair)) + 16)
+			(^rawptr)(&cur.data[8])^ = (^rawptr)(uintptr(li))^
+		} else {
+			mpconv_stack_destroy_o(mpstack)
+			return FAIL_E
+		}
+		if convert_one_value_msgpack_o(packer, mpstack, cur, tv, copyID, objname) == FAIL_E {
+			mpconv_stack_destroy_o(mpstack)
+			return FAIL_E
+		}
+	}
+	mpconv_stack_destroy_o(mpstack)
+	return OK_E
+}
+
+// Msgpack-mode driver (encode_vim_to_msgpack).
+encode_vim_to_msgpack_o :: proc "c" (packer: ^PackerBuffer_O, tv: ^Typval_T, objname: cstring) -> C.int {
+	context = runtime.default_context()
+	copyID := get_copyID()
+	mpstack := MPConvStack_O{}
+	mpconv_stack_init_o(&mpstack)
+	if convert_one_value_msgpack_o(packer, &mpstack, nil, tv, copyID, objname) == FAIL_E {
+		mpconv_stack_destroy_o(&mpstack)
+		return FAIL_E
+	}
+	return encode_msgpack_walker_o(packer, &mpstack, tv, copyID, objname)
+}
+
+// Exact-name alias for live C callers (shada.c) after cutover.
+@(export)
+encode_vim_to_msgpack :: proc "c" (packer: ^PackerBuffer_O, tv: ^Typval_T, objname: cstring) -> C.int {
+	context = runtime.default_context()
+	return encode_vim_to_msgpack_o(packer, tv, objname)
+}
+
+// —— Batch 23j: decode.c json stacks + decoder_pop (dormant) ——
+
+// ValuesStackItem mirror (decode.c): 24B cc-probed.
+ValuesStackItem_O :: struct {
+	is_special_string: bool, // 0
+	didcomma:          bool, // 1
+	didcolon:          bool, // 2
+	_pad:              [5]u8,
+	val:               Typval_T, // 8..24
+}
+#assert(size_of(ValuesStackItem_O) == 24)
+
+// ContainerStackItem mirror (decode.c): 40B cc-probed.
+ContainerStackItem_O :: struct {
+	stack_index: C.size_t, // 0
+	special_val: rawptr,   // 8
+	s:           cstring,  // 16
+	container:   Typval_T, // 24..40
+}
+#assert(size_of(ContainerStackItem_O) == 40)
+
+// kvec mirrors for the two stacks.
+ValuesStack_O :: struct {
+	n:     C.size_t,
+	a:     C.size_t,
+	items: ^ValuesStackItem_O,
+}
+ContainersStack_O :: struct {
+	n:     C.size_t,
+	a:     C.size_t,
+	items: ^ContainerStackItem_O,
+}
+
+// Values-stack ops (kvec semantics).
+vstack_push_o :: proc "c" (st: ^ValuesStack_O, v: ValuesStackItem_O) {
+	context = runtime.default_context()
+	if st.n >= st.a {
+		newcap: C.size_t = 8
+		if st.a > 0 {
+			newcap = st.a * 2
+		}
+		nbytes := newcap * 24
+		if st.items == nil {
+			st.items = (^ValuesStackItem_O)(xmalloc(nbytes))
+		} else {
+			st.items = (^ValuesStackItem_O)(xrealloc(rawptr(st.items), nbytes))
+		}
+		st.a = newcap
+	}
+	([^]ValuesStackItem_O)(st.items)[st.n] = v
+	st.n += 1
+}
+vstack_pop_o :: proc "c" (st: ^ValuesStack_O) -> ValuesStackItem_O {
+	context = runtime.default_context()
+	st.n -= 1
+	return ([^]ValuesStackItem_O)(st.items)[st.n]
+}
+vstack_item_o :: proc "c" (st: ^ValuesStack_O, i: C.size_t) -> ^ValuesStackItem_O {
+	context = runtime.default_context()
+	return &([^]ValuesStackItem_O)(st.items)[i]
+}
+
+// Container-stack ops (kvec semantics).
+cstack_push_o :: proc "c" (st: ^ContainersStack_O, v: ContainerStackItem_O) {
+	context = runtime.default_context()
+	if st.n >= st.a {
+		newcap: C.size_t = 8
+		if st.a > 0 {
+			newcap = st.a * 2
+		}
+		nbytes := newcap * 40
+		if st.items == nil {
+			st.items = (^ContainerStackItem_O)(xmalloc(nbytes))
+		} else {
+			st.items = (^ContainerStackItem_O)(xrealloc(rawptr(st.items), nbytes))
+		}
+		st.a = newcap
+	}
+	([^]ContainerStackItem_O)(st.items)[st.n] = v
+	st.n += 1
+}
+cstack_pop_o :: proc "c" (st: ^ContainersStack_O) -> ContainerStackItem_O {
+	context = runtime.default_context()
+	st.n -= 1
+	return ([^]ContainerStackItem_O)(st.items)[st.n]
+}
+cstack_last_o :: proc "c" (st: ^ContainersStack_O) -> ^ContainerStackItem_O {
+	context = runtime.default_context()
+	return &([^]ContainerStackItem_O)(st.items)[st.n - 1]
+}
+
+// JSON decoder pop (decode.c json_decoder_pop, dormant).
+json_decoder_pop_o :: proc "c" (obj: ValuesStackItem_O, stack: ^ValuesStack_O, container_stack: ^ContainersStack_O, pp: ^cstring, next_map_special: ^bool, didcomma: ^bool, didcolon: ^bool) -> C.int {
+	context = runtime.default_context()
+	mut_obj := obj
+	if container_stack.n == 0 {
+		vstack_push_o(stack, mut_obj)
+		return OK_E
+	}
+	last_container := cstack_last_o(container_stack)^
+	val_location := pp^
+	if mut_obj.val.v_type == last_container.container.v_type && rawptr(mut_obj.val.vval) == rawptr(last_container.container.vval) {
+		cstack_pop_o(container_stack)
+		val_location = last_container.s
+		last_container = cstack_last_o(container_stack)^
+	}
+	if last_container.container.v_type == VAR_LIST {
+		l := rawptr(last_container.container.vval)
+		if tv_list_len_o(l) != 0 && !mut_obj.didcomma {
+			semsg(cstring("E474: Expected comma before list item: %s"), val_location)
+			tv_clear(&mut_obj.val)
+			return FAIL_E
+		}
+		tv_list_append_owned_tv(l, mut_obj.val)
+	} else if last_container.stack_index == stack.n - 2 {
+		if !mut_obj.didcolon {
+			semsg(cstring("E474: Expected colon before dictionary value: %s"), val_location)
+			tv_clear(&mut_obj.val)
+			return FAIL_E
+		}
+		key := vstack_pop_o(stack)
+		if last_container.special_val == nil {
+			di := tv_dict_item_alloc(transmute(cstring)(key.val.vval))
+			tv_clear(&key.val)
+			if tv_dict_add(rawptr(last_container.container.vval), di) == FAIL_E {
+				libc.abort()
+			}
+			(^Typval_T)(uintptr(di))^ = mut_obj.val
+		} else {
+			kv_pair := tv_list_alloc(2)
+			tv_list_append_list(last_container.special_val, kv_pair)
+			tv_list_append_owned_tv(kv_pair, key.val)
+			tv_list_append_owned_tv(kv_pair, mut_obj.val)
+		}
+	} else {
+		if !mut_obj.is_special_string && mut_obj.val.v_type != VAR_STRING {
+			semsg(cstring("E474: Expected string key: %s"), pp^)
+			tv_clear(&mut_obj.val)
+			return FAIL_E
+		} else if !mut_obj.didcomma && last_container.special_val == nil && (^C.size_t)(uintptr(rawptr(last_container.container.vval)) + 24)^ != 0 {
+			semsg(cstring("E474: Expected comma before dictionary key: %s"), val_location)
+			tv_clear(&mut_obj.val)
+			return FAIL_E
+		}
+		if last_container.special_val == nil && (mut_obj.is_special_string || rawptr(mut_obj.val.vval) == nil || tv_dict_find(rawptr(last_container.container.vval), transmute(cstring)(mut_obj.val.vval), -1) != nil) {
+			tv_clear(&mut_obj.val)
+			cstack_pop_o(container_stack)
+			last_val := vstack_item_o(stack, last_container.stack_index)^
+			for stack.n > last_container.stack_index {
+				popped := vstack_pop_o(stack)
+				tv_clear(&popped.val)
+			}
+			pp^ = last_container.s
+			didcomma^ = last_val.didcomma
+			didcolon^ = last_val.didcolon
+			next_map_special^ = true
+			return OK_E
+		}
+		vstack_push_o(stack, mut_obj)
+	}
+	return OK_E
+}
+
+// —— Batch 23k: decode.c json string/number parsers + driver ——
+
+// JSON double-quoted string parser (dormant plain until driver below).
+parse_json_string_o :: proc "c" (buf: cstring, buf_len: C.size_t, pp: ^cstring, stack: ^ValuesStack_O, container_stack: ^ContainersStack_O, next_map_special: ^bool, didcomma: ^bool, didcolon: ^bool) -> C.int {
+	context = runtime.default_context()
+	e := uintptr(rawptr(buf)) + uintptr(buf_len)
+	p := uintptr(rawptr(pp^))
+	length: C.size_t = 0
+	s := p + 1
+	p = s
+	ret: C.int = OK_E
+	done := false
+	for uintptr(p) < e && ([^]u8)(p)[0] != '"' && !done {
+		if ([^]u8)(p)[0] == '\\' {
+			p += 1
+			if uintptr(p) >= e {
+				semsg(cstring("E474: Unfinished escape sequence: %.*s"), C.int(buf_len), buf)
+				ret = FAIL_E
+				done = true
+			} else if ([^]u8)(p)[0] == 'u' {
+				if uintptr(p) + 4 >= e {
+					semsg(cstring("E474: Unfinished unicode escape sequence: %.*s"), C.int(buf_len), buf)
+					ret = FAIL_E
+					done = true
+				} else if !ascii_isxdigit_o(([^]u8)(p)[1]) || !ascii_isxdigit_o(([^]u8)(p)[2]) || !ascii_isxdigit_o(([^]u8)(p)[3]) || !ascii_isxdigit_o(([^]u8)(p)[4]) {
+					semsg(cstring("E474: Expected four hex digits after \\u: %.*s"), C.int(uintptr(rawptr(buf)) + uintptr(buf_len) - (uintptr(p) - 1)), transmute(cstring)(p - 1))
+					ret = FAIL_E
+					done = true
+				} else {
+					length += 3
+					p += 5
+				}
+			} else if ([^]u8)(p)[0] == '\\' || ([^]u8)(p)[0] == '/' || ([^]u8)(p)[0] == '"' || ([^]u8)(p)[0] == 't' || ([^]u8)(p)[0] == 'b' || ([^]u8)(p)[0] == 'n' || ([^]u8)(p)[0] == 'r' || ([^]u8)(p)[0] == 'f' {
+				length += 1
+				p += 1
+			} else {
+				semsg(cstring("E474: Unknown escape sequence: %.*s"), C.int(uintptr(rawptr(buf)) + uintptr(buf_len) - (uintptr(p) - 1)), transmute(cstring)(p - 1))
+				ret = FAIL_E
+				done = true
+			}
+		} else {
+			p_byte := ([^]u8)(p)[0]
+			if p_byte < 0x20 {
+				semsg(cstring("E474: ASCII control characters cannot be present inside string: %.*s"), C.int(uintptr(rawptr(buf)) + uintptr(buf_len) - uintptr(p)), transmute(cstring)(p))
+				ret = FAIL_E
+				done = true
+			} else {
+				ch := utf_ptr2char(transmute(cstring)(p))
+				if ch >= 0x80 && C.int(p_byte) == ch && !(ch == 0xC3 && uintptr(p) + 1 < e && ([^]u8)(p + 1)[0] == 0x83) {
+					semsg(cstring("E474: Only UTF-8 strings allowed: %.*s"), C.int(uintptr(rawptr(buf)) + uintptr(buf_len) - uintptr(p)), transmute(cstring)(p))
+					ret = FAIL_E
+					done = true
+				} else if ch > 0x10FFFF {
+					semsg(cstring("E474: Only UTF-8 code points up to U+10FFFF are allowed to appear unescaped: %.*s"), C.int(uintptr(rawptr(buf)) + uintptr(buf_len) - uintptr(p)), transmute(cstring)(p))
+					ret = FAIL_E
+					done = true
+				} else {
+					ch_len := C.size_t(utf_char2len_r(ch))
+					length += ch_len
+					p += uintptr(ch_len)
+				}
+			}
+		}
+	}
+	if ret == OK_E && (uintptr(p) >= e || ([^]u8)(p)[0] != '"') {
+		semsg(cstring("E474: Expected string end: %.*s"), C.int(buf_len), buf)
+		ret = FAIL_E
+	}
+	if ret == OK_E {
+		str := (^u8)(xmalloc(length + 1))
+		str_end := uintptr(str)
+		fst_in_pair: C.int = 0
+		t := s
+		for uintptr(t) < uintptr(p) {
+			if ([^]u8)(t)[0] != '\\' || ([^]u8)(t + 1)[0] != 'u' {
+				if fst_in_pair != 0 {
+					str_end = uintptr(str_end) + uintptr(utf_char2bytes(fst_in_pair, transmute(^u8)(str_end)))
+					fst_in_pair = 0
+				}
+			}
+			if ([^]u8)(t)[0] == '\\' {
+				t += 1
+				if ([^]u8)(t)[0] == 'u' {
+					ubuf: [4]u8
+					ubuf[0] = ([^]u8)(t + 1)[0]; ubuf[1] = ([^]u8)(t + 2)[0]; ubuf[2] = ([^]u8)(t + 3)[0]; ubuf[3] = ([^]u8)(t + 4)[0]
+					t += 4
+					ch: u64 = 0
+					for k: C.int = 0; k < 4; k += 1 {
+						ch = ch * 16 + u64(hexval_o(ubuf[k]))
+					}
+					if ch >= 0xD800 && ch <= 0xDBFF {
+						if fst_in_pair != 0 {
+							str_end = uintptr(str_end) + uintptr(utf_char2bytes(fst_in_pair, transmute(^u8)(str_end)))
+						}
+						fst_in_pair = C.int(ch)
+					} else if ch >= 0xDC00 && ch <= 0xDFFF && fst_in_pair != 0 {
+						full := C.int(ch - 0xDC00) + ((fst_in_pair - 0xD800) << 10) + 0x10000
+						str_end = uintptr(str_end) + uintptr(utf_char2bytes(full, transmute(^u8)(str_end)))
+						fst_in_pair = 0
+					} else {
+						if fst_in_pair != 0 {
+							str_end = uintptr(str_end) + uintptr(utf_char2bytes(fst_in_pair, transmute(^u8)(str_end)))
+							fst_in_pair = 0
+						}
+						str_end = uintptr(str_end) + uintptr(utf_char2bytes(C.int(ch), transmute(^u8)(str_end)))
+					}
+				} else {
+					c := ([^]u8)(t)[0]
+					if c == '\\' || c == '/' || c == '"' {
+						([^]u8)(str_end)[0] = c
+					} else if c == 't' {
+						([^]u8)(str_end)[0] = 9
+					} else if c == 'b' {
+						([^]u8)(str_end)[0] = 8
+					} else if c == 'n' {
+						([^]u8)(str_end)[0] = 10
+					} else if c == 'r' {
+						([^]u8)(str_end)[0] = 13
+					} else if c == 'f' {
+						([^]u8)(str_end)[0] = 12
+					}
+					str_end += 1
+				}
+			} else {
+				([^]u8)(str_end)[0] = ([^]u8)(t)[0]
+				str_end += 1
+			}
+			t += 1
+		}
+		if fst_in_pair != 0 {
+			str_end = uintptr(str_end) + uintptr(utf_char2bytes(fst_in_pair, transmute(^u8)(str_end)))
+		}
+		([^]u8)(str_end)[0] = 0
+		obj := decode_string(transmute(cstring)(str), C.size_t(str_end - uintptr(str)), false, true)
+		is_sp := obj.v_type != VAR_STRING
+		if json_decoder_pop_o(ValuesStackItem_O{is_special_string = is_sp, didcomma = didcomma^, didcolon = didcolon^, val = obj}, stack, container_stack, pp, next_map_special, didcomma, didcolon) == FAIL_E {
+			ret = FAIL_E
+		}
+	}
+	pp^ = transmute(cstring)(p)
+	return ret
+}
+
+// Hex digit value helper.
+hexval_o :: proc "c" (c: u8) -> u8 {
+	context = runtime.default_context()
+	if c >= '0' && c <= '9' {
+		return c - '0'
+	}
+	if c >= 'a' && c <= 'f' {
+		return c - 'a' + 10
+	}
+	return c - 'A' + 10
+}
+
+// ascii_isxdigit (ascii_defs.h inline).
+ascii_isxdigit_o :: proc "c" (c: u8) -> bool {
+	context = runtime.default_context()
+	return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')
+}
+
+// Values/container stack destroyers (kvi_destroy: free items).
+vstack_destroy_o :: proc "c" (st: ^ValuesStack_O) {
+	context = runtime.default_context()
+	if st.items != nil {
+		xfree(rawptr(st.items))
+		st.items = nil
+	}
+}
+cstack_destroy_o :: proc "c" (st: ^ContainersStack_O) {
+	context = runtime.default_context()
+	if st.items != nil {
+		xfree(rawptr(st.items))
+		st.items = nil
+	}
+}
+
+// JSON number parser (decode.c parse_json_number).
+parse_json_number_o :: proc "c" (buf: cstring, buf_len: C.size_t, pp: ^cstring, stack: ^ValuesStack_O, container_stack: ^ContainersStack_O, next_map_special: ^bool, didcomma: ^bool, didcolon: ^bool) -> C.int {
+	context = runtime.default_context()
+	e := uintptr(rawptr(buf)) + uintptr(buf_len)
+	p := uintptr(rawptr(pp^))
+	ret: C.int = OK_E
+	s := p
+	ints := p
+	fracs: uintptr = 0
+	exps: uintptr = 0
+	exps_s: uintptr = 0
+	failed := false
+	if ([^]u8)(p)[0] == '-' {
+		p += 1
+	}
+	ints = p
+	if uintptr(p) < e {
+		for uintptr(p) < e && ascii_isdigit_o(([^]u8)(p)[0]) {
+			p += 1
+		}
+		if p != ints + 1 && ([^]u8)(ints)[0] == '0' {
+			semsg(cstring("E474: Leading zeroes are not allowed: %.*s"), C.int(e - s), transmute(cstring)(s))
+			ret = FAIL_E
+			failed = true
+		} else if uintptr(p) < e && p != ints {
+			if ([^]u8)(p)[0] == '.' {
+				p += 1
+				fracs = p
+				for uintptr(p) < e && ascii_isdigit_o(([^]u8)(p)[0]) {
+					p += 1
+				}
+				if uintptr(p) >= e || p == fracs {
+					// fall to check
+				}
+			}
+			if !failed && uintptr(p) < e && (([^]u8)(p)[0] == 'e' || ([^]u8)(p)[0] == 'E') {
+				p += 1
+				exps_s = p
+				if uintptr(p) < e && (([^]u8)(p)[0] == '-' || ([^]u8)(p)[0] == '+') {
+					p += 1
+				}
+				exps = p
+				for uintptr(p) < e && ascii_isdigit_o(([^]u8)(p)[0]) {
+					p += 1
+				}
+			}
+		}
+	}
+	if ret == OK_E {
+		if p == ints {
+			semsg(cstring("E474: Missing number after minus sign: %.*s"), C.int(e - s), transmute(cstring)(s))
+			ret = FAIL_E
+		} else if p == fracs || (fracs != 0 && exps_s == fracs + 1) {
+			semsg(cstring("E474: Missing number after decimal dot: %.*s"), C.int(e - s), transmute(cstring)(s))
+			ret = FAIL_E
+		} else if exps != 0 && p == exps {
+			semsg(cstring("E474: Missing exponent: %.*s"), C.int(e - s), transmute(cstring)(s))
+			ret = FAIL_E
+		}
+	}
+	if ret == OK_E {
+		tv := Typval_T{v_type = VAR_NUMBER, v_lock = VAR_UNLOCKED}
+		exp_num_len := C.size_t(p - s)
+		if fracs != 0 || exps != 0 {
+			f: f64 = 0
+			num_len := string2float(transmute(cstring)(s), &f)
+			if exp_num_len != num_len {
+				semsg(cstring("E685: internal error: while converting number \"%.*s\" to float string2float consumed %zu bytes in place of %zu"), C.int(exp_num_len), transmute(cstring)(s), num_len, exp_num_len)
+			}
+			tv.v_type = VAR_FLOAT
+			tv.vval = transmute(rawptr)(f)
+		} else {
+			nr: C.longlong = 0
+			num_len: C.int = 0
+			vim_str2nr_r(transmute(cstring)(s), nil, &num_len, 0, &nr, nil, C.size_t(p - s), true, nil)
+			if C.int(exp_num_len) != num_len {
+				semsg(cstring("E685: internal error: while converting number \"%.*s\" to integer vim_str2nr consumed %i bytes in place of %zu"), C.int(exp_num_len), transmute(cstring)(s), num_len, exp_num_len)
+			}
+			tv.vval = transmute(rawptr)(nr)
+		}
+		pc := transmute(cstring)(p)
+		if json_decoder_pop_o(ValuesStackItem_O{is_special_string = false, didcomma = didcomma^, didcolon = didcolon^, val = tv}, stack, container_stack, &pc, next_map_special, didcomma, didcolon) == FAIL_E {
+			ret = FAIL_E
+		} else {
+			p = uintptr(rawptr(pc))
+		}
+		if ret == OK_E && next_map_special^ {
+			pp^ = transmute(cstring)(p)
+			return ret
+		}
+		p -= 1
+	}
+	pp^ = transmute(cstring)(p)
+	return ret
+}
+
+// JSON decoder driver (decode.c json_decode_string).
+@(export)
+json_decode_string :: proc "c" (buf: cstring, buf_len: C.size_t, rettv: ^Typval_T) -> C.int {
+	context = runtime.default_context()
+	e := uintptr(rawptr(buf)) + uintptr(buf_len)
+	p := uintptr(rawptr(buf))
+	for uintptr(p) < e && (([^]u8)(p)[0] == ' ' || ([^]u8)(p)[0] == 9 || ([^]u8)(p)[0] == 10 || ([^]u8)(p)[0] == 13) {
+		p += 1
+	}
+	if uintptr(p) >= e {
+		emsg(cstring("E474: Attempt to decode a blank string"))
+		return FAIL_E
+	}
+	ret: C.int = OK_E
+	stack := ValuesStack_O{}
+	container_stack := ContainersStack_O{}
+	rettv.v_type = VAR_UNKNOWN
+	didcomma := false
+	didcolon := false
+	next_map_special := false
+	failed := false
+	after_cycle := false
+	for uintptr(p) < e && !failed && !after_cycle {
+		restart := false
+		brk := false
+		c := ([^]u8)(p)[0]
+		if c == '}' || c == ']' {
+			if container_stack.n == 0 {
+				semsg(cstring("E474: No container to close: %.*s"), C.int(e - uintptr(p)), transmute(cstring)(p))
+				failed = true
+			} else {
+				lc := cstack_last_o(&container_stack)^
+				if c == '}' && lc.container.v_type != VAR_DICT {
+					semsg(cstring("E474: Closing list with curly bracket: %.*s"), C.int(e - uintptr(p)), transmute(cstring)(p))
+					failed = true
+				} else if c == ']' && lc.container.v_type != VAR_LIST {
+					semsg(cstring("E474: Closing dictionary with square bracket: %.*s"), C.int(e - uintptr(p)), transmute(cstring)(p))
+					failed = true
+				} else if didcomma {
+					semsg(cstring("E474: Trailing comma: %.*s"), C.int(e - uintptr(p)), transmute(cstring)(p))
+					failed = true
+				} else if didcolon {
+					semsg(cstring("E474: Expected value after colon: %.*s"), C.int(e - uintptr(p)), transmute(cstring)(p))
+					failed = true
+				} else if lc.stack_index != stack.n - 1 {
+					semsg(cstring("E474: Expected value: %.*s"), C.int(e - uintptr(p)), transmute(cstring)(p))
+					failed = true
+				} else if stack.n == 1 {
+					p += 1
+					cstack_pop_o(&container_stack)
+					after_cycle = true
+				} else {
+					top := vstack_pop_o(&stack)
+					pc := transmute(cstring)(p)
+					if json_decoder_pop_o(top, &stack, &container_stack, &pc, &next_map_special, &didcomma, &didcolon) == FAIL_E {
+						failed = true
+					} else {
+						p = uintptr(rawptr(pc))
+					}
+					brk = true
+				}
+			}
+		} else if c == ',' {
+			if container_stack.n == 0 {
+				semsg(cstring("E474: Comma not inside container: %.*s"), C.int(e - uintptr(p)), transmute(cstring)(p))
+				failed = true
+			} else {
+				lc := cstack_last_o(&container_stack)^
+				empty := false
+				if lc.special_val == nil {
+					if lc.container.v_type == VAR_DICT {
+						empty = (^C.size_t)(uintptr(rawptr(lc.container.vval)) + 24)^ == 0
+					} else {
+						empty = tv_list_len_o(rawptr(lc.container.vval)) == 0
+					}
+				} else {
+					empty = tv_list_len_o(lc.special_val) == 0
+				}
+				if didcomma {
+					semsg(cstring("E474: Duplicate comma: %.*s"), C.int(e - uintptr(p)), transmute(cstring)(p))
+					failed = true
+				} else if didcolon {
+					semsg(cstring("E474: Comma after colon: %.*s"), C.int(e - uintptr(p)), transmute(cstring)(p))
+					failed = true
+				} else if lc.container.v_type == VAR_DICT && lc.stack_index != stack.n - 1 {
+					semsg(cstring("E474: Using comma in place of colon: %.*s"), C.int(e - uintptr(p)), transmute(cstring)(p))
+					failed = true
+				} else if empty {
+					semsg(cstring("E474: Leading comma: %.*s"), C.int(e - uintptr(p)), transmute(cstring)(p))
+					failed = true
+				} else {
+					didcomma = true
+					brk = true
+				}
+			}
+		} else if c == ':' {
+			if container_stack.n == 0 {
+				semsg(cstring("E474: Colon not inside container: %.*s"), C.int(e - uintptr(p)), transmute(cstring)(p))
+				failed = true
+			} else {
+				lc := cstack_last_o(&container_stack)^
+				if lc.container.v_type != VAR_DICT {
+					semsg(cstring("E474: Using colon not in dictionary: %.*s"), C.int(e - uintptr(p)), transmute(cstring)(p))
+					failed = true
+				} else if lc.stack_index != stack.n - 2 {
+					semsg(cstring("E474: Unexpected colon: %.*s"), C.int(e - uintptr(p)), transmute(cstring)(p))
+					failed = true
+				} else if didcomma {
+					semsg(cstring("E474: Colon after comma: %.*s"), C.int(e - uintptr(p)), transmute(cstring)(p))
+					failed = true
+				} else if didcolon {
+					semsg(cstring("E474: Duplicate colon: %.*s"), C.int(e - uintptr(p)), transmute(cstring)(p))
+					failed = true
+				} else {
+					didcolon = true
+					brk = true
+				}
+			}
+		} else if c == ' ' || c == 9 || c == 10 || c == 13 {
+			brk = true
+		} else if c == 'n' {
+			if uintptr(p) + 3 >= e || libc.strncmp(transmute(cstring)(p + 1), cstring("ull"), 3) != 0 {
+				semsg(cstring("E474: Expected null: %.*s"), C.int(e - uintptr(p)), transmute(cstring)(p))
+				failed = true
+			} else {
+				p += 3
+				pc := transmute(cstring)(p)
+				if json_decoder_pop_o(ValuesStackItem_O{val = Typval_T{v_type = VAR_SPECIAL, v_lock = VAR_UNLOCKED, vval = transmute(rawptr)(C.longlong(KSPECIALVARNULL_O))}, didcomma = didcomma, didcolon = didcolon}, &stack, &container_stack, &pc, &next_map_special, &didcomma, &didcolon) == FAIL_E {
+					failed = true
+				} else {
+					p = uintptr(rawptr(pc))
+				}
+				if !failed && next_map_special {
+					restart = true
+				}
+			}
+		} else if c == 't' {
+			if uintptr(p) + 3 >= e || libc.strncmp(transmute(cstring)(p + 1), cstring("rue"), 3) != 0 {
+				semsg(cstring("E474: Expected true: %.*s"), C.int(e - uintptr(p)), transmute(cstring)(p))
+				failed = true
+			} else {
+				p += 3
+				pc := transmute(cstring)(p)
+				if json_decoder_pop_o(ValuesStackItem_O{val = Typval_T{v_type = VAR_BOOL, v_lock = VAR_UNLOCKED, vval = transmute(rawptr)(C.longlong(kBoolVarTrue))}, didcomma = didcomma, didcolon = didcolon}, &stack, &container_stack, &pc, &next_map_special, &didcomma, &didcolon) == FAIL_E {
+					failed = true
+				} else {
+					p = uintptr(rawptr(pc))
+				}
+				if !failed && next_map_special {
+					restart = true
+				}
+			}
+		} else if c == 'f' {
+			if uintptr(p) + 4 >= e || libc.strncmp(transmute(cstring)(p + 1), cstring("alse"), 4) != 0 {
+				semsg(cstring("E474: Expected false: %.*s"), C.int(e - uintptr(p)), transmute(cstring)(p))
+				failed = true
+			} else {
+				p += 4
+				pc := transmute(cstring)(p)
+				if json_decoder_pop_o(ValuesStackItem_O{val = Typval_T{v_type = VAR_BOOL, v_lock = VAR_UNLOCKED, vval = transmute(rawptr)(C.longlong(kBoolVarFalse))}, didcomma = didcomma, didcolon = didcolon}, &stack, &container_stack, &pc, &next_map_special, &didcomma, &didcolon) == FAIL_E {
+					failed = true
+				} else {
+					p = uintptr(rawptr(pc))
+				}
+				if !failed && next_map_special {
+					restart = true
+				}
+			}
+		} else if c == '"' {
+			pc := transmute(cstring)(p)
+			if parse_json_string_o(buf, buf_len, &pc, &stack, &container_stack, &next_map_special, &didcomma, &didcolon) == FAIL_E {
+				failed = true
+			} else {
+				p = uintptr(rawptr(pc))
+			}
+			if !failed && next_map_special {
+				restart = true
+			}
+		} else if c == '-' || (c >= '0' && c <= '9') {
+			pc := transmute(cstring)(p)
+			if parse_json_number_o(buf, buf_len, &pc, &stack, &container_stack, &next_map_special, &didcomma, &didcolon) == FAIL_E {
+				failed = true
+			} else {
+				p = uintptr(rawptr(pc))
+			}
+			if !failed && next_map_special {
+				restart = true
+			}
+		} else if c == '[' {
+			l := tv_list_alloc(KLISTLEN_MAYKNOW_O)
+			tv_list_ref_o(l)
+			tv := Typval_T{v_type = VAR_LIST, v_lock = VAR_UNLOCKED, vval = transmute(rawptr)(l)}
+			cstack_push_o(&container_stack, ContainerStackItem_O{stack_index = stack.n, s = transmute(cstring)(p), container = tv})
+			vstack_push_o(&stack, ValuesStackItem_O{val = tv, didcomma = didcomma, didcolon = didcolon})
+		} else if c == '{' {
+			tv := Typval_T{}
+			val_list: rawptr = nil
+			if next_map_special {
+				next_map_special = false
+				val_list = decode_create_map_special_dict(&tv, KLISTLEN_MAYKNOW_O)
+			} else {
+				dd := tv_dict_alloc()
+				(^C.int)(uintptr(dd) + 8)^ += 1
+				tv = Typval_T{v_type = VAR_DICT, v_lock = VAR_UNLOCKED, vval = transmute(rawptr)(dd)}
+			}
+			cstack_push_o(&container_stack, ContainerStackItem_O{stack_index = stack.n, special_val = val_list, s = transmute(cstring)(p), container = tv})
+			vstack_push_o(&stack, ValuesStackItem_O{val = tv, didcomma = didcomma, didcolon = didcolon})
+		} else {
+			semsg(cstring("E474: Unidentified byte: %.*s"), C.int(e - uintptr(p)), transmute(cstring)(p))
+			failed = true
+		}
+		if restart || failed || after_cycle {
+			continue
+		}
+		if brk {
+			p += 1
+			continue
+		}
+		didcomma = false
+		didcolon = false
+		if container_stack.n == 0 {
+			p += 1
+			break
+		}
+		p += 1
+	}
+	if !failed {
+		for uintptr(p) < e {
+			cc := ([^]u8)(p)[0]
+			if cc == 10 || cc == ' ' || cc == 9 || cc == 13 {
+				p += 1
+			} else {
+				semsg(cstring("E474: Trailing characters: %.*s"), C.int(e - uintptr(p)), transmute(cstring)(p))
+				failed = true
+				break
+			}
+		}
+	}
+	if !failed {
+		if stack.n == 1 && container_stack.n == 0 {
+			top := vstack_pop_o(&stack)
+			rettv^ = top.val
+		} else {
+			semsg(cstring("E474: Unexpected end of input: %.*s"), C.int(buf_len), buf)
+			failed = true
+		}
+	}
+	if failed {
+		ret = FAIL_E
+		for stack.n > 0 {
+			popped := vstack_pop_o(&stack)
+			tv_clear(&popped.val)
+		}
+	} else {
+		ret = OK_E
+	}
+	vstack_destroy_o(&stack)
+	cstack_destroy_o(&container_stack)
+	return ret
+}
+
+// —— Batch 23l: decode.c mpack callbacks (mpack_node/token mirrors) ——
+foreign _ {
+	@(link_name = "mpack_parse")
+	mpack_parse_e :: proc "c" (parser: rawptr, b: ^cstring, bl: ^C.size_t, enter_cb: Mpack_Walk_Cb, exit_cb: Mpack_Walk_Cb) -> C.int ---
+	@(link_name = "mpack_unpack_boolean")
+	mpack_unpack_boolean_e :: proc "c" (t: Mpack_Token_O) -> bool ---
+	@(link_name = "mpack_unpack_uint")
+	mpack_unpack_uint_e :: proc "c" (t: Mpack_Token_O) -> u64 ---
+	@(link_name = "mpack_unpack_sint")
+	mpack_unpack_sint_e :: proc "c" (t: Mpack_Token_O) -> i64 ---
+	@(link_name = "mpack_unpack_float_fast")
+	mpack_unpack_float_e :: proc "c" (t: Mpack_Token_O) -> f64 ---
+}
+
+// mpack walk callback type (mpack/object.h).
+Mpack_Walk_Cb :: proc "c" (w: rawptr, n: rawptr)
+
+// mpack_token_t mirror (mpack_core.h): 16B cc-probed.
+Mpack_Token_O :: struct {
+	type:   C.int, // 0
+	length: u32,   // 4
+	data:   [8]u8, // 8: value/chunk_ptr/ext_type
+}
+#assert(size_of(Mpack_Token_O) == 16)
+
+MPACK_TOK_NIL_O :: 1
+MPACK_TOK_BOOLEAN_O :: 2
+MPACK_TOK_UINT_O :: 3
+MPACK_TOK_SINT_O :: 4
+MPACK_TOK_FLOAT_O :: 5
+MPACK_TOK_CHUNK_O :: 6
+MPACK_TOK_ARRAY_O :: 7
+MPACK_TOK_MAP_O :: 8
+MPACK_TOK_BIN_O :: 9
+MPACK_TOK_STR_O :: 10
+MPACK_TOK_EXT_O :: 11
+
+// mpack_node_t mirror (mpack/object.h): 48B cc-probed.
+Mpack_Node_O :: struct {
+	tok:         Mpack_Token_O, // 0..16
+	pos:         C.size_t,      // 16
+	key_visited: C.int,         // 24
+	_pad:        [4]u8,
+	data:        [16]u8,        // 32..48
+}
+#assert(size_of(Mpack_Node_O) == 48)
+
+// Big-integer to special typval (decode.c static).
+positive_integer_to_special_typval_o :: proc "c" (rettv: ^Typval_T, val: u64) {
+	context = runtime.default_context()
+	if val <= u64(VARNUMBER_MAX_O) {
+		rettv^ = Typval_T{v_type = VAR_NUMBER, v_lock = VAR_UNLOCKED, vval = transmute(rawptr)(C.longlong(val))}
+	} else {
+		list := tv_list_alloc(4)
+		tv_list_ref_o(list)
+		create_special_dict_o(rettv, KMPINTEGER_O, Typval_T{v_type = VAR_LIST, v_lock = VAR_UNLOCKED, vval = transmute(rawptr)(list)})
+		tv_list_append_number(list, C.longlong(1))
+		tv_list_append_number(list, C.longlong((val >> 62) & 0x3))
+		tv_list_append_number(list, C.longlong((val >> 31) & 0x7FFFFFFF))
+		tv_list_append_number(list, C.longlong(val & 0x7FFFFFFF))
+	}
+}
+
+// mpack enter callback (decode.c static): allocate result slots.
+typval_parse_enter_o :: proc "c" (w: rawptr, n: rawptr) {
+	context = runtime.default_context()
+	parser := w
+	node := n
+	result: rawptr = nil
+	parent: rawptr = nil
+	if (^C.size_t)(uintptr(node) - 48 + 16)^ != max(C.size_t) {
+		parent = rawptr(uintptr(node) - 48)
+	}
+	if parent != nil {
+		ptype := (^C.int)(uintptr(parent))^
+		if ptype == MPACK_TOK_ARRAY_O {
+			list := (^rawptr)(uintptr(parent) + 40)^
+			result = tv_list_append_owned_tv(list, Typval_T{v_type = VAR_UNKNOWN, v_lock = VAR_UNLOCKED})
+		} else if ptype == MPACK_TOK_MAP_O {
+			items := (^rawptr)(uintptr(parent) + 40)^
+			pos := (^C.size_t)(uintptr(parent) + 16)^
+			kv := (^C.int)(uintptr(parent) + 24)^
+			result = rawptr(uintptr(items) + uintptr((pos * 2 + C.size_t(kv)) * 16))
+		} else if ptype == MPACK_TOK_STR_O || ptype == MPACK_TOK_BIN_O || ptype == MPACK_TOK_EXT_O {
+		} else {
+			libc.abort()
+		}
+	} else {
+		result = (^rawptr)(uintptr(parser))^
+	}
+	(^rawptr)(uintptr(node) + 32)^ = result
+	(^rawptr)(uintptr(node) + 40)^ = nil
+	ntype := (^C.int)(uintptr(node))^
+	if ntype == MPACK_TOK_NIL_O {
+		(^Typval_T)(result)^ = Typval_T{v_type = VAR_SPECIAL, v_lock = VAR_UNLOCKED, vval = transmute(rawptr)(C.longlong(KSPECIALVARNULL_O))}
+	} else if ntype == MPACK_TOK_BOOLEAN_O {
+		v: C.int = kBoolVarFalse
+		if mpack_unpack_boolean_e((^Mpack_Token_O)(uintptr(node))^) {
+			v = kBoolVarTrue
+		}
+		(^Typval_T)(result)^ = Typval_T{v_type = VAR_BOOL, v_lock = VAR_UNLOCKED, vval = transmute(rawptr)(C.longlong(v))}
+	} else if ntype == MPACK_TOK_SINT_O {
+		(^Typval_T)(result)^ = Typval_T{v_type = VAR_NUMBER, v_lock = VAR_UNLOCKED, vval = transmute(rawptr)(C.longlong(mpack_unpack_sint_e((^Mpack_Token_O)(uintptr(node))^)))}
+	} else if ntype == MPACK_TOK_UINT_O {
+		positive_integer_to_special_typval_o((^Typval_T)(result), mpack_unpack_uint_e((^Mpack_Token_O)(uintptr(node))^))
+	} else if ntype == MPACK_TOK_FLOAT_O {
+		(^Typval_T)(result)^ = Typval_T{v_type = VAR_FLOAT, v_lock = VAR_UNLOCKED, vval = transmute(rawptr)(mpack_unpack_float_e((^Mpack_Token_O)(uintptr(node))^))}
+	} else if ntype == MPACK_TOK_BIN_O || ntype == MPACK_TOK_STR_O || ntype == MPACK_TOK_EXT_O {
+		(^rawptr)(uintptr(node) + 40)^ = rawptr(xmallocz_r(C.size_t((^u32)(uintptr(node) + 4)^)))
+	} else if ntype == MPACK_TOK_CHUNK_O {
+		data := (^rawptr)(uintptr(parent) + 40)^
+		libc.memcpy(rawptr(uintptr(data) + uintptr((^C.size_t)(uintptr(parent) + 16)^)), rawptr((^rawptr)(uintptr(node) + 8)^), C.size_t((^u32)(uintptr(node) + 4)^))
+	} else if ntype == MPACK_TOK_ARRAY_O {
+		list := tv_list_alloc(C.ssize_t((^u32)(uintptr(node) + 4)^))
+		tv_list_ref_o(list)
+		(^Typval_T)(result)^ = Typval_T{v_type = VAR_LIST, v_lock = VAR_UNLOCKED, vval = transmute(rawptr)(list)}
+		(^rawptr)(uintptr(node) + 40)^ = list
+	} else if ntype == MPACK_TOK_MAP_O {
+		(^rawptr)(uintptr(node) + 40)^ = rawptr(xmallocz_r(C.size_t((^u32)(uintptr(node) + 4)^) * 2 * 16))
+	}
+}
+
+// mpack exit callback (decode.c static): finalize containers.
+typval_parse_exit_o :: proc "c" (w: rawptr, n: rawptr) {
+	context = runtime.default_context()
+	node := n
+	result := (^rawptr)(uintptr(node) + 32)^
+	ntype := (^C.int)(uintptr(node))^
+	length := C.size_t((^u32)(uintptr(node) + 4)^)
+	if ntype == MPACK_TOK_BIN_O || ntype == MPACK_TOK_STR_O {
+		(^Typval_T)(result)^ = decode_string(transmute(cstring)((^rawptr)(uintptr(node) + 40)^), length, false, true)
+		(^rawptr)(uintptr(node) + 40)^ = nil
+	} else if ntype == MPACK_TOK_EXT_O {
+		list := tv_list_alloc(2)
+		tv_list_ref_o(list)
+		tv_list_append_number(list, C.longlong((^C.int)(uintptr(node) + 8)^))
+		ext_val_list := tv_list_alloc(KLISTLEN_MAYKNOW_O)
+		tv_list_append_list(list, ext_val_list)
+		create_special_dict_o((^Typval_T)(result), KMPEXT_O, Typval_T{v_type = VAR_LIST, v_lock = VAR_UNLOCKED, vval = transmute(rawptr)(list)})
+		encode_list_write(ext_val_list, transmute(cstring)((^rawptr)(uintptr(node) + 40)^), length)
+		xfree((^rawptr)(uintptr(node) + 40)^)
+		(^rawptr)(uintptr(node) + 40)^ = nil
+	} else if ntype == MPACK_TOK_MAP_O {
+		items := ([^]Typval_T)((^rawptr)(uintptr(node) + 40)^)
+		all_str := true
+		i: C.size_t = 0
+		for i < length {
+			ktv := items[i * 2 + 0]
+			if ktv.v_type != VAR_STRING || rawptr(ktv.vval) == nil || ([^]u8)(ktv.vval)[0] == 0 {
+				all_str = false
+				break
+			}
+			i += 1
+		}
+		if all_str {
+			d := tv_dict_alloc()
+			(^C.int)(uintptr(d) + 8)^ += 1
+			(^Typval_T)(result)^ = Typval_T{v_type = VAR_DICT, v_lock = VAR_UNLOCKED, vval = transmute(rawptr)(d)}
+			dup := false
+			i = 0
+			for i < length {
+				key := transmute(cstring)(items[i * 2 + 0].vval)
+				keylen := C.size_t(libc.strlen(key))
+				di := rawptr(xmallocz_r(17 + keylen))
+				libc.memcpy(rawptr(uintptr(di) + 17), rawptr(transmute(^u8)(key)), keylen)
+				(^C.int)(uintptr(di))^ = VAR_UNKNOWN
+				if tv_dict_add(d, di) == FAIL_E {
+					todo := (^C.size_t)(uintptr(d) + 24)^
+					hi := uintptr((^rawptr)(rawptr(uintptr(d) + 48))^)
+					for todo > 0 {
+						k := ([^]rawptr)(hi)[1]
+						hi += 16
+						if k == nil || k == rawptr(&hash_removed_c) {
+							continue
+						}
+						todo -= 1
+						ddi := rawptr(uintptr(k) - 17)
+						(^Typval_T)(uintptr(ddi))^ = Typval_T{v_type = VAR_SPECIAL, v_lock = VAR_UNLOCKED, vval = transmute(rawptr)(C.longlong(KSPECIALVARNULL_O))}
+					}
+					tv_clear((^Typval_T)(result))
+					xfree(di)
+					dup = true
+					break
+				}
+				(^Typval_T)(uintptr(di))^ = items[i * 2 + 1]
+				i += 1
+			}
+			if !dup {
+				i = 0
+				for i < length {
+					xfree(rawptr(transmute(^u8)(items[i * 2 + 0].vval)))
+					i += 1
+				}
+				xfree((^rawptr)(uintptr(node) + 40)^)
+				(^rawptr)(uintptr(node) + 40)^ = nil
+				return
+			}
+		}
+		list := decode_create_map_special_dict((^Typval_T)(result), C.ptrdiff_t(length))
+		j: C.size_t = 0
+		for j < length {
+			kv_pair := tv_list_alloc(2)
+			tv_list_append_list(list, kv_pair)
+			tv_list_append_owned_tv(kv_pair, items[j * 2 + 0])
+			tv_list_append_owned_tv(kv_pair, items[j * 2 + 1])
+			j += 1
+		}
+		xfree((^rawptr)(uintptr(node) + 40)^)
+		(^rawptr)(uintptr(node) + 40)^ = nil
+	}
+}
+
+// Free entered-but-unexited nodes (decode.c public).
+@(export)
+typval_parser_error_free :: proc "c" (parser: rawptr) {
+	context = runtime.default_context()
+	n := C.size_t((^u32)(uintptr(parser) + 8)^)
+	i: C.size_t = 0
+	for i < n {
+		node := rawptr(uintptr(parser) + uintptr(80 + i * 48))
+		t := (^C.int)(uintptr(node))^
+		if t == MPACK_TOK_BIN_O || t == MPACK_TOK_STR_O || t == MPACK_TOK_EXT_O || t == MPACK_TOK_MAP_O {
+			p := (^rawptr)(uintptr(node) + 40)^
+			if p != nil {
+				xfree(p)
+			}
+			(^rawptr)(uintptr(node) + 40)^ = nil
+		}
+		i += 1
+	}
+}
+
+// Streaming msgpack-to-typval (decode.c public).
+@(export)
+mpack_parse_typval :: proc "c" (parser: rawptr, data: ^cstring, size: ^C.size_t) -> C.int {
+	context = runtime.default_context()
+	return mpack_parse_e(parser, data, size, typval_parse_enter_o, typval_parse_exit_o)
+}
+
+// One-shot msgpack-to-typval (decode.c public).
+@(export)
+unpack_typval :: proc "c" (data: ^cstring, size: ^C.size_t, ret: ^Typval_T) -> C.int {
+	context = runtime.default_context()
+	ret.v_type = VAR_UNKNOWN
+	parser: [1664]u8
+	mpack_parser_init_e(rawptr(&parser[0]), 0)
+	(^rawptr)(rawptr(&parser[0]))^ = rawptr(ret)
+	status := mpack_parse_typval(rawptr(&parser[0]), data, size)
+	if status != MPACK_OK_O {
+		typval_parser_error_free(rawptr(&parser[0]))
+		tv_clear(ret)
+	}
+	return status
+}
+
+// —— Batch 28a: eval.c tiny leaves (num_divide/modulus/get_copyID) ——
+
+// Integer division with div-by-zero guards (eval.c public).
+@(export)
+num_divide :: proc "c" (n1: C.longlong, n2: C.longlong) -> C.longlong {
+	context = runtime.default_context()
+	result: C.longlong = 0
+	if n2 == 0 {
+		if n1 == 0 {
+			result = VARNUMBER_MIN_O
+		} else if n1 < 0 {
+			result = -VARNUMBER_MAX_O
+		} else {
+			result = VARNUMBER_MAX_O
+		}
+	} else if n1 == VARNUMBER_MIN_O && n2 == -1 {
+		result = VARNUMBER_MAX_O
+	} else {
+		result = n1 / n2
+	}
+	return result
+}
+
+// Integer modulus with div-by-zero guard (eval.c public).
+@(export)
+num_modulus :: proc "c" (n1: C.longlong, n2: C.longlong) -> C.longlong {
+	context = runtime.default_context()
+	if n2 == 0 {
+		return 0
+	}
+	return n1 % n2
+}
+
+// CopyID generator (eval.c public; static counter, +2 per call).
+copyID_current_g: C.int = 0
+
+@(export)
+get_copyID :: proc "c" () -> C.int {
+	context = runtime.default_context()
+	copyID_current_g += 2
+	return copyID_current_g
+}
+
+// —— Batch 28b: eval.c expr predicates ——
+
+// Non-empty evaluatable check (eval.c public, CONST).
+@(export)
+eval_expr_valid_arg :: proc "c" (tv: ^Typval_T) -> bool {
+	context = runtime.default_context()
+	return tv.v_type != VAR_UNKNOWN && (tv.v_type != VAR_STRING || (rawptr(tv.vval) != nil && ([^]u8)(tv.vval)[0] != 0))
+}
+
+// Typval-to-bool via expression eval (eval.c public).
+@(export)
+eval_expr_to_bool :: proc "c" (expr: ^Typval_T, error: ^bool) -> bool {
+	context = runtime.default_context()
+	argv := Typval_T{}
+	rettv := Typval_T{}
+	if eval_expr_typval(expr, false, &argv, 0, &rettv) == FAIL_E {
+		error^ = true
+		return false
+	}
+	res := tv_get_number_chk(&rettv, error) != 0
+	tv_clear(&rettv)
+	return res
+}
+
+// Regex match helper (eval.c public).
+@(export)
+pattern_match :: proc "c" (pat: cstring, text: cstring, ic: bool) -> C.int {
+	context = runtime.default_context()
+	matches: C.int = 0
+	regmatch := Regmatch_T{}
+	save_cpo := p_cpo
+	p_cpo = empty_string_opt()
+	regmatch.regprog = vim_regcomp(pat, RE_MAGIC + RE_STRING_O)
+	if regmatch.regprog != nil {
+		regmatch.rm_ic = p_ic
+		if vim_regexec_nl_e(&regmatch, text, 0) {
+			matches = 1
+		}
+		vim_regfree(regmatch.regprog)
+	}
+	p_cpo = save_cpo
+	return matches
+}
+
+// —— Batch 28d: eval.c evalarg + eval_to_bool ——
+foreign _ {
+	@(link_name = "sourcing_a_script")
+	sourcing_a_script_e :: proc "c" (eap: rawptr) -> C.int ---
+}
+
+// Simple-funccal fast path with eval0 fallback (eval.c static).
+eval0_simple_funccal_o :: proc "c" (arg: cstring, rettv: ^Typval_T, eap: rawptr, evalarg: rawptr) -> C.int {
+	context = runtime.default_context()
+	r := may_call_simple_func(arg, rettv)
+	if r == NOTDONE_O {
+		r = eval0(arg, rettv, eap, evalarg)
+	}
+	return r
+}
+
+// Top-level expression evaluator with trailing-text check (eval.c public).
+@(export)
+eval0 :: proc "c" (arg: cstring, rettv: ^Typval_T, eap: rawptr, evalarg: rawptr) -> C.int {
+	context = runtime.default_context()
+	did_emsg_before := did_emsg_g()
+	called_emsg_before := called_emsg
+	end_error := false
+	p := skipwhite(arg)
+	ret := eval1(&p, rettv, evalarg)
+	if ret != FAIL_E {
+		end_error = ends_excmd_e(C.int(([^]u8)(p)[0])) == 0
+	}
+	if ret == FAIL_E || end_error {
+		if ret != FAIL_E {
+			tv_clear(rettv)
+		}
+		if !aborting_r() && did_emsg_g() == did_emsg_before && called_emsg == called_emsg_before {
+			if end_error {
+				semsg(cstring(E488_S), p)
+			} else {
+				semsg(cstring(E15_S), arg)
+			}
+		}
+		if eap != nil && p != nil {
+			nextcmd := transmute(rawptr)(check_nextcmd_r(transmute(^u8)(p)))
+			if nextcmd != nil && ([^]u8)(nextcmd)[0] != '|' {
+				(^rawptr)(uintptr(eap) + EXARG_NEXTCMD_OFF_O)^ = nextcmd
+			}
+		}
+		return FAIL_E
+	}
+	if eap != nil {
+		(^rawptr)(uintptr(eap) + EXARG_NEXTCMD_OFF_O)^ = transmute(rawptr)(check_nextcmd_r(transmute(^u8)(p)))
+	}
+	return ret
+}
+
+EXARG_CMDLINEP_OFF :: 48
+EXARG_CMDLINE_TOFREE_OFF :: 56
+
+// Fill evalarg from exarg (eval.c public; reuses Batch-20c Evalarg_T).
+@(export)
+fill_evalarg_from_eap :: proc "c" (evalarg: ^Evalarg_T, eap: rawptr, skip: bool) {
+	context = runtime.default_context()
+	evalarg.eval_flags = 0
+	if !skip {
+		evalarg.eval_flags = EVAL_EVALUATE_O
+	}
+	// NOTE: C leaves eval_tofree uninitialized here (latent UB — ex_while
+	// declares a bare struct and nothing in the tree ever stores non-NULL).
+	// Zero it so clear_evalarg below is deterministic instead of gambling
+	// on stack residue (which crashed lazy startup: free(stack)).
+	evalarg.eval_tofree = nil
+	if eap == nil {
+		return
+	}
+	if sourcing_a_script_e(eap) != 0 || (^rawptr)(uintptr(eap) + 168)^ == transmute(rawptr)(get_list_line) {
+		evalarg.eval_getline = (^rawptr)(uintptr(eap) + 168)^
+		evalarg.eval_cookie = (^rawptr)(uintptr(eap) + 176)^
+	}
+}
+
+// Clear evalarg (eval.c public).
+@(export)
+clear_evalarg :: proc "c" (evalarg: ^Evalarg_T, eap: rawptr) {
+	context = runtime.default_context()
+	if evalarg == nil {
+		return
+	}
+	if evalarg.eval_tofree != nil {
+		if eap != nil {
+			xfree(rawptr(transmute(^u8)((^cstring)(uintptr(eap) + EXARG_CMDLINE_TOFREE_OFF)^)))
+			(^cstring)(uintptr(eap) + EXARG_CMDLINE_TOFREE_OFF)^ = (^cstring)(uintptr(eap) + EXARG_CMDLINEP_OFF)^
+			(^cstring)(uintptr(eap) + EXARG_CMDLINEP_OFF)^ = transmute(cstring)(evalarg.eval_tofree)
+		} else {
+			xfree(rawptr(transmute(^u8)(evalarg.eval_tofree)))
+		}
+		evalarg.eval_tofree = nil
+	}
+}
+
+// —— Batch 28al: eval.c clear_lval (export + weak, completes lval trio) ——
+
+// Lvalue cleanup: free exp_name + newkey (eval.c public).
+@(export)
+clear_lval :: proc "c" (lp: rawptr) {
+	context = runtime.default_context()
+	xfree((^rawptr)(uintptr(lp) + 16)^)
+	xfree((^rawptr)(uintptr(lp) + LL_NEWKEY_OFF_O)^)
+}
+
+// Top-level string-to-bool eval (eval.c public).
+@(export)
+eval_to_bool :: proc "c" (arg: cstring, error: ^bool, eap: rawptr, skip: bool, use_simple_function: bool) -> bool {
+	context = runtime.default_context()
+	tv := Typval_T{}
+	retval := false
+	evalarg := Evalarg_T{}
+	fill_evalarg_from_eap(&evalarg, eap, skip)
+	if skip {
+		emsg_skip += 1
+	}
+	r: C.int = 0
+	if use_simple_function {
+		r = eval0_simple_funccal_o(arg, &tv, eap, rawptr(&evalarg))
+	} else {
+		r = eval0(arg, &tv, eap, rawptr(&evalarg))
+	}
+	if r == FAIL_E {
+		error^ = true
+	} else {
+		error^ = false
+		if !skip {
+			err := false
+			retval = tv_get_number_chk(&tv, &err) != 0
+			if err {
+				error^ = true
+			}
+			tv_clear(&tv)
+		}
+	}
+	if skip {
+		emsg_skip -= 1
+	}
+	clear_evalarg(&evalarg, eap)
+	return retval
+}
+
+// —— Batch 28e: eval.c to_string family ——
+foreign _ {
+	@(link_name = "EVALARG_EVALUATE")
+	EVALARG_EVALUATE_g: Evalarg_T
+}
+
+// String eval with skip support (eval.c public).
+@(export)
+eval_to_string_skip :: proc "c" (arg: cstring, eap: rawptr, skip: bool) -> cstring {
+	context = runtime.default_context()
+	tv := Typval_T{}
+	retval: cstring = nil
+	evalarg := Evalarg_T{}
+	fill_evalarg_from_eap(&evalarg, eap, skip)
+	if skip {
+		emsg_skip += 1
+	}
+	if eval0(arg, &tv, eap, rawptr(&evalarg)) == FAIL_E || skip {
+		retval = nil
+	} else {
+		retval = transmute(cstring)(xstrdup_o(transmute(^u8)(tv_get_string(&tv))))
+		tv_clear(&tv)
+	}
+	if skip {
+		emsg_skip -= 1
+	}
+	clear_evalarg(&evalarg, eap)
+	return retval
+}
+
+// Skip over an expression (eval.c public).
+@(export)
+skip_expr :: proc "c" (pp: ^cstring, evalarg: ^Evalarg_T) -> C.int {
+	context = runtime.default_context()
+	save_flags: C.int = 0
+	if evalarg != nil {
+		save_flags = evalarg.eval_flags
+		evalarg.eval_flags &= ~C.int(1)
+	}
+	pp^ = skipwhite(pp^)
+	rettv := Typval_T{}
+	res := eval1(pp, &rettv, nil)
+	if evalarg != nil {
+		evalarg.eval_flags = save_flags
+	}
+	return res
+}
+
+// List/dict-aware tv-to-string (eval.c static).
+typval2string_o :: proc "c" (tv: ^Typval_T, join_list: bool) -> cstring {
+	context = runtime.default_context()
+	if join_list && tv.v_type == VAR_LIST {
+		ga := Garray{}
+		ga_init_r2(&ga, 1, 80)
+		l := rawptr(tv.vval)
+		if l != nil {
+			tv_list_join(&ga, l, cstring("\n"))
+			if tv_list_len_o(l) > 0 {
+				ga_append_r(&ga, NL_O)
+			}
+		}
+		ga_append_r(&ga, 0)
+		return transmute(cstring)(ga.ga_data)
+	} else if tv.v_type == VAR_LIST || tv.v_type == VAR_DICT {
+		return encode_tv2string(tv, nil)
+	}
+	return transmute(cstring)(xstrdup_o(transmute(^u8)(tv_get_string(tv))))
+}
+
+// Top-level string eval with exarg (eval.c public).
+@(export)
+eval_to_string_eap :: proc "c" (arg: cstring, join_list: bool, eap: rawptr, use_simple_function: bool) -> cstring {
+	context = runtime.default_context()
+	tv := Typval_T{}
+	retval: cstring = nil
+	evalarg := Evalarg_T{}
+	skip := false
+	if eap != nil {
+		skip = (^bool)(uintptr(eap) + 72)^
+	}
+	fill_evalarg_from_eap(&evalarg, eap, skip)
+	r: C.int = 0
+	if use_simple_function {
+		r = eval0_simple_funccal_o(arg, &tv, nil, rawptr(&evalarg))
+	} else {
+		r = eval0(arg, &tv, nil, rawptr(&evalarg))
+	}
+	if r == FAIL_E {
+		retval = nil
+	} else {
+		retval = typval2string_o(&tv, join_list)
+		tv_clear(&tv)
+	}
+	clear_evalarg(&evalarg, nil)
+	return retval
+}
+
+// Top-level string eval (eval.c public).
+@(export)
+eval_to_string :: proc "c" (arg: cstring, join_list: bool, use_simple_function: bool) -> cstring {
+	context = runtime.default_context()
+	return eval_to_string_eap(arg, join_list, nil, use_simple_function)
+}
+
+// Sandboxed string eval (eval.c public).
+@(export)
+eval_to_string_safe :: proc "c" (arg: cstring, use_sandbox: bool, use_simple_function: bool) -> cstring {
+	context = runtime.default_context()
+	retval: cstring = nil
+	funccal_entry: [16]u8
+	save_funccal(rawptr(&funccal_entry[0]))
+	if use_sandbox {
+		sandbox += 1
+	}
+	textlock += 1
+	retval = eval_to_string(arg, false, use_simple_function)
+	if use_sandbox {
+		sandbox -= 1
+	}
+	textlock -= 1
+	restore_funccal()
+	return retval
+}
+
+// Top-level number eval, silent (eval.c public).
+@(export)
+eval_to_number :: proc "c" (expr: cstring, use_simple_function: bool) -> C.longlong {
+	context = runtime.default_context()
+	rettv := Typval_T{}
+	retval: C.longlong = 0
+	p := skipwhite(expr)
+	r: C.int = NOTDONE_O
+	emsg_off += 1
+	if use_simple_function {
+		r = may_call_simple_func(p, &rettv)
+	}
+	if r == NOTDONE_O {
+		r = eval1(&p, &rettv, rawptr(&EVALARG_EVALUATE_g))
+	}
+	if r == FAIL_E {
+		retval = -1
+	} else {
+		retval = tv_get_number_chk(&rettv, nil)
+		tv_clear(&rettv)
+	}
+	emsg_off -= 1
+	return retval
+}
+
+// —— Batch 28i: eval.c eval7_leader (dormant plain, C-static) ——
+
+// Apply unary '!'/'-' leader run to a value (eval.c static,
+// activates with eval7 port).
+eval7_leader_o :: proc "c" (rettv: ^Typval_T, numeric_only: bool, start_leader: cstring, end_leaderp: ^cstring) -> C.int {
+	context = runtime.default_context()
+	end_leader := uintptr(rawptr(end_leaderp^))
+	ret: C.int = OK_E
+	error := false
+	val: C.longlong = 0
+	f: f64 = 0
+	if rettv.v_type == VAR_FLOAT {
+		f = transmute(f64)(rettv.vval)
+	} else {
+		val = tv_get_number_chk(rettv, &error)
+	}
+	if error {
+		tv_clear(rettv)
+		ret = FAIL_E
+	} else {
+		for end_leader > uintptr(rawptr(start_leader)) {
+			end_leader -= 1
+			if ([^]u8)(end_leader)[0] == '!' {
+				if numeric_only {
+					end_leader += 1
+					break
+				}
+				if rettv.v_type == VAR_FLOAT {
+					rettv.v_type = VAR_BOOL
+					if f == 0 {
+						val = kBoolVarTrue
+					} else {
+						val = kBoolVarFalse
+					}
+				} else {
+					if val != 0 {
+						val = 0
+					} else {
+						val = 1
+					}
+				}
+			} else if ([^]u8)(end_leader)[0] == '-' {
+				if rettv.v_type == VAR_FLOAT {
+					f = -f
+				} else {
+					val = -val
+				}
+			}
+		}
+		if rettv.v_type == VAR_FLOAT {
+			tv_clear(rettv)
+			rettv.vval = transmute(rawptr)(f)
+		} else {
+			tv_clear(rettv)
+			rettv.v_type = VAR_NUMBER
+			rettv.vval = transmute(rawptr)(val)
+		}
+	}
+	end_leaderp^ = transmute(cstring)(end_leader)
+	return ret
+}
+
+// —— Batch 28j: eval.c call_func_rettv (dormant plain, C-static) ——
+E1192_S :: "E1192: Empty function name"
+
+// Invoke funcref in rettv with parsed args (eval.c static,
+// activates with eval_lambda/eval_method ports).
+call_func_rettv_o :: proc "c" (arg: ^cstring, evalarg: rawptr, rettv: ^Typval_T, evaluate: bool, selfdict: rawptr, basetv: rawptr, lua_funcname: cstring) -> C.int {
+	context = runtime.default_context()
+	pt: rawptr = nil
+	functv := Typval_T{}
+	funcname: cstring = nil
+	is_lua := false
+	fail := false
+	if evaluate {
+		functv = rettv^
+		rettv.v_type = VAR_UNKNOWN
+		if functv.v_type == VAR_PARTIAL {
+			pt = rawptr(functv.vval)
+			is_lua = is_luafunc(pt)
+			if is_lua {
+				funcname = lua_funcname
+			} else {
+				funcname = partial_name(pt)
+			}
+		} else {
+			funcname = transmute(cstring)(functv.vval)
+			if funcname == nil || ([^]u8)(funcname)[0] == 0 {
+				emsg(cstring(E1192_S))
+				fail = true
+			}
+		}
+	} else {
+		funcname = cstring("")
+	}
+	ret: C.int = 0
+	if !fail {
+		fe := Funcexe_T{}
+		fe.firstline = (^C.int)(uintptr(curwin) + W_CURSOR_OFF)^
+		fe.lastline = (^C.int)(uintptr(curwin) + W_CURSOR_OFF)^
+		fe.evaluate = evaluate
+		fe.partial = pt
+		fe.selfdict = selfdict
+		fe.basetv = basetv
+		namelen: C.int = -1
+		if is_lua {
+			namelen = C.int(uintptr(rawptr(arg^)) - uintptr(rawptr(funcname)))
+		}
+		ret = get_func_tv(funcname, namelen, rettv, arg, evalarg, &fe)
+	}
+	if evaluate {
+		tv_clear(&functv)
+	}
+	return ret
+}
+
+// —— Batch 28k: eval.c eval_lambda (dormant plain, C-static) ——
+E274_S :: "E274: No white space allowed before parenthesis"
+
+// Evaluate "->method()" on a lambda base (eval.c static,
+// activates with eval_method/eval7 ports).
+eval_lambda_o :: proc "c" (arg: ^cstring, rettv: ^Typval_T, evalarg: rawptr, verbose: bool) -> C.int {
+	context = runtime.default_context()
+	evaluate := evalarg != nil && ((^Evalarg_T)(evalarg).eval_flags & EVAL_EVALUATE_O) != 0
+	arg^ = transmute(cstring)(uintptr(rawptr(arg^)) + 2)
+	base := rettv^
+	rettv.v_type = VAR_UNKNOWN
+	ret := get_lambda_tv(arg, rettv, evalarg)
+	if ret != OK_E {
+		return FAIL_E
+	} else if ([^]u8)(arg^)[0] != '(' {
+		if verbose {
+			if ([^]u8)(skipwhite(arg^))[0] == '(' {
+				emsg(cstring(E274_S))
+			} else {
+				semsg(cstring(E107_S), cstring("lambda"))
+			}
+		}
+		tv_clear(rettv)
+		ret = FAIL_E
+	} else {
+		ret = call_func_rettv_o(arg, evalarg, rettv, evaluate, nil, rawptr(&base), nil)
+	}
+	if evaluate {
+		tv_clear(&base)
+	}
+	return ret
+}
+
+// —— Batch 28l: eval.c eval1_emsg (dormant plain, C-static) ——
+
+// Call eval1 with invalid-expression error reporting (eval.c static,
+// activates with eval_expr_string/f-4989 callers).
+eval1_emsg_o :: proc "c" (arg: ^cstring, rettv: ^Typval_T, eap: rawptr) -> C.int {
+	context = runtime.default_context()
+	start := arg^
+	did_emsg_before := did_emsg_g()
+	called_emsg_before := called_emsg
+	evalarg := Evalarg_T{}
+	skip := false
+	if eap != nil {
+		skip = (^bool)(uintptr(eap) + 72)^
+	}
+	fill_evalarg_from_eap(&evalarg, eap, skip)
+	ret := eval1(arg, rettv, rawptr(&evalarg))
+	if ret == FAIL_E {
+		if !aborting_r() && did_emsg_g() == did_emsg_before && called_emsg == called_emsg_before {
+			semsg(cstring(E15_S), start)
+		}
+	}
+	clear_evalarg(&evalarg, eap)
+	return ret
+}
+
+// —— Batch 28m: eval.c expr-typval cluster ——
+
+// Evaluate a partial value (eval.c static, dormant until eval_expr_typval).
+eval_expr_partial_o :: proc "c" (expr: ^Typval_T, argv: ^Typval_T, argc: C.int, rettv: ^Typval_T) -> C.int {
+	context = runtime.default_context()
+	partial := rawptr(expr.vval)
+	if partial == nil {
+		return FAIL_E
+	}
+	s := partial_name(partial)
+	if s == nil || ([^]u8)(s)[0] == 0 {
+		return FAIL_E
+	}
+	fe := Funcexe_T{}
+	fe.evaluate = true
+	fe.partial = partial
+	if call_func(s, -1, rettv, argc, argv, &fe) == FAIL_E {
+		return FAIL_E
+	}
+	return OK_E
+}
+
+// Evaluate a funcref/string value (eval.c static, dormant until eval_expr_typval).
+eval_expr_func_o :: proc "c" (expr: ^Typval_T, argv: ^Typval_T, argc: C.int, rettv: ^Typval_T) -> C.int {
+	context = runtime.default_context()
+	buf: [65]u8
+	s: cstring = nil
+	if expr.v_type == VAR_FUNC {
+		s = transmute(cstring)(expr.vval)
+	} else {
+		s = tv_get_string_buf_chk(expr, &buf[0])
+	}
+	if s == nil || ([^]u8)(s)[0] == 0 {
+		return FAIL_E
+	}
+	fe := Funcexe_T{}
+	fe.evaluate = true
+	if call_func(s, -1, rettv, argc, argv, &fe) == FAIL_E {
+		return FAIL_E
+	}
+	return OK_E
+}
+
+// Evaluate a string value (eval.c static, dormant until eval_expr_typval).
+eval_expr_string_o :: proc "c" (expr: ^Typval_T, rettv: ^Typval_T) -> C.int {
+	context = runtime.default_context()
+	buf: [65]u8
+	s := tv_get_string_buf_chk(expr, &buf[0])
+	if s == nil {
+		return FAIL_E
+	}
+	s = skipwhite(s)
+	sc := s
+	if eval1_emsg_o(&sc, rettv, nil) == FAIL_E {
+		return FAIL_E
+	}
+	if ([^]u8)(skipwhite(sc))[0] != 0 {
+		tv_clear(rettv)
+		semsg(cstring(E15_S), sc)
+		return FAIL_E
+	}
+	return OK_E
+}
+
+// Evaluate partial/func/string typval (eval.c public).
+@(export)
+eval_expr_typval :: proc "c" (expr: ^Typval_T, want_func: bool, argv: ^Typval_T, argc: C.int, rettv: ^Typval_T) -> C.int {
+	context = runtime.default_context()
+	if expr.v_type == VAR_PARTIAL {
+		return eval_expr_partial_o(expr, argv, argc, rettv)
+	}
+	if expr.v_type == VAR_FUNC || want_func {
+		return eval_expr_func_o(expr, argv, argc, rettv)
+	}
+	return eval_expr_string_o(expr, rettv)
+}
+
+// —— Batch 28n: eval.c index cluster (FFI fully rewired) ——
+
+E719_S :: "E719: Cannot slice a Dictionary"
+E111_S :: "E111: Missing ']'"
+E695_S :: "E695: Cannot index a Funcref"
+E909_S :: "E909: Cannot index a special variable"
+E806_S :: "E806: Using a Float as a String"
+E716_S :: "E716: Key not present in Dictionary: \"%s\""
+E716_LEN_S :: "E716: Key not present in Dictionary: \"%.*s\""
+
+// Indexability check (eval.c static, dormant until eval_index_o/f_slice).
+check_can_index_o :: proc "c" (rettv: ^Typval_T, evaluate: bool, verbose: bool) -> C.int {
+	context = runtime.default_context()
+	if rettv.v_type == VAR_FUNC || rettv.v_type == VAR_PARTIAL {
+		if verbose {
+			emsg(cstring(E695_S))
+		}
+		return FAIL_E
+	} else if rettv.v_type == VAR_FLOAT {
+		if verbose {
+			emsg(cstring(E806_S))
+		}
+		return FAIL_E
+	} else if rettv.v_type == VAR_BOOL || rettv.v_type == VAR_SPECIAL {
+		if verbose {
+			emsg(cstring(E909_S))
+		}
+		return FAIL_E
+	} else if rettv.v_type == VAR_UNKNOWN {
+		if evaluate {
+			emsg(cstring(E909_S))
+			return FAIL_E
+		}
+	}
+	return OK_E
+}
+
+// Apply index/range to a value (eval.c static; f_slice + eval_index_o callers).
+eval_index_inner_o :: proc "c" (rettv: ^Typval_T, is_range: bool, var1: ^Typval_T, var2: ^Typval_T, exclusive: bool, key: cstring, keylen: C.ptrdiff_t, verbose: bool) -> C.int {
+	context = runtime.default_context()
+	n1: C.longlong = 0
+	n2: C.longlong = 0
+	if var1 != nil && rettv.v_type != VAR_DICT {
+		n1 = tv_get_number(var1)
+	}
+	if is_range {
+		if rettv.v_type == VAR_DICT {
+			if verbose {
+				emsg(cstring(E719_S))
+			}
+			return FAIL_E
+		}
+		if var2 != nil {
+			n2 = tv_get_number(var2)
+		} else {
+			n2 = VARNUMBER_MAX_O
+		}
+	}
+	if rettv.v_type == VAR_NUMBER || rettv.v_type == VAR_STRING {
+		s := tv_get_string(rettv)
+		v: cstring = nil
+		length := C.int(libc.strlen(s))
+		if exclusive {
+			if is_range {
+				v = string_slice(s, n1, n2, exclusive)
+			} else {
+				v = char_from_string(s, n1)
+			}
+		} else if is_range {
+			if n1 < 0 {
+				n1 = C.longlong(length) + n1
+				if n1 < 0 {
+					n1 = 0
+				}
+			}
+			if n2 < 0 {
+				n2 = C.longlong(length) + n2
+			} else if n2 >= C.longlong(length) {
+				n2 = C.longlong(length)
+			}
+			if n1 >= C.longlong(length) || n2 < 0 || n1 > n2 {
+				v = nil
+			} else {
+				v = transmute(cstring)(xmemdupz_o2(transmute(^u8)(rawptr(uintptr(rawptr(s)) + uintptr(n1))), C.size_t(n2 - n1 + 1)))
+			}
+		} else {
+			if n1 >= C.longlong(length) || n1 < 0 {
+				v = nil
+			} else {
+				v = transmute(cstring)(xmemdupz_o2(transmute(^u8)(rawptr(uintptr(rawptr(s)) + uintptr(n1))), 1))
+			}
+		}
+		tv_clear(rettv)
+		rettv.v_type = VAR_STRING
+		rettv.vval = transmute(rawptr)(v)
+	} else if rettv.v_type == VAR_BLOB {
+		tv_blob_slice_or_index(rawptr(rettv.vval), is_range, n1, n2, exclusive, rettv)
+	} else if rettv.v_type == VAR_LIST {
+		if var1 == nil {
+			n1 = 0
+		}
+		if var2 == nil {
+			n2 = VARNUMBER_MAX_O
+		}
+		if tv_list_slice_or_index(rawptr(rettv.vval), is_range, n1, n2, exclusive, rettv, verbose) == FAIL_E {
+			return FAIL_E
+		}
+	} else if rettv.v_type == VAR_DICT {
+		k := key
+		if k == nil {
+			k = tv_get_string_chk(var1)
+			if k == nil {
+				return FAIL_E
+			}
+		}
+		item := tv_dict_find(rawptr(rettv.vval), k, keylen)
+		if item == nil && verbose {
+			if keylen > 0 {
+				semsg(cstring(E716_LEN_S), C.int(keylen), k)
+			} else {
+				semsg(cstring(E716_S), k)
+			}
+		}
+		if item == nil || ((^Typval_T)(uintptr(item))).v_type == VAR_PARTIAL && is_luafunc(rawptr((^Typval_T)(uintptr(item)).vval)) {
+			return FAIL_E
+		}
+		tmp := Typval_T{}
+		tv_copy((^Typval_T)(uintptr(item)), &tmp)
+		tv_clear(rettv)
+		rettv^ = tmp
+	}
+	return OK_E
+}
+
+// Evaluate "[expr]"/"[a:b]"/".key" subscript (eval.c static, dormant until eval7).
+eval_index_o :: proc "c" (arg: ^cstring, rettv: ^Typval_T, evalarg: rawptr, verbose: bool) -> C.int {
+	context = runtime.default_context()
+	evaluate := evalarg != nil && ((^Evalarg_T)(evalarg).eval_flags & EVAL_EVALUATE_O) != 0
+	empty1 := false
+	empty2 := false
+	is_range := false
+	key: cstring = nil
+	keylen: C.ptrdiff_t = -1
+	if check_can_index_o(rettv, evaluate, verbose) == FAIL_E {
+		return FAIL_E
+	}
+	var1 := Typval_T{v_type = VAR_UNKNOWN, v_lock = VAR_UNLOCKED}
+	var2 := Typval_T{v_type = VAR_UNKNOWN, v_lock = VAR_UNLOCKED}
+	if ([^]u8)(arg^)[0] == '.' {
+		key = transmute(cstring)(uintptr(rawptr(arg^)) + 1)
+		keylen = 0
+		for eval_isdictc(C.int(([^]u8)(rawptr(uintptr(rawptr(key)) + uintptr(keylen)))[0])) {
+			keylen += 1
+		}
+		if keylen == 0 {
+			return FAIL_E
+		}
+		arg^ = skipwhite(transmute(cstring)(rawptr(uintptr(rawptr(key)) + uintptr(keylen))))
+	} else {
+		arg^ = skipwhite(transmute(cstring)(uintptr(rawptr(arg^)) + 1))
+		if ([^]u8)(arg^)[0] == ':' {
+			empty1 = true
+		} else if eval1(arg, &var1, evalarg) == FAIL_E {
+			return FAIL_E
+		} else if evaluate && !tv_check_str(&var1) {
+			tv_clear(&var1)
+			return FAIL_E
+		}
+		if ([^]u8)(arg^)[0] == ':' {
+			is_range = true
+			arg^ = skipwhite(transmute(cstring)(uintptr(rawptr(arg^)) + 1))
+			if ([^]u8)(arg^)[0] == ']' {
+				empty2 = true
+			} else if eval1(arg, &var2, evalarg) == FAIL_E {
+				if !empty1 {
+					tv_clear(&var1)
+				}
+				return FAIL_E
+			} else if evaluate && !tv_check_str(&var2) {
+				if !empty1 {
+					tv_clear(&var1)
+				}
+				tv_clear(&var2)
+				return FAIL_E
+			}
+		}
+		if ([^]u8)(arg^)[0] != ']' {
+			if verbose {
+				emsg(cstring(E111_S))
+			}
+			tv_clear(&var1)
+			if is_range {
+				tv_clear(&var2)
+			}
+			return FAIL_E
+		}
+		arg^ = skipwhite(transmute(cstring)(uintptr(rawptr(arg^)) + 1))
+	}
+	if evaluate {
+		v1: ^Typval_T = nil
+		if !empty1 {
+			v1 = &var1
+		}
+		v2: ^Typval_T = nil
+		if !empty2 {
+			v2 = &var2
+		}
+		res := eval_index_inner_o(rettv, is_range, v1, v2, false, key, keylen, verbose)
+		if !empty1 {
+			tv_clear(&var1)
+		}
+		if is_range {
+			tv_clear(&var2)
+		}
+		return res
+	}
+	return OK_E
+}
+
+// "slice()" function (eval.c public).
+@(export)
+f_slice :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	if check_can_index_o((^Typval_T)(uintptr(argvars)), true, false) != OK_E {
+		return
+	}
+	tv_copy((^Typval_T)(uintptr(argvars)), rettv)
+	v2: ^Typval_T = nil
+	if ([^]Typval_T)(argvars)[2].v_type != VAR_UNKNOWN {
+		v2 = (^Typval_T)(uintptr(argvars) + 32)
+	}
+	eval_index_inner_o(rettv, true, (^Typval_T)(uintptr(argvars) + 16), v2, true, nil, 0, false)
+}
+
+// —— Batch 28o: eval.c eval_func (dormant plain, C-static) ——
+
+// Resolve name + invoke function with parsed args (eval.c static,
+// activates with eval_method/eval7 ports).
+eval_func_o :: proc "c" (arg: ^cstring, evalarg: rawptr, name: cstring, name_len: C.int, rettv: ^Typval_T, flags: C.int, basetv: ^Typval_T) -> C.int {
+	context = runtime.default_context()
+	evaluate := (flags & EVAL_EVALUATE_O) != 0
+	s := name
+	length := name_len
+	found_var := false
+	if !evaluate {
+		check_vars(s, C.size_t(length))
+	}
+	partial: rawptr = nil
+	s = deref_func_name(s, &length, &partial, !evaluate, &found_var)
+	s = transmute(cstring)(xmemdupz_o2(transmute(^u8)(s), C.size_t(length)))
+	fe := Funcexe_T{}
+	fe.firstline = (^C.int)(uintptr(curwin) + W_CURSOR_OFF)^
+	fe.lastline = (^C.int)(uintptr(curwin) + W_CURSOR_OFF)^
+	fe.evaluate = evaluate
+	fe.partial = partial
+	fe.basetv = rawptr(basetv)
+	fe.found_var = found_var
+	ret := get_func_tv(s, length, rettv, arg, evalarg, &fe)
+	xfree(rawptr(transmute(^u8)(s)))
+	if rettv.v_type == VAR_UNKNOWN && !evaluate && ([^]u8)(arg^)[0] == '(' {
+		rettv.vval = transmute(rawptr)(tv_empty_string)
+		rettv.v_type = VAR_FUNC
+	}
+	if evaluate && aborting_r() {
+		if ret == OK_E {
+			tv_clear(rettv)
+		}
+		ret = FAIL_E
+	}
+	return ret
+}
+
+// —— Batch 28p: eval.c eval_number (dormant plain, C-static) ——
+foreign _ {
+	@(link_name = "hex2nr")
+	hex2nr_e :: proc "c" (c: C.int) -> C.int ---
+	@(link_name = "trans_special")
+	trans_special_e :: proc "c" (srcp: ^rawptr, src_len: C.size_t, dst: rawptr, flags: C.int, escape_ks: bool, did_simplify: rawptr) -> C.uint ---
+	@(link_name = "mb_copy_char")
+	mb_copy_char_e :: proc "c" (fp: ^cstring, tp: ^cstring) ---
+}
+
+E1278_S :: "E1278: Stray '}' without a matching '{': %s"
+E114_S :: "E114: Missing quote: %s"
+E115_S :: "E115: Missing quote: %s"
+E110_S :: "E110: Missing ')'"
+E1169_S :: "E1169: Expression too recursive: %s"
+E109_S :: "E109: Missing ':' after '?'"
+FSK_IN_STRING_O :: 0x04
+FSK_SIMPLIFY_O :: 0x08
+
+E973_S :: "E973: Blob literal should have an even number of hex characters"
+
+// Number/blob-literal parser (eval.c static, activates with eval7).
+eval_number_o :: proc "c" (arg: ^cstring, rettv: ^Typval_T, evaluate: bool, want_string: bool) -> C.int {
+	context = runtime.default_context()
+	p := skipdigits_r(transmute(cstring)(rawptr(uintptr(rawptr(arg^)) + 1)))
+	get_float := false
+	if !want_string && ([^]u8)(p)[0] == '.' && ascii_isdigit_o(([^]u8)(p)[1]) {
+		get_float = true
+		p = skipdigits_r(transmute(cstring)(rawptr(uintptr(rawptr(p)) + 2)))
+		if ([^]u8)(p)[0] == 'e' || ([^]u8)(p)[0] == 'E' {
+			p = transmute(cstring)(uintptr(rawptr(p)) + 1)
+			if ([^]u8)(p)[0] == '-' || ([^]u8)(p)[0] == '+' {
+				p = transmute(cstring)(uintptr(rawptr(p)) + 1)
+			}
+			if !ascii_isdigit_o(([^]u8)(p)[0]) {
+				get_float = false
+			} else {
+				p = skipdigits_r(transmute(cstring)(rawptr(uintptr(rawptr(p)) + 1)))
+			}
+		}
+		if (([^]u8)(p)[0] >= 'A' && ([^]u8)(p)[0] <= 'Z') || (([^]u8)(p)[0] >= 'a' && ([^]u8)(p)[0] <= 'z') || ([^]u8)(p)[0] == '.' {
+			get_float = false
+		}
+	}
+	if get_float {
+		f: f64 = 0
+		arg^ = transmute(cstring)(uintptr(rawptr(arg^)) + uintptr(string2float(arg^, &f)))
+		if evaluate {
+			rettv.v_type = VAR_FLOAT
+			rettv.vval = transmute(rawptr)(f)
+		}
+	} else if ([^]u8)(arg^)[0] == '0' && (([^]u8)(arg^)[1] == 'z' || ([^]u8)(arg^)[1] == 'Z') {
+		blob: rawptr = nil
+		if evaluate {
+			blob = tv_blob_alloc()
+		}
+		bp := uintptr(rawptr(arg^)) + 2
+		for ascii_isxdigit_o(([^]u8)(bp)[0]) {
+			if !ascii_isxdigit_o(([^]u8)(bp + 1)[0]) {
+				if blob != nil {
+					emsg(cstring(E973_S))
+					ga_clear_r((^Garray)(blob))
+					xfree(blob)
+				}
+				return FAIL_E
+			}
+			if blob != nil {
+				ga_append_r((^Garray)(blob), u8((hex2nr_e(C.int(([^]u8)(bp)[0])) << 4) + hex2nr_e(C.int(([^]u8)(bp + 1)[0]))))
+			}
+			if ([^]u8)(bp + 2)[0] == '.' && ascii_isxdigit_o(([^]u8)(bp + 3)[0]) {
+				bp += 1
+			}
+			bp += 2
+		}
+		if blob != nil {
+			tv_blob_set_ret_o(rettv, blob)
+		}
+		arg^ = transmute(cstring)(bp)
+	} else {
+		length: C.int = 0
+		n: C.longlong = 0
+		vim_str2nr_r(arg^, nil, &length, 0x0f, &n, nil, 0, true, nil)
+		if length == 0 {
+			if evaluate {
+				semsg(cstring(E15_S), arg^)
+			}
+			return FAIL_E
+		}
+		arg^ = transmute(cstring)(uintptr(rawptr(arg^)) + uintptr(length))
+		if evaluate {
+			rettv.v_type = VAR_NUMBER
+			rettv.vval = transmute(rawptr)(n)
+		}
+	}
+	return OK_E
+}
+
+// —— Batch 28q: eval.c eval_string (dormant plain, C-static) ——
+
+// Double-quoted string parser with escapes + interpolation scan
+// (eval.c static, activates with eval7).
+eval_string_o :: proc "c" (arg: ^cstring, rettv: ^Typval_T, evaluate: bool, interpolate: bool) -> C.int {
+	context = runtime.default_context()
+	arg_end := uintptr(rawptr(arg^)) + uintptr(libc.strlen(arg^))
+	extra: C.uint = 0
+	off: uintptr = 1
+	if interpolate {
+		extra = 1
+		off = 0
+	}
+	p := uintptr(rawptr(arg^)) + off
+	for ([^]u8)(p)[0] != 0 && ([^]u8)(p)[0] != '"' {
+		if ([^]u8)(p)[0] == '\\' && ([^]u8)(p + 1)[0] != 0 {
+			p += 1
+			if ([^]u8)(p)[0] == '<' {
+				modifiers: C.int = 0
+				flags: C.int = FSK_KEYCODE + FSK_IN_STRING_O
+				extra += 5
+				if ([^]u8)(p + 1)[0] != '*' {
+					flags += FSK_SIMPLIFY_O
+				}
+				pc := transmute(cstring)(p)
+				if find_special_key_r(transmute(^^u8)(&pc), C.size_t(arg_end - uintptr(rawptr(pc))), &modifiers, flags, nil) != 0 {
+					p = uintptr(rawptr(pc)) - 1
+				} else {
+					p = uintptr(rawptr(pc))
+				}
+			}
+		} else if interpolate && (([^]u8)(p)[0] == '{' || ([^]u8)(p)[0] == '}') {
+			if ([^]u8)(p)[0] == '{' && ([^]u8)(p + 1)[0] != '{' {
+				break
+			}
+			p += 1
+			if ([^]u8)(p - 1)[0] == '}' && ([^]u8)(p)[0] != '}' {
+				semsg(cstring(E1278_S), arg^)
+				return FAIL_E
+			}
+			extra -= 1
+		}
+		// MB_PTR_ADV: advance past one (possibly multibyte) char
+		p = uintptr(rawptr(p)) + uintptr(utfc_ptr2len(transmute(cstring)(p)))
+	}
+	if ([^]u8)(p)[0] != '"' && !(interpolate && ([^]u8)(p)[0] == '{') {
+		semsg(cstring(E114_S), arg^)
+		return FAIL_E
+	}
+	if !evaluate {
+		arg^ = transmute(cstring)(p + off)
+		return OK_E
+	}
+	rettv.v_type = VAR_STRING
+	length := C.int(p - uintptr(rawptr(arg^)) + uintptr(extra))
+	rettv.vval = transmute(rawptr)(xmalloc(C.size_t(length)))
+	e := uintptr(rawptr(transmute(^u8)(rettv.vval)))
+	p = uintptr(rawptr(arg^)) + off
+	for ([^]u8)(p)[0] != 0 && ([^]u8)(p)[0] != '"' {
+		if ([^]u8)(p)[0] == '\\' {
+			p += 1
+			c := ([^]u8)(p)[0]
+			if c == 'b' {
+				([^]u8)(e)[0] = 8; e += 1; p += 1
+			} else if c == 'e' {
+				([^]u8)(e)[0] = 27; e += 1; p += 1
+			} else if c == 'f' {
+				([^]u8)(e)[0] = 12; e += 1; p += 1
+			} else if c == 'n' {
+				([^]u8)(e)[0] = 10; e += 1; p += 1
+			} else if c == 'r' {
+				([^]u8)(e)[0] = 13; e += 1; p += 1
+			} else if c == 't' {
+				([^]u8)(e)[0] = 9; e += 1; p += 1
+			} else if c == 'X' || c == 'x' || c == 'u' || c == 'U' {
+				if ascii_isxdigit_o(([^]u8)(p + 1)[0]) {
+					n: C.int = 0
+					up := c
+					if up >= 'a' && up <= 'z' {
+						up -= 32
+					}
+					if up == 'X' {
+						n = 2
+					} else if c == 'u' {
+						n = 4
+					} else {
+						n = 8
+					}
+					nr: C.int = 0
+					n -= 1
+					for n >= 0 && ascii_isxdigit_o(([^]u8)(p + 1)[0]) {
+						p += 1
+						nr = (nr << 4) + C.int(hex2nr_e(C.int(([^]u8)(p)[0])))
+						n -= 1
+					}
+					p += 1
+					if up != 'X' {
+						e = uintptr(rawptr(transmute(cstring)(e))) + uintptr(utf_char2bytes(nr, transmute(^u8)(e)))
+					} else {
+						([^]u8)(e)[0] = u8(nr); e += 1
+					}
+				}
+			} else if c >= '0' && c <= '7' {
+				v := c - '0'
+				p += 1
+				if ([^]u8)(p)[0] >= '0' && ([^]u8)(p)[0] <= '7' {
+					v = (v << 3) + (([^]u8)(p)[0] - '0'); p += 1
+					if ([^]u8)(p)[0] >= '0' && ([^]u8)(p)[0] <= '7' {
+						v = (v << 3) + (([^]u8)(p)[0] - '0'); p += 1
+					}
+				}
+				([^]u8)(e)[0] = v; e += 1
+			} else if c == '<' {
+				flags: C.int = FSK_KEYCODE + FSK_IN_STRING_O
+				if ([^]u8)(p + 1)[0] != '*' {
+					flags += FSK_SIMPLIFY_O
+				}
+				pc := transmute(cstring)(p)
+				pcr := rawptr(pc)
+				added := trans_special_e(&pcr, C.size_t(arg_end - uintptr(rawptr(pc))), rawptr(transmute(^u8)(e)), flags, false, nil)
+				pc = transmute(cstring)(pcr)
+				p = uintptr(rawptr(pc))
+				if added != 0 {
+					e += uintptr(added)
+					if e >= uintptr(rawptr(transmute(^u8)(rettv.vval))) + uintptr(length) {
+						iemsg_r(cstring("eval_string() used more space than allocated"))
+					}
+				} else {
+					pc2 := transmute(cstring)(p)
+					ec2 := transmute(cstring)(e)
+					mb_copy_char_e(&pc2, &ec2)
+					p = uintptr(rawptr(pc2)); e = uintptr(rawptr(ec2))
+				}
+			} else {
+				pc2 := transmute(cstring)(p)
+				ec2 := transmute(cstring)(e)
+				mb_copy_char_e(&pc2, &ec2)
+				p = uintptr(rawptr(pc2)); e = uintptr(rawptr(ec2))
+			}
+		} else {
+			if interpolate && (([^]u8)(p)[0] == '{' || ([^]u8)(p)[0] == '}') {
+				if ([^]u8)(p)[0] == '{' && ([^]u8)(p + 1)[0] != '{' {
+					break
+				}
+				p += 1
+			}
+			pc2 := transmute(cstring)(p)
+			ec2 := transmute(cstring)(e)
+			mb_copy_char_e(&pc2, &ec2)
+			p = uintptr(rawptr(pc2)); e = uintptr(rawptr(ec2))
+		}
+	}
+	([^]u8)(e)[0] = 0
+	if ([^]u8)(p)[0] == '"' && !interpolate {
+		p += 1
+	}
+	arg^ = transmute(cstring)(p)
+	return OK_E
+}
+
+// —— Batch 28r: eval.c eval_lit_string (dormant plain, C-static) ——
+
+// Single-quoted literal parser with '' reduce + interpolation scan
+// (eval.c static, activates with eval7).
+eval_lit_string_o :: proc "c" (arg: ^cstring, rettv: ^Typval_T, evaluate: bool, interpolate: bool) -> C.int {
+	context = runtime.default_context()
+	reduce: C.int = 0
+	off: uintptr = 1
+	if interpolate {
+		reduce = -1
+		off = 0
+	}
+	p := uintptr(rawptr(arg^)) + off
+	for ([^]u8)(p)[0] != 0 {
+		if ([^]u8)(p)[0] == '\'' {
+			if ([^]u8)(p + 1)[0] != '\'' {
+				break
+			}
+			reduce += 1
+			p += 1
+		} else if interpolate {
+			if ([^]u8)(p)[0] == '{' {
+				if ([^]u8)(p + 1)[0] != '{' {
+					break
+				}
+				p += 1
+				reduce += 1
+			} else if ([^]u8)(p)[0] == '}' {
+				p += 1
+				if ([^]u8)(p)[0] != '}' {
+					semsg(cstring(E1278_S), arg^)
+					return FAIL_E
+				}
+				reduce += 1
+			}
+		}
+		p = uintptr(rawptr(p)) + uintptr(utfc_ptr2len(transmute(cstring)(p)))
+	}
+	if ([^]u8)(p)[0] != '\'' && !(interpolate && ([^]u8)(p)[0] == '{') {
+		semsg(cstring(E115_S), arg^)
+		return FAIL_E
+	}
+	if !evaluate {
+		arg^ = transmute(cstring)(p + off)
+		return OK_E
+	}
+	str := (^u8)(xmalloc(C.size_t(C.int(p - uintptr(rawptr(arg^))) - reduce)))
+	rettv.v_type = VAR_STRING
+	rettv.vval = transmute(rawptr)(str)
+	p = uintptr(rawptr(arg^)) + off
+	for ([^]u8)(p)[0] != 0 {
+		if ([^]u8)(p)[0] == '\'' {
+			if ([^]u8)(p + 1)[0] != '\'' {
+				break
+			}
+			p += 1
+		} else if interpolate && (([^]u8)(p)[0] == '{' || ([^]u8)(p)[0] == '}') {
+			if ([^]u8)(p)[0] == '{' && ([^]u8)(p + 1)[0] != '{' {
+				break
+			}
+			p += 1
+		}
+		pc := transmute(cstring)(p)
+		sc := transmute(cstring)(str)
+		mb_copy_char_e(&pc, &sc)
+		p = uintptr(rawptr(pc)); str = transmute(^u8)(sc)
+	}
+	str^ = 0
+	arg^ = transmute(cstring)(p + off)
+	return OK_E
+}
+
+// —— Batch 28s: eval.c eval_list (dormant plain, C-static) ——
+E696_S :: "E696: Missing comma in List: %s"
+E697_S :: "E697: Missing end of List ']': %s"
+
+// List literal parser (eval.c static, activates with eval7).
+eval_list_o :: proc "c" (arg: ^cstring, rettv: ^Typval_T, evalarg: rawptr) -> C.int {
+	context = runtime.default_context()
+	evaluate := evalarg != nil && ((^Evalarg_T)(evalarg).eval_flags & EVAL_EVALUATE_O) != 0
+	l: rawptr = nil
+	if evaluate {
+		l = tv_list_alloc(KLISTLEN_MAYKNOW_O)
+	}
+	arg^ = skipwhite(transmute(cstring)(uintptr(rawptr(arg^)) + 1))
+	for ([^]u8)(arg^)[0] != ']' && ([^]u8)(arg^)[0] != 0 {
+		tv := Typval_T{}
+		if eval1(arg, &tv, evalarg) == FAIL_E {
+			if evaluate {
+				tv_list_free(l)
+			}
+			return FAIL_E
+		}
+		if evaluate {
+			tv.v_lock = VAR_UNLOCKED
+			tv_list_append_owned_tv(l, tv)
+		}
+		had_comma := ([^]u8)(arg^)[0] == ','
+		if had_comma {
+			arg^ = skipwhite(transmute(cstring)(uintptr(rawptr(arg^)) + 1))
+		}
+		if ([^]u8)(arg^)[0] == ']' {
+			break
+		}
+		if !had_comma {
+			semsg(cstring(E696_S), arg^)
+			if evaluate {
+				tv_list_free(l)
+			}
+			return FAIL_E
+		}
+	}
+	if ([^]u8)(arg^)[0] != ']' {
+		semsg(cstring(E697_S), arg^)
+		if evaluate {
+			tv_list_free(l)
+		}
+		return FAIL_E
+	}
+	arg^ = skipwhite(transmute(cstring)(uintptr(rawptr(arg^)) + 1))
+	if evaluate {
+		tv_list_set_ret_o(rettv, l)
+	}
+	return OK_E
+}
+
+// —— Batch 28t: eval.c dict cluster (dormant plains, C-statics) ——
+E720_S :: "E720: Missing colon in Dictionary: %s"
+E721_S :: "E721: Duplicate key in Dictionary: \"%s\""
+E722_S :: "E722: Missing comma in Dictionary: %s"
+E723_S :: "E723: Missing end of Dictionary '}': %s"
+
+// Blob index/range lval resolver (eval.c static, dormant until get_lval port).
+get_lval_blob_o :: proc "c" (lp: rawptr, var1: ^Typval_T, var2: ^Typval_T, empty1: bool, quiet: bool) -> C.int {
+	context = runtime.default_context()
+	ll_tv := (^rawptr)(uintptr(lp) + LL_TV_OFF_O)^
+	bloblen := tv_blob_len_o((^rawptr)(uintptr(ll_tv) + 8)^)
+	if empty1 {
+		(^C.int)(uintptr(lp) + LL_N1_OFF_O)^ = 0
+	} else {
+		(^C.int)(uintptr(lp) + LL_N1_OFF_O)^ = C.int(tv_get_number(var1))
+	}
+	if tv_blob_check_index(bloblen, C.longlong((^C.int)(uintptr(lp) + LL_N1_OFF_O)^), quiet) == FAIL_E {
+		return FAIL_E
+	}
+	if (^bool)(uintptr(lp) + LL_RANGE_OFF_O)^ && !(^bool)(uintptr(lp) + LL_RANGE_OFF_O + 1)^ {
+		(^C.int)(uintptr(lp) + LL_N2_OFF_O)^ = C.int(tv_get_number(var2))
+		if tv_blob_check_range(bloblen, C.longlong((^C.int)(uintptr(lp) + LL_N1_OFF_O)^), C.longlong((^C.int)(uintptr(lp) + LL_N2_OFF_O)^), quiet) == FAIL_E {
+			return FAIL_E
+		}
+	}
+	(^rawptr)(uintptr(lp) + LL_BLOB_OFF_O)^ = (^rawptr)(uintptr(ll_tv) + 8)^
+	(^rawptr)(uintptr(lp) + LL_TV_OFF_O)^ = nil
+	return OK_E
+}
+
+// List index/range lval resolver (eval.c static, dormant until get_lval port).
+get_lval_list_o :: proc "c" (lp: rawptr, var1: ^Typval_T, var2: ^Typval_T, empty1: bool, flags: C.int, quiet: bool) -> C.int {
+	context = runtime.default_context()
+	if empty1 {
+		(^C.int)(uintptr(lp) + LL_N1_OFF_O)^ = 0
+	} else {
+		(^C.int)(uintptr(lp) + LL_N1_OFF_O)^ = C.int(tv_get_number(var1))
+	}
+	(^rawptr)(uintptr(lp) + LL_DICT_OFF_O)^ = nil
+	ll_tv := (^rawptr)(uintptr(lp) + LL_TV_OFF_O)^
+	(^rawptr)(uintptr(lp) + LL_LIST_OFF_O)^ = (^rawptr)(uintptr(ll_tv) + 8)^
+	li := tv_list_check_range_index_one((^rawptr)(uintptr(lp) + LL_LIST_OFF_O)^, (^C.int)(uintptr(lp) + LL_N1_OFF_O), quiet)
+	(^rawptr)(uintptr(lp) + LL_LI_OFF_O)^ = li
+	if li == nil {
+		return FAIL_E
+	}
+	if (^bool)(uintptr(lp) + LL_RANGE_OFF_O)^ && !(^bool)(uintptr(lp) + LL_RANGE_OFF_O + 1)^ {
+		(^C.int)(uintptr(lp) + LL_N2_OFF_O)^ = C.int(tv_get_number(var2))
+		if tv_list_check_range_index_two((^rawptr)(uintptr(lp) + LL_LIST_OFF_O)^, (^C.int)(uintptr(lp) + LL_N1_OFF_O), li, (^C.int)(uintptr(lp) + LL_N2_OFF_O), quiet) == FAIL_E {
+			return FAIL_E
+		}
+	}
+	(^rawptr)(uintptr(lp) + LL_TV_OFF_O)^ = rawptr(uintptr(li) + 16)
+	return OK_E
+}
+
+// —— Batch 28ai: eval.c get_lval_subscript (dormant plain, C-static) ——
+E689_S :: "E689: Can only index a List, Dictionary or Blob"
+E708_S :: "E708: [:] must come last"
+E713_S :: "E713: Cannot use empty key after ."
+E709_S :: "E709: [:] requires a List or Blob value"
+E1203_S :: "E1203: Dot can only be used on a dictionary: %s"
+
+// Subscript-chain walker for lvalues (eval.c static, dormant until get_lval).
+get_lval_subscript_o :: proc "c" (lp: rawptr, p_in: cstring, name: cstring, rettv: ^Typval_T, ht: rawptr, v: rawptr, unlet: bool, flags: C.int) -> cstring {
+	context = runtime.default_context()
+	quiet := (flags & GLV_QUIET_O) != 0
+	var1 := Typval_T{v_type = VAR_UNKNOWN, v_lock = VAR_UNLOCKED}
+	var2 := Typval_T{v_type = VAR_UNKNOWN, v_lock = VAR_UNLOCKED}
+	empty1 := false
+	p := p_in
+	done := false
+	failed := false
+	for !done && !failed && (([^]u8)(p)[0] == '[' || (([^]u8)(p)[0] == '.' && ([^]u8)(p)[1] != '=' && ([^]u8)(p)[1] != '.')) {
+		ll_tv := (^rawptr)(uintptr(lp) + LL_TV_OFF_O)^
+		ll_type := (^C.int)(uintptr(ll_tv))^
+		if ([^]u8)(p)[0] == '.' && ll_type != VAR_DICT {
+			if !quiet {
+				semsg(cstring(E1203_S), name)
+			}
+			return nil
+		}
+		if ll_type != VAR_LIST && ll_type != VAR_DICT && ll_type != VAR_BLOB {
+			if !quiet {
+				emsg(cstring(E689_S))
+			}
+			return nil
+		}
+		if ll_type == VAR_LIST && (^rawptr)(uintptr(ll_tv) + 8)^ == nil {
+			tv_list_alloc_ret(transmute(^Typval)(ll_tv), KLISTLEN_UNKNOWN_O)
+		} else if ll_type == VAR_BLOB && (^rawptr)(uintptr(ll_tv) + 8)^ == nil {
+			tv_blob_alloc_ret((^Typval_T)(ll_tv))
+		}
+		if (^bool)(uintptr(lp) + LL_RANGE_OFF_O)^ {
+			if !quiet {
+				emsg(cstring(E708_S))
+			}
+			failed = true
+			break
+		}
+		length: C.int = -1
+		key: cstring = nil
+		if ([^]u8)(p)[0] == '.' {
+			key = transmute(cstring)(uintptr(rawptr(p)) + 1)
+			length = 0
+			for {
+				cc := ([^]u8)(rawptr(uintptr(rawptr(key)) + uintptr(length)))[0]
+				if !((cc >= 'A' && cc <= 'Z') || (cc >= 'a' && cc <= 'z') || (cc >= '0' && cc <= '9') || cc == '_') {
+					break
+				}
+				length += 1
+			}
+			if length == 0 {
+				if !quiet {
+					emsg(cstring(E713_S))
+				}
+				return nil
+			}
+			p = transmute(cstring)(rawptr(uintptr(rawptr(key)) + uintptr(length)))
+		} else {
+			p = skipwhite(transmute(cstring)(uintptr(rawptr(p)) + 1))
+			if ([^]u8)(p)[0] == ':' {
+				empty1 = true
+			} else {
+				empty1 = false
+				pc := p
+				if eval1(&pc, &var1, rawptr(&EVALARG_EVALUATE_g)) == FAIL_E {
+					failed = true
+					break
+				}
+				p = pc
+				if !tv_check_str(&var1) {
+					failed = true
+					break
+				}
+				p = skipwhite(p)
+			}
+			if ([^]u8)(p)[0] == ':' {
+				if ll_type == VAR_DICT {
+					if !quiet {
+						emsg(cstring(E719_S))
+					}
+					failed = true
+					break
+				}
+				if rettv != nil && !((^C.int)(uintptr(rettv))^ == VAR_LIST && rawptr((^Typval_T)(uintptr(rettv)).vval) != nil) && !((^C.int)(uintptr(rettv))^ == VAR_BLOB && rawptr((^Typval_T)(uintptr(rettv)).vval) != nil) {
+					if !quiet {
+						emsg(cstring(E709_S))
+					}
+					failed = true
+					break
+				}
+				p = skipwhite(transmute(cstring)(uintptr(rawptr(p)) + 1))
+				if ([^]u8)(p)[0] == ']' {
+					(^bool)(uintptr(lp) + LL_RANGE_OFF_O + 1)^ = true
+				} else {
+					(^bool)(uintptr(lp) + LL_RANGE_OFF_O + 1)^ = false
+					pc := p
+					if eval1(&pc, &var2, rawptr(&EVALARG_EVALUATE_g)) == FAIL_E {
+						failed = true
+						break
+					}
+					p = pc
+					if !tv_check_str(&var2) {
+						failed = true
+						break
+					}
+				}
+				(^bool)(uintptr(lp) + LL_RANGE_OFF_O)^ = true
+			} else {
+				(^bool)(uintptr(lp) + LL_RANGE_OFF_O)^ = false
+			}
+			if ([^]u8)(p)[0] != ']' {
+				if !quiet {
+					emsg(cstring(E111_S))
+				}
+				failed = true
+				break
+			}
+			p = transmute(cstring)(uintptr(rawptr(p)) + 1)
+		}
+		ll_tv = (^rawptr)(uintptr(lp) + LL_TV_OFF_O)^
+		ll_type = (^C.int)(uintptr(ll_tv))^
+		if ll_type == VAR_DICT {
+			status := get_lval_dict_item_o(lp, name, key, length, &p, &var1, flags, unlet, rettv)
+			if status == GLV_FAIL_O {
+				failed = true
+				break
+			}
+			if status == GLV_STOP_O {
+				done = true
+				break
+			}
+		} else if ll_type == VAR_BLOB {
+			if get_lval_blob_o(lp, &var1, &var2, empty1, quiet) == FAIL_E {
+				failed = true
+				break
+			}
+			done = true
+			break
+		} else {
+			if get_lval_list_o(lp, &var1, &var2, empty1, flags, quiet) == FAIL_E {
+				failed = true
+				break
+			}
+		}
+		tv_clear(&var1)
+		tv_clear(&var2)
+		var1.v_type = VAR_UNKNOWN
+		var2.v_type = VAR_UNKNOWN
+	}
+	tv_clear(&var1)
+	tv_clear(&var2)
+	if failed {
+		return nil
+	}
+	return p
+}
+
+// —— Batch 28aj: eval.c make_expanded_name + get_lval ——
+E121B_S :: "E121: Undefined variable"
+
+// Brace-expanded name builder (eval.c static, dormant until get_lval).
+make_expanded_name_o :: proc "c" (in_start: cstring, expr_start: cstring, expr_end: cstring, in_end: cstring) -> cstring {
+	context = runtime.default_context()
+	if expr_end == nil || in_end == nil {
+		return nil
+	}
+	retval: cstring = nil
+	es := expr_start
+	ee := expr_end
+	ie := in_end
+	([^]u8)(es)[0] = 0
+	([^]u8)(ee)[0] = 0
+	c1 := ([^]u8)(ie)[0]
+	([^]u8)(ie)[0] = 0
+	temp_result := eval_to_string(transmute(cstring)(uintptr(rawptr(es)) + 1), false, false)
+	if temp_result != nil {
+		retvalsize := C.size_t(uintptr(rawptr(es)) - uintptr(rawptr(in_start)) + uintptr(libc.strlen(temp_result)) + uintptr(uintptr(rawptr(ie)) - uintptr(rawptr(ee))) + 1)
+		retval = transmute(cstring)(xmalloc(retvalsize))
+		libc.snprintf(transmute([^]u8)(retval), retvalsize, cstring("%s%s%s"), in_start, temp_result, transmute(cstring)(uintptr(rawptr(ee)) + 1))
+	}
+	xfree(rawptr(transmute(^u8)(temp_result)))
+	([^]u8)(ie)[0] = c1
+	([^]u8)(es)[0] = '{'
+	([^]u8)(ee)[0] = '}'
+	if retval != nil {
+		es2: cstring = nil
+		ee2: cstring = nil
+		temp_result = transmute(cstring)(find_name_end(retval, &es2, &ee2, 0))
+		if es2 != nil {
+			temp_result = transmute(cstring)(make_expanded_name_o(retval, es2, ee2, temp_result))
+			xfree(rawptr(transmute(^u8)(retval)))
+			retval = transmute(cstring)(temp_result)
+		}
+	}
+	return retval
+}
+
+// Lvalue name parser (eval.c public).
+@(export)
+get_lval :: proc "c" (name: cstring, rettv: rawptr, lp: rawptr, unlet: bool, skip: bool, flags: C.int, fne_flags: C.int) -> cstring {
+	context = runtime.default_context()
+	quiet := (flags & GLV_QUIET_O) != 0
+	libc.memset(lp, 0, 96)
+	if skip {
+		(^rawptr)(uintptr(lp) + 0)^ = rawptr(name)
+		return transmute(cstring)(find_name_end(name, nil, nil, FNE_INCL_BR_O | fne_flags))
+	}
+	expr_start: cstring = nil
+	expr_end: cstring = nil
+	p := find_name_end(name, &expr_start, &expr_end, fne_flags)
+	if expr_start != nil {
+		if unlet && !ascii_iswhite(([^]u8)(p)[0]) && ends_excmd_e(C.int(([^]u8)(p)[0])) == 0 && ([^]u8)(p)[0] != '[' && ([^]u8)(p)[0] != '.' {
+			semsg(cstring(E488_S), p)
+			return nil
+		}
+		exp := make_expanded_name_o(name, expr_start, expr_end, p)
+		(^rawptr)(uintptr(lp) + 16)^ = rawptr(transmute(^u8)(exp))
+		(^rawptr)(uintptr(lp) + 0)^ = rawptr(transmute(^u8)(exp))
+		if exp == nil {
+			if !aborting_r() && !quiet {
+				emsg_severe_g = true
+				semsg(cstring(E15_S), name)
+				return nil
+			}
+			(^C.size_t)(uintptr(lp) + 8)^ = 0
+		} else {
+			(^C.size_t)(uintptr(lp) + 8)^ = C.size_t(libc.strlen(transmute(cstring)((^rawptr)(uintptr(lp) + 0)^)))
+		}
+	} else {
+		(^rawptr)(uintptr(lp) + 0)^ = rawptr(name)
+		(^C.size_t)(uintptr(lp) + 8)^ = C.size_t(uintptr(rawptr(p)) - uintptr(rawptr((^rawptr)(uintptr(lp) + 0)^)))
+	}
+	if ([^]u8)(p)[0] != '[' && ([^]u8)(p)[0] != '.' || (^rawptr)(uintptr(lp) + 0)^ == nil {
+		return p
+	}
+	ht_buf: [296]u8
+	htp: rawptr = nil
+	if (flags & GLV_READ_ONLY_O) == 0 {
+		htp = rawptr(&ht_buf[0])
+	}
+	no_autoload: C.int = 0
+	if (flags & GLV_NO_AUTOLOAD_O) != 0 {
+		no_autoload = 1
+	}
+	v := find_var(transmute(cstring)((^rawptr)(uintptr(lp) + 0)^), (^C.size_t)(uintptr(lp) + 8)^, htp, no_autoload)
+	if v == nil && !quiet {
+		semsg(cstring(E121B_S), C.int((^C.size_t)(uintptr(lp) + 8)^), transmute(cstring)((^rawptr)(uintptr(lp) + 0)^))
+	}
+	if v == nil {
+		return nil
+	}
+	(^rawptr)(uintptr(lp) + LL_TV_OFF_O)^ = rawptr(uintptr(v))
+	if ((^Typval_T)(uintptr(v))).v_type == VAR_PARTIAL && is_luafunc(rawptr((^Typval_T)(uintptr(v)).vval)) {
+		return p
+	}
+	p = get_lval_subscript_o(lp, p, name, transmute(^Typval_T)(rettv), htp, v, unlet, flags)
+	if p == nil {
+		return nil
+	}
+	(^C.size_t)(uintptr(lp) + 8)^ = C.size_t(uintptr(rawptr(p)) - uintptr(rawptr((^rawptr)(uintptr(lp) + 0)^)))
+	return p
+}
+GLV_QUIET_O :: 2
+GLV_FAIL_O :: 0
+GLV_OK_O :: 1
+GLV_STOP_O :: 2
+DV_SCOPE_OFF_O :: 4
+
+// Dict-item lval resolver (eval.c static, dormant until get_lval port).
+get_lval_dict_item_o :: proc "c" (lp: rawptr, name: cstring, key: cstring, length: C.int, key_end: ^cstring, var1: ^Typval_T, flags: C.int, unlet: bool, rettv: ^Typval_T) -> C.int {
+	context = runtime.default_context()
+	quiet := (flags & GLV_QUIET_O) != 0
+	p := key_end^
+	k := key
+	if length == -1 {
+		k = tv_get_string(var1)
+	}
+	(^rawptr)(uintptr(lp) + LL_LIST_OFF_O)^ = nil
+	tv_ptr := (^rawptr)(uintptr(lp) + LL_TV_OFF_O)^
+	if (^rawptr)(uintptr(tv_ptr) + 8)^ == nil {
+		nd := tv_dict_alloc()
+		(^rawptr)(uintptr(tv_ptr) + 8)^ = rawptr(nd)
+		(^C.int)(uintptr(rawptr(nd)) + 8)^ += 1
+	}
+	d := (^rawptr)(uintptr(tv_ptr) + 8)^
+	(^rawptr)(uintptr(lp) + LL_DICT_OFF_O)^ = d
+	di := tv_dict_find(d, k, C.ptrdiff_t(length))
+	(^rawptr)(uintptr(lp) + LL_DI_OFF_O)^ = di
+	if rettv != nil && (^C.int)(uintptr(d) + DV_SCOPE_OFF_O)^ != 0 {
+		wrong := false
+		if length != -1 {
+			// NUL-terminate a copy for validation (key points into cmdline)
+			kc := (^u8)(xmemdupz_o2(transmute(^u8)(k), C.size_t(length) + 1))
+			([^]u8)(kc)[length] = 0
+			wrong = ((^C.int)(uintptr(d) + DV_SCOPE_OFF_O)^ == VAR_DEF_SCOPE_O && tv_is_func_o(rettv^) && var_wrong_func_name(transmute(cstring)(kc), di == nil)) || !valid_varname(transmute(cstring)(kc))
+			xfree(rawptr(kc))
+		} else {
+			wrong = ((^C.int)(uintptr(d) + DV_SCOPE_OFF_O)^ == VAR_DEF_SCOPE_O && tv_is_func_o(rettv^) && var_wrong_func_name(k, di == nil)) || !valid_varname(k)
+		}
+		if wrong {
+			return GLV_FAIL_O
+		}
+	}
+	if di != nil && ((^Typval_T)(uintptr(di))).v_type == VAR_PARTIAL && is_luafunc(rawptr((^Typval_T)(uintptr(di)).vval)) && length == -1 && rettv == nil {
+		semsg(cstring(E461_S), cstring("v:['lua']"))
+		return GLV_FAIL_O
+	}
+	if di == nil {
+		if d == get_vimvar_dict() || rawptr(uintptr(d) + 16) == get_funccal_args_ht() {
+			semsg(cstring(E461_S), name)
+			return GLV_FAIL_O
+		}
+		if ([^]u8)(p)[0] == '[' || ([^]u8)(p)[0] == '.' || unlet {
+			if !quiet {
+				semsg(cstring(E716_S), k)
+			}
+			return GLV_FAIL_O
+		}
+		if length == -1 {
+			(^rawptr)(uintptr(lp) + LL_NEWKEY_OFF_O)^ = rawptr(xstrdup_o(transmute(^u8)(k)))
+		} else {
+			(^rawptr)(uintptr(lp) + LL_NEWKEY_OFF_O)^ = rawptr(xmemdupz_o2(transmute(^u8)(k), C.size_t(length)))
+		}
+		key_end^ = p
+		return GLV_STOP_O
+	} else if (flags & GLV_READ_ONLY_O) == 0 && (var_check_ro(C.int((^u8)(uintptr(di) + 16)^), name, C.size_t(uintptr(rawptr(p)) - uintptr(rawptr(name)))) || var_check_lock(C.int((^u8)(uintptr(di) + 16)^), name, C.size_t(uintptr(rawptr(p)) - uintptr(rawptr(name))))) {
+		return GLV_FAIL_O
+	}
+	(^rawptr)(uintptr(lp) + LL_TV_OFF_O)^ = rawptr(uintptr(di))
+	return GLV_OK_O
+}
+E112_S :: "E112: Option name missing: %s"
+E113_S :: "E113: Unknown option: %s"
+E1265_S :: "E1265: Cannot use a partial here"
+E1085_S :: "E1085: Not a callable type: %s"
+E260_S :: "E260: Missing name after ->"
+
+// Option-name value reader (eval.c public).
+@(export)
+eval_option :: proc "c" (arg: ^cstring, rettv: ^Typval_T, evaluate: bool) -> C.int {
+	context = runtime.default_context()
+	working := ([^]u8)(arg^)[0] == '+'
+	opt_idx: C.int = 0
+	opt_flags: C.int = 0
+	option_end := find_option_var_end(arg, &opt_idx, &opt_flags)
+	if option_end == nil {
+		if rettv != nil {
+			semsg(cstring(E112_S), arg^)
+		}
+		return FAIL_E
+	}
+	if !evaluate {
+		arg^ = option_end
+		return OK_E
+	}
+	c := ([^]u8)(option_end)[0]
+	([^]u8)(option_end)[0] = 0
+	ret: C.int = OK_E
+	is_tty_opt := is_tty_option(arg^)
+	if opt_idx == kOptInvalid_S && !is_tty_opt {
+		if rettv != nil {
+			semsg(cstring(E113_S), arg^)
+		}
+		ret = FAIL_E
+	} else if rettv != nil {
+		value := get_tty_option(arg^) if is_tty_opt else get_option_value(opt_idx, opt_flags)
+		rettv^ = optval_as_tv(value, true)
+	} else if working && !is_tty_opt && is_option_hidden(opt_idx) {
+		ret = FAIL_E
+	}
+	([^]u8)(option_end)[0] = c
+	arg^ = option_end
+	return ret
+}
+
+// Environment variable reader (eval.c static, dormant until eval7).
+eval_env_var_o :: proc "c" (arg: ^cstring, rettv: ^Typval_T, evaluate: C.int) -> C.int {
+	context = runtime.default_context()
+	arg^ = transmute(cstring)(uintptr(rawptr(arg^)) + 1)
+	name := arg^
+	length := get_env_len(arg)
+	if evaluate != 0 {
+		if length == 0 {
+			return FAIL_E
+		}
+		cc := ([^]u8)(rawptr(uintptr(rawptr(name)) + uintptr(length)))[0]
+		([^]u8)(rawptr(uintptr(rawptr(name)) + uintptr(length)))[0] = 0
+		string := vim_getenv(name)
+		if string == nil || ([^]u8)(string)[0] == 0 {
+			xfree(rawptr(transmute(^u8)(string)))
+			string = expand_env_save(transmute(cstring)(uintptr(rawptr(name)) - 1))
+			if string != nil && ([^]u8)(string)[0] == '$' {
+				xfree(rawptr(transmute(^u8)(string)))
+				string = nil
+			}
+		}
+		([^]u8)(rawptr(uintptr(rawptr(name)) + uintptr(length)))[0] = cc
+		rettv.v_type = VAR_STRING
+		rettv.vval = transmute(rawptr)(string)
+		rettv.v_lock = VAR_UNLOCKED
+	}
+	return OK_E
+}
+
+// —— Batch 28v: eval.c eval_interp_string (export + weak) ——
+
+// Interpolated $".."/$'..' string evaluator (eval.c public).
+@(export)
+eval_interp_string :: proc "c" (arg: ^cstring, rettv: ^Typval_T, evaluate: bool) -> C.int {
+	context = runtime.default_context()
+	ret: C.int = OK_E
+	ga := Garray{}
+	ga_init_r2(&ga, 1, 80)
+	arg^ = transmute(cstring)(uintptr(rawptr(arg^)) + 1)
+	quote := ([^]u8)(arg^)[0]
+	arg^ = transmute(cstring)(uintptr(rawptr(arg^)) + 1)
+	for {
+		tv := Typval_T{}
+		if quote == '"' {
+			ret = eval_string_o(arg, &tv, evaluate, true)
+		} else {
+			ret = eval_lit_string_o(arg, &tv, evaluate, true)
+		}
+		if ret == FAIL_E {
+			break
+		}
+		if evaluate {
+			ga_concat_e(&ga, transmute(cstring)(tv.vval))
+			tv_clear(&tv)
+		}
+		if ([^]u8)(arg^)[0] != '{' {
+			arg^ = transmute(cstring)(uintptr(rawptr(arg^)) + 1)
+			break
+		}
+		p := eval_one_expr_in_str(transmute(^u8)(arg^), &ga, evaluate)
+		if p == nil {
+			ret = FAIL_E
+			break
+		}
+		arg^ = transmute(cstring)(p)
+	}
+	rettv.v_type = VAR_STRING
+	if ret != FAIL_E && evaluate {
+		ga_append_r(&ga, 0)
+	}
+	rettv.vval = ga.ga_data
+	return OK_E
+}
+
+// —— Batch 28w: eval.c eval7 (dormant plain, C-static) ——
+
+@(private = "file")
+eval7_recurse_g: C.int
+
+// Primary expression parser (eval.c static, activates eval6/eval_method).
+eval7_o :: proc "c" (arg: ^cstring, rettv: ^Typval_T, evalarg: rawptr, want_string: bool) -> C.int {
+	context = runtime.default_context()
+	evaluate := evalarg != nil && ((^Evalarg_T)(evalarg).eval_flags & EVAL_EVALUATE_O) != 0
+	ret: C.int = OK_E
+	rettv.v_type = VAR_UNKNOWN
+	start_leader := arg^
+	for ([^]u8)(arg^)[0] == '!' || ([^]u8)(arg^)[0] == '-' || ([^]u8)(arg^)[0] == '+' {
+		arg^ = skipwhite(transmute(cstring)(uintptr(rawptr(arg^)) + 1))
+	}
+	end_leader := arg^
+	if eval7_recurse_g == 1000 {
+		semsg(cstring(E1169_S), arg^)
+		return FAIL_E
+	}
+	eval7_recurse_g += 1
+	c := ([^]u8)(arg^)[0]
+	done := true
+	if c >= '0' && c <= '9' {
+		ret = eval_number_o(arg, rettv, evaluate, want_string)
+		if ret == OK_E && evaluate && uintptr(rawptr(end_leader)) > uintptr(rawptr(start_leader)) {
+			ret = eval7_leader_o(rettv, true, start_leader, &end_leader)
+		}
+	} else if c == '"' {
+		ret = eval_string_o(arg, rettv, evaluate, false)
+	} else if c == '\'' {
+		ret = eval_lit_string_o(arg, rettv, evaluate, false)
+	} else if c == '[' {
+		ret = eval_list_o(arg, rettv, evalarg)
+	} else if c == '#' {
+		ret = eval_lit_dict_o(arg, rettv, evalarg)
+	} else if c == '{' {
+		ret = get_lambda_tv(arg, rettv, evalarg)
+		if ret == NOTDONE_O {
+			ret = eval_dict_o(arg, rettv, evalarg, false)
+		}
+	} else if c == '&' {
+		ret = eval_option(arg, rettv, evaluate)
+	} else if c == '$' {
+		if ([^]u8)(arg^)[1] == '"' || ([^]u8)(arg^)[1] == '\'' {
+			ret = eval_interp_string(arg, rettv, evaluate)
+		} else {
+			ret = eval_env_var_o(arg, rettv, C.int(evaluate))
+		}
+	} else if c == '@' {
+		arg^ = transmute(cstring)(uintptr(rawptr(arg^)) + 1)
+		if evaluate {
+			rettv.v_type = VAR_STRING
+			rettv.vval = transmute(rawptr)(get_reg_contents(C.int(([^]u8)(arg^)[0]), kGRegExprSrc))
+		}
+		if ([^]u8)(arg^)[0] != 0 {
+			arg^ = transmute(cstring)(uintptr(rawptr(arg^)) + 1)
+		}
+	} else if c == '(' {
+		arg^ = skipwhite(transmute(cstring)(uintptr(rawptr(arg^)) + 1))
+		ret = eval1(arg, rettv, evalarg)
+		if ([^]u8)(arg^)[0] == ')' {
+			arg^ = transmute(cstring)(uintptr(rawptr(arg^)) + 1)
+		} else if ret == OK_E {
+			emsg(cstring(E110_S))
+			tv_clear(rettv)
+			ret = FAIL_E
+		}
+	} else {
+		done = false
+	}
+	if !done {
+		s := arg^
+		alias: cstring = nil
+		length := get_name_len(arg, &alias, evaluate, true)
+		if alias != nil {
+			s = alias
+		}
+		if length <= 0 {
+			ret = FAIL_E
+		} else {
+			flags: C.int = 0
+			if evalarg != nil {
+				flags = (^Evalarg_T)(evalarg).eval_flags
+			}
+			if ([^]u8)(skipwhite(arg^))[0] == '(' {
+				arg^ = skipwhite(arg^)
+				ret = eval_func_o(arg, evalarg, s, length, rettv, flags, nil)
+			} else if evaluate {
+				ret = eval_variable(s, length, rettv, nil, true, false)
+			} else {
+				check_vars(s, C.size_t(length))
+				if rettv.v_type == VAR_UNKNOWN && strnequal_e(s, cstring("v:lua."), 6) {
+					rettv.v_type = VAR_PARTIAL
+					rettv.vval = transmute(rawptr)(get_vim_var_partial(VV_LUA_O))
+					(^C.int)(uintptr(rawptr(rettv.vval)))^ += 1
+				}
+				ret = OK_E
+			}
+		}
+		xfree(rawptr(transmute(^u8)(alias)))
+	}
+	arg^ = skipwhite(arg^)
+	if ret == OK_E {
+		ret = handle_subscript(arg, rettv, evalarg, true)
+	}
+	if ret == OK_E && evaluate && uintptr(rawptr(end_leader)) > uintptr(rawptr(start_leader)) {
+		ret = eval7_leader_o(rettv, false, start_leader, &end_leader)
+	}
+	eval7_recurse_g -= 1
+	return ret
+}
+
+// —— Batch 28ad: eval.c eval_method + handle_subscript ——
+
+// Evaluate "->method()"/"->v:lua.method()" (eval.c static,
+// dormant until eval7_o activation wires it).
+eval_method_o :: proc "c" (arg: ^cstring, rettv: ^Typval_T, evalarg: rawptr, verbose: bool) -> C.int {
+	context = runtime.default_context()
+	evaluate := evalarg != nil && ((^Evalarg_T)(evalarg).eval_flags & EVAL_EVALUATE_O) != 0
+	arg^ = transmute(cstring)(uintptr(rawptr(arg^)) + 2)
+	base := rettv^
+	rettv.v_type = VAR_UNKNOWN
+	length: C.int = 0
+	name := arg^
+	lua_funcname: cstring = nil
+	alias: cstring = nil
+	if libc.strncmp(name, cstring("v:lua."), 6) == 0 {
+		lua_funcname = transmute(cstring)(uintptr(rawptr(name)) + 6)
+		arg^ = skip_luafunc_name(lua_funcname)
+		arg^ = skipwhite(arg^)
+		length = C.int(uintptr(rawptr(arg^)) - uintptr(rawptr(lua_funcname)))
+	} else {
+		length = get_name_len(arg, &alias, evaluate, true)
+		if alias != nil {
+			name = alias
+		}
+	}
+	tofree: cstring = nil
+	ret: C.int = OK_E
+	if length <= 0 {
+		if verbose {
+			if lua_funcname == nil {
+				emsg(cstring(E260_S))
+			} else {
+				semsg(cstring(E15_S), name)
+			}
+		}
+		ret = FAIL_E
+	} else {
+		arg^ = skipwhite(arg^)
+		paren := vim_strchr_c(transmute(^u8)(arg^), C.int('('))
+		if ([^]u8)(arg^)[0] != '(' && lua_funcname == nil && alias == nil && paren != nil {
+			arg^ = name
+			([^]u8)(paren)[0] = 0
+			ref := Typval_T{v_type = VAR_UNKNOWN, v_lock = VAR_UNLOCKED}
+			if eval7_o(arg, &ref, evalarg, false) == FAIL_E {
+				arg^ = transmute(cstring)(uintptr(rawptr(name)) + uintptr(length))
+				ret = FAIL_E
+			} else if ([^]u8)(skipwhite(arg^))[0] != 0 {
+				if verbose {
+					semsg(cstring(E488_S), arg^)
+				}
+				ret = FAIL_E
+			} else if ref.v_type == VAR_FUNC && rawptr(ref.vval) != nil {
+				name = transmute(cstring)(ref.vval)
+				ref.vval = nil
+				tofree = name
+				length = C.int(libc.strlen(name))
+			} else if ref.v_type == VAR_PARTIAL && rawptr(ref.vval) != nil {
+				pt := rawptr(ref.vval)
+				if (^C.int)(uintptr(pt) + PT_ARGC_OFF_O)^ > 0 || (^rawptr)(uintptr(pt) + PT_DICT_OFF_O)^ != nil {
+					if verbose {
+						emsg(cstring(E1265_S))
+					}
+					ret = FAIL_E
+				} else {
+					name = transmute(cstring)(xstrdup_o(transmute(^u8)(partial_name(pt))))
+					tofree = name
+					if name == nil {
+						ret = FAIL_E
+						name = arg^
+					} else {
+						length = C.int(libc.strlen(name))
+					}
+				}
+			} else {
+				if verbose {
+					semsg(cstring(E1085_S), name)
+				}
+				ret = FAIL_E
+			}
+			tv_clear(&ref)
+			([^]u8)(paren)[0] = '('
+		}
+		if ret == OK_E {
+			if ([^]u8)(arg^)[0] != '(' {
+				if verbose {
+					semsg(cstring(E107_S), name)
+				}
+				ret = FAIL_E
+			} else if ascii_iswhite(([^]u8)(arg^)[-1]) {
+				if verbose {
+					emsg(cstring(E274_S))
+				}
+				ret = FAIL_E
+			} else if lua_funcname != nil {
+				if evaluate {
+					rettv.v_type = VAR_PARTIAL
+					rettv.vval = transmute(rawptr)(get_vim_var_partial(VV_LUA_O))
+					(^C.int)(uintptr(rawptr(rettv.vval)))^ += 1
+				}
+				ret = call_func_rettv_o(arg, evalarg, rettv, evaluate, nil, rawptr(&base), lua_funcname)
+			} else {
+				ret = eval_func_o(arg, evalarg, name, length, rettv, C.int(evaluate), &base)
+			}
+		}
+	}
+	if evaluate {
+		tv_clear(&base)
+	}
+	xfree(rawptr(transmute(^u8)(tofree)))
+	if alias != nil {
+		xfree(rawptr(transmute(^u8)(alias)))
+	}
+	return ret
+}
+
+// Subscript/method/call chain after a primary (eval.c public).
+@(export)
+handle_subscript :: proc "c" (arg: ^cstring, rettv: ^Typval_T, evalarg: rawptr, verbose: bool) -> C.int {
+	context = runtime.default_context()
+	evaluate := evalarg != nil && ((^Evalarg_T)(evalarg).eval_flags & EVAL_EVALUATE_O) != 0
+	ret: C.int = OK_E
+	selfdict: rawptr = nil
+	lua_funcname: cstring = nil
+	if rettv.v_type == VAR_PARTIAL && is_luafunc(rawptr(rettv.vval)) {
+		if !evaluate {
+			tv_clear(rettv)
+		}
+		if ([^]u8)(arg^)[0] != '.' {
+			tv_clear(rettv)
+			ret = FAIL_E
+		} else {
+			arg^ = transmute(cstring)(uintptr(rawptr(arg^)) + 1)
+			lua_funcname = arg^
+			length := check_luafunc_name(arg^, true)
+			if length == 0 {
+				tv_clear(rettv)
+				ret = FAIL_E
+			}
+			arg^ = transmute(cstring)(uintptr(rawptr(arg^)) + uintptr(length))
+		}
+	}
+	for {
+		if ret != OK_E {
+			break
+		}
+		c0 := ([^]u8)(arg^)[0]
+		is_sub := false
+		if c0 == '[' {
+			is_sub = true
+		} else if c0 == '.' && rettv.v_type == VAR_DICT {
+			is_sub = true
+		} else if c0 == '(' {
+			if !evaluate {
+				is_sub = true
+			} else if tv_is_func_o(rettv^) {
+				is_sub = true
+			}
+		}
+		if is_sub && ascii_iswhite(([^]u8)(rawptr(uintptr(rawptr(arg^)) - 1))[0]) {
+			is_sub = false
+		}
+		is_arrow := c0 == '-' && ([^]u8)(arg^)[1] == '>'
+		if !is_sub && !is_arrow {
+			break
+		}
+		if ([^]u8)(arg^)[0] == '(' {
+			ret = call_func_rettv_o(arg, evalarg, rettv, evaluate, selfdict, nil, lua_funcname)
+			if aborting_r() {
+				if ret == OK_E {
+					tv_clear(rettv)
+				}
+				ret = FAIL_E
+			}
+			tv_dict_unref(selfdict)
+			selfdict = nil
+		} else if ([^]u8)(arg^)[0] == '-' {
+			if ([^]u8)(arg^)[2] == '{' {
+				ret = eval_lambda_o(arg, rettv, evalarg, verbose)
+			} else {
+				ret = eval_method_o(arg, rettv, evalarg, verbose)
+			}
+		} else {
+			tv_dict_unref(selfdict)
+			if rettv.v_type == VAR_DICT {
+				selfdict = rawptr(rettv.vval)
+				if selfdict != nil {
+					(^C.int)(uintptr(selfdict) + 8)^ += 1
+				}
+			} else {
+				selfdict = nil
+			}
+			if eval_index_o(arg, rettv, evalarg, verbose) == FAIL_E {
+				tv_clear(rettv)
+				ret = FAIL_E
+			}
+		}
+	}
+	if selfdict != nil && tv_is_func_o(rettv^) {
+		set_selfdict(rettv, selfdict)
+	}
+	tv_dict_unref(selfdict)
+	return ret
+}
+
+// —— Batch 28ba: eval.c partial lifecycle (exports + weak) ——
+
+// Partial display name (eval.c public).
+@(export)
+partial_name :: proc "c" (pt: rawptr) -> cstring {
+	context = runtime.default_context()
+	if pt != nil {
+		if (^rawptr)(uintptr(pt) + PT_NAME_OFF_O)^ != nil {
+			return transmute(cstring)((^rawptr)(uintptr(pt) + PT_NAME_OFF_O)^)
+		}
+		if (^rawptr)(uintptr(pt) + PT_FUNC_OFF_O)^ != nil {
+			return transmute(cstring)(uintptr((^rawptr)(uintptr(pt) + PT_FUNC_OFF_O)^) + UF_NAME_OFF_O)
+		}
+	}
+	return cstring("")
+}
+
+// Partial storage release (eval.c static).
+partial_free_o :: proc "c" (pt: rawptr) {
+	context = runtime.default_context()
+	i: C.int = 0
+	for i < (^C.int)(uintptr(pt) + PT_ARGC_OFF_O)^ {
+		tv_clear((^Typval_T)(uintptr((^rawptr)(uintptr(pt) + PT_ARGV_OFF_O)^) + uintptr(i) * 16))
+		i += 1
+	}
+	xfree((^rawptr)(uintptr(pt) + PT_ARGV_OFF_O)^)
+	tv_dict_unref((^rawptr)(uintptr(pt) + PT_DICT_OFF_O)^)
+	if (^rawptr)(uintptr(pt) + PT_NAME_OFF_O)^ != nil {
+		func_unref(transmute(cstring)((^rawptr)(uintptr(pt) + PT_NAME_OFF_O)^))
+		xfree((^rawptr)(uintptr(pt) + PT_NAME_OFF_O)^)
+	} else {
+		func_ptr_unref((^rawptr)(uintptr(pt) + PT_FUNC_OFF_O)^)
+	}
+	xfree(pt)
+}
+
+// Closure unreference (eval.c public).
+@(export)
+partial_unref :: proc "c" (pt: rawptr) {
+	context = runtime.default_context()
+	if pt == nil {
+		return
+	}
+	(^C.int)(uintptr(pt) + PT_REFCOUNT_OFF_O)^ -= 1
+	if (^C.int)(uintptr(pt) + PT_REFCOUNT_OFF_O)^ <= 0 {
+		partial_free_o(pt)
+	}
+}
+
+// —— Batch 28az: eval.c funcref compare + simple-call + grow (exports + weak) ——
+
+// Funcref equality (eval.c public).
+@(export)
+func_equal :: proc "c" (tv1: ^Typval_T, tv2: ^Typval_T, ic: bool) -> bool {
+	context = runtime.default_context()
+	s1: cstring = nil
+	if tv1.v_type == VAR_FUNC {
+		s1 = transmute(cstring)(tv1.vval)
+	} else {
+		s1 = partial_name(rawptr(tv1.vval))
+	}
+	if s1 != nil && ([^]u8)(s1)[0] == 0 {
+		s1 = nil
+	}
+	s2: cstring = nil
+	if tv2.v_type == VAR_FUNC {
+		s2 = transmute(cstring)(tv2.vval)
+	} else {
+		s2 = partial_name(rawptr(tv2.vval))
+	}
+	if s2 != nil && ([^]u8)(s2)[0] == 0 {
+		s2 = nil
+	}
+	if s1 == nil || s2 == nil {
+		if s1 != s2 {
+			return false
+		}
+	} else if libc.strcmp(s1, s2) != 0 {
+		return false
+	}
+	d1: rawptr = nil
+	d2: rawptr = nil
+	if tv1.v_type != VAR_FUNC {
+		d1 = (^rawptr)(uintptr(rawptr(tv1.vval)) + PT_DICT_OFF_O)^
+	}
+	if tv2.v_type != VAR_FUNC {
+		d2 = (^rawptr)(uintptr(rawptr(tv2.vval)) + PT_DICT_OFF_O)^
+	}
+	if d1 == nil || d2 == nil {
+		if d1 != d2 {
+			return false
+		}
+	} else if !tv_dict_equal(d1, d2, ic) {
+		return false
+	}
+	a1: C.int = 0
+	a2: C.int = 0
+	if tv1.v_type != VAR_FUNC {
+		a1 = (^C.int)(uintptr(rawptr(tv1.vval)) + PT_ARGC_OFF_O)^
+	}
+	if tv2.v_type != VAR_FUNC {
+		a2 = (^C.int)(uintptr(rawptr(tv2.vval)) + PT_ARGC_OFF_O)^
+	}
+	if a1 != a2 {
+		return false
+	}
+	i: C.int = 0
+	for i < a1 {
+		if !tv_equal((^Typval_T)(uintptr((^rawptr)(uintptr(rawptr(tv1.vval)) + PT_ARGV_OFF_O)^) + uintptr(i) * 16), (^Typval_T)(uintptr((^rawptr)(uintptr(rawptr(tv2.vval)) + PT_ARGV_OFF_O)^) + uintptr(i) * 16), ic) {
+			return false
+		}
+		i += 1
+	}
+	return true
+}
+
+// Name-end scanner with namespace rule (eval.c static, dormant until simple-func).
+to_name_end_o :: proc "c" (arg: cstring, use_namespace: bool) -> cstring {
+	context = runtime.default_context()
+	if !eval_isnamec1(C.int(([^]u8)(arg)[0])) {
+		return arg
+	}
+	p := transmute(cstring)(uintptr(rawptr(arg)) + 1)
+	for ([^]u8)(p)[0] != 0 && eval_isnamec(C.int(([^]u8)(p)[0])) {
+		if ([^]u8)(p)[0] == ':' && (p != transmute(cstring)(uintptr(rawptr(arg)) + 1) || !use_namespace || !vim_strchr_bgstvw_o(([^]u8)(arg)[0])) {
+			break
+		}
+		p = transmute(cstring)(uintptr(rawptr(p)) + uintptr(utfc_ptr2len(p)))
+	}
+	return p
+}
+
+// Namespace-set membership ("abglstvw" + namespaces incl. a/l).
+vim_strchr_bgstvw_o :: proc "c" (c: u8) -> bool {
+	context = runtime.default_context()
+	return c == 'a' || c == 'b' || c == 'g' || c == 'l' || c == 's' || c == 't' || c == 'v' || c == 'w'
+}
+
+// Zero-arg `Name()` fast path (eval.c public).
+@(export)
+may_call_simple_func :: proc "c" (arg: cstring, rettv: ^Typval_T) -> C.int {
+	context = runtime.default_context()
+	parens := strstr_c(arg, cstring("()"))
+	r: C.int = NOTDONE_O
+	if parens != nil && ([^]u8)(skipwhite(transmute(cstring)(uintptr(rawptr(parens)) + 2)))[0] == 0 {
+		if strnequal_e(arg, cstring("v:lua."), 6) {
+			p := transmute(cstring)(uintptr(rawptr(arg)) + 6)
+			if p != transmute(cstring)(parens) && skip_luafunc_name(p) == transmute(cstring)(parens) {
+				r = call_simple_luafunc(p, C.size_t(uintptr(rawptr(parens)) - uintptr(rawptr(p))), rettv)
+			}
+		} else {
+			p := arg
+			if libc.strncmp(arg, cstring("<SNR>"), 5) == 0 {
+				p = skipdigits_r(transmute(cstring)(uintptr(rawptr(arg)) + 5))
+			}
+			if to_name_end_o(p, true) == transmute(cstring)(parens) {
+				r = call_simple_func(arg, C.size_t(uintptr(rawptr(parens)) - uintptr(rawptr(arg))), rettv)
+			}
+		}
+	}
+	return r
+}
+
+// In-place string append (eval.c public).
+@(export)
+grow_string_tv :: proc "c" (tv1: ^Typval_T, s2: cstring) -> C.int {
+	context = runtime.default_context()
+	if tv1.v_type != VAR_STRING || rawptr(tv1.vval) == nil {
+		return FAIL_E
+	}
+	len1 := libc.strlen(transmute(cstring)(tv1.vval))
+	len2 := libc.strlen(s2)
+	p := (^u8)(xrealloc(rawptr(tv1.vval), len1 + len2 + 1))
+	libc.memmove(rawptr(uintptr(p) + uintptr(len1)), rawptr(transmute(^u8)(s2)), len2 + 1)
+	tv1.vval = transmute(rawptr)(p)
+	return OK_E
+}
+
+// —— Batch 28ay: eval.c set_context_for_expression (export + weak) ——
+foreign _ {
+	@(link_name = "cmd_has_expr_args")
+	cmd_has_expr_args_e :: proc "c" (cmdidx: C.int) -> bool ---
+}
+
+EXPAND_COMMANDS_O :: 1
+EXPAND_USER_VARS_O :: 15
+EXPAND_FUNCTIONS_O :: 18
+EXPAND_EXPRESSION_O :: 20
+EXPAND_ENV_VARS_O :: 26
+CMD_LET_O :: 231
+CMD_CALL_O :: 53
+
+// Completion context for :let/:const/:call/expression args (eval.c public).
+@(export)
+set_context_for_expression :: proc "c" (xp: ^expand_T, arg: cstring, cmdidx: C.int) {
+	context = runtime.default_context()
+	got_eq := false
+	cur := arg
+	if cmdidx == CMD_LET_O || cmdidx == CMD_CONST_O {
+		xp.xp_context = EXPAND_USER_VARS_O
+		if libc.strpbrk(cur, cstring("\"'+-*/%.=!?~|&$([<>,#")) == nil {
+			p := transmute(cstring)(uintptr(rawptr(cur)) + uintptr(libc.strlen(cur)))
+			for uintptr(rawptr(p)) >= uintptr(rawptr(cur)) {
+				xp.xp_pattern = p
+				p = transmute(cstring)(mb_ptr_back(transmute(^u8)(cur), transmute(^u8)(p)))
+				if ascii_iswhite(([^]u8)(p)[0]) {
+					break
+				}
+			}
+			return
+		}
+	} else {
+		if cmdidx == CMD_CALL_O {
+			xp.xp_context = EXPAND_FUNCTIONS_O
+		} else {
+			xp.xp_context = EXPAND_EXPRESSION_O
+		}
+	}
+	for {
+		xp.xp_pattern = transmute(cstring)(libc.strpbrk(cur, cstring("\"'+-*/%.=!?~|&$([<>,#")))
+		if xp.xp_pattern == nil {
+			break
+		}
+		c := C.int(([^]u8)(xp.xp_pattern)[0])
+		if c == '&' {
+			c = C.int(([^]u8)(xp.xp_pattern)[1])
+			if c == '&' {
+				xp.xp_pattern = transmute(cstring)(uintptr(rawptr(xp.xp_pattern)) + 1)
+				if cmdidx != CMD_LET_O || got_eq {
+					xp.xp_context = EXPAND_EXPRESSION_O
+				} else {
+					xp.xp_context = EXPAND_NOTHING_S
+				}
+			} else if c != ' ' {
+				xp.xp_context = EXPAND_SETTINGS_S
+				if (c == 'l' || c == 'g') && ([^]u8)(xp.xp_pattern)[2] == ':' {
+					xp.xp_pattern = transmute(cstring)(uintptr(rawptr(xp.xp_pattern)) + 2)
+				}
+			}
+		} else if c == '$' {
+			xp.xp_context = EXPAND_ENV_VARS_O
+		} else if c == '=' {
+			got_eq = true
+			xp.xp_context = EXPAND_EXPRESSION_O
+		} else if c == '#' && xp.xp_context == EXPAND_EXPRESSION_O {
+			break
+		} else if (c == '<' || c == '#') && xp.xp_context == EXPAND_FUNCTIONS_O && vim_strchr_c(transmute(^u8)(xp.xp_pattern), C.int('(')) == nil {
+			break
+		} else if cmdidx != CMD_LET_O || got_eq {
+			if c == '"' {
+				for {
+					c = C.int(([^]u8)(xp.xp_pattern)[0] + 0)
+					xp.xp_pattern = transmute(cstring)(uintptr(rawptr(xp.xp_pattern)) + 1)
+					c = C.int(([^]u8)(xp.xp_pattern)[0])
+					if c == 0 || c == '"' {
+						break
+					}
+					if c == '\\' && ([^]u8)(xp.xp_pattern)[1] != 0 {
+						xp.xp_pattern = transmute(cstring)(uintptr(rawptr(xp.xp_pattern)) + 1)
+					}
+				}
+				xp.xp_context = EXPAND_NOTHING_S
+			} else if c == '\'' {
+				for ([^]u8)(xp.xp_pattern)[0] != 0 && ([^]u8)(xp.xp_pattern)[0] != '\'' {
+					xp.xp_pattern = transmute(cstring)(uintptr(rawptr(xp.xp_pattern)) + 1)
+				}
+				xp.xp_context = EXPAND_NOTHING_S
+			} else if c == '|' {
+				if ([^]u8)(xp.xp_pattern)[1] == '|' {
+					xp.xp_pattern = transmute(cstring)(uintptr(rawptr(xp.xp_pattern)) + 1)
+					xp.xp_context = EXPAND_EXPRESSION_O
+				} else {
+					xp.xp_context = EXPAND_COMMANDS_O
+				}
+			} else {
+				xp.xp_context = EXPAND_EXPRESSION_O
+			}
+		} else {
+			xp.xp_context = EXPAND_EXPRESSION_O
+		}
+		cur = xp.xp_pattern
+		if ([^]u8)(cur)[0] != 0 {
+			cur = transmute(cstring)(uintptr(rawptr(cur)) + 1)
+			for ([^]u8)(cur)[0] == ' ' || ([^]u8)(cur)[0] == 9 {
+				cur = transmute(cstring)(uintptr(rawptr(cur)) + 1)
+			}
+		}
+	}
+	if cmd_has_expr_args_e(cmdidx) && xp.xp_context == EXPAND_EXPRESSION_O {
+		for {
+			n := skiptowhite(cur)
+			if n == cur {
+				break
+			}
+			nc := ([^]u8)(skipwhite(n))[0]
+			if nc == 0 || nc == ' ' || nc == 9 {
+				break
+			}
+			cur = skipwhite(n)
+		}
+	}
+	xp.xp_pattern = cur
+}
+
+// —— Batch 28ax: eval.c var2fpos (export + weak) ——
+foreign _ {
+	@(link_name = "check_cursor_moved")
+	check_cursor_moved_e :: proc "c" (wp: rawptr) ---
+}
+
+@(private = "file")
+var2fpos_pos_g: Pos_T
+
+// Position value reader (eval.c public).
+@(export)
+var2fpos :: proc "c" (tv: ^Typval_T, dollar_lnum: bool, ret_fnum: ^C.int, charcol: bool, wp: rawptr) -> rawptr {
+	context = runtime.default_context()
+	pos := &var2fpos_pos_g
+	bp := (^rawptr)(uintptr(wp) + W_BUFFER_OFF)^
+	if tv.v_type == VAR_LIST {
+		error := false
+		l := rawptr(tv.vval)
+		if l == nil {
+			return nil
+		}
+		pos.lnum = C.int(tv_list_find_nr(l, 0, &error))
+		if error || pos.lnum <= 0 || pos.lnum > (^C.int)(uintptr(bp) + B_ML_LINE_COUNT)^ {
+			return nil
+		}
+		pos.col = C.int(tv_list_find_nr(l, 1, &error))
+		if error {
+			return nil
+		}
+		length: C.int = 0
+		if charcol {
+			length = mb_charlen_r(transmute(cstring)(ml_get_buf(bp, pos.lnum)))
+		} else {
+			length = ml_get_buf_len(bp, pos.lnum)
+		}
+		li := tv_list_find(l, 1)
+		if li != nil && (^C.int)(uintptr((^Typval_T)(uintptr(li) + 16)))^ == VAR_STRING && rawptr((^Typval_T)(uintptr(li) + 16).vval) != nil && libc.strcmp(transmute(cstring)((^Typval_T)(uintptr(li) + 16).vval), cstring("$")) == 0 {
+			pos.col = length + 1
+		}
+		if pos.col == 0 || C.int(pos.col) > length + 1 {
+			return nil
+		}
+		pos.col -= 1
+		pos.coladd = C.int(tv_list_find_nr(l, 2, &error))
+		if error {
+			pos.coladd = 0
+		}
+		return pos
+	}
+	name := tv_get_string_chk(tv)
+	if name == nil {
+		return nil
+	}
+	pos.lnum = 0
+	if ([^]u8)(name)[0] == '.' {
+		pos^ = (^Pos_T)(uintptr(wp) + W_CURSOR_OFF)^
+	} else if ([^]u8)(name)[0] == 'v' && ([^]u8)(name)[1] == 0 {
+		if VIsual_active && wp == curwin {
+			pos^ = VIsual_g
+		} else {
+			pos^ = (^Pos_T)(uintptr(wp) + W_CURSOR_OFF)^
+		}
+	} else if ([^]u8)(name)[0] == '\'' {
+		mname := C.int(([^]u8)(name)[1])
+		fm := mark_get(bp, wp, nil, kMarkAll, mname)
+		if fm == nil || (^C.int)(uintptr(fm) + 0)^ <= 0 {
+			return nil
+		}
+		pos^ = (^Pos_T)(uintptr(fm) + 0)^
+		if (mname >= 'A' && mname <= 'Z') || ascii_isdigit_o(u8(mname)) {
+			ret_fnum^ = (^C.int)(uintptr(fm) + 12)^
+		}
+	}
+	if pos.lnum != 0 {
+		if charcol {
+			pos.col = buf_byteidx_to_charidx(bp, pos.lnum, pos.col)
+		}
+		return pos
+	}
+	pos.coladd = 0
+	if ([^]u8)(name)[0] == 'w' && dollar_lnum {
+		check_cursor_moved_e(wp)
+		pos.col = 0
+		if ([^]u8)(name)[1] == '0' {
+			update_topline_r(wp)
+			top := (^C.int)(uintptr(wp) + W_TOPLINE_OFF)^
+			if top > 0 {
+				pos.lnum = top
+			} else {
+				pos.lnum = 1
+			}
+			return pos
+		} else if ([^]u8)(name)[1] == '$' {
+			validate_botline_win_r(wp)
+			bot := (^C.int)(uintptr(wp) + W_BOTLINE_OFF)^
+			if bot > 0 {
+				pos.lnum = bot - 1
+			} else {
+				pos.lnum = 0
+			}
+			return pos
+		}
+	} else if ([^]u8)(name)[0] == '$' {
+		if dollar_lnum {
+			pos.lnum = (^C.int)(uintptr(bp) + B_ML_LINE_COUNT)^
+			pos.col = 0
+		} else {
+			pos.lnum = (^C.int)(uintptr(wp) + W_CURSOR_OFF)^
+			if charcol {
+				pos.col = mb_charlen_r(transmute(cstring)(ml_get_buf(bp, (^C.int)(uintptr(wp) + W_CURSOR_OFF)^)))
+			} else {
+				pos.col = ml_get_buf_len(bp, (^C.int)(uintptr(wp) + W_CURSOR_OFF)^)
+			}
+		}
+		return pos
+	}
+	return nil
+}
+
+// —— Batch 28aw: eval.c list2fpos + set_selfdict ——
+
+// List-to-position converter (eval.c public).
+@(export)
+list2fpos :: proc "c" (arg: ^Typval_T, posp: ^Pos_T, fnump: ^C.int, curswantp: ^C.int, charcol: bool) -> C.int {
+	context = runtime.default_context()
+	minlen: C.int = 3
+	maxlen: C.int = 5
+	if fnump == nil {
+		minlen = 2
+		maxlen = 4
+	}
+	llen := tv_list_len_o(rawptr(arg.vval))
+	if arg.v_type != VAR_LIST || rawptr(arg.vval) == nil || llen < minlen || llen > maxlen {
+		return FAIL_E
+	}
+	l := rawptr(arg.vval)
+	i: C.int = 0
+	n: C.int = 0
+	if fnump != nil {
+		n = C.int(tv_list_find_nr(l, i, nil))
+		i += 1
+		if n < 0 {
+			return FAIL_E
+		}
+		if n == 0 {
+			n = (^C.int)(uintptr(curbuf) + B_FNUM_OFF)^
+		}
+		fnump^ = n
+	}
+	n = C.int(tv_list_find_nr(l, i, nil))
+	i += 1
+	if n < 0 {
+		return FAIL_E
+	}
+	(^C.int)(uintptr(posp) + 0)^ = n
+	n = C.int(tv_list_find_nr(l, i, nil))
+	i += 1
+	if n < 0 {
+		return FAIL_E
+	}
+	if charcol {
+		fnum := (^C.int)(uintptr(curbuf) + B_FNUM_OFF)^
+		if fnump != nil {
+			fnum = fnump^
+		}
+		buf := buflist_findnr(fnum)
+		if buf == nil || (^rawptr)(uintptr(buf) + B_ML_MFP_OFF)^ == nil {
+			return FAIL_E
+		}
+		lnum := (^C.int)(uintptr(posp) + 0)^
+		if lnum == 0 {
+			lnum = (^C.int)(uintptr(curwin) + W_CURSOR_OFF)^
+		}
+		n = buf_charidx_to_byteidx(buf, lnum, n) + 1
+	}
+	(^C.int)(uintptr(posp) + 4)^ = n
+	n = C.int(tv_list_find_nr(l, i, nil))
+	if n < 0 {
+		(^C.int)(uintptr(posp) + 8)^ = 0
+	} else {
+		(^C.int)(uintptr(posp) + 8)^ = n
+	}
+	if curswantp != nil {
+		(^C.int)(uintptr(curswantp))^ = C.int(tv_list_find_nr(l, i + 1, nil))
+	}
+	return OK_E
+}
+
+// Bind dict as partial-self (eval.c public).
+@(export)
+set_selfdict :: proc "c" (rettv: ^Typval_T, selfdict: rawptr) {
+	context = runtime.default_context()
+	if rettv.v_type == VAR_PARTIAL && !(^bool)(uintptr(rawptr(rettv.vval)) + PT_AUTO_OFF_O)^ && (^rawptr)(uintptr(rawptr(rettv.vval)) + PT_DICT_OFF_O)^ != nil {
+		return
+	}
+	make_partial(selfdict, rettv)
+}
+
+// —— Batch 28av: eval.c get_name_len + find_option_var_end ——
+
+// Variable/function name length with brace expansion (eval.c public).
+@(export)
+get_name_len :: proc "c" (arg: ^cstring, alias: ^cstring, evaluate: bool, verbose: bool) -> C.int {
+	context = runtime.default_context()
+	alias^ = nil
+	if ([^]u8)(arg^)[0] == u8(K_SPECIAL_INPUT) && ([^]u8)(arg^)[1] == u8(KS_EXTRA) && ([^]u8)(arg^)[2] == u8(KE_SNR_O) {
+		arg^ = transmute(cstring)(uintptr(rawptr(arg^)) + 3)
+		return get_id_len(arg) + 3
+	}
+	length := eval_fname_script(arg^)
+	if length > 0 {
+		arg^ = transmute(cstring)(uintptr(rawptr(arg^)) + uintptr(length))
+	}
+	expr_start: cstring = nil
+	expr_end: cstring = nil
+	fne: C.int = FNE_CHECK_START_O
+	if length > 0 {
+		fne = 0
+	}
+	p := find_name_end(arg^, &expr_start, &expr_end, fne)
+	if expr_start != nil {
+		if !evaluate {
+			length += C.int(uintptr(rawptr(p)) - uintptr(rawptr(arg^)))
+			arg^ = skipwhite(p)
+			return length
+		}
+		temp_string := make_expanded_name_o(transmute(cstring)(uintptr(rawptr(arg^)) - uintptr(length)), expr_start, expr_end, transmute(cstring)(p))
+		if temp_string == nil {
+			return -1
+		}
+		alias^ = temp_string
+		arg^ = skipwhite(p)
+		return C.int(libc.strlen(temp_string))
+	}
+	length += get_id_len(arg)
+	if length == 0 && verbose && ([^]u8)(arg^)[0] != 0 {
+		semsg(cstring(E15_S), arg^)
+	}
+	return length
+}
+
+// Option-variable name end scanner (eval.c public).
+@(export)
+find_option_var_end :: proc "c" (arg: ^cstring, opt_idxp: ^C.int, opt_flagsp: ^C.int) -> cstring {
+	context = runtime.default_context()
+	p := transmute(^u8)(arg^)
+	p = transmute(^u8)(uintptr(rawptr(p)) + 1)
+	if ([^]u8)(p)[0] == 'g' && ([^]u8)(p)[1] == ':' {
+		opt_flagsp^ = OPT_GLOBAL_S
+		p = transmute(^u8)(uintptr(rawptr(p)) + 2)
+	} else if ([^]u8)(p)[0] == 'l' && ([^]u8)(p)[1] == ':' {
+		opt_flagsp^ = OPT_LOCAL_S
+		p = transmute(^u8)(uintptr(rawptr(p)) + 2)
+	} else {
+		opt_flagsp^ = 0
+	}
+	end := find_option_end(p, opt_idxp)
+	if end == nil {
+		return nil
+	}
+	arg^ = transmute(cstring)(p)
+	return transmute(cstring)(end)
+}
+
+// —— Batch 28au: eval.c do_string_sub (export + weak) ——
+foreign _ {
+	@(link_name = "vim_regsub")
+	vim_regsub_e :: proc "c" (rmp: ^Regmatch_T, source: cstring, expr: ^Typval_T, dest: ^u8, destlen: C.int, flags: C.int) -> C.int ---
+}
+
+// Regex substitution driver (eval.c public).
+@(export)
+do_string_sub :: proc "c" (str: cstring, length: C.size_t, pat: cstring, sub: cstring, expr: ^Typval_T, flags: cstring, ret_len: ^C.size_t) -> cstring {
+	context = runtime.default_context()
+	regmatch := Regmatch_T{}
+	ga := Garray{}
+	save_cpo := p_cpo
+	p_cpo = empty_string_opt()
+	ga_init_r2(&ga, 1, 200)
+	regmatch.rm_ic = p_ic
+	regmatch.regprog = vim_regcomp(pat, RE_MAGIC + RE_STRING_O)
+	if regmatch.regprog != nil {
+		tail := transmute(cstring)(str)
+		end := transmute(cstring)(uintptr(rawptr(str)) + uintptr(length))
+		do_all := ([^]u8)(flags)[0] == 'g'
+		sublen: C.int = 0
+		zero_width: ^u8 = nil
+		for vim_regexec_nl_e(&regmatch, str, C.int(uintptr(rawptr(tail)) - uintptr(rawptr(str)))) {
+			if regmatch.startp[0] == regmatch.endp[0] {
+				if zero_width == regmatch.startp[0] {
+					i := C.int(utfc_ptr2len(transmute(cstring)(tail)))
+					libc.memmove(rawptr(uintptr(ga.ga_data) + uintptr(ga.ga_len)), rawptr(transmute(^u8)(tail)), C.size_t(i))
+					ga.ga_len += i
+					tail = transmute(cstring)(uintptr(rawptr(tail)) + uintptr(i))
+					continue
+				}
+				zero_width = regmatch.startp[0]
+			}
+			sublen = vim_regsub_e(&regmatch, sub, expr, transmute(^u8)(tail), 0, REGSUB_MAGIC_O)
+			if sublen <= 0 {
+				ga_clear_r(&ga)
+				break
+			}
+			ga_grow_r(&ga, C.int(uintptr(rawptr(end)) - uintptr(rawptr(tail))) + sublen - C.int(uintptr(rawptr(regmatch.endp[0])) - uintptr(rawptr(regmatch.startp[0]))))
+			i := C.int(uintptr(rawptr(regmatch.startp[0])) - uintptr(rawptr(tail)))
+			libc.memmove(rawptr(uintptr(ga.ga_data) + uintptr(ga.ga_len)), rawptr(transmute(^u8)(tail)), C.size_t(i))
+			vim_regsub_e(&regmatch, sub, expr, transmute(^u8)(uintptr(ga.ga_data) + uintptr(ga.ga_len) + uintptr(i)), sublen, REGSUB_COPY_O + REGSUB_MAGIC_O)
+			ga.ga_len += i + sublen - 1
+			tail = transmute(cstring)(regmatch.endp[0])
+			if ([^]u8)(tail)[0] == 0 {
+				break
+			}
+			if !do_all {
+				break
+			}
+		}
+		if ga.ga_data != nil {
+			libc.strcpy(transmute([^]u8)(uintptr(ga.ga_data) + uintptr(ga.ga_len)), transmute(cstring)(tail))
+			ga.ga_len += C.int(uintptr(rawptr(end)) - uintptr(rawptr(tail)))
+		}
+		vim_regfree(regmatch.regprog)
+	}
+	str_out: cstring = nil
+	length_out: C.size_t = 0
+	if ga.ga_data != nil {
+		str_out = transmute(cstring)(ga.ga_data)
+		length_out = C.size_t(ga.ga_len)
+	} else {
+		str_out = str
+		length_out = length
+	}
+	ret := transmute(cstring)(xstrnsave_c(str_out, length_out))
+	ga_clear_r(&ga)
+	if p_cpo == empty_string_opt() {
+		p_cpo = save_cpo
+	} else {
+		if ([^]u8)(p_cpo)[0] == 0 {
+			set_option_value_give_err(kOptCpoptions_E, str_optval(save_cpo, libc.strlen(transmute(cstring)(save_cpo))), 0)
+		}
+		free_string_option(p_cpo)
+	}
+	if ret_len != nil {
+		ret_len^ = length_out
+	}
+	return ret
+}
+
+// —— Batch 28at: eval.c trivial leaves (exports + weak) ——
+
+// Name-character classifiers (eval.c public).
+@(export)
+eval_isnamec :: proc "c" (c: C.int) -> bool {
+	context = runtime.default_context()
+	return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_' || c == ':' || c == '#'
+}
+
+// Name-start classifier (eval.c public).
+@(export)
+eval_isnamec1 :: proc "c" (c: C.int) -> bool {
+	context = runtime.default_context()
+	return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || c == '_'
+}
+
+// Dict-key-start classifier (eval.c public).
+@(export)
+eval_isdictc :: proc "c" (c: C.int) -> bool {
+	context = runtime.default_context()
+	return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_'
+}
+
+// Environment-name length scanner (eval.c public).
+@(export)
+get_env_len :: proc "c" (arg: ^cstring) -> C.int {
+	context = runtime.default_context()
+	p := arg^
+	for _vim_isIDc(C.int(([^]u8)(p)[0])) {
+		p = transmute(cstring)(uintptr(rawptr(p)) + 1)
+	}
+	if p == arg^ {
+		return 0
+	}
+	length := C.int(uintptr(rawptr(p)) - uintptr(rawptr(arg^)))
+	arg^ = p
+	return length
+}
+
+// Function/var-name length scanner (eval.c public).
+@(export)
+get_id_len :: proc "c" (arg: ^cstring) -> C.int {
+	context = runtime.default_context()
+	length: C.int = 0
+	p := arg^
+	for eval_isnamec(C.int(([^]u8)(p)[0])) {
+		if ([^]u8)(p)[0] == ':' {
+			length = C.int(uintptr(rawptr(p)) - uintptr(rawptr(arg^)))
+			c0 := ([^]u8)(arg^)[0]
+			if length > 1 || (length == 1 && c0 != 'a' && c0 != 'b' && c0 != 'g' && c0 != 'l' && c0 != 's' && c0 != 't' && c0 != 'v' && c0 != 'w') {
+				break
+			}
+		}
+		p = transmute(cstring)(uintptr(rawptr(p)) + 1)
+	}
+	if p == arg^ {
+		return 0
+	}
+	length = C.int(uintptr(rawptr(p)) - uintptr(rawptr(arg^)))
+	arg^ = skipwhite(p)
+	return length
+}
+
+VAR_FLAVOUR_DEFAULT_O :: 1
+VAR_FLAVOUR_SESSION_O :: 2
+VAR_FLAVOUR_SHADA_O :: 4
+
+// Session/shada/default flavour by case pattern (eval.c public).
+@(export)
+var_flavour :: proc "c" (varname: cstring) -> C.int {
+	context = runtime.default_context()
+	p := varname
+	if ([^]u8)(p)[0] >= 'A' && ([^]u8)(p)[0] <= 'Z' {
+		for {
+			p = transmute(cstring)(uintptr(rawptr(p)) + 1)
+			if ([^]u8)(p)[0] == 0 {
+				break
+			}
+			if ([^]u8)(p)[0] >= 'a' && ([^]u8)(p)[0] <= 'z' {
+				return VAR_FLAVOUR_SESSION_O
+			}
+		}
+		return VAR_FLAVOUR_SHADA_O
+	}
+	return VAR_FLAVOUR_DEFAULT_O
+}
+
+// Unconditional tv-to-string (eval.c public).
+@(export)
+typval_tostring :: proc "c" (arg: ^Typval_T, quotes: bool) -> ^u8 {
+	context = runtime.default_context()
+	if arg == nil {
+		return xstrdup_o(transmute(^u8)(cstring("(does not exist)")))
+	}
+	if !quotes && arg.v_type == VAR_STRING {
+		s := transmute(cstring)(arg.vval)
+		if s == nil {
+			s = cstring("")
+		}
+		return xstrdup_o(transmute(^u8)(s))
+	}
+	return transmute(^u8)(encode_tv2string(arg, nil))
+}
+
+// —— Batch 28as: eval.c var_item_copy (export + weak) ——
+E698_S :: "E698: Variable nested too deep for making a copy"
+DICT_MAXNEST_O :: 100
+
+@(private = "file")
+var_item_copy_recurse_g: C.int
+
+// Deep/shallow copy one typval with conversion (eval.c public).
+@(export)
+var_item_copy :: proc "c" (conv: rawptr, from: ^Typval_T, to: ^Typval_T, deep: bool, copyID: C.int) -> C.int {
+	context = runtime.default_context()
+	ret: C.int = OK_E
+	if var_item_copy_recurse_g >= DICT_MAXNEST_O {
+		emsg(cstring(E698_S))
+		return FAIL_E
+	}
+	var_item_copy_recurse_g += 1
+	if from.v_type == VAR_NUMBER || from.v_type == VAR_FLOAT || from.v_type == VAR_FUNC || from.v_type == VAR_PARTIAL || from.v_type == VAR_BOOL || from.v_type == VAR_SPECIAL {
+		tv_copy(from, to)
+	} else if from.v_type == VAR_STRING {
+		if conv == nil || (^C.int)(uintptr(conv))^ == CONV_NONE_O || rawptr(from.vval) == nil {
+			tv_copy(from, to)
+		} else {
+			to.v_type = VAR_STRING
+			to.v_lock = VAR_UNLOCKED
+			to.vval = transmute(rawptr)(string_convert_e(conv, transmute(cstring)(from.vval), nil))
+			if rawptr(to.vval) == nil {
+				to.vval = transmute(rawptr)(xstrdup_o(transmute(^u8)(from.vval)))
+			}
+		}
+	} else if from.v_type == VAR_LIST {
+		to.v_type = VAR_LIST
+		to.v_lock = VAR_UNLOCKED
+		if rawptr(from.vval) == nil {
+			to.vval = nil
+		} else if copyID != 0 && tv_list_copyid_o(rawptr(from.vval)) == copyID {
+			to.vval = (^rawptr)(uintptr(rawptr(from.vval)) + 32)^
+			tv_list_ref_o(rawptr(to.vval))
+		} else {
+			to.vval = tv_list_copy(conv, rawptr(from.vval), deep, copyID)
+		}
+		if rawptr(to.vval) == nil && rawptr(from.vval) != nil {
+			ret = FAIL_E
+		}
+	} else if from.v_type == VAR_BLOB {
+		tv_blob_copy(rawptr(from.vval), to)
+	} else if from.v_type == VAR_DICT {
+		to.v_type = VAR_DICT
+		to.v_lock = VAR_UNLOCKED
+		if rawptr(from.vval) == nil {
+			to.vval = nil
+		} else if copyID != 0 && (^C.int)(uintptr(rawptr(from.vval)) + 12)^ == copyID {
+			to.vval = (^rawptr)(uintptr(rawptr(from.vval)) + 312)^
+			(^C.int)(uintptr(rawptr(to.vval)) + 8)^ += 1
+		} else {
+			to.vval = tv_dict_copy(conv, rawptr(from.vval), deep, copyID)
+		}
+		if rawptr(to.vval) == nil && rawptr(from.vval) != nil {
+			ret = FAIL_E
+		}
+	} else {
+		_internal_error(cstring("var_item_copy(UNKNOWN)"))
+		ret = FAIL_E
+	}
+	var_item_copy_recurse_g -= 1
+	return ret
+}
+
+// —— Batch 28ar: eval.c fold evaluators (exports + weak) ——
+KOBJTYPE_STRING_O :: 4
+
+// Evaluate 'foldexpr' for a window (eval.c public).
+@(export)
+eval_foldexpr :: proc "c" (wp: rawptr, cp: ^C.int) -> C.int {
+	context = runtime.default_context()
+	saved_sctx := current_sctx_buf
+	use_sandbox := was_set_insecurely(wp, kOptFoldexpr_E, OPT_LOCAL_S) != 0
+	arg := skipwhite(transmute(cstring)((^rawptr)(uintptr(wp) + W_P_FDE)^))
+	libc.memcpy(rawptr(&current_sctx_buf[0]), rawptr(uintptr(wp) + W_P_SCRIPT_CTX + uintptr(kWinOptFoldtext) * SCCTX_STRIDE), SCCTX_STRIDE)
+	emsg_off += 1
+	if use_sandbox {
+		sandbox += 1
+	}
+	textlock += 1
+	cp^ = 0
+	tv := Typval_T{}
+	retval: C.longlong = 0
+	if eval0_simple_funccal_o(arg, &tv, nil, &EVALARG_EVALUATE_g) == FAIL_E {
+		retval = 0
+	} else {
+		if tv.v_type == VAR_NUMBER {
+			retval = transmute(C.longlong)(tv.vval)
+		} else if tv.v_type != VAR_STRING || rawptr(tv.vval) == nil {
+			retval = 0
+		} else {
+			s := transmute(cstring)(tv.vval)
+			if ([^]u8)(s)[0] != 0 && !ascii_isdigit_o(([^]u8)(s)[0]) && ([^]u8)(s)[0] != '-' {
+				cp^ = C.int(([^]u8)(s)[0])
+				s = transmute(cstring)(uintptr(rawptr(s)) + 1)
+			}
+			retval = C.longlong(libc.atol(s))
+		}
+		tv_clear(&tv)
+	}
+	emsg_off -= 1
+	if use_sandbox {
+		sandbox -= 1
+	}
+	textlock -= 1
+	clear_evalarg(&EVALARG_EVALUATE_g, nil)
+	libc.memcpy(rawptr(&current_sctx_buf[0]), rawptr(&saved_sctx[0]), SCCTX_STRIDE)
+	return C.int(retval)
+}
+
+// Evaluate 'foldtext' for a window (eval.c public).
+@(export)
+eval_foldtext :: proc "c" (wp: rawptr) -> Api_Object {
+	context = runtime.default_context()
+	use_sandbox := was_set_insecurely(wp, kOptFoldtext_E, OPT_LOCAL_S) != 0
+	arg := (^cstring)(uintptr(wp) + W_P_FDT)^
+	funccal_entry: [16]u8
+	save_funccal(rawptr(&funccal_entry[0]))
+	if use_sandbox {
+		sandbox += 1
+	}
+	textlock += 1
+	tv := Typval_T{}
+	retval := Api_Object{}
+	if eval0_simple_funccal_o(arg, &tv, nil, &EVALARG_EVALUATE_g) == FAIL_E {
+		retval.t = KOBJTYPE_STRING_O
+	} else {
+		if tv.v_type == VAR_LIST {
+			retval = vim_to_object_e(&tv, nil, false)
+		} else {
+			s := tv_get_string(&tv)
+			cp := (^u8)(xmemdupz_o2(transmute(^u8)(s), C.size_t(libc.strlen(s))))
+			retval.t = KOBJTYPE_STRING_O
+			(^rawptr)(&retval.data[0])^ = rawptr(cp)
+			(^C.size_t)(&retval.data[8])^ = C.size_t(libc.strlen(s))
+		}
+		tv_clear(&tv)
+	}
+	clear_evalarg(&EVALARG_EVALUATE_g, nil)
+	if use_sandbox {
+		sandbox -= 1
+	}
+	textlock -= 1
+	restore_funccal()
+	return retval
+}
+
+// —— Batch 28aq: eval.c system() engine ——
+
+// Output splitter (eval.c static, dormant until engine below).
+string_to_list_o :: proc "c" (str: cstring, length: C.size_t, keepempty: bool) -> rawptr {
+	context = runtime.default_context()
+	length := length
+	if !keepempty && ([^]u8)(str)[length - 1] == NL_O {
+		length -= 1
+	}
+	list := tv_list_alloc(KLISTLEN_MAYKNOW_O)
+	encode_list_write(list, str, length)
+	return list
+}
+
+// os_system wrapper with verbose/profile/shell_error handling (eval.c static).
+get_system_output_as_rettv_o :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, retlist: bool) {
+	context = runtime.default_context()
+	profiling := do_profiling == PROF_YES
+	rettv.v_type = VAR_STRING
+	rettv.vval = nil
+	if check_secure() {
+		return
+	}
+	input_len: C.ptrdiff_t = 0
+	input := save_tv_as_string((^Typval_T)(uintptr(argvars) + 16), &input_len, false, false)
+	if input_len < 0 {
+		return
+	}
+	executable := true
+	argv := tv_to_argv((^Typval_T)(uintptr(argvars)), nil, &executable)
+	if argv == nil {
+		if !executable {
+			set_vim_var_nr(VV_SHELL_ERROR, -1)
+		}
+		xfree(rawptr(input))
+		return
+	}
+	if p_verbose > 3 {
+		cmdstr := shell_argv_to_str(argv)
+		verbose_enter_scroll_e()
+		smsg(0, cstring("Executing command: \"%s\""), cmdstr)
+		msg_puts(cstring("\n\n"))
+		verbose_leave_scroll_e()
+		xfree(rawptr(transmute(^u8)(cmdstr)))
+	}
+	wait_time: proftime_T = 0
+	if profiling {
+		prof_child_enter(&wait_time)
+	}
+	nread: C.size_t = 0
+	res: ^u8 = nil
+	status := os_system(argv, input, C.size_t(input_len), &res, &nread)
+	if profiling {
+		prof_child_exit(&wait_time)
+	}
+	xfree(rawptr(input))
+	set_vim_var_nr(VV_SHELL_ERROR, C.longlong(status))
+	if res == nil {
+		if retlist {
+			tv_list_alloc_ret(transmute(^Typval)(rettv), 0)
+		} else {
+			rettv.vval = transmute(rawptr)(xstrdup_o(transmute(^u8)(cstring(""))))
+		}
+		return
+	}
+	if retlist {
+		keepempty: C.int = 0
+		if ([^]Typval_T)(argvars)[1].v_type != VAR_UNKNOWN && ([^]Typval_T)(argvars)[2].v_type != VAR_UNKNOWN {
+			keepempty = C.int(tv_get_number((^Typval_T)(uintptr(argvars) + 32)))
+		}
+		rettv.vval = transmute(rawptr)(string_to_list_o(transmute(cstring)(res), nread, keepempty != 0))
+		tv_list_ref_o(rawptr(rettv.vval))
+		rettv.v_type = VAR_LIST
+		xfree(rawptr(res))
+	} else {
+		_memchrsub(rawptr(res), C.int(0), C.int(1), nread)
+		rettv.vval = transmute(rawptr)(res)
+	}
+}
+
+// "system()" function (eval.c public).
+@(export)
+f_system :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	get_system_output_as_rettv_o(argvars, rettv, false)
+}
+
+// "systemlist()" function (eval.c public).
+@(export)
+f_systemlist :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	get_system_output_as_rettv_o(argvars, rettv, true)
+}
+
+// —— Batch 28ap: eval.c ex_echo cluster (exports + weak) ——
+foreign _ {
+	@(link_name = "msg_clr_eos")
+	msg_clr_eos_e :: proc "c" () ---
+	@(link_name = "emsg_multiline")
+	emsg_multiline_e :: proc "c" (str: cstring, kind: cstring, hl_id: C.int, hist: bool) ---
+	@(link_name = "do_cmdline")
+	do_cmdline_raw_e :: proc "c" (cmdline: cstring, fgetline: rawptr, cookie: rawptr, flags: C.int) -> C.int ---
+	@(link_name = "force_abort")
+	force_abort_g: bool
+}
+
+CMD_ECHO_O :: 135
+CMD_ECHON_O :: 139
+CMD_ECHOMSG_O :: 138
+CMD_ECHOERR_O :: 136
+CMD_EXECUTE_O :: 151
+HLF_E_O :: 6
+EXARG_ARG_OFF :: 0
+EXARG_NEXTCMD_OFF :: 32
+EXARG_GETLINE_OFF :: 168
+EXARG_COOKIE_OFF :: 176
+
+// Moved C static (single live copy; readers all ported here).
+echo_hl_id_g: C.int = 0
+
+// ":echo[!] expr..." (eval.c public).
+@(export)
+ex_echo :: proc "c" (eap: rawptr) {
+	context = runtime.default_context()
+	arg := (^cstring)(uintptr(eap) + EXARG_ARG_OFF)^
+	rettv := Typval_T{}
+	atstart := true
+	need_clear := true
+	did_emsg_before := did_emsg_g()
+	called_emsg_before := called_emsg
+	evalarg := Evalarg_T{}
+	skip := (^bool)(uintptr(eap) + EXARG_SKIP_OFF)^
+	fill_evalarg_from_eap(&evalarg, eap, skip)
+	if skip {
+		emsg_skip += 1
+	}
+	for ([^]u8)(arg)[0] != 0 && ([^]u8)(arg)[0] != '|' && ([^]u8)(arg)[0] != '\n' && !got_int {
+		need_clr_eos_g = true
+		p := arg
+		ap := arg
+		if eval1(&ap, &rettv, rawptr(&evalarg)) == FAIL_E {
+			if !aborting_r() && did_emsg_g() == did_emsg_before && called_emsg == called_emsg_before {
+				semsg(cstring(E15_S), p)
+			}
+			need_clr_eos_g = false
+			break
+		}
+		arg = ap
+		need_clr_eos_g = false
+		if !skip {
+			cmdidx := (^C.int)(uintptr(eap) + EXARG_CMDIDX_OFF)^
+			if atstart {
+				atstart = false
+				msg_ext_set_append(cmdidx == CMD_ECHON_O)
+				msg_ext_no_fast()
+				msg_ext_set_kind(cstring("echo"))
+				if cmdidx == CMD_ECHO_O {
+					if !msg_didout_g {
+						msg_sb_eol()
+					}
+					msg_start()
+				}
+			} else if cmdidx == CMD_ECHO_O {
+				msg_puts_hl_r(cstring(" "), echo_hl_id_g, false)
+			}
+			tofree := encode_tv2echo(&rettv, nil)
+			msg_multiline(String{data = transmute(cstring)(tofree), size = libc.strlen(transmute(cstring)(tofree))}, echo_hl_id_g, true, false, &need_clear)
+			xfree(rawptr(tofree))
+		}
+		tv_clear(&rettv)
+		arg = skipwhite(arg)
+	}
+	(^rawptr)(uintptr(eap) + EXARG_NEXTCMD_OFF)^ = transmute(rawptr)(check_nextcmd_r(transmute(^u8)(arg)))
+	clear_evalarg(&evalarg, eap)
+	msg_ext_set_append(false)
+	if skip {
+		emsg_skip -= 1
+	} else {
+		cmdidx := (^C.int)(uintptr(eap) + EXARG_CMDIDX_OFF)^
+		eap_arg := (^cstring)(uintptr(eap) + EXARG_ARG_OFF)^
+		if ui_has(K_UIMESSAGES_O) && (([^]u8)(eap_arg)[0] == 0 || ([^]u8)(eap_arg)[0] == '|' || ([^]u8)(eap_arg)[0] == '\n') {
+			msg_puts_len_e(cstring(""), 0, 0, false)
+		} else if need_clear {
+			msg_clr_eos_e()
+		}
+		if cmdidx == CMD_ECHO_O {
+			msg_end()
+		}
+	}
+}
+
+// ":echohl {name}" (eval.c public).
+@(export)
+ex_echohl :: proc "c" (eap: rawptr) {
+	context = runtime.default_context()
+	echo_hl_id_g = syn_name2id_e((^cstring)(uintptr(eap) + EXARG_ARG_OFF)^)
+}
+
+// Echo highlight id accessor (eval.c public).
+@(export)
+get_echo_hl_id :: proc "c" () -> C.int {
+	context = runtime.default_context()
+	return echo_hl_id_g
+}
+
+// ":execute/echomsg/echoerr expr..." (eval.c public).
+@(export)
+ex_execute :: proc "c" (eap: rawptr) {
+	context = runtime.default_context()
+	arg := (^cstring)(uintptr(eap) + EXARG_ARG_OFF)^
+	rettv := Typval_T{}
+	ret: C.int = OK_E
+	ga := Garray{}
+	ga_init_r2(&ga, 1, 80)
+	skip := (^bool)(uintptr(eap) + EXARG_SKIP_OFF)^
+	if skip {
+		emsg_skip += 1
+	}
+	for ([^]u8)(arg)[0] != 0 && ([^]u8)(arg)[0] != '|' && ([^]u8)(arg)[0] != '\n' {
+		ap := arg
+		ret = eval1_emsg_o(&ap, &rettv, eap)
+		arg = ap
+		if ret == FAIL_E {
+			break
+		}
+		if !skip {
+			cmdidx := (^C.int)(uintptr(eap) + EXARG_CMDIDX_OFF)^
+			argstr: cstring = nil
+			need_free := false
+			if cmdidx == CMD_EXECUTE_O {
+				argstr = tv_get_string(&rettv)
+			} else if rettv.v_type == VAR_STRING {
+				argstr = transmute(cstring)(encode_tv2echo(&rettv, nil))
+				need_free = true
+			} else {
+				argstr = transmute(cstring)(encode_tv2string(&rettv, nil))
+				need_free = true
+			}
+			length := C.size_t(libc.strlen(argstr))
+			ga_grow_r(&ga, C.int(length) + 2)
+			if ga.ga_len > 0 {
+				([^]u8)(ga.ga_data)[ga.ga_len] = ' '
+				ga.ga_len += 1
+			}
+			libc.memcpy(rawptr(uintptr(ga.ga_data) + uintptr(ga.ga_len)), rawptr(transmute(^u8)(argstr)), length + 1)
+			if cmdidx != CMD_EXECUTE_O {
+				xfree(rawptr(transmute(^u8)(argstr)))
+			}
+			_ = need_free
+			ga.ga_len += C.int(length)
+		}
+		tv_clear(&rettv)
+		arg = skipwhite(arg)
+	}
+	if ret != FAIL_E && ga.ga_data != nil {
+		cmdidx := (^C.int)(uintptr(eap) + EXARG_CMDIDX_OFF)^
+		if cmdidx == CMD_ECHOMSG_O {
+			msg_ext_no_fast()
+			msg_ext_set_kind(cstring("echomsg"))
+			msg_msg(transmute(cstring)(ga.ga_data), echo_hl_id_g)
+		} else if cmdidx == CMD_ECHOERR_O {
+			save_did_emsg := did_emsg_g()
+			msg_ext_no_fast()
+			emsg_multiline_e(transmute(cstring)(ga.ga_data), cstring("echoerr"), HLF_E_O, true)
+			if !force_abort_g {
+				did_emsg_set(save_did_emsg != 0)
+			}
+		} else if cmdidx == CMD_EXECUTE_O {
+			do_cmdline_raw_e(transmute(cstring)(ga.ga_data), (^rawptr)(uintptr(eap) + EXARG_GETLINE_OFF)^, (^rawptr)(uintptr(eap) + EXARG_COOKIE_OFF)^, DOCMD_NOWAIT_O | DOCMD_VERBOSE_O)
+		}
+	}
+	ga_clear_r(&ga)
+	if skip {
+		emsg_skip -= 1
+	}
+	(^rawptr)(uintptr(eap) + EXARG_NEXTCMD_OFF)^ = transmute(rawptr)(check_nextcmd_r(transmute(^u8)(arg)))
+}
+
+// —— Batch 28an: eval.c GC-marking cluster ——
+
+// Explicit GC stacks (typval_defs.h:374): 16B each.
+PT_COPYID_OFF_O :: 4
+Ht_Stack_O :: struct {
+	ht:   rawptr, // hashtab_T*
+	prev: rawptr, // ^Ht_Stack_O
+}
+List_Stack_O :: struct {
+	list: rawptr, // list_T*
+	prev: rawptr, // ^List_Stack_O
+}
+
+// Mark hashtab contents (eval.c public).
+@(export)
+set_ref_in_ht :: proc "c" (ht: rawptr, copyID: C.int, list_stack: rawptr) -> bool {
+	context = runtime.default_context()
+	abort := false
+	ht_stack: rawptr = nil
+	cur_ht := ht
+	for {
+		if !abort {
+			todo := (^C.size_t)(uintptr(cur_ht) + 8)^
+			hi := uintptr((^rawptr)(uintptr(cur_ht) + 32)^)
+			for todo > 0 {
+				k := ([^]rawptr)(hi)[1]
+				hi += 16
+				if k == nil || k == rawptr(&hash_removed_c) {
+					continue
+				}
+				todo -= 1
+				if set_ref_in_item((^Typval_T)(uintptr(k) - 17), copyID, rawptr(&ht_stack), list_stack) {
+					abort = true
+				}
+			}
+		}
+		if ht_stack == nil {
+			break
+		}
+		cur_ht = (^Ht_Stack_O)(ht_stack).ht
+		temp := ht_stack
+		ht_stack = (^Ht_Stack_O)(ht_stack).prev
+		xfree(temp)
+	}
+	return abort
+}
+
+// Mark list contents (eval.c public).
+@(export)
+set_ref_in_list_items :: proc "c" (l: rawptr, copyID: C.int, ht_stack: rawptr) -> bool {
+	context = runtime.default_context()
+	abort := false
+	list_stack: rawptr = nil
+	cur_l := l
+	for {
+		li := tv_list_first_o(cur_l)
+		for li != nil {
+			if abort {
+				break
+			}
+			if set_ref_in_item((^Typval_T)(uintptr(li) + 16), copyID, ht_stack, rawptr(&list_stack)) {
+				abort = true
+			}
+			li = (^rawptr)(uintptr(li))^
+		}
+		if list_stack == nil {
+			break
+		}
+		cur_l = (^List_Stack_O)(list_stack).list
+		temp := list_stack
+		list_stack = (^List_Stack_O)(list_stack).prev
+		xfree(temp)
+	}
+	return abort
+}
+
+// Mark one dict (eval.c static, dormant until set_ref_in_item).
+set_ref_in_item_dict_o :: proc "c" (dd: rawptr, copyID: C.int, ht_stack: rawptr, list_stack: rawptr) -> bool {
+	context = runtime.default_context()
+	if dd == nil || (^C.int)(uintptr(dd) + DV_COPYID_OFF)^ == copyID {
+		return false
+	}
+	(^C.int)(uintptr(dd) + DV_COPYID_OFF)^ = copyID
+	if ht_stack == nil {
+		return set_ref_in_ht(rawptr(uintptr(dd) + 16), copyID, list_stack)
+	}
+	newitem := (^Ht_Stack_O)(xmalloc(C.size_t(size_of(Ht_Stack_O))))
+	newitem.ht = rawptr(uintptr(dd) + 16)
+	newitem.prev = (^rawptr)(ht_stack)^
+	(^rawptr)(ht_stack)^ = newitem
+	head := uintptr(dd) + DV_WATCHERS_OFF
+	w := (^rawptr)(head)^
+	for w != rawptr(head) {
+		next := (^rawptr)(uintptr(w))^
+		watcher := rawptr(uintptr(w) - 32)
+		set_ref_in_callback((^Callback_E)(watcher), copyID, ht_stack, list_stack)
+		w = next
+	}
+	return false
+}
+
+// Mark one list (eval.c static, dormant until set_ref_in_item).
+set_ref_in_item_list_o :: proc "c" (ll: rawptr, copyID: C.int, ht_stack: rawptr, list_stack: rawptr) -> bool {
+	context = runtime.default_context()
+	if ll == nil || (^C.int)(uintptr(ll) + 68)^ == copyID {
+		return false
+	}
+	(^C.int)(uintptr(ll) + 68)^ = copyID
+	if list_stack == nil {
+		return set_ref_in_list_items(ll, copyID, ht_stack)
+	}
+	newitem := (^List_Stack_O)(xmalloc(C.size_t(size_of(List_Stack_O))))
+	newitem.list = ll
+	newitem.prev = (^rawptr)(list_stack)^
+	(^rawptr)(list_stack)^ = newitem
+	return false
+}
+
+// Mark one partial (eval.c static, dormant until set_ref_in_item).
+set_ref_in_item_partial_o :: proc "c" (pt: rawptr, copyID: C.int, ht_stack: rawptr, list_stack: rawptr) -> bool {
+	context = runtime.default_context()
+	if pt == nil || (^C.int)(uintptr(pt) + PT_COPYID_OFF_O)^ == copyID {
+		return false
+	}
+	(^C.int)(uintptr(pt) + PT_COPYID_OFF_O)^ = copyID
+	abort := set_ref_in_func(transmute(cstring)((^rawptr)(uintptr(pt) + PT_NAME_OFF_O)^), (^rawptr)(uintptr(pt) + PT_FUNC_OFF_O)^, copyID)
+	if (^rawptr)(uintptr(pt) + PT_DICT_OFF_O)^ != nil {
+		dtv := Typval_T{v_type = VAR_DICT, v_lock = VAR_UNLOCKED, vval = (^rawptr)(uintptr(pt) + PT_DICT_OFF_O)^}
+		if set_ref_in_item(&dtv, copyID, ht_stack, list_stack) {
+			abort = true
+		}
+	}
+	i: C.int = 0
+	for i < (^C.int)(uintptr(pt) + PT_ARGC_OFF_O)^ {
+		if set_ref_in_item((^Typval_T)(uintptr((^rawptr)(uintptr(pt) + PT_ARGV_OFF_O)^) + uintptr(i) * 16), copyID, ht_stack, list_stack) {
+			abort = true
+		}
+		i += 1
+	}
+	return abort
+}
+
+// Mark one typval's references (eval.c public).
+@(export)
+set_ref_in_item :: proc "c" (tv: ^Typval_T, copyID: C.int, ht_stack: rawptr, list_stack: rawptr) -> bool {
+	context = runtime.default_context()
+	if tv.v_type == VAR_DICT {
+		return set_ref_in_item_dict_o(rawptr(tv.vval), copyID, ht_stack, list_stack)
+	} else if tv.v_type == VAR_LIST {
+		return set_ref_in_item_list_o(rawptr(tv.vval), copyID, ht_stack, list_stack)
+	} else if tv.v_type == VAR_FUNC {
+		return set_ref_in_func(transmute(cstring)(tv.vval), nil, copyID)
+	} else if tv.v_type == VAR_PARTIAL {
+		return set_ref_in_item_partial_o(rawptr(tv.vval), copyID, ht_stack, list_stack)
+	}
+	return false
+}
+
+// Mark one callback's references (eval.c public).
+@(export)
+set_ref_in_callback :: proc "c" (callback: ^Callback_E, copyID: C.int, ht_stack: rawptr, list_stack: rawptr) -> bool {
+	context = runtime.default_context()
+	if callback.type == KCB_PARTIAL_O {
+		tv := Typval_T{v_type = VAR_PARTIAL, v_lock = VAR_UNLOCKED, vval = (^rawptr)(uintptr(callback))^}
+		return set_ref_in_item(&tv, copyID, ht_stack, list_stack)
+	} else if callback.type == KCB_LUA_O {
+		libc.abort()
+	}
+	return false
+}
+
+// Reader-callback variant (eval.c static, dormant until channel GC ports).
+set_ref_in_callback_reader_o :: proc "c" (reader: rawptr, copyID: C.int, ht_stack: rawptr, list_stack: rawptr) -> bool {
+	context = runtime.default_context()
+	if set_ref_in_callback((^Callback_E)(reader), copyID, ht_stack, list_stack) {
+		return true
+	}
+	if (^rawptr)(uintptr(reader) + 16)^ != nil {
+		tv := Typval_T{v_type = VAR_DICT, v_lock = VAR_UNLOCKED, vval = (^rawptr)(uintptr(reader) + 16)^}
+		return set_ref_in_item(&tv, copyID, ht_stack, list_stack)
+	}
+	return false
+}
+
+// —— Batch 28ao: eval.c callback_call + depth (exports + weak) ——
+foreign _ {
+	@(link_name = "nlua_call_ref")
+	nlua_call_ref_e :: proc "c" (ref: C.int, name: cstring, args: Api_Array, mode: C.int, arena: rawptr, err: rawptr) -> Api_Object ---
+}
+
+E169_S :: "E169: Command too recursive"
+KRETNILBOOL_O :: 1
+KOBJTYPE_BOOL_O :: 1
+
+// Moved C static (single live copy; C twin dies with the weak).
+callback_depth_g: C.int = 0
+
+// Callback-nesting depth (eval.c public).
+@(export)
+get_callback_depth :: proc "c" () -> C.int {
+	context = runtime.default_context()
+	return callback_depth_g
+}
+
+// Invoke a Callback value (eval.c public).
+@(export)
+callback_call :: proc "c" (callback: rawptr, argcount_in: C.int, argvars_in: ^Typval_T, rettv: ^Typval_T) -> bool {
+	context = runtime.default_context()
+	cb := (^Callback_E)(callback)
+	if C.longlong(callback_depth_g) > p_mfd_g {
+		emsg(cstring(E169_S))
+		return false
+	}
+	partial: rawptr = nil
+	name: cstring = nil
+	args := Api_Array{}
+	if cb.type == KCB_FUNCREF_O {
+		name = transmute(cstring)((^rawptr)(uintptr(callback))^)
+		length := C.int(libc.strlen(name))
+		if length >= 6 && libc.memcmp(rawptr(transmute(^u8)(name)), rawptr(transmute(^u8)(cstring("v:lua."))), 6) == 0 {
+			name = transmute(cstring)(uintptr(rawptr(name)) + 6)
+			length = check_luafunc_name(name, false)
+			if length == 0 {
+				return false
+			}
+			partial = get_vim_var_partial(VV_LUA_O)
+		}
+	} else if cb.type == KCB_PARTIAL_O {
+		partial = (^rawptr)(uintptr(callback))^
+		name = partial_name(partial)
+	} else if cb.type == KCB_LUA_O {
+		rv := nlua_call_ref_e(C.int((^i64)(uintptr(callback))^), nil, args, KRETNILBOOL_O, nil, nil)
+		return rv.t == KOBJTYPE_BOOL_O && (^bool)(&rv.data[0])^
+	} else {
+		return false
+	}
+	fe := Funcexe_T{}
+	fe.firstline = (^C.int)(uintptr(curwin) + W_CURSOR_OFF)^
+	fe.lastline = (^C.int)(uintptr(curwin) + W_CURSOR_OFF)^
+	fe.evaluate = true
+	fe.partial = partial
+	callback_depth_g += 1
+	ret := call_func(name, -1, rettv, argcount_in, argvars_in, &fe)
+	callback_depth_g -= 1
+	return ret != 0
+}
+
+// —— Batch 28ak: eval.c set_var_lval (export + weak) ——
+E996_RANGE_S :: "E996: Cannot lock a range"
+E996_LISTDICT_S :: "E996: Cannot lock a list or dict"
+TV_CSTRING_O :: max(C.size_t) - 1
+
+// Assign through a parsed lval (eval.c public).
+@(export)
+set_var_lval :: proc "c" (lp: rawptr, endp: cstring, rettv: ^Typval_T, copy: bool, is_const: bool, op: cstring) {
+	context = runtime.default_context()
+	di: rawptr = nil
+	ll_tv := (^rawptr)(uintptr(lp) + LL_TV_OFF_O)^
+	if ll_tv == nil {
+		cc := ([^]u8)(endp)[0]
+		([^]u8)(endp)[0] = 0
+		ll_blob := (^rawptr)(uintptr(lp) + LL_BLOB_OFF_O)^
+		if ll_blob != nil {
+			if op != nil && ([^]u8)(op)[0] != '=' {
+				semsg(cstring(E_LETWRONG_S), op)
+				return
+			}
+			if value_check_lock((^C.int)(uintptr(ll_blob) + 28)^, transmute(cstring)((^rawptr)(uintptr(lp) + 0)^), TV_CSTRING_O) {
+				return
+			}
+			if (^bool)(uintptr(lp) + LL_RANGE_OFF_O)^ && rettv.v_type == VAR_BLOB {
+				if (^bool)(uintptr(lp) + LL_RANGE_OFF_O + 1)^ {
+					(^C.int)(uintptr(lp) + LL_N2_OFF_O)^ = tv_blob_len_o(ll_blob) - 1
+				}
+				if tv_blob_set_range(ll_blob, C.longlong((^C.int)(uintptr(lp) + LL_N1_OFF_O)^), C.longlong((^C.int)(uintptr(lp) + LL_N2_OFF_O)^), rettv) == FAIL_E {
+					return
+				}
+			} else {
+				error := false
+				val := tv_get_number_chk(rettv, &error)
+				if !error {
+					if val < 0 || val > 255 {
+						semsg(cstring(E_BLOBVAL_S), val)
+					} else {
+						tv_blob_set_append(ll_blob, (^C.int)(uintptr(lp) + LL_N1_OFF_O)^, u8(val))
+					}
+				}
+			}
+		} else if op != nil && ([^]u8)(op)[0] != '=' {
+			tv := Typval_T{}
+			if is_const {
+				emsg(cstring(E995_S))
+				([^]u8)(endp)[0] = cc
+				return
+			}
+			di = nil
+			if eval_variable(transmute(cstring)((^rawptr)(uintptr(lp) + 0)^), C.int((^C.size_t)(uintptr(lp) + 8)^), &tv, rawptr(&di), true, false) == OK_E {
+				di_ok := di == nil
+				ro_ok := true
+				lock_ok := true
+				if di != nil {
+					ro_ok = !var_check_ro(C.int((^u8)(uintptr(di) + 16)^), transmute(cstring)((^rawptr)(uintptr(lp) + 0)^), TV_CSTRING_O)
+					lock_ok = !tv_check_lock((^Typval_T)(uintptr(di)), transmute(cstring)((^rawptr)(uintptr(lp) + 0)^), TV_CSTRING_O)
+				}
+				if (di_ok || (ro_ok && lock_ok)) && eexe_mod_op(&tv, rettv, op) == OK_E {
+					set_var(transmute(cstring)((^rawptr)(uintptr(lp) + 0)^), (^C.size_t)(uintptr(lp) + 8)^, &tv, false)
+				}
+				tv_clear(&tv)
+			}
+		} else {
+			set_var_const(transmute(cstring)((^rawptr)(uintptr(lp) + 0)^), (^C.size_t)(uintptr(lp) + 8)^, rettv, copy, is_const)
+		}
+		([^]u8)(endp)[0] = cc
+		return
+	}
+	lock_v: C.int = 0
+	if (^rawptr)(uintptr(lp) + LL_NEWKEY_OFF_O)^ == nil {
+		lock_v = (^C.int)(uintptr(ll_tv) + 4)^
+	} else {
+		lock_v = (^C.int)(uintptr((^rawptr)(uintptr(ll_tv) + 8)^) + 208)^
+	}
+	if value_check_lock(lock_v, transmute(cstring)((^rawptr)(uintptr(lp) + 0)^), TV_CSTRING_O) {
+		return
+	}
+	if (^bool)(uintptr(lp) + LL_RANGE_OFF_O)^ {
+		if is_const {
+			emsg(cstring(E996_RANGE_S))
+			return
+		}
+		tv_list_assign_range((^rawptr)(uintptr(lp) + LL_LIST_OFF_O)^, rawptr(rettv.vval), (^C.int)(uintptr(lp) + LL_N1_OFF_O)^, (^C.int)(uintptr(lp) + LL_N2_OFF_O)^, (^bool)(uintptr(lp) + LL_RANGE_OFF_O + 1)^, op, transmute(cstring)((^rawptr)(uintptr(lp) + 0)^))
+		return
+	}
+	oldtv := Typval_T{v_type = VAR_UNKNOWN, v_lock = VAR_UNLOCKED}
+	dict := (^rawptr)(uintptr(lp) + LL_DICT_OFF_O)^
+	watched := tv_dict_is_watched_o(dict)
+	if is_const {
+		emsg(cstring(E996_LISTDICT_S))
+		return
+	}
+	if (^rawptr)(uintptr(lp) + LL_NEWKEY_OFF_O)^ != nil {
+		if op != nil && ([^]u8)(op)[0] != '=' {
+			semsg(cstring(E716_S), transmute(cstring)((^rawptr)(uintptr(lp) + LL_NEWKEY_OFF_O)^))
+			return
+		}
+		if tv_dict_wrong_func_name((^rawptr)(uintptr(ll_tv) + 8)^, rettv, transmute(cstring)((^rawptr)(uintptr(lp) + LL_NEWKEY_OFF_O)^)) != 0 {
+			return
+		}
+		di = tv_dict_item_alloc(transmute(cstring)((^rawptr)(uintptr(lp) + LL_NEWKEY_OFF_O)^))
+		if tv_dict_add((^rawptr)(uintptr(ll_tv) + 8)^, di) == FAIL_E {
+			xfree(di)
+			return
+		}
+		(^rawptr)(uintptr(lp) + LL_TV_OFF_O)^ = rawptr(uintptr(di))
+		ll_tv = rawptr(uintptr(di))
+		if copy {
+			tv_copy(rettv, (^Typval_T)(ll_tv))
+		} else {
+			(^Typval_T)(ll_tv)^ = rettv^
+			(^Typval_T)(ll_tv).v_lock = VAR_UNLOCKED
+			tv_init_o(rettv)
+		}
+	} else {
+		if watched {
+			tv_copy((^Typval_T)(ll_tv), &oldtv)
+		}
+		if op != nil && ([^]u8)(op)[0] != '=' {
+			eexe_mod_op((^Typval_T)(ll_tv), rettv, op)
+		} else {
+			tv_clear((^Typval_T)(ll_tv))
+			if copy {
+				tv_copy(rettv, (^Typval_T)(ll_tv))
+			} else {
+				(^Typval_T)(ll_tv)^ = rettv^
+				(^Typval_T)(ll_tv).v_lock = VAR_UNLOCKED
+				tv_init_o(rettv)
+			}
+		}
+	}
+	if watched {
+		if oldtv.v_type == VAR_UNKNOWN {
+			tv_dict_watcher_notify(dict, transmute(cstring)((^rawptr)(uintptr(lp) + LL_NEWKEY_OFF_O)^), (^Typval_T)(ll_tv), nil)
+		} else {
+			di_ := (^rawptr)(uintptr(lp) + LL_DI_OFF_O)^
+			tv_dict_watcher_notify(dict, transmute(cstring)(rawptr(uintptr(di_) + 17)), (^Typval_T)(ll_tv), &oldtv)
+			tv_clear(&oldtv)
+		}
+	}
+}
+
+// —— Batch 28am: eval.c timer core (exports + weak) ——
+foreign _ {
+	@(link_name = "get_pressedreturn")
+	get_pressedreturn_e :: proc "c" () -> bool ---
+	@(link_name = "set_pressedreturn")
+	set_pressedreturn_e :: proc "c" (val: bool) ---
+	@(link_name = "discard_current_exception")
+	discard_current_exception_e :: proc "c" () ---
+}
+
+// Timer_T mirror (eval.h:106): 240B cc-probed.
+Timer_T :: struct {
+	tw:           TimeWatcher, // 0..192
+	timer_id:     C.int,       // 192
+	repeat_count: C.int,       // 196
+	refcount:     C.int,       // 200
+	emsg_count:   C.int,       // 204
+	timeout:      i64,         // 208
+	stopped:      bool,        // 216
+	paused:       bool,        // 217
+	_pad:         [6]u8,
+	callback:     Callback_E,  // 224..240
+}
+#assert(size_of(Timer_T) == 240)
+
+// Moved C statics (single live copies; C twins go dead with the weaks).
+timers_g: PMap_uint64_t
+last_timer_id_g: u64 = 1
+
+// Timer lookup by id (eval.c public).
+@(export)
+find_timer_by_nr :: proc "c" (xx: C.longlong) -> rawptr {
+	context = runtime.default_context()
+	k := mh_get_uint64_t(&timers_g.set, u64(xx))
+	if k == MH_TOMBSTONE {
+		return nil
+	}
+	return timers_g.values[k]
+}
+
+// Single-timer info dict (eval.c public).
+@(export)
+add_timer_info :: proc "c" (rettv: ^Typval_T, timer: rawptr) {
+	context = runtime.default_context()
+	t := (^Timer_T)(timer)
+	l := rawptr((^Typval_T)(rettv).vval)
+	d := tv_dict_alloc()
+	tv_list_append_dict(l, d)
+	tv_dict_add_nr(d, cstring("id"), 2, C.longlong(t.timer_id))
+	tv_dict_add_nr(d, cstring("time"), 4, C.longlong(t.timeout))
+	paused: C.longlong = 0
+	if t.paused {
+		paused = 1
+	}
+	tv_dict_add_nr(d, cstring("paused"), 6, paused)
+	rep: C.longlong = C.longlong(t.repeat_count)
+	if t.repeat_count < 0 {
+		rep = -1
+	}
+	tv_dict_add_nr(d, cstring("repeat"), 6, rep)
+	di := tv_dict_item_alloc(cstring("callback"))
+	if tv_dict_add(d, di) == FAIL_E {
+		xfree(di)
+		return
+	}
+	callback_put(&t.callback, (^Typval_T)(uintptr(di)))
+}
+
+// All-timer info list (eval.c public).
+@(export)
+add_timer_info_all :: proc "c" (rettv: ^Typval_T) {
+	context = runtime.default_context()
+	tv_list_alloc_ret(transmute(^Typval)(rettv), C.int(timers_g.set.h.size))
+	i: u32 = 0
+	for i < timers_g.set.h.n_buckets {
+		if !mh_is_empty(&timers_g.set.h, i) && !mh_is_del(&timers_g.set.h, i) {
+			timer := timers_g.values[timers_g.set.h.hash[i] - 1]
+			t := (^Timer_T)(timer)
+			if !t.stopped || t.refcount > 1 {
+				add_timer_info(rettv, timer)
+			}
+		}
+		i += 1
+	}
+}
+
+// Timer fire handler, runs on the main loop (eval.c public).
+@(export)
+timer_due_cb :: proc "c" (tw: ^TimeWatcher, data: rawptr) {
+	context = runtime.default_context()
+	timer := (^Timer_T)(data)
+	save_did_emsg := did_emsg_g()
+	called_emsg_before := called_emsg
+	save_ex_pressedreturn := get_pressedreturn_e()
+	if timer.stopped || timer.paused {
+		return
+	}
+	timer.refcount += 1
+	if timer.repeat_count >= 0 {
+		timer.repeat_count -= 1
+		if timer.repeat_count == 0 {
+			timer_stop(timer)
+		}
+	}
+	argv := [2]Typval_T{Typval_T{v_type = VAR_UNKNOWN, v_lock = VAR_UNLOCKED}, Typval_T{v_type = VAR_UNKNOWN, v_lock = VAR_UNLOCKED}}
+	argv[0].v_type = VAR_NUMBER
+	argv[0].vval = transmute(rawptr)(C.longlong(timer.timer_id))
+	rettv := Typval_T{v_type = VAR_UNKNOWN, v_lock = VAR_UNLOCKED}
+	callback_call(rawptr(&timer.callback), 1, &argv[0], &rettv)
+	if called_emsg > called_emsg_before && did_emsg_g() != 0 {
+		timer.emsg_count += 1
+		if did_throw_g {
+			discard_current_exception_e()
+		}
+	}
+	did_emsg_set(save_did_emsg != 0)
+	set_pressedreturn_e(save_ex_pressedreturn)
+	if timer.emsg_count >= 3 {
+		timer_stop(timer)
+	}
+	tv_clear(&rettv)
+	if !timer.stopped && timer.timeout == 0 {
+		time_watcher_start(&timer.tw, timer_due_cb, 0, 0)
+	}
+	timer_decref_o(timer)
+}
+
+// Timer close handler: free queue + callback + map slot (eval.c static).
+timer_close_cb_o :: proc "c" (tw: ^TimeWatcher, data: rawptr) {
+	context = runtime.default_context()
+	timer := (^Timer_T)(data)
+	multiqueue_free(timer.tw.events)
+	callback_free(&timer.callback)
+	map_del_uint64_t_ptr_t(&timers_g, u64(timer.timer_id), nil)
+	timer_decref_o(timer)
+}
+
+// Timer refcount release (eval.c static).
+timer_decref_o :: proc "c" (timer: ^Timer_T) {
+	context = runtime.default_context()
+	timer.refcount -= 1
+	if timer.refcount == 0 {
+		xfree(timer)
+	}
+}
+
+// Create + start a timer (eval.c public).
+@(export)
+timer_start :: proc "c" (timeout: i64, repeat_count: C.int, callback: ^Callback_E) -> u64 {
+	context = runtime.default_context()
+	timer := (^Timer_T)(xmalloc(C.size_t(size_of(Timer_T))))
+	timer.refcount = 1
+	timer.stopped = false
+	timer.paused = false
+	timer.emsg_count = 0
+	timer.repeat_count = repeat_count
+	timer.timeout = timeout
+	timer.timer_id = C.int(last_timer_id_g)
+	last_timer_id_g += 1
+	timer.callback = callback^
+	time_watcher_init(&main_loop, &timer.tw, timer)
+	timer.tw.events = multiqueue_new_child(main_loop.events)
+	timer.tw.blockable = true
+	time_watcher_start(&timer.tw, timer_due_cb, u64(timeout), u64(timeout))
+	new_item := false
+	slot := map_put_ref_uint64_t_ptr_t(&timers_g, u64(timer.timer_id), nil, &new_item)
+	slot^ = timer
+	return u64(timer.timer_id)
+}
+
+// Stop a timer (eval.c public).
+@(export)
+timer_stop :: proc "c" (timer: rawptr) {
+	context = runtime.default_context()
+	t := (^Timer_T)(timer)
+	if t.stopped {
+		return
+	}
+	t.stopped = true
+	time_watcher_stop(&t.tw)
+	time_watcher_close(&t.tw, timer_close_cb_o)
+}
+
+// Stop every timer (eval.c public).
+@(export)
+timer_stop_all :: proc "c" () {
+	context = runtime.default_context()
+	i: u32 = 0
+	for i < timers_g.set.h.n_buckets {
+		if !mh_is_empty(&timers_g.set.h, i) && !mh_is_del(&timers_g.set.h, i) {
+			timer_stop(timers_g.values[timers_g.set.h.hash[i] - 1])
+		}
+		i += 1
+	}
+}
+
+// Teardown all timers at exit (eval.c public).
+@(export)
+timer_teardown :: proc "c" () {
+	context = runtime.default_context()
+	timer_stop_all()
+}
+
+// —— Batch 28af: eval.c for-loop cluster (exports + weak) ——
+E690_S :: "E690: Missing \"in\" after :for"
+
+// Forinfo_T mirror (eval.c:122): 64B cc-probed.
+Forinfo_T :: struct {
+	fi_semicolon: C.int,    // 0
+	fi_varcount:  C.int,    // 4
+	fi_lw_item:   rawptr,   // 8 (listwatch_T: item@0)
+	fi_lw_next:   rawptr,   // 16 (listwatch_T: next@8)
+	fi_list:      rawptr,   // 24
+	fi_bi:        C.int,    // 32
+	_pad36:       [4]u8,
+	fi_blob:      rawptr,   // 40
+	fi_string:    cstring,  // 48
+	fi_byte_idx:  C.int,    // 56
+	_pad60:       [4]u8,
+}
+#assert(size_of(Forinfo_T) == 64)
+
+// Parse ":for vars in expr" header (eval.c public).
+@(export)
+eval_for_line :: proc "c" (arg: cstring, errp: ^bool, eap: rawptr, evalarg: rawptr) -> rawptr {
+	context = runtime.default_context()
+	fi := (^Forinfo_T)(xcalloc(1, C.size_t(size_of(Forinfo_T))))
+	tv := Typval_T{}
+	l: rawptr = nil
+	skip := ((^Evalarg_T)(evalarg).eval_flags & EVAL_EVALUATE_O) == 0
+	errp^ = true
+	expr := skip_var_list(arg, &fi.fi_varcount, &fi.fi_semicolon, false)
+	if expr == nil {
+		return fi
+	}
+	expr = skipwhite(expr)
+	if ([^]u8)(expr)[0] != 'i' || ([^]u8)(expr)[1] != 'n' || (([^]u8)(expr)[2] != 0 && !ascii_iswhite(([^]u8)(expr)[2])) {
+		emsg(cstring(E690_S))
+		return fi
+	}
+	if skip {
+		emsg_skip += 1
+	}
+	expr = skipwhite(transmute(cstring)(uintptr(rawptr(expr)) + 2))
+	if eval0(transmute(cstring)(expr), &tv, eap, evalarg) == OK_E {
+		errp^ = false
+		if !skip {
+			if tv.v_type == VAR_LIST {
+				l = rawptr(tv.vval)
+				if l == nil {
+					tv_clear(&tv)
+				} else {
+					fi.fi_list = l
+					tv_list_watch_add(l, rawptr(uintptr(fi) + 8))
+					(^rawptr)(uintptr(fi) + 8)^ = tv_list_first_o(l)
+				}
+			} else if tv.v_type == VAR_BLOB {
+				fi.fi_bi = 0
+				if rawptr(tv.vval) != nil {
+					btv := Typval_T{}
+					tv_blob_copy(rawptr(tv.vval), &btv)
+					fi.fi_blob = rawptr(btv.vval)
+				}
+				tv_clear(&tv)
+			} else if tv.v_type == VAR_STRING {
+				fi.fi_byte_idx = 0
+				fi.fi_string = transmute(cstring)(tv.vval)
+				tv.vval = nil
+				if fi.fi_string == nil {
+					fi.fi_string = transmute(cstring)(xstrdup_o(transmute(^u8)(cstring(""))))
+				}
+			} else {
+				emsg(cstring(E1098_S))
+				tv_clear(&tv)
+			}
+		}
+	}
+	if skip {
+		emsg_skip -= 1
+	}
+	return fi
+}
+
+// Advance a ":for" iteration (eval.c public).
+@(export)
+next_for_item :: proc "c" (fi_void: rawptr, arg: cstring) -> bool {
+	context = runtime.default_context()
+	fi := (^Forinfo_T)(fi_void)
+	if fi.fi_blob != nil {
+		if fi.fi_bi >= tv_blob_len_o(fi.fi_blob) {
+			return false
+		}
+		tv := Typval_T{v_type = VAR_NUMBER, v_lock = VAR_FIXED_O}
+		tv.vval = transmute(rawptr)(C.longlong(tv_blob_get_o(fi.fi_blob, fi.fi_bi)))
+		fi.fi_bi += 1
+		return ex_let_vars(arg, &tv, 1, fi.fi_semicolon, fi.fi_varcount, false, nil) == OK_E
+	}
+	if fi.fi_string != nil {
+		length := utfc_ptr2len(transmute(cstring)(rawptr(uintptr(rawptr(fi.fi_string)) + uintptr(fi.fi_byte_idx))))
+		if length == 0 {
+			return false
+		}
+		tv := Typval_T{v_type = VAR_STRING, v_lock = VAR_FIXED_O}
+		tv.vval = transmute(rawptr)(xmemdupz_o2(transmute(^u8)(rawptr(uintptr(rawptr(fi.fi_string)) + uintptr(fi.fi_byte_idx))), C.size_t(length)))
+		fi.fi_byte_idx += length
+		result := ex_let_vars(arg, &tv, 1, fi.fi_semicolon, fi.fi_varcount, false, nil) == OK_E
+		xfree(rawptr(transmute(^u8)(tv.vval)))
+		return result
+	}
+	item := fi.fi_lw_item
+	if item == nil {
+		return false
+	}
+	fi.fi_lw_item = (^rawptr)(uintptr(item))^
+	return ex_let_vars(arg, (^Typval_T)(uintptr(item) + 16), 1, fi.fi_semicolon, fi.fi_varcount, false, nil) == OK_E
+}
+
+// Free ":for" iteration state (eval.c public).
+@(export)
+free_for_info :: proc "c" (fi_void: rawptr) {
+	context = runtime.default_context()
+	fi := (^Forinfo_T)(fi_void)
+	if fi == nil {
+		return
+	}
+	if fi.fi_list != nil {
+		tv_list_watch_remove(fi.fi_list, rawptr(uintptr(fi) + 8))
+		tv_list_unref(fi.fi_list)
+	} else if fi.fi_blob != nil {
+		tv_blob_unref(fi.fi_blob)
+	} else {
+		xfree(rawptr(transmute(^u8)(fi.fi_string)))
+	}
+	xfree(fi)
+}
+
+// —— Batch 28aa: eval.c eval3 (dormant plain, C-static) ——
+
+// Logical-AND chain (eval.c static, activates eval2).
+eval3_o :: proc "c" (arg: ^cstring, rettv: ^Typval_T, evalarg: rawptr) -> C.int {
+	context = runtime.default_context()
+	if eval4_o(arg, rettv, evalarg) == FAIL_E {
+		return FAIL_E
+	}
+	p := arg^
+	if ([^]u8)(p)[0] == '&' && ([^]u8)(p)[1] == '&' {
+		evalarg_used: ^Evalarg_T = nil
+		local_evalarg := Evalarg_T{}
+		if evalarg == nil {
+			evalarg_used = &local_evalarg
+		} else {
+			evalarg_used = (^Evalarg_T)(evalarg)
+		}
+		orig_flags := evalarg_used.eval_flags
+		evaluate := (evalarg_used.eval_flags & EVAL_EVALUATE_O) != 0
+		result := true
+		if evaluate {
+			error := false
+			if tv_get_number_chk(rettv, &error) == 0 {
+				result = false
+			}
+			tv_clear(rettv)
+			if error {
+				return FAIL_E
+			}
+		}
+		for ([^]u8)(p)[0] == '&' && ([^]u8)(p)[1] == '&' {
+			arg^ = skipwhite(transmute(cstring)(uintptr(rawptr(arg^)) + 2))
+			if result {
+				evalarg_used.eval_flags = orig_flags
+			} else {
+				evalarg_used.eval_flags = orig_flags & ~C.int(1)
+			}
+			var2 := Typval_T{}
+			if eval4_o(arg, &var2, rawptr(evalarg_used)) == FAIL_E {
+				return FAIL_E
+			}
+			if evaluate && result {
+				error := false
+				if tv_get_number_chk(&var2, &error) == 0 {
+					result = false
+				}
+				tv_clear(&var2)
+				if error {
+					return FAIL_E
+				}
+			}
+			if evaluate {
+				rettv.v_type = VAR_NUMBER
+				if result {
+					rettv.vval = transmute(rawptr)(C.longlong(1))
+				} else {
+					rettv.vval = transmute(rawptr)(C.longlong(0))
+				}
+			}
+			p = arg^
+		}
+		if evalarg == nil {
+			clear_evalarg(&local_evalarg, nil)
+		} else {
+			(^Evalarg_T)(evalarg).eval_flags = orig_flags
+		}
+	}
+	return OK_E
+}
+
+// —— Batch 28ab: eval.c eval2 (dormant plain, C-static) ——
+
+// Logical-OR chain (eval.c static, activates eval1).
+eval2_o :: proc "c" (arg: ^cstring, rettv: ^Typval_T, evalarg: rawptr) -> C.int {
+	context = runtime.default_context()
+	if eval3_o(arg, rettv, evalarg) == FAIL_E {
+		return FAIL_E
+	}
+	p := arg^
+	if ([^]u8)(p)[0] == '|' && ([^]u8)(p)[1] == '|' {
+		evalarg_used: ^Evalarg_T = nil
+		local_evalarg := Evalarg_T{}
+		if evalarg == nil {
+			evalarg_used = &local_evalarg
+		} else {
+			evalarg_used = (^Evalarg_T)(evalarg)
+		}
+		orig_flags := evalarg_used.eval_flags
+		evaluate := (evalarg_used.eval_flags & EVAL_EVALUATE_O) != 0
+		result := false
+		if evaluate {
+			error := false
+			if tv_get_number_chk(rettv, &error) != 0 {
+				result = true
+			}
+			tv_clear(rettv)
+			if error {
+				return FAIL_E
+			}
+		}
+		for ([^]u8)(p)[0] == '|' && ([^]u8)(p)[1] == '|' {
+			arg^ = skipwhite(transmute(cstring)(uintptr(rawptr(arg^)) + 2))
+			if !result {
+				evalarg_used.eval_flags = orig_flags
+			} else {
+				evalarg_used.eval_flags = orig_flags & ~C.int(1)
+			}
+			var2 := Typval_T{}
+			if eval3_o(arg, &var2, rawptr(evalarg_used)) == FAIL_E {
+				return FAIL_E
+			}
+			if evaluate && !result {
+				error := false
+				if tv_get_number_chk(&var2, &error) != 0 {
+					result = true
+				}
+				tv_clear(&var2)
+				if error {
+					return FAIL_E
+				}
+			}
+			if evaluate {
+				rettv.v_type = VAR_NUMBER
+				if result {
+					rettv.vval = transmute(rawptr)(C.longlong(1))
+				} else {
+					rettv.vval = transmute(rawptr)(C.longlong(0))
+				}
+			}
+			p = arg^
+		}
+		if evalarg == nil {
+			clear_evalarg(&local_evalarg, nil)
+		} else {
+			(^Evalarg_T)(evalarg).eval_flags = orig_flags
+		}
+	}
+	return OK_E
+}
+
+// —— Batch 28ac: eval.c eval1 (export + weak, full chain Odin) ——
+
+// Ternary/?? top-level expression (eval.c public).
+@(export)
+eval1 :: proc "c" (arg: ^cstring, rettv: ^Typval_T, evalarg: rawptr) -> C.int {
+	context = runtime.default_context()
+	rettv^ = Typval_T{}
+	if eval2_o(arg, rettv, evalarg) == FAIL_E {
+		return FAIL_E
+	}
+	p := arg^
+	if ([^]u8)(p)[0] == '?' {
+		op_falsy := ([^]u8)(p)[1] == '?'
+		evalarg_used: ^Evalarg_T = nil
+		local_evalarg := Evalarg_T{}
+		if evalarg == nil {
+			evalarg_used = &local_evalarg
+		} else {
+			evalarg_used = (^Evalarg_T)(evalarg)
+		}
+		orig_flags := evalarg_used.eval_flags
+		evaluate := (evalarg_used.eval_flags & EVAL_EVALUATE_O) != 0
+		result := false
+		if evaluate {
+			error := false
+			if op_falsy {
+				result = tv2bool(rettv)
+			} else if tv_get_number_chk(rettv, &error) != 0 {
+				result = true
+			}
+			if error || !op_falsy || !result {
+				tv_clear(rettv)
+			}
+			if error {
+				return FAIL_E
+			}
+		}
+		if op_falsy {
+			arg^ = transmute(cstring)(uintptr(rawptr(arg^)) + 1)
+		}
+		arg^ = skipwhite(transmute(cstring)(uintptr(rawptr(arg^)) + 1))
+		take_branch := false
+		if op_falsy {
+			take_branch = !result
+		} else {
+			take_branch = result
+		}
+		if take_branch {
+			evalarg_used.eval_flags = orig_flags
+		} else {
+			evalarg_used.eval_flags = orig_flags & ~C.int(1)
+		}
+		var2 := Typval_T{}
+		if eval1(arg, &var2, rawptr(evalarg_used)) == FAIL_E {
+			evalarg_used.eval_flags = orig_flags
+			return FAIL_E
+		}
+		if !op_falsy || !result {
+			rettv^ = var2
+		}
+		if !op_falsy {
+			p = arg^
+			if ([^]u8)(p)[0] != ':' {
+				emsg(cstring(E109_S))
+				if evaluate && result {
+					tv_clear(rettv)
+				}
+				evalarg_used.eval_flags = orig_flags
+				return FAIL_E
+			}
+			arg^ = skipwhite(transmute(cstring)(uintptr(rawptr(arg^)) + 1))
+			if !result {
+				evalarg_used.eval_flags = orig_flags
+			} else {
+				evalarg_used.eval_flags = orig_flags & ~C.int(1)
+			}
+			if eval1(arg, &var2, rawptr(evalarg_used)) == FAIL_E {
+				if evaluate && result {
+					tv_clear(rettv)
+				}
+				evalarg_used.eval_flags = orig_flags
+				return FAIL_E
+			}
+			if evaluate && !result {
+				rettv^ = var2
+			}
+		}
+		if evalarg == nil {
+			clear_evalarg(&local_evalarg, nil)
+		} else {
+			(^Evalarg_T)(evalarg).eval_flags = orig_flags
+		}
+	}
+	return OK_E
+}
+
+// —— Batch 28x: eval.c multdiv + eval6 (dormant plains, C-statics) ——
+E804_S :: "E804: Cannot use '%' with Float"
+
+// Scatter-free helpers for the arithmetic chain.
+eval_multdiv_number_o :: proc "c" (tv1: ^Typval_T, tv2: ^Typval_T, op: C.int) -> C.int {
+	context = runtime.default_context()
+	n1: C.longlong = 0
+	n2: C.longlong = 0
+	use_float := false
+	f1: f64 = 0
+	f2: f64 = 0
+	error := false
+	if tv1.v_type == VAR_FLOAT {
+		f1 = transmute(f64)(tv1.vval)
+		use_float = true
+	} else {
+		n1 = tv_get_number_chk(tv1, &error)
+	}
+	tv_clear(tv1)
+	if error {
+		tv_clear(tv2)
+		return FAIL_E
+	}
+	if tv2.v_type == VAR_FLOAT {
+		if !use_float {
+			f1 = f64(n1)
+			use_float = true
+		}
+		f2 = transmute(f64)(tv2.vval)
+	} else {
+		n2 = tv_get_number_chk(tv2, &error)
+		tv_clear(tv2)
+		if error {
+			return FAIL_E
+		}
+		if use_float {
+			f2 = f64(n2)
+		}
+	}
+	if use_float {
+		if op == '*' {
+			f1 = f1 * f2
+		} else if op == '/' {
+			if f2 == 0 {
+				if f1 == 0 {
+					f1 = libc.NAN
+				} else if f1 > 0 {
+					f1 = libc.HUGE_VAL
+				} else {
+					f1 = -libc.HUGE_VAL
+				}
+			} else {
+				f1 = f1 / f2
+			}
+		} else {
+			emsg(cstring(E804_S))
+			return FAIL_E
+		}
+		tv1.v_type = VAR_FLOAT
+		tv1.vval = transmute(rawptr)(f1)
+	} else {
+		if op == '*' {
+			n1 = n1 * n2
+		} else if op == '/' {
+			n1 = num_divide(n1, n2)
+		} else {
+			n1 = num_modulus(n1, n2)
+		}
+		tv1.v_type = VAR_NUMBER
+		tv1.vval = transmute(rawptr)(n1)
+	}
+	return OK_E
+}
+
+// Fifth-level *, /, % operators (eval.c static, activates eval5).
+eval6_o :: proc "c" (arg: ^cstring, rettv: ^Typval_T, evalarg: rawptr, want_string: bool) -> C.int {
+	context = runtime.default_context()
+	if eval7_o(arg, rettv, evalarg, want_string) == FAIL_E {
+		return FAIL_E
+	}
+	for {
+		op := C.int(([^]u8)(arg^)[0])
+		if op != '*' && op != '/' && op != '%' {
+			break
+		}
+		evaluate := evalarg != nil && ((^Evalarg_T)(evalarg).eval_flags & EVAL_EVALUATE_O) != 0
+		arg^ = skipwhite(transmute(cstring)(uintptr(rawptr(arg^)) + 1))
+		var2 := Typval_T{}
+		if eval7_o(arg, &var2, evalarg, false) == FAIL_E {
+			return FAIL_E
+		}
+		if evaluate {
+			if eval_multdiv_number_o(rettv, &var2, op) == FAIL_E {
+				return FAIL_E
+			}
+		}
+	}
+	return OK_E
+}
+
+// —— Batch 28z: eval.c typval_compare + eval4 ——
+EXPR_UNKNOWN_O :: 0
+EXPR_EQUAL_O :: 1
+EXPR_NEQUAL_O :: 2
+EXPR_GREATER_O :: 3
+EXPR_GEQUAL_O :: 4
+EXPR_SMALLER_O :: 5
+EXPR_SEQUAL_O :: 6
+EXPR_MATCH_O :: 7
+EXPR_NOMATCH_O :: 8
+EXPR_IS_O :: 9
+EXPR_ISNOT_O :: 10
+
+E977_S :: "E977: Can only compare Blob with Blob"
+E978_S :: "E978: Invalid operation for Blob"
+E691_S :: "E691: Can only compare List with List"
+E692_S :: "E692: Invalid operation for List"
+E735_S :: "E735: Can only compare Dictionary with Dictionary"
+E736_S :: "E736: Invalid operation for Dictionary"
+E694_S :: "E694: Invalid operation for Funcrefs"
+
+// Compare two typvals (eval.c public).
+@(export)
+typval_compare :: proc "c" (typ1: ^Typval_T, typ2: ^Typval_T, type: C.int, ic: bool) -> C.int {
+	context = runtime.default_context()
+	n1: C.longlong = 0
+	n2: C.longlong = 0
+	type_is := type == EXPR_IS_O || type == EXPR_ISNOT_O
+	if type_is && typ1.v_type != typ2.v_type {
+		if type == EXPR_ISNOT_O {
+			n1 = 1
+		}
+	} else if typ1.v_type == VAR_BLOB || typ2.v_type == VAR_BLOB {
+		if type_is {
+			if typ1.v_type == typ2.v_type && rawptr(typ1.vval) == rawptr(typ2.vval) {
+				n1 = 1
+			}
+			if type == EXPR_ISNOT_O {
+				if n1 != 0 {
+					n1 = 0
+				} else {
+					n1 = 1
+				}
+			}
+		} else if typ1.v_type != typ2.v_type || (type != EXPR_EQUAL_O && type != EXPR_NEQUAL_O) {
+			if typ1.v_type != typ2.v_type {
+				emsg(cstring(E977_S))
+			} else {
+				emsg(cstring(E978_S))
+			}
+			tv_clear(typ1)
+			return FAIL_E
+		} else {
+			if tv_blob_equal(rawptr(typ1.vval), rawptr(typ2.vval)) {
+				n1 = 1
+			}
+			if type == EXPR_NEQUAL_O {
+				if n1 != 0 {
+					n1 = 0
+				} else {
+					n1 = 1
+				}
+			}
+		}
+	} else if typ1.v_type == VAR_LIST || typ2.v_type == VAR_LIST {
+		if type_is {
+			if typ1.v_type == typ2.v_type && rawptr(typ1.vval) == rawptr(typ2.vval) {
+				n1 = 1
+			}
+			if type == EXPR_ISNOT_O {
+				if n1 != 0 {
+					n1 = 0
+				} else {
+					n1 = 1
+				}
+			}
+		} else if typ1.v_type != typ2.v_type || (type != EXPR_EQUAL_O && type != EXPR_NEQUAL_O) {
+			if typ1.v_type != typ2.v_type {
+				emsg(cstring(E691_S))
+			} else {
+				emsg(cstring(E692_S))
+			}
+			tv_clear(typ1)
+			return FAIL_E
+		} else {
+			if tv_list_equal(rawptr(typ1.vval), rawptr(typ2.vval), ic) {
+				n1 = 1
+			}
+			if type == EXPR_NEQUAL_O {
+				if n1 != 0 {
+					n1 = 0
+				} else {
+					n1 = 1
+				}
+			}
+		}
+	} else if typ1.v_type == VAR_DICT || typ2.v_type == VAR_DICT {
+		if type_is {
+			if typ1.v_type == typ2.v_type && rawptr(typ1.vval) == rawptr(typ2.vval) {
+				n1 = 1
+			}
+			if type == EXPR_ISNOT_O {
+				if n1 != 0 {
+					n1 = 0
+				} else {
+					n1 = 1
+				}
+			}
+		} else if typ1.v_type != typ2.v_type || (type != EXPR_EQUAL_O && type != EXPR_NEQUAL_O) {
+			if typ1.v_type != typ2.v_type {
+				emsg(cstring(E735_S))
+			} else {
+				emsg(cstring(E736_S))
+			}
+			tv_clear(typ1)
+			return FAIL_E
+		} else {
+			if tv_dict_equal(rawptr(typ1.vval), rawptr(typ2.vval), ic) {
+				n1 = 1
+			}
+			if type == EXPR_NEQUAL_O {
+				if n1 != 0 {
+					n1 = 0
+				} else {
+					n1 = 1
+				}
+			}
+		}
+	} else if tv_is_func_o(typ1^) || tv_is_func_o(typ2^) {
+		if type != EXPR_EQUAL_O && type != EXPR_NEQUAL_O && type != EXPR_IS_O && type != EXPR_ISNOT_O {
+			emsg(cstring(E694_S))
+			tv_clear(typ1)
+			return FAIL_E
+		}
+		if (typ1.v_type == VAR_PARTIAL && rawptr(typ1.vval) == nil) || (typ2.v_type == VAR_PARTIAL && rawptr(typ2.vval) == nil) {
+			if rawptr(typ1.vval) == rawptr(typ2.vval) {
+				n1 = 1
+			}
+		} else if type_is {
+			if typ1.v_type == VAR_FUNC && typ2.v_type == VAR_FUNC {
+				if tv_equal(typ1, typ2, ic) {
+					n1 = 1
+				}
+			} else if typ1.v_type == VAR_PARTIAL && typ2.v_type == VAR_PARTIAL {
+				if rawptr(typ1.vval) == rawptr(typ2.vval) {
+					n1 = 1
+				}
+			}
+		} else {
+			if tv_equal(typ1, typ2, ic) {
+				n1 = 1
+			}
+		}
+		if type == EXPR_NEQUAL_O || type == EXPR_ISNOT_O {
+			if n1 != 0 {
+				n1 = 0
+			} else {
+				n1 = 1
+			}
+		}
+	} else if (typ1.v_type == VAR_FLOAT || typ2.v_type == VAR_FLOAT) && type != EXPR_MATCH_O && type != EXPR_NOMATCH_O {
+		f1 := tv_get_float(typ1)
+		f2 := tv_get_float(typ2)
+		if type == EXPR_IS_O || type == EXPR_EQUAL_O {
+			if f1 == f2 {
+				n1 = 1
+			}
+		} else if type == EXPR_ISNOT_O || type == EXPR_NEQUAL_O {
+			if f1 != f2 {
+				n1 = 1
+			}
+		} else if type == EXPR_GREATER_O {
+			if f1 > f2 {
+				n1 = 1
+			}
+		} else if type == EXPR_GEQUAL_O {
+			if f1 >= f2 {
+				n1 = 1
+			}
+		} else if type == EXPR_SMALLER_O {
+			if f1 < f2 {
+				n1 = 1
+			}
+		} else if type == EXPR_SEQUAL_O {
+			if f1 <= f2 {
+				n1 = 1
+			}
+		}
+	} else if (typ1.v_type == VAR_NUMBER || typ2.v_type == VAR_NUMBER) && type != EXPR_MATCH_O && type != EXPR_NOMATCH_O {
+		n1 = tv_get_number(typ1)
+		n2 = tv_get_number(typ2)
+		if type == EXPR_IS_O || type == EXPR_EQUAL_O {
+			if n1 == n2 {
+				n1 = 1
+			} else {
+				n1 = 0
+			}
+		} else if type == EXPR_ISNOT_O || type == EXPR_NEQUAL_O {
+			if n1 != n2 {
+				n1 = 1
+			} else {
+				n1 = 0
+			}
+		} else if type == EXPR_GREATER_O {
+			if n1 > n2 {
+				n1 = 1
+			} else {
+				n1 = 0
+			}
+		} else if type == EXPR_GEQUAL_O {
+			if n1 >= n2 {
+				n1 = 1
+			} else {
+				n1 = 0
+			}
+		} else if type == EXPR_SMALLER_O {
+			if n1 < n2 {
+				n1 = 1
+			} else {
+				n1 = 0
+			}
+		} else if type == EXPR_SEQUAL_O {
+			if n1 <= n2 {
+				n1 = 1
+			} else {
+				n1 = 0
+			}
+		}
+	} else {
+		buf1: [65]u8
+		buf2: [65]u8
+		s1 := tv_get_string_buf(typ1, &buf1[0])
+		s2 := tv_get_string_buf(typ2, &buf2[0])
+		i: C.int = 0
+		if type != EXPR_MATCH_O && type != EXPR_NOMATCH_O {
+			i = mb_strcmp_ic_r(ic, s1, s2)
+		}
+		if type == EXPR_IS_O || type == EXPR_EQUAL_O {
+			if i == 0 {
+				n1 = 1
+			}
+		} else if type == EXPR_ISNOT_O || type == EXPR_NEQUAL_O {
+			if i != 0 {
+				n1 = 1
+			}
+		} else if type == EXPR_GREATER_O {
+			if i > 0 {
+				n1 = 1
+			}
+		} else if type == EXPR_GEQUAL_O {
+			if i >= 0 {
+				n1 = 1
+			}
+		} else if type == EXPR_SMALLER_O {
+			if i < 0 {
+				n1 = 1
+			}
+		} else if type == EXPR_SEQUAL_O {
+			if i <= 0 {
+				n1 = 1
+			}
+		} else if type == EXPR_MATCH_O || type == EXPR_NOMATCH_O {
+			if pattern_match(s2, s1, ic) != 0 {
+				n1 = 1
+			}
+			if type == EXPR_NOMATCH_O {
+				if n1 != 0 {
+					n1 = 0
+				} else {
+					n1 = 1
+				}
+			}
+		}
+	}
+	tv_clear(typ1)
+	typ1.v_type = VAR_NUMBER
+	typ1.vval = transmute(rawptr)(n1)
+	return OK_E
+}
+
+// Comparison operator chain (eval.c static, activates eval3).
+eval4_o :: proc "c" (arg: ^cstring, rettv: ^Typval_T, evalarg: rawptr) -> C.int {
+	context = runtime.default_context()
+	var2 := Typval_T{}
+	type: C.int = EXPR_UNKNOWN_O
+	length: C.int = 2
+	if eval5_o(arg, rettv, evalarg) == FAIL_E {
+		return FAIL_E
+	}
+	p := arg^
+	c0 := ([^]u8)(p)[0]
+	c1 := ([^]u8)(p)[1]
+	if c0 == '=' {
+		if c1 == '=' {
+			type = EXPR_EQUAL_O
+		} else if c1 == '~' {
+			type = EXPR_MATCH_O
+		}
+	} else if c0 == '!' {
+		if c1 == '=' {
+			type = EXPR_NEQUAL_O
+		} else if c1 == '~' {
+			type = EXPR_NOMATCH_O
+		}
+	} else if c0 == '>' {
+		if c1 != '=' {
+			type = EXPR_GREATER_O
+			length = 1
+		} else {
+			type = EXPR_GEQUAL_O
+		}
+	} else if c0 == '<' {
+		if c1 != '=' {
+			type = EXPR_SMALLER_O
+			length = 1
+		} else {
+			type = EXPR_SEQUAL_O
+		}
+	} else if c0 == 'i' {
+		if c1 == 's' {
+			if ([^]u8)(p)[2] == 'n' && ([^]u8)(p)[3] == 'o' && ([^]u8)(p)[4] == 't' {
+				length = 5
+			}
+			c := ([^]u8)(rawptr(uintptr(rawptr(p)) + uintptr(length)))[0]
+			if !((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_') {
+				if length == 2 {
+					type = EXPR_IS_O
+				} else {
+					type = EXPR_ISNOT_O
+				}
+			}
+		}
+	}
+	if type != EXPR_UNKNOWN_O {
+		ic := false
+		if ([^]u8)(rawptr(uintptr(rawptr(p)) + uintptr(length)))[0] == '?' {
+			ic = true
+			length += 1
+		} else if ([^]u8)(rawptr(uintptr(rawptr(p)) + uintptr(length)))[0] == '#' {
+			length += 1
+		} else {
+			ic = (p_ic != 0)
+		}
+		arg^ = skipwhite(transmute(cstring)(rawptr(uintptr(rawptr(p)) + uintptr(length))))
+		if eval5_o(arg, &var2, evalarg) == FAIL_E {
+			tv_clear(rettv)
+			return FAIL_E
+		}
+		if evalarg != nil && ((^Evalarg_T)(evalarg).eval_flags & EVAL_EVALUATE_O) != 0 {
+			ret := typval_compare(rettv, &var2, type, ic)
+			tv_clear(&var2)
+			return ret
+		}
+	}
+	return OK_E
+}
+
+// —— Batch 28y: eval.c add/concat helpers + eval5 (dormant plains) ——
+
+// Blob concatenation (eval.c static, dormant until eval5_o).
+eval_addblob_o :: proc "c" (tv1: ^Typval_T, tv2: ^Typval_T) {
+	context = runtime.default_context()
+	b1 := rawptr(tv1.vval)
+	b2 := rawptr(tv2.vval)
+	b := tv_blob_alloc()
+	len1 := i64(tv_blob_len_o(b1))
+	len2 := i64(tv_blob_len_o(b2))
+	totallen := len1 + len2
+	if totallen >= 0 && totallen <= i64(max(C.int)) {
+		ga_grow_r((^Garray)(b), C.int(totallen))
+		if len1 > 0 {
+			libc.memmove(rawptr((^rawptr)(uintptr(b) + 16)^), (^rawptr)(uintptr(b1) + 16)^, C.size_t(len1))
+		}
+		if len2 > 0 {
+			libc.memmove(rawptr(uintptr((^rawptr)(uintptr(b) + 16)^) + uintptr(len1)), (^rawptr)(uintptr(b2) + 16)^, C.size_t(len2))
+		}
+		(^C.int)(uintptr(b) + 0)^ = C.int(totallen)
+	}
+	tv_clear(tv1)
+	tv_blob_set_ret_o(tv1, b)
+}
+
+// List concatenation (eval.c static, dormant until eval5_o).
+eval_addlist_o :: proc "c" (tv1: ^Typval_T, tv2: ^Typval_T) -> C.int {
+	context = runtime.default_context()
+	var3 := Typval_T{}
+	if tv_list_concat(rawptr(tv1.vval), rawptr(tv2.vval), &var3) == FAIL_E {
+		tv_clear(tv1)
+		tv_clear(tv2)
+		return FAIL_E
+	}
+	tv_clear(tv1)
+	tv1^ = var3
+	return OK_E
+}
+
+// String concatenation (eval.c static, dormant until eval5_o).
+eval_concat_str_o :: proc "c" (tv1: ^Typval_T, tv2: ^Typval_T) -> C.int {
+	context = runtime.default_context()
+	buf1: [65]u8
+	buf2: [65]u8
+	s1 := tv_get_string_buf(tv1, &buf1[0])
+	s2 := tv_get_string_buf_chk(tv2, &buf2[0])
+	if s2 == nil {
+		tv_clear(tv1)
+		tv_clear(tv2)
+		return FAIL_E
+	}
+	if grow_string_tv(tv1, s2) == OK_E {
+		return OK_E
+	}
+	p := concat_str_c(s1, s2)
+	tv_clear(tv1)
+	tv1.v_type = VAR_STRING
+	tv1.vval = transmute(rawptr)(p)
+	return OK_E
+}
+
+// Number add/subtract (eval.c static, dormant until eval5_o).
+eval_addsub_number_o :: proc "c" (tv1: ^Typval_T, tv2: ^Typval_T, op: C.int) -> C.int {
+	context = runtime.default_context()
+	error := false
+	n1: C.longlong = 0
+	n2: C.longlong = 0
+	f1: f64 = 0
+	f2: f64 = 0
+	if tv1.v_type == VAR_FLOAT {
+		f1 = transmute(f64)(tv1.vval)
+	} else {
+		n1 = tv_get_number_chk(tv1, &error)
+		if error {
+			tv_clear(tv1)
+			tv_clear(tv2)
+			return FAIL_E
+		}
+		if tv2.v_type == VAR_FLOAT {
+			f1 = f64(n1)
+		}
+	}
+	if tv2.v_type == VAR_FLOAT {
+		f2 = transmute(f64)(tv2.vval)
+	} else {
+		n2 = tv_get_number_chk(tv2, &error)
+		if error {
+			tv_clear(tv1)
+			tv_clear(tv2)
+			return FAIL_E
+		}
+		if tv1.v_type == VAR_FLOAT {
+			f2 = f64(n2)
+		}
+	}
+	tv_clear(tv1)
+	if tv1.v_type == VAR_FLOAT || tv2.v_type == VAR_FLOAT {
+		if op == '+' {
+			f1 = f1 + f2
+		} else {
+			f1 = f1 - f2
+		}
+		tv1.v_type = VAR_FLOAT
+		tv1.vval = transmute(rawptr)(f1)
+	} else {
+		if op == '+' {
+			n1 = n1 + n2
+		} else {
+			n1 = n1 - n2
+		}
+		tv1.v_type = VAR_NUMBER
+		tv1.vval = transmute(rawptr)(n1)
+	}
+	return OK_E
+}
+
+// Fourth-level +, -, .. operators (eval.c static, activates eval4).
+eval5_o :: proc "c" (arg: ^cstring, rettv: ^Typval_T, evalarg: rawptr) -> C.int {
+	context = runtime.default_context()
+	if eval6_o(arg, rettv, evalarg, false) == FAIL_E {
+		return FAIL_E
+	}
+	for {
+		op := C.int(([^]u8)(arg^)[0])
+		concat := op == '.'
+		if op != '+' && op != '-' && !concat {
+			break
+		}
+		evaluate := evalarg != nil && ((^Evalarg_T)(evalarg).eval_flags & EVAL_EVALUATE_O) != 0
+		if ((op != '+' || (rettv.v_type != VAR_LIST && rettv.v_type != VAR_BLOB)) && (op == '.' || rettv.v_type != VAR_FLOAT) && evaluate) {
+			if (op == '.' && !tv_check_str(rettv)) || (op != '.' && !tv_check_num(rettv)) {
+				tv_clear(rettv)
+				return FAIL_E
+			}
+		}
+		if op == '.' && ([^]u8)(arg^)[1] == '.' {
+			arg^ = transmute(cstring)(uintptr(rawptr(arg^)) + 1)
+		}
+		arg^ = skipwhite(transmute(cstring)(uintptr(rawptr(arg^)) + 1))
+		var2 := Typval_T{}
+		if eval6_o(arg, &var2, evalarg, op == '.') == FAIL_E {
+			tv_clear(rettv)
+			return FAIL_E
+		}
+		if evaluate {
+			if op == '.' {
+				if eval_concat_str_o(rettv, &var2) == FAIL_E {
+					return FAIL_E
+				}
+			} else if op == '+' && rettv.v_type == VAR_BLOB && var2.v_type == VAR_BLOB {
+				eval_addblob_o(rettv, &var2)
+			} else if op == '+' && rettv.v_type == VAR_LIST && var2.v_type == VAR_LIST {
+				if eval_addlist_o(rettv, &var2) == FAIL_E {
+					return FAIL_E
+				}
+			} else {
+				if eval_addsub_number_o(rettv, &var2, op) == FAIL_E {
+					return FAIL_E
+				}
+			}
+			tv_clear(&var2)
+		}
+	}
+	return OK_E
+}
+
+// Bare-word dict key scanner (eval.c static, dormant until eval_dict_o).
+get_literal_key_o :: proc "c" (arg: ^cstring, tv: ^Typval_T) -> C.int {
+	context = runtime.default_context()
+	c := ([^]u8)(arg^)[0]
+	if !((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_' || c == '-') {
+		return FAIL_E
+	}
+	p := uintptr(rawptr(arg^))
+	for {
+		cc := ([^]u8)(p)[0]
+		if !((cc >= 'A' && cc <= 'Z') || (cc >= 'a' && cc <= 'z') || (cc >= '0' && cc <= '9') || cc == '_' || cc == '-') {
+			break
+		}
+		p += 1
+	}
+	tv.v_type = VAR_STRING
+	tv.vval = transmute(rawptr)(xmemdupz_o2(transmute(^u8)(arg^), C.size_t(p - uintptr(rawptr(arg^)))))
+	arg^ = skipwhite(transmute(cstring)(p))
+	return OK_E
+}
+
+// Dictionary literal parser (eval.c static, activates with eval7).
+eval_dict_o :: proc "c" (arg: ^cstring, rettv: ^Typval_T, evalarg: rawptr, literal: bool) -> C.int {
+	context = runtime.default_context()
+	evaluate := evalarg != nil && ((^Evalarg_T)(evalarg).eval_flags & EVAL_EVALUATE_O) != 0
+	tv := Typval_T{}
+	key: cstring = nil
+	curly_expr := skipwhite(transmute(cstring)(uintptr(rawptr(arg^)) + 1))
+	buf: [65]u8
+	if ([^]u8)(curly_expr)[0] != '}' && !literal {
+		ce := curly_expr
+		if eval1(&ce, &tv, nil) == OK_E && ([^]u8)(skipwhite(ce))[0] == '}' {
+			return NOTDONE_O
+		}
+	}
+	d: rawptr = nil
+	if evaluate {
+		d = tv_dict_alloc()
+	}
+	tvkey := Typval_T{v_type = VAR_UNKNOWN, v_lock = VAR_UNLOCKED}
+	tv.v_type = VAR_UNKNOWN
+	arg^ = skipwhite(transmute(cstring)(uintptr(rawptr(arg^)) + 1))
+	for ([^]u8)(arg^)[0] != '}' && ([^]u8)(arg^)[0] != 0 {
+		r: C.int = 0
+		if literal {
+			r = get_literal_key_o(arg, &tvkey)
+		} else {
+			r = eval1(arg, &tvkey, evalarg)
+		}
+		if r == FAIL_E {
+			if d != nil {
+				tv_dict_free(d)
+			}
+			return FAIL_E
+		}
+		if ([^]u8)(arg^)[0] != ':' {
+			semsg(cstring(E720_S), arg^)
+			tv_clear(&tvkey)
+			if d != nil {
+				tv_dict_free(d)
+			}
+			return FAIL_E
+		}
+		if evaluate {
+			key = tv_get_string_buf_chk(&tvkey, &buf[0])
+			if key == nil {
+				tv_clear(&tvkey)
+				if d != nil {
+					tv_dict_free(d)
+				}
+				return FAIL_E
+			}
+		}
+		arg^ = skipwhite(transmute(cstring)(uintptr(rawptr(arg^)) + 1))
+		if eval1(arg, &tv, evalarg) == FAIL_E {
+			tv_clear(&tvkey)
+			if d != nil {
+				tv_dict_free(d)
+			}
+			return FAIL_E
+		}
+		if evaluate {
+			item := tv_dict_find(d, key, -1)
+			if item != nil {
+				semsg(cstring(E721_S), key)
+				tv_clear(&tvkey)
+				tv_clear(&tv)
+				if d != nil {
+					tv_dict_free(d)
+				}
+				return FAIL_E
+			}
+			item = tv_dict_item_alloc(key)
+			(^Typval_T)(uintptr(item))^ = tv
+			(^Typval_T)(uintptr(item)).v_lock = VAR_UNLOCKED
+			if tv_dict_add(d, item) == FAIL_E {
+				tv_dict_item_free(item)
+			}
+		}
+		tv_clear(&tvkey)
+		had_comma := ([^]u8)(arg^)[0] == ','
+		if had_comma {
+			arg^ = skipwhite(transmute(cstring)(uintptr(rawptr(arg^)) + 1))
+		}
+		if ([^]u8)(arg^)[0] == '}' {
+			break
+		}
+		if !had_comma {
+			semsg(cstring(E722_S), arg^)
+			if d != nil {
+				tv_dict_free(d)
+			}
+			return FAIL_E
+		}
+	}
+	if ([^]u8)(arg^)[0] != '}' {
+		semsg(cstring(E723_S), arg^)
+		if d != nil {
+			tv_dict_free(d)
+		}
+		return FAIL_E
+	}
+	arg^ = skipwhite(transmute(cstring)(uintptr(rawptr(arg^)) + 1))
+	if evaluate {
+		tv_dict_set_ret_o(rettv, d)
+	}
+	return OK_E
+}
+
+// Literal-dict #{...} entry (eval.c static, dormant until eval7).
+eval_lit_dict_o :: proc "c" (arg: ^cstring, rettv: ^Typval_T, evalarg: rawptr) -> C.int {
+	context = runtime.default_context()
+	if ([^]u8)(arg^)[1] == '{' {
+		arg^ = transmute(cstring)(uintptr(rawptr(arg^)) + 1)
+		return eval_dict_o(arg, rettv, evalarg, true)
+	}
+	return NOTDONE_O
+}
+
+// —— Batch 28f: eval.c vim_function call cluster ——
+
+// Call a Vimscript function by name (eval.c public).
+@(export)
+call_vim_function :: proc "c" (func: cstring, argc: C.int, argv: ^Typval_T, rettv: ^Typval_T) -> C.int {
+	context = runtime.default_context()
+	fail := false
+	length := C.int(libc.strlen(func))
+	pt: rawptr = nil
+	f := func
+	if length >= 6 && libc.memcmp(rawptr(transmute(^u8)(func)), rawptr(transmute(^u8)(cstring("v:lua."))), 6) == 0 {
+		f = transmute(cstring)(uintptr(rawptr(func)) + 6)
+		length = check_luafunc_name(f, false)
+		if length == 0 {
+			fail = true
+		} else {
+			pt = get_vim_var_partial(VV_LUA_O)
+		}
+	}
+	ret: C.int = 0
+	if !fail {
+		rettv.v_type = VAR_UNKNOWN
+		fe := Funcexe_T{}
+		fe.firstline = (^C.int)(uintptr(curwin) + W_CURSOR_OFF)^
+		fe.lastline = (^C.int)(uintptr(curwin) + W_CURSOR_OFF)^
+		fe.evaluate = true
+		fe.partial = pt
+		ret = call_func(f, length, rettv, argc, argv, &fe)
+	} else {
+		ret = FAIL_E
+	}
+	if ret == FAIL_E {
+		tv_clear(rettv)
+	}
+	return ret
+}
+
+// Call function, return string result (eval.c public).
+@(export)
+call_func_retstr :: proc "c" (func: cstring, argc: C.int, argv: ^Typval_T) -> rawptr {
+	context = runtime.default_context()
+	rettv := Typval_T{}
+	if call_vim_function(func, argc, argv, &rettv) == FAIL_E {
+		return nil
+	}
+	retval := rawptr(xstrdup_o(transmute(^u8)(tv_get_string(&rettv))))
+	tv_clear(&rettv)
+	return retval
+}
+
+// Call function, return list result (eval.c public).
+@(export)
+call_func_retlist :: proc "c" (func: cstring, argc: C.int, argv: ^Typval_T) -> rawptr {
+	context = runtime.default_context()
+	rettv := Typval_T{}
+	if call_vim_function(func, argc, argv, &rettv) == FAIL_E {
+		return nil
+	}
+	if rettv.v_type != VAR_LIST {
+		tv_clear(&rettv)
+		return nil
+	}
+	return rawptr(rettv.vval)
+}
+
+// —— Batch 27ca: funcs.c jobstop ——
+CHAN_ID_OFF :: 0
+CHAN_IS_RPC_OFF :: 1752
+
+// "jobstop()" function.
+@(export)
+f_jobstop :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	rettv.v_type = VAR_NUMBER
+	rettv.vval = transmute(rawptr)(C.longlong(0))
+	if check_secure() {
+		return
+	}
+	if ([^]Typval_T)(argvars)[0].v_type != VAR_NUMBER {
+		emsg(e_invarg)
+		return
+	}
+	data := find_job(C.ulonglong(transmute(C.longlong)(([^]Typval_T)(argvars)[0].vval)), false)
+	if data == nil {
+		return
+	}
+	err: cstring = nil
+	if (^bool)(uintptr(data) + CHAN_IS_RPC_OFF)^ {
+		channel_close_e((^C.ulonglong)(uintptr(data) + CHAN_ID_OFF)^, KCHPART_RPC_O, &err)
+	}
+	proc_stop((^Proc)(rawptr(uintptr(data) + CHAN_STREAM_OFF)))
+	rettv.vval = transmute(rawptr)(C.longlong(1))
+	if err != nil {
+		emsg(err)
+	}
+}
+
+// —— Batch 27cb: funcs.c jobstart engine (FFI fully rewired) ——
+foreign _ {
+	@(link_name = "create_environment")
+	create_environment_e :: proc "c" (job_env: rawptr, clear_env: bool, pty: bool, set_nvim_addr: bool, pty_term_name: cstring) -> rawptr ---
+	@(link_name = "channel_terminal_alloc")
+	channel_terminal_alloc_e :: proc "c" (buf: rawptr, chan: rawptr) ---
+	@(link_name = "terminal_open")
+	terminal_open_e :: proc "c" (termpp: ^rawptr, buf: rawptr) ---
+	@(link_name = "terminal_buf")
+	terminal_buf_e :: proc "c" (term: rawptr) -> C.int ---
+	@(link_name = "vim_FullName")
+	vim_FullName_e :: proc "c" (fname: cstring, buf: cstring, len: C.size_t, force: bool) -> C.int ---
+	@(link_name = "dict_set_var")
+	dict_set_var_e :: proc "c" (dict: rawptr, key: NvimString, value: Api_Object, del: bool, retval: bool, arena: rawptr, err: rawptr) -> Api_Object ---
+}
+
+KCHSTDIN_PIPE_O :: 0
+KCHSTDIN_NULL_O :: 1
+CHAN_TERM_OFF :: 1848
+B_CHANGED_OFF :: 208
+B_TERMINAL_OFF2 :: 12488
+B_HANDLE_OFF :: 0
+E_CMDWIN_S :: "E11: Invalid in command-line window; <CR> executes, CTRL-C quits"
+E_TERM_MODIFIED_S :: "jobstart(...,{term=true}) requires unmodified buffer"
+E_TERM_CONNECTED_S :: "Terminal already connected to buffer %d"
+
+// "jobstart()" function.
+@(export)
+f_jobstart :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
+	context = runtime.default_context()
+	rettv.v_type = VAR_NUMBER
+	rettv.vval = transmute(rawptr)(C.longlong(0))
+	if check_secure() {
+		return
+	}
+	cmd: cstring = nil
+	executable := true
+	argv := tv_to_argv((^Typval_T)(uintptr(argvars)), &cmd, &executable)
+	if argv == nil {
+		if executable {
+			rettv.vval = transmute(rawptr)(C.longlong(0))
+		} else {
+			rettv.vval = transmute(rawptr)(C.longlong(-1))
+		}
+		return
+	}
+	if ([^]Typval_T)(argvars)[1].v_type != VAR_DICT && ([^]Typval_T)(argvars)[1].v_type != VAR_UNKNOWN {
+		semsg(e_invarg2, cstring("expected dictionary"))
+		shell_free_argv(argv)
+		return
+	}
+	job_opts: rawptr = nil
+	detach := false
+	rpc := false
+	pty := false
+	term := false
+	clear_env := false
+	overlapped := false
+	stdin_mode: C.int = KCHSTDIN_PIPE_O
+	on_stdout := CallbackReader_E{}
+	on_stderr := CallbackReader_E{}
+	on_exit := Callback_E{}
+	cwd: cstring = nil
+	job_env: rawptr = nil
+	if ([^]Typval_T)(argvars)[1].v_type == VAR_DICT {
+		job_opts = rawptr(([^]Typval_T)(argvars)[1].vval)
+		if tv_dict_get_number(job_opts, cstring("detach")) != 0 {
+			detach = true
+		}
+		if tv_dict_get_number(job_opts, cstring("rpc")) != 0 {
+			rpc = true
+		}
+		if tv_dict_get_number(job_opts, cstring("term")) != 0 {
+			term = true
+		}
+		if term || tv_dict_get_number(job_opts, cstring("pty")) != 0 {
+			pty = true
+		}
+		if tv_dict_get_number(job_opts, cstring("clear_env")) != 0 {
+			clear_env = true
+		}
+		if tv_dict_get_number(job_opts, cstring("overlapped")) != 0 {
+			overlapped = true
+		}
+		s := tv_dict_get_string(job_opts, cstring("stdin"), false)
+		if s != nil {
+			if libc.strncmp(s, cstring("null"), 65) == 0 {
+				stdin_mode = KCHSTDIN_NULL_O
+			} else if libc.strncmp(s, cstring("pipe"), 65) != 0 {
+				semsg(cstring(E_INVARG_NVAL_S), cstring("stdin"), s)
+			}
+		}
+		job_term := tv_dict_find(job_opts, cstring("term"), 4)
+		if job_term != nil && (^C.int)(uintptr(job_term))^ != VAR_BOOL {
+			semsg(e_invarg2, cstring("'term' must be Boolean"))
+			shell_free_argv(argv)
+			return
+		}
+		if pty && rpc {
+			semsg(e_invarg2, cstring("job cannot have both 'pty' and 'rpc' options set"))
+			shell_free_argv(argv)
+			return
+		}
+		new_cwd := tv_dict_get_string(job_opts, cstring("cwd"), false)
+		if new_cwd != nil && ([^]u8)(new_cwd)[0] != 0 {
+			cwd = new_cwd
+			if !os_isdir(cwd) {
+				semsg(e_invarg2, cstring("expected valid directory"))
+				shell_free_argv(argv)
+				return
+			}
+		}
+		job_env = tv_dict_find(job_opts, cstring("env"), 3)
+		if job_env != nil && (^C.int)(uintptr((^Typval_T)(uintptr(job_env))))^ != VAR_DICT {
+			semsg(e_invarg2, cstring("env"))
+			shell_free_argv(argv)
+			return
+		}
+		if !common_job_callbacks(job_opts, &on_stdout, &on_stderr, &on_exit) {
+			shell_free_argv(argv)
+			return
+		}
+	}
+	width: C.uint16_t = C.uint16_t(tv_dict_get_number(job_opts, cstring("width")))
+	height: C.uint16_t = C.uint16_t(tv_dict_get_number(job_opts, cstring("height")))
+	term_name: cstring = nil
+	if term {
+		if text_locked_r() {
+			text_locked_msg_r()
+			shell_free_argv(argv)
+			return
+		}
+		if bt_cmdwin(curbuf) {
+			emsg(cstring(E_CMDWIN_S))
+			shell_free_argv(argv)
+			return
+		}
+		if (^C.int)(uintptr(curbuf) + B_CHANGED_OFF)^ != 0 {
+			emsg(cstring(E_TERM_MODIFIED_S))
+			shell_free_argv(argv)
+			return
+		}
+		term_ptr := (^rawptr)(uintptr(curbuf) + B_TERMINAL_OFF2)^
+		if term_ptr != nil && terminal_running_r(term_ptr) {
+			semsg(cstring(E_TERM_CONNECTED_S), (^C.int)(uintptr(curbuf) + B_HANDLE_OFF)^)
+			shell_free_argv(argv)
+			return
+		}
+		if term_ptr != nil {
+			buf_close_terminal(curbuf)
+		}
+		term_name = cstring("xterm-256color")
+		if cwd == nil {
+			cwd = cstring(".")
+		}
+		overlapped = false
+		detach = false
+		stdin_mode = KCHSTDIN_PIPE_O
+		if width == 0 {
+			ww := (^C.int)(uintptr(curwin) + W_VIEW_WIDTH_OFF)^ - win_col_off_r(curwin)
+			if ww < 0 {
+				ww = 0
+			}
+			width = C.uint16_t(ww)
+		}
+		if height == 0 {
+			height = C.uint16_t((^C.int)(uintptr(curwin) + W_VIEW_HEIGHT_OFF)^)
+		}
+	}
+	if pty {
+		if term_name == nil {
+			term_name = tv_dict_get_string(job_opts, cstring("TERM"), false)
+		}
+		if term_name == nil {
+			term_name = cstring("ansi")
+		}
+	}
+	env := create_environment_e(job_env, clear_env, pty, true, term_name)
+	status: C.longlong = 0
+	chan := channel_job_start_e(transmute(rawptr)(argv), nil, on_stdout, on_stderr, on_exit, pty, rpc, overlapped, detach, stdin_mode, cwd, width, height, env, rawptr(&status))
+	rettv.vval = transmute(rawptr)(status)
+	if chan == nil {
+		return
+	}
+	if !term {
+		channel_create_event_e(chan, nil)
+		return
+	}
+	if status <= 0 {
+		return
+	}
+	pid := (^C.int)(uintptr(chan) + CHAN_STREAM_OFF + PROC_PID_OFF)^
+	buf := curbuf
+	(^C.int)(uintptr(buf) + B_P_SWF_OFF)^ = 0
+	if (^rawptr)(uintptr(buf) + B_ML_MFP_OFF)^ == nil && ml_open_r(buf) == FAIL_E {
+		proc_stop((^Proc)(rawptr(uintptr(chan) + CHAN_STREAM_OFF)))
+		channel_decref_e(chan)
+		return
+	}
+	channel_incref_e(chan)
+	channel_terminal_alloc_e(buf, chan)
+	apply_autocmds(EVENT_BUFFILEPRE_O, nil, nil, false, buf)
+	term_alive := true
+	if (^rawptr)(uintptr(chan) + CHAN_TERM_OFF)^ == nil || terminal_buf_e((^rawptr)(uintptr(chan) + CHAN_TERM_OFF)^) == 0 {
+		term_alive = false
+	}
+	if term_alive {
+		vim_FullName_e(cwd, transmute(cstring)(&name_buff[0]), 4096, false)
+		length := home_replace(nil, transmute(cstring)(&name_buff[0]), transmute(cstring)(&IObuff[0]), 1025, true)
+		if length != 1 && (([^]u8)(&IObuff[0])[length - 1] == '\\' || ([^]u8)(&IObuff[0])[length - 1] == '/') {
+			([^]u8)(&IObuff[0])[length - 1] = 0
+		}
+		if length == 1 && ([^]u8)(&IObuff[0])[0] == '/' {
+			([^]u8)(&IObuff[0])[1] = '.'
+			([^]u8)(&IObuff[0])[2] = 0
+		}
+		libc.snprintf(transmute([^]u8)(&name_buff[0]), 4096, cstring("term://%s//%d:%s"), transmute(cstring)(&IObuff[0]), pid, cmd)
+		setfname(buf, transmute(cstring)(&name_buff[0]), nil, true)
+		apply_autocmds(EVENT_BUFFILEPOST_O, nil, nil, false, buf)
+		if (^rawptr)(uintptr(chan) + CHAN_TERM_OFF)^ == nil || terminal_buf_e((^rawptr)(uintptr(chan) + CHAN_TERM_OFF)^) == 0 {
+			term_alive = false
+		}
+	}
+	if term_alive {
+		err := Api_Error{typ = -1, msg = nil}
+		locked := (^C.int)(uintptr(buf) + B_LOCKED_OFF)^
+		(^C.int)(uintptr(buf) + B_LOCKED_OFF)^ = locked + 1
+		id_key := NvimString{data = cstring("terminal_job_id"), size = 15}
+		id_val := Api_Object{t = 2}
+		(^i64)(&id_val.data[0])^ = i64((^u64)(uintptr(chan) + CHAN_ID_OFF)^)
+		dict_set_var_e((^rawptr)(uintptr(buf) + B_VARS_OFF)^, id_key, id_val, false, false, nil, rawptr(&err))
+		api_clear_error_r(&err)
+		pid_key := NvimString{data = cstring("terminal_job_pid"), size = 16}
+		pid_val := Api_Object{t = 2}
+		(^i64)(&pid_val.data[0])^ = i64(pid)
+		dict_set_var_e((^rawptr)(uintptr(buf) + B_VARS_OFF)^, pid_key, pid_val, false, false, nil, rawptr(&err))
+		api_clear_error_r(&err)
+		(^C.int)(uintptr(buf) + B_LOCKED_OFF)^ = locked
+		if (^rawptr)(uintptr(chan) + CHAN_TERM_OFF)^ == nil || terminal_buf_e((^rawptr)(uintptr(chan) + CHAN_TERM_OFF)^) == 0 {
+			term_alive = false
+		}
+	}
+	if term_alive {
+		terminal_open_e((^rawptr)(uintptr(chan) + CHAN_TERM_OFF), buf)
+	}
+	channel_create_event_e(chan, nil)
+	channel_decref_e(chan)
+}
+
+// —— Batch 28bb: eval.c callback/lua-name + string leaves (exports + weak) ——
+E921_S :: "E921: Invalid callback argument"
+
+// Callback value constructor (eval.c public).
+@(export)
+callback_from_typval :: proc "c" (callback: ^Callback_E, arg: ^Typval_T) -> bool {
+	context = runtime.default_context()
+	r: C.int = OK_E
+	if arg.v_type == VAR_PARTIAL && rawptr(arg.vval) != nil {
+		callback.data = rawptr(arg.vval)
+		(^C.int)(uintptr(rawptr(arg.vval)) + PT_REFCOUNT_OFF_O)^ += 1
+		callback.type = KCB_PARTIAL_O
+	} else if arg.v_type == VAR_STRING && rawptr(arg.vval) != nil && ascii_isdigit_o(([^]u8)(arg.vval)[0]) {
+		r = FAIL_E
+	} else if arg.v_type == VAR_FUNC || arg.v_type == VAR_STRING {
+		name := transmute(cstring)(arg.vval)
+		if name == nil {
+			r = FAIL_E
+		} else if ([^]u8)(name)[0] == 0 {
+			callback.type = KCB_NONE_O
+			callback.data = nil
+		} else {
+			callback.data = nil
+			if arg.v_type == VAR_STRING {
+				callback.data = rawptr(get_scriptlocal_funcname(name))
+			}
+			if callback.data == nil {
+				callback.data = rawptr(xstrdup_o(transmute(^u8)(name)))
+			}
+			func_ref(transmute(cstring)(callback.data))
+			callback.type = KCB_FUNCREF_O
+		}
+	} else if nlua_is_table_from_lua_e(arg) {
+		name := nlua_register_table_as_callable_e(arg)
+		if name != nil {
+			callback.data = rawptr(xstrdup_o(transmute(^u8)(name)))
+			callback.type = KCB_FUNCREF_O
+		} else {
+			r = FAIL_E
+		}
+	} else if arg.v_type == VAR_SPECIAL || (arg.v_type == VAR_NUMBER && transmute(C.longlong)(arg.vval) == 0) {
+		callback.type = KCB_NONE_O
+		callback.data = nil
+	} else {
+		r = FAIL_E
+	}
+	if r == FAIL_E {
+		emsg(cstring(E921_S))
+		return false
+	}
+	return true
+}
+
+// v:lua partial check (eval.c public).
+@(export)
+is_luafunc :: proc "c" (partial: rawptr) -> bool {
+	context = runtime.default_context()
+	return partial == get_vim_var_partial(VV_LUA_O)
+}
+
+// Skip one v:lua name (eval.c public).
+@(export)
+skip_luafunc_name :: proc "c" (p: cstring) -> cstring {
+	context = runtime.default_context()
+	cur := p
+	for {
+		c := ([^]u8)(cur)[0]
+		if !((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_' || c == '-' || c == '.' || c == '\'') {
+			break
+		}
+		cur = transmute(cstring)(uintptr(rawptr(cur)) + 1)
+	}
+	return cur
+}
+
+// Validate v:lua name + terminator (eval.c public).
+@(export)
+check_luafunc_name :: proc "c" (str: cstring, paren: bool) -> C.int {
+	context = runtime.default_context()
+	p := skip_luafunc_name(str)
+	want: u8 = 0
+	if paren {
+		want = '('
+	}
+	if ([^]u8)(p)[0] != want {
+		return 0
+	}
+	return C.int(uintptr(rawptr(p)) - uintptr(rawptr(str)))
+}
+
+// Byte index for char index (eval.c static).
+char_idx2byte_o :: proc "c" (str: cstring, str_len: C.size_t, idx: C.longlong) -> C.longlong {
+	context = runtime.default_context()
+	nchar := idx
+	nbyte: C.size_t = 0
+	if nchar >= 0 {
+		for nchar > 0 && nbyte < str_len {
+			nbyte += C.size_t(utfc_ptr2len(transmute(cstring)(uintptr(rawptr(str)) + uintptr(nbyte))))
+			nchar -= 1
+		}
+	} else {
+		nbyte = str_len
+		for nchar < 0 && nbyte > 0 {
+			nbyte -= 1
+			nbyte -= C.size_t(utf_head_off_r(transmute(^u8)(str), transmute(^u8)(uintptr(rawptr(str)) + uintptr(nbyte))))
+			nchar += 1
+		}
+		if nchar < 0 {
+			return -1
+		}
+	}
+	return C.longlong(nbyte)
+}
+
+// Char-at-index (eval.c public).
+@(export)
+char_from_string :: proc "c" (str: cstring, index: C.longlong) -> cstring {
+	context = runtime.default_context()
+	if str == nil {
+		return nil
+	}
+	nchar := index
+	slen := libc.strlen(str)
+	if index < 0 {
+		clen: C.int = 0
+		nbyte: C.size_t = 0
+		for nbyte < slen {
+			nbyte += C.size_t(utfc_ptr2len(transmute(cstring)(uintptr(rawptr(str)) + uintptr(nbyte))))
+			clen += 1
+		}
+		nchar = C.longlong(clen) + index
+		if nchar < 0 {
+			return nil
+		}
+	}
+	nbyte: C.size_t = 0
+	for nchar > 0 && nbyte < slen {
+		nbyte += C.size_t(utfc_ptr2len(transmute(cstring)(uintptr(rawptr(str)) + uintptr(nbyte))))
+		nchar -= 1
+	}
+	if nbyte >= slen {
+		return nil
+	}
+	return transmute(cstring)(xmemdupz_o2(transmute(^u8)(uintptr(rawptr(str)) + uintptr(nbyte)), C.size_t(utfc_ptr2len(transmute(cstring)(uintptr(rawptr(str)) + uintptr(nbyte))))))
+}
+
+// String slice by char index (eval.c public).
+@(export)
+string_slice :: proc "c" (str: cstring, first: C.longlong, last: C.longlong, exclusive: bool) -> cstring {
+	context = runtime.default_context()
+	if str == nil {
+		return nil
+	}
+	slen := libc.strlen(str)
+	start_byte := char_idx2byte_o(str, slen, first)
+	if start_byte < 0 {
+		start_byte = 0
+	}
+	end_byte: C.longlong = 0
+	if (last == -1 && !exclusive) || last == VARNUMBER_MAX_O {
+		end_byte = C.longlong(slen)
+	} else {
+		end_byte = char_idx2byte_o(str, slen, last)
+		if !exclusive && end_byte >= 0 && end_byte < C.longlong(slen) {
+			end_byte += C.longlong(utfc_ptr2len(transmute(cstring)(uintptr(rawptr(str)) + uintptr(end_byte))))
+		}
+	}
+	if start_byte >= C.longlong(slen) || end_byte <= start_byte {
+		return nil
+	}
+	return transmute(cstring)(xmemdupz_o2(transmute(^u8)(uintptr(rawptr(str)) + uintptr(start_byte)), C.size_t(end_byte - start_byte)))
+}
+
+// Float prefix parser (eval.c public).
+@(export)
+string2float :: proc "c" (text: cstring, ret_value: ^f64) -> C.size_t {
+	context = runtime.default_context()
+	c0 := ([^]u8)(text)[0]
+	c1 := ([^]u8)(text)[1]
+	c2 := ([^]u8)(text)[2]
+	c3 := ([^]u8)(text)[3]
+	is_inf := (c0 == 'i' || c0 == 'I') && (c1 == 'n' || c1 == 'N') && (c2 == 'f' || c2 == 'F')
+	is_ninf := c0 == '-' && (c1 == 'i' || c1 == 'I') && (c2 == 'n' || c2 == 'N') && (c3 == 'f' || c3 == 'F')
+	is_nan := (c0 == 'n' || c0 == 'N') && (c1 == 'a' || c1 == 'A') && (c2 == 'n' || c2 == 'N')
+	if is_inf {
+		ret_value^ = libc.INFINITY
+		return 3
+	}
+	if is_ninf {
+		ret_value^ = -libc.INFINITY
+		return 4
+	}
+	if is_nan {
+		ret_value^ = libc.NAN
+		return 3
+	}
+	endp: cstring = nil
+	ret_value^ = strtod_e(text, &endp)
+	return C.size_t(uintptr(rawptr(endp)) - uintptr(rawptr(text)))
+}
+
+// —— Batch 28be: eval.c name-end + source/verbose message leaves ——
+foreign _ {
+	@(link_name = "get_scriptname")
+	get_scriptname_e :: proc "c" (ctx: sctx_T, should_free: ^bool) -> cstring ---
+	@(link_name = "line_msg")
+	line_msg_e: cstring
+	@(link_name = "msg_ext_skip_verbose")
+	msg_ext_skip_verbose_e: bool
+}
+
+// Variable/function name end scanner (eval.c public).
+@(export)
+find_name_end :: proc "c" (arg: cstring, expr_start: ^cstring, expr_end: ^cstring, flags: C.int) -> cstring {
+	context = runtime.default_context()
+	if expr_start != nil {
+		expr_start^ = nil
+		expr_end^ = nil
+	}
+	if (flags & FNE_CHECK_START_O) != 0 && !eval_isnamec1(C.int(([^]u8)(arg)[0])) && ([^]u8)(arg)[0] != '{' {
+		return arg
+	}
+	mb_nest: C.int = 0
+	br_nest: C.int = 0
+	length: C.int = 0
+	p := arg
+	for ([^]u8)(p)[0] != 0 && (eval_isnamec(C.int(([^]u8)(p)[0])) || ([^]u8)(p)[0] == '{' || ((flags & FNE_INCL_BR_O) != 0 && (([^]u8)(p)[0] == '[' || (([^]u8)(p)[0] == '.' && eval_isdictc(C.int(([^]u8)(p)[1]))))) || mb_nest != 0 || br_nest != 0) {
+		if ([^]u8)(p)[0] == '\'' {
+			p = transmute(cstring)(uintptr(rawptr(p)) + 1)
+			for ([^]u8)(p)[0] != 0 && ([^]u8)(p)[0] != '\'' {
+				p = transmute(cstring)(uintptr(rawptr(p)) + uintptr(utfc_ptr2len(p)))
+			}
+			if ([^]u8)(p)[0] == 0 {
+				break
+			}
+		} else if ([^]u8)(p)[0] == '"' {
+			p = transmute(cstring)(uintptr(rawptr(p)) + 1)
+			for ([^]u8)(p)[0] != 0 && ([^]u8)(p)[0] != '"' {
+				if ([^]u8)(p)[0] == '\\' && ([^]u8)(p)[1] != 0 {
+					p = transmute(cstring)(uintptr(rawptr(p)) + 1)
+				}
+				p = transmute(cstring)(uintptr(rawptr(p)) + uintptr(utfc_ptr2len(p)))
+			}
+			if ([^]u8)(p)[0] == 0 {
+				break
+			}
+		} else if br_nest == 0 && mb_nest == 0 && ([^]u8)(p)[0] == ':' {
+			length = C.int(uintptr(rawptr(p)) - uintptr(rawptr(arg)))
+			prev_close := ([^]u8)(uintptr(rawptr(p)) - 1)[0] == '}'
+			c0 := ([^]u8)(arg)[0]
+			in_ns := c0 == 'a' || c0 == 'b' || c0 == 'g' || c0 == 'l' || c0 == 's' || c0 == 't' || c0 == 'v' || c0 == 'w'
+			if ((length > 1 && !prev_close) || (length == 1 && !in_ns)) {
+				break
+			}
+		}
+		if mb_nest == 0 {
+			if ([^]u8)(p)[0] == '[' {
+				br_nest += 1
+			} else if ([^]u8)(p)[0] == ']' {
+				br_nest -= 1
+			}
+		}
+		if br_nest == 0 {
+			if ([^]u8)(p)[0] == '{' {
+				mb_nest += 1
+				if expr_start != nil && expr_start^ == nil {
+					expr_start^ = p
+				}
+			} else if ([^]u8)(p)[0] == '}' {
+				mb_nest -= 1
+				if expr_start != nil && mb_nest == 0 && expr_end^ == nil {
+					expr_end^ = p
+				}
+			}
+		}
+		p = transmute(cstring)(uintptr(rawptr(p)) + uintptr(utfc_ptr2len(p)))
+	}
+	return p
+}
+
+// "file:lnum" source string (eval.c public).
+@(export)
+eval_fmt_source_name_line :: proc "c" (buf: cstring, bufsize: C.size_t) {
+	context = runtime.default_context()
+	if exestack.ga_len > 0 {
+		idx := int(exestack.ga_len - 1)
+		name := ([^]Estack)(exestack.ga_data)[idx].es_name
+		if name != nil {
+			libc.snprintf(transmute([^]u8)(buf), bufsize, cstring("%s:%d"), name, ([^]Estack)(exestack.ga_data)[idx].es_lnum)
+			return
+		}
+	}
+	libc.snprintf(transmute([^]u8)(buf), bufsize, cstring("?"))
+}
+
+// Verbose "Last set from" message (eval.c public).
+@(export)
+last_set_msg :: proc "c" (script_ctx: sctx_T) {
+	context = runtime.default_context()
+	if script_ctx.sc_sid == 0 {
+		return
+	}
+	should_free := false
+	p := get_scriptname_e(script_ctx, &should_free)
+	msg_ext_skip_verbose_e = true
+	verbose_enter()
+	msg_puts(cstring("\n\tLast set from "))
+	msg_puts(p)
+	if script_ctx.sc_lnum > 0 {
+		msg_puts(line_msg_e)
+		msg_outnum(C.int(script_ctx.sc_lnum))
+	} else if script_is_lua_e(script_ctx.sc_sid) {
+		msg_puts(cstring(" (run Nvim with -V1 for more details)"))
+	}
+	if should_free {
+		xfree(rawptr(transmute(^u8)(p)))
+	}
+	verbose_leave()
+}
+
+// —— Batch 28bi: eval.c garbage_collect (export + weak, last big one) ——
+foreign _ {
+	@(link_name = "may_garbage_collect")
+	may_garbage_collect_g: bool
+	@(link_name = "set_ref_in_insexpand_funcs")
+	set_ref_in_insexpand_funcs_e :: proc "c" (copyID: C.int) -> bool ---
+	@(link_name = "set_ref_in_opfunc")
+	set_ref_in_opfunc_e :: proc "c" (copyID: C.int) -> bool ---
+	@(link_name = "set_ref_in_tagfunc")
+	set_ref_in_tagfunc_e :: proc "c" (copyID: C.int) -> bool ---
+	@(link_name = "set_ref_in_findfunc")
+	set_ref_in_findfunc_e :: proc "c" (copyID: C.int) -> bool ---
+	@(link_name = "set_ref_in_quickfix")
+	set_ref_in_quickfix_e :: proc "c" (copyID: C.int) -> bool ---
+	@(link_name = "set_ref_in_cpt_callbacks")
+	set_ref_in_cpt_callbacks_e :: proc "c" (callbacks: rawptr, count: C.int, copyID: C.int) -> bool ---
+}
+
+COPYID_MASK_O :: ~C.int(1)
+CHAN_ON_DATA_OFF_O :: 1856
+CHAN_ON_STDERR_OFF_O :: 1920
+CHAN_ON_EXIT_OFF_O :: 1984
+
+// Free unreferenced lists/dicts (eval.c static).
+free_unref_items_o :: proc "c" (copyID: C.int) -> bool {
+	context = runtime.default_context()
+	did_free := false
+	tv_in_free_unref_items = true
+	dd := gc_first_dict
+	for dd != nil {
+		if ((^C.int)(uintptr(dd) + 12)^ & COPYID_MASK_O) != (copyID & COPYID_MASK_O) {
+			tv_dict_free_contents(dd)
+			did_free = true
+		}
+		dd = (^rawptr)(uintptr(dd) + 320)^
+	}
+	ll := gc_first_list
+	for ll != nil {
+		if ((^C.int)(uintptr(ll) + 68)^ & COPYID_MASK_O) != (copyID & COPYID_MASK_O) && (^rawptr)(uintptr(ll) + 16)^ == nil {
+			tv_list_free_contents(ll)
+			did_free = true
+		}
+		ll = (^rawptr)(uintptr(ll) + 40)^
+	}
+	dd_next: rawptr = nil
+	dd = gc_first_dict
+	for dd != nil {
+		dd_next = (^rawptr)(uintptr(dd) + 320)^
+		if ((^C.int)(uintptr(dd) + 12)^ & COPYID_MASK_O) != (copyID & COPYID_MASK_O) {
+			tv_dict_free_dict(dd)
+		}
+		dd = dd_next
+	}
+	ll_next: rawptr = nil
+	ll = gc_first_list
+	for ll != nil {
+		ll_next = (^rawptr)(uintptr(ll) + 40)^
+		if ((^C.int)(uintptr(ll) + 68)^ & COPYID_MASK_O) != (copyID & COPYID_MASK_O) && (^rawptr)(uintptr(ll) + 16)^ == nil {
+			tv_list_free_list(ll)
+		}
+		ll = ll_next
+	}
+	tv_in_free_unref_items = false
+	return did_free
+}
+
+// Full garbage-collection pass (eval.c public).
+@(export)
+garbage_collect :: proc "c" (testing: bool) -> bool {
+	context = runtime.default_context()
+	abort := false
+	if !testing {
+		want_garbage_collect_g = false
+		may_garbage_collect_g = false
+		garbage_collect_at_exit_g = false
+	}
+	if exestack.ga_maxlen - exestack.ga_len > 500 {
+		n := exestack.ga_len / 2
+		if n < exestack.ga_growsize {
+			n = exestack.ga_growsize
+		}
+		if exestack.ga_len + n < exestack.ga_maxlen {
+			new_len := C.size_t(exestack.ga_itemsize) * C.size_t(exestack.ga_len + n)
+			exestack.ga_data = rawptr(xrealloc(exestack.ga_data, new_len))
+			exestack.ga_maxlen = exestack.ga_len + n
+		}
+	}
+	copyID := get_copyID()
+	if !abort {
+		abort = set_ref_in_previous_funccal(copyID)
+	}
+	if !abort {
+		abort = garbage_collect_scriptvars(copyID)
+	}
+	buf := firstbuf
+	for buf != nil {
+		if !abort {
+			abort = set_ref_in_item((^Typval_T)(uintptr(buf) + B_BUFVAR_OFF), copyID, nil, nil)
+		}
+		if !abort {
+			abort = set_ref_in_callback((^Callback_E)(uintptr(buf) + B_PROMPT_CB_OFF), copyID, nil, nil)
+		}
+		if !abort {
+			abort = set_ref_in_callback((^Callback_E)(uintptr(buf) + B_PROMPT_INT_OFF), copyID, nil, nil)
+		}
+		if !abort {
+			abort = set_ref_in_callback((^Callback_E)(uintptr(buf) + B_CFU_CB_OFF), copyID, nil, nil)
+		}
+		if !abort {
+			abort = set_ref_in_callback((^Callback_E)(uintptr(buf) + B_OFU_CB_OFF), copyID, nil, nil)
+		}
+		if !abort {
+			abort = set_ref_in_callback((^Callback_E)(uintptr(buf) + B_TSRFU_CB_OFF), copyID, nil, nil)
+		}
+		if !abort {
+			abort = set_ref_in_callback((^Callback_E)(uintptr(buf) + B_TFU_CB_OFF), copyID, nil, nil)
+		}
+		if !abort {
+			abort = set_ref_in_callback((^Callback_E)(uintptr(buf) + B_FFU_CB_OFF), copyID, nil, nil)
+		}
+		if !abort && (^rawptr)(uintptr(buf) + B_P_CPT_CB_OFF)^ != nil {
+			abort = set_ref_in_cpt_callbacks_e((^rawptr)(uintptr(buf) + B_P_CPT_CB_OFF)^, (^C.int)(uintptr(buf) + B_P_CPT_COUNT_OFF)^, copyID)
+		}
+		buf = (^rawptr)(uintptr(buf) + B_NEXT_OFF)^
+	}
+	if !abort {
+		abort = set_ref_in_insexpand_funcs_e(copyID)
+	}
+	if !abort {
+		abort = set_ref_in_opfunc_e(copyID)
+	}
+	if !abort {
+		abort = set_ref_in_tagfunc_e(copyID)
+	}
+	if !abort {
+		abort = set_ref_in_findfunc_e(copyID)
+	}
+	tp := first_tabpage
+	for tp != nil {
+		wp := (^rawptr)(uintptr(tp) + TP_FIRSTWIN_OFF)^
+		for wp != nil {
+			if !abort {
+				abort = set_ref_in_item((^Typval_T)(uintptr(wp) + W_WINVAR_OFF), copyID, nil, nil)
+			}
+			wp = (^rawptr)(uintptr(wp) + W_NEXT_OFF)^
+		}
+		tp = (^rawptr)(uintptr(tp) + TP_NEXT_OFF)^
+	}
+	i: u32 = 0
+	for i < u32(aucmd_win_vec_g.size) {
+		auw := rawptr(uintptr(aucmd_win_vec_g.items) + uintptr(i) * 16)
+		if (^rawptr)(uintptr(auw))^ != nil {
+			if !abort {
+				abort = set_ref_in_item((^Typval_T)(uintptr((^rawptr)(uintptr(auw))^) + W_WINVAR_OFF), copyID, nil, nil)
+			}
+		}
+		i += 1
+	}
+	tp = first_tabpage
+	for tp != nil {
+		if !abort {
+			abort = set_ref_in_item((^Typval_T)(uintptr(tp) + TP_WINVAR_OFF), copyID, nil, nil)
+		}
+		tp = (^rawptr)(uintptr(tp) + TP_NEXT_OFF)^
+	}
+	if !abort {
+		abort = garbage_collect_globvars(copyID) != 0
+	}
+	if !abort {
+		abort = set_ref_in_call_stack(copyID)
+	}
+	if !abort {
+		abort = set_ref_in_functions(copyID)
+	}
+	i = 0
+	for i < channels_g.set.h.n_buckets {
+		if !mh_is_empty(&channels_g.set.h, i) && !mh_is_del(&channels_g.set.h, i) {
+			data := channels_g.values[channels_g.set.h.hash[i] - 1]
+			set_ref_in_callback_reader_o(rawptr(uintptr(data) + CHAN_ON_DATA_OFF_O), copyID, nil, nil)
+			set_ref_in_callback_reader_o(rawptr(uintptr(data) + CHAN_ON_STDERR_OFF_O), copyID, nil, nil)
+			set_ref_in_callback(transmute(^Callback_E)(uintptr(data) + CHAN_ON_EXIT_OFF_O), copyID, nil, nil)
+		}
+		i += 1
+	}
+	i = 0
+	for i < timers_g.set.h.n_buckets {
+		if !mh_is_empty(&timers_g.set.h, i) && !mh_is_del(&timers_g.set.h, i) {
+			timer := timers_g.values[timers_g.set.h.hash[i] - 1]
+			set_ref_in_callback(transmute(^Callback_E)(uintptr(timer) + 224), copyID, nil, nil)
+		}
+		i += 1
+	}
+	if !abort {
+		abort = set_ref_in_func_args(copyID)
+	}
+	if !abort {
+		abort = garbage_collect_vimvars(copyID)
+	}
+	if !abort {
+		abort = set_ref_in_quickfix_e(copyID)
+	}
+	did_free := false
+	if !abort {
+		did_free = free_unref_items_o(copyID)
+		did_free = free_unref_funccal(copyID, testing) || did_free
+	} else if p_verbose > 0 {
+		verb_msg_r(cstring("Not enough memory to set references, garbage collection aborted!"))
+	}
+	return did_free
+}
+
+// —— Batch 28bh: eval.c prompt cluster (exports + weak) ——
+foreign _ {
+	@(link_name = "ml_delete_buf")
+	ml_delete_buf_e :: proc "c" (buf: rawptr, lnum: C.int, message: bool) -> C.int ---
+	@(link_name = "deleted_lines_buf")
+	deleted_lines_buf_e :: proc "c" (buf: rawptr, lnum: C.int, count: C.int) ---
+}
+
+// v:event dict accessor with recursive-save (eval.c public).
+@(export)
+get_v_event :: proc "c" (sve: rawptr) -> rawptr {
+	context = runtime.default_context()
+	v_event := get_vim_var_dict(VV_EVENT_O)
+	if (^C.size_t)(uintptr(v_event) + 16 + 8)^ > 0 {
+		([^]u8)(sve)[0] = 1
+		libc.memcpy(rawptr(uintptr(sve) + 8), rawptr(uintptr(v_event) + 16), 296)
+		hash_init_r(rawptr(uintptr(v_event) + 16))
+	} else {
+		([^]u8)(sve)[0] = 0
+	}
+	return v_event
+}
+
+// v:event dict restorer (eval.c public).
+@(export)
+restore_v_event :: proc "c" (v_event: rawptr, sve: rawptr) {
+	context = runtime.default_context()
+	tv_dict_free_contents(v_event)
+	if ([^]u8)(sve)[0] != 0 {
+		libc.memcpy(rawptr(uintptr(v_event) + 16), rawptr(uintptr(sve) + 8), 296)
+	} else {
+		hash_init_r(rawptr(uintptr(v_event) + 16))
+	}
+}
+
+// Prompt-buffer input reader (eval.c public).
+@(export)
+prompt_get_input :: proc "c" (buf: rawptr) -> cstring {
+	context = runtime.default_context()
+	if !bt_prompt(buf) {
+		return nil
+	}
+	lnum_start := (^C.int)(uintptr(buf) + B_PROMPT_START)^
+	lnum_last := (^C.int)(uintptr(buf) + B_ML_LINE_COUNT)^
+	text := ml_get_buf(buf, lnum_start)
+	if C.int(libc.strlen(transmute(cstring)(text))) >= (^C.int)(uintptr(buf) + B_PROMPT_START + 4)^ {
+		text = transmute(^u8)(uintptr(rawptr(text)) + uintptr((^C.int)(uintptr(buf) + B_PROMPT_START + 4)^))
+	}
+	full_text := xstrdup_o(text)
+	i := lnum_start + 1
+	for i <= lnum_last {
+		half_text := concat_str_c(transmute(cstring)(full_text), cstring("\n"))
+		xfree(rawptr(full_text))
+		full_text = transmute(^u8)(concat_str_c(transmute(cstring)(half_text), transmute(cstring)(ml_get_buf(buf, i))))
+		xfree(rawptr(half_text))
+		i += 1
+	}
+	return transmute(cstring)(full_text)
+}
+
+// Prompt scrollback trimmer (eval.c public).
+@(export)
+prompt_trim_scrollback :: proc "c" (buf: rawptr) {
+	context = runtime.default_context()
+	if (^C.longlong)(uintptr(buf) + B_P_SCBK_OFF)^ <= 0 {
+		return
+	}
+	prompt_line := (^C.int)(uintptr(buf) + B_PROMPT_START)^
+	above_prompt := prompt_line - 1
+	if above_prompt <= C.int((^C.longlong)(uintptr(buf) + B_P_SCBK_OFF)^) {
+		return
+	}
+	to_delete := above_prompt - C.int((^C.longlong)(uintptr(buf) + B_P_SCBK_OFF)^)
+	i: C.int = 0
+	for i < to_delete {
+		ml_delete_buf_e(buf, 1, false)
+		i += 1
+	}
+	mark_adjust_buf(buf, 1, to_delete, MAXLNUM, -to_delete, true, kMarkAdjustNormal, kExtmarkUndo)
+	deleted_lines_buf_e(buf, 1, to_delete)
+	tp := first_tabpage
+	for tp != nil {
+		wp := (^rawptr)(uintptr(tp) + TP_FIRSTWIN_OFF)^
+		for wp != nil {
+			if (^rawptr)(uintptr(wp) + W_BUFFER_OFF)^ == buf {
+				ln := (^C.int)(uintptr(wp) + W_CURSOR_OFF)^
+				if ln <= to_delete {
+					ln = 1
+				} else {
+					ln -= to_delete
+				}
+				(^C.int)(uintptr(wp) + W_CURSOR_OFF)^ = ln
+				if (^C.int)(uintptr(wp) + W_CURSOR_OFF)^ > (^C.int)(uintptr((^rawptr)(uintptr(wp) + W_BUFFER_OFF)^) + B_ML_LINE_COUNT)^ {
+					(^C.int)(uintptr(wp) + W_CURSOR_OFF)^ = (^C.int)(uintptr((^rawptr)(uintptr(wp) + W_BUFFER_OFF)^) + B_ML_LINE_COUNT)^
+				}
+			}
+			wp = (^rawptr)(uintptr(wp) + W_NEXT_OFF)^
+		}
+		tp = (^rawptr)(uintptr(tp) + TP_NEXT_OFF)^
+	}
+	check_cursor_col_r(curwin)
+}
+
+// Prompt submit handler (eval.c public).
+@(export)
+prompt_invoke_callback :: proc "c" () {
+	context = runtime.default_context()
+	lnum := (^C.int)(uintptr(curbuf) + B_ML_LINE_COUNT)^
+	user_input := prompt_get_input(curbuf)
+	if user_input == nil {
+		return
+	}
+	ml_append(lnum, transmute(^u8)(cstring("")), 0, false)
+	appended_lines_mark_r(lnum, 1)
+	(^C.int)(uintptr(curwin) + W_CURSOR_OFF)^ = lnum + 1
+	(^C.int)(uintptr(curwin) + W_CURSOR_OFF + 4)^ = 0
+	(^C.int)(uintptr(curbuf) + B_PROMPT_START)^ = lnum + 1
+	if (^C.int)(uintptr(curbuf) + B_PROMPT_CB_OFF + 8)^ == KCB_NONE_O {
+		xfree(rawptr(transmute(^u8)(user_input)))
+	} else {
+		argv := [2]Typval_T{Typval_T{v_type = VAR_UNKNOWN, v_lock = VAR_UNLOCKED}, Typval_T{v_type = VAR_UNKNOWN, v_lock = VAR_UNLOCKED}}
+		argv[0].v_type = VAR_STRING
+		argv[0].vval = transmute(rawptr)(user_input)
+		rettv := Typval_T{v_type = VAR_UNKNOWN, v_lock = VAR_UNLOCKED}
+		callback_call(rawptr(uintptr(curbuf) + B_PROMPT_CB_OFF), 1, &argv[0], &rettv)
+		tv_clear(&argv[0])
+		tv_clear(&rettv)
+	}
+	u_clearallandblockfree(curbuf)
+	(^C.int)(uintptr(curbuf) + B_PROMPT_START)^ = (^C.int)(uintptr(curbuf) + B_ML_LINE_COUNT)^
+	([^]u8)(uintptr(curbuf) + B_PROMPT_APPEND_OFF)[0] = 1
+	prompt_trim_scrollback(curbuf)
+}
+
+// Prompt interrupt handler (eval.c public).
+@(export)
+invoke_prompt_interrupt :: proc "c" () -> bool {
+	context = runtime.default_context()
+	if (^C.int)(uintptr(curbuf) + B_PROMPT_INT_OFF + 8)^ == KCB_NONE_O {
+		return false
+	}
+	argv := [1]Typval_T{Typval_T{v_type = VAR_UNKNOWN, v_lock = VAR_UNLOCKED}}
+	rettv := Typval_T{v_type = VAR_UNKNOWN, v_lock = VAR_UNLOCKED}
+	got_int = false
+	ret := callback_call(rawptr(uintptr(curbuf) + B_PROMPT_INT_OFF), 0, &argv[0], &rettv)
+	tv_clear(&rettv)
+	return ret
+}
+
+// —— Batch 28bg: eval.c provider trio (exports + weak) ——
+foreign _ {
+	@(link_name = "nlua_is_deferred_safe")
+	nlua_is_deferred_safe_e :: proc "c" () -> bool ---
+}
+
+E5560_S :: "E5560: %s must not be called in a fast event context"
+E319_S :: "E319: No \"%s\" provider found. Run \":checkhealth vim.provider\""
+
+// Provider-feature check (eval.c public).
+@(export)
+eval_has_provider :: proc "c" (feat: cstring, throw_if_fast: bool) -> bool {
+	context = runtime.default_context()
+	if libc.strcmp(feat, cstring("clipboard")) != 0 && libc.strcmp(feat, cstring("python3")) != 0 && libc.strcmp(feat, cstring("python3_compiled")) != 0 && libc.strcmp(feat, cstring("python3_dynamic")) != 0 && libc.strcmp(feat, cstring("perl")) != 0 && libc.strcmp(feat, cstring("ruby")) != 0 && libc.strcmp(feat, cstring("node")) != 0 {
+		return false
+	}
+	if throw_if_fast && !nlua_is_deferred_safe_e() {
+		semsg(cstring(E5560_S), cstring("Vimscript function"))
+		return false
+	}
+	name: [32]u8
+	libc.snprintf(([^]u8)(&name[0]), 32, cstring("%s"), feat)
+	for i := 0; i < 32; i += 1 {
+		if ([^]u8)(&name[0])[i] == '_' {
+			([^]u8)(&name[0])[i] = 0
+			break
+		}
+		if ([^]u8)(&name[0])[i] == 0 {
+			break
+		}
+	}
+	buf: [256]u8
+	tv := Typval_T{}
+	length := C.int(libc.snprintf(([^]u8)(&buf[0]), 256, cstring("g:loaded_%s_provider"), transmute(cstring)(&name[0])))
+	if eval_variable(transmute(cstring)(&buf[0]), length, &tv, nil, false, true) == FAIL_E {
+		length = C.int(libc.snprintf(([^]u8)(&buf[0]), 256, cstring("provider#%s#bogus"), transmute(cstring)(&name[0])))
+		script_autoload_e(transmute(cstring)(&buf[0]), C.size_t(length), false)
+		length = C.int(libc.snprintf(([^]u8)(&buf[0]), 256, cstring("g:loaded_%s_provider"), transmute(cstring)(&name[0])))
+		if eval_variable(transmute(cstring)(&buf[0]), length, &tv, nil, false, true) == FAIL_E {
+			length = C.int(libc.snprintf(([^]u8)(&buf[0]), 256, cstring("provider#%s#Call"), transmute(cstring)(&name[0])))
+			if find_func(transmute(cstring)(&buf[0])) != nil && p_lpl != 0 {
+				semsg(cstring("provider: %s: missing required variable g:loaded_%s_provider"), transmute(cstring)(&name[0]), transmute(cstring)(&name[0]))
+			}
+			return false
+		}
+	}
+	ok := false
+	if tv.v_type == VAR_NUMBER && transmute(C.longlong)(tv.vval) == 2 {
+		ok = true
+	}
+	if ok {
+		libc.snprintf(([^]u8)(&buf[0]), 256, cstring("provider#%s#Call"), transmute(cstring)(&name[0]))
+		if find_func(transmute(cstring)(&buf[0])) == nil {
+			semsg(cstring("provider: %s: g:loaded_%s_provider=2 but %s is not defined"), transmute(cstring)(&name[0]), transmute(cstring)(&name[0]), transmute(cstring)(&buf[0]))
+			ok = false
+		}
+	}
+	return ok
+}
+
+// Provider-method dispatcher (eval.c public).
+@(export)
+eval_call_provider :: proc "c" (provider: cstring, method: cstring, arguments: rawptr, discard: bool) -> Typval_T {
+	context = runtime.default_context()
+	if !eval_has_provider(provider, false) {
+		semsg(cstring(E319_S), provider)
+		return Typval_T{v_type = VAR_NUMBER, v_lock = VAR_UNLOCKED, vval = transmute(rawptr)(C.longlong(0))}
+	}
+	func: [256]u8
+	name_len := C.int(libc.snprintf(([^]u8)(&func[0]), 256, cstring("provider#%s#Call"), provider))
+	saved_scope := provider_caller_scope_g
+	provider_caller_scope_g.script_ctx = transmute(sctx_T)(current_sctx_buf)
+	provider_caller_scope_g.es_entry = ([^]Estack)(exestack.ga_data)[int(exestack.ga_len) - 1]
+	provider_caller_scope_g.autocmd_fname = autocmd_fname_g
+	provider_caller_scope_g.autocmd_match = autocmd_match_g
+	provider_caller_scope_g.autocmd_fname_full = autocmd_fname_full_g
+	provider_caller_scope_g.autocmd_bufnr = autocmd_bufnr_g
+	provider_caller_scope_g.funccalp = rawptr(get_current_funccal())
+	entry: [16]u8
+	save_funccal(rawptr(&entry[0]))
+	provider_call_nesting_g += 1
+	argvars := [3]Typval_T{Typval_T{v_type = VAR_STRING, v_lock = VAR_UNLOCKED, vval = transmute(rawptr)(method)}, Typval_T{v_type = VAR_LIST, v_lock = VAR_UNLOCKED, vval = arguments}, Typval_T{v_type = VAR_UNKNOWN, v_lock = VAR_UNLOCKED}}
+	rettv := Typval_T{v_type = VAR_UNKNOWN, v_lock = VAR_UNLOCKED}
+	tv_list_ref_o(arguments)
+	fe := Funcexe_T{}
+	fe.firstline = (^C.int)(uintptr(curwin) + W_CURSOR_OFF)^
+	fe.lastline = (^C.int)(uintptr(curwin) + W_CURSOR_OFF)^
+	fe.evaluate = true
+	call_func(transmute(cstring)(&func[0]), name_len, &rettv, 2, &argvars[0], &fe)
+	tv_list_unref(arguments)
+	restore_funccal()
+	provider_caller_scope_g = saved_scope
+	provider_call_nesting_g -= 1
+	if discard {
+		tv_clear(&rettv)
+	}
+	return rettv
+}
+
+// Host-program eval entry (eval.c public).
+@(export)
+script_host_eval :: proc "c" (name: cstring, argvars: ^Typval_T, rettv: ^Typval_T) {
+	context = runtime.default_context()
+	if check_secure() {
+		return
+	}
+	if ([^]Typval_T)(argvars)[0].v_type != VAR_STRING {
+		emsg(e_invarg)
+		return
+	}
+	args := tv_list_alloc(1)
+	tv_list_append_string(args, transmute(^u8)(([^]Typval_T)(argvars)[0].vval), -1)
+	rettv^ = eval_call_provider(name, cstring("eval"), args, false)
+}
+
+// —— Batch 28bf: eval.c init + global-set leaves (exports + weak) ——
+
+// Top-level eval init (eval.c public; single implementation, main.odin binds here).
+@(export)
+eval_init :: proc "c" () {
+	context = runtime.default_context()
+	evalvars_init()
+	func_init()
+}
+
+// Set a global var with funccal save (eval.c public).
+@(export)
+var_set_global :: proc "c" (name: cstring, vartv: Typval_T) {
+	context = runtime.default_context()
+	entry: [16]u8
+	save_funccal(rawptr(&entry[0]))
+	v := vartv
+	set_var(name, C.size_t(libc.strlen(name)), &v, false)
+	restore_funccal()
+}
+
+// —— Batch 28bd: eval.c job argv cluster (exports + weak) ——
+E900_JOB_S :: "E900: Invalid channel id: not a job"
+E900_CHAN_S :: "E900: Invalid channel id"
+VV_ARGV_O :: 89
+
+// Command-to-argv builder (eval.c public).
+@(export)
+tv_to_argv :: proc "c" (cmd_tv: ^Typval_T, cmd: ^cstring, executable: ^bool) -> ^^u8 {
+	context = runtime.default_context()
+	if cmd_tv.v_type == VAR_STRING {
+		cmd_str := tv_get_string(cmd_tv)
+		if cmd != nil {
+			cmd^ = cmd_str
+		}
+		return shell_build_argv(cmd_str, nil)
+	}
+	if cmd_tv.v_type != VAR_LIST {
+		semsg(e_invarg2, cstring("expected String or List"))
+		return nil
+	}
+	argl := rawptr(cmd_tv.vval)
+	argc := tv_list_len_o(argl)
+	if argc == 0 {
+		emsg(e_invarg)
+		return nil
+	}
+	arg0 := tv_get_string_chk((^Typval_T)(uintptr(tv_list_first_o(argl)) + 16))
+	exe_resolved: cstring = nil
+	if arg0 == nil || !os_can_exe(arg0, &exe_resolved, true) {
+		if arg0 != nil && executable != nil {
+			buf: [1025]u8
+			libc.snprintf(([^]u8)(&buf[0]), 1025, cstring("'%s' is not executable"), arg0)
+			semsg(cstring(E_INVARGNVAL_S), cstring("cmd"), transmute(cstring)(&buf[0]))
+			executable^ = false
+		}
+		return nil
+	}
+	if cmd != nil {
+		cmd^ = exe_resolved
+	}
+	argv := (^rawptr)(xcalloc(C.size_t(argc + 1), C.size_t(size_of(rawptr))))
+	i: C.int = 0
+	li := tv_list_first_o(argl)
+	for li != nil {
+		a := tv_get_string_chk((^Typval_T)(uintptr(li) + 16))
+		if a == nil {
+			shell_free_argv(transmute(^^u8)(argv))
+			xfree(rawptr(exe_resolved))
+			return nil
+		}
+		([^]rawptr)(argv)[i] = rawptr(xstrdup_o(transmute(^u8)(a)))
+		i += 1
+		li = (^rawptr)(uintptr(li))^
+	}
+	xfree(([^]rawptr)(argv)[0])
+	([^]rawptr)(argv)[0] = rawptr(exe_resolved)
+	return transmute(^^u8)(argv)
+}
+
+// Typval-to-string saver (eval.c public).
+@(export)
+save_tv_as_string :: proc "c" (tv: ^Typval_T, len: ^C.ptrdiff_t, endnl: bool, crlf: bool) -> ^u8 {
+	context = runtime.default_context()
+	len^ = 0
+	if tv.v_type == VAR_UNKNOWN {
+		return nil
+	}
+	if tv.v_type != VAR_LIST && tv.v_type != VAR_NUMBER {
+		ret := tv_get_string_chk(tv)
+		if ret != nil {
+			len^ = C.ptrdiff_t(libc.strlen(ret))
+			return xmemdupz_o2(transmute(^u8)(ret), C.size_t(len^))
+		}
+		len^ = -1
+		return nil
+	}
+	if tv.v_type == VAR_NUMBER {
+		buf := buflist_findnr(C.int(transmute(C.longlong)(tv.vval)))
+		if buf != nil {
+			lnum: C.int = 1
+			for lnum <= (^C.int)(uintptr(buf) + B_ML_LINE_COUNT)^ {
+				p := ml_get_buf(buf, lnum)
+				for ([^]u8)(p)[0] != 0 {
+					len^ += 1
+					p = transmute(^u8)(uintptr(rawptr(p)) + 1)
+				}
+				len^ += 1
+				lnum += 1
+			}
+		} else {
+			semsg(cstring(E86_S), transmute(C.longlong)(tv.vval))
+			len^ = -1
+			return nil
+		}
+		if len^ == 0 {
+			return nil
+		}
+		ret := (^u8)(xmalloc(C.size_t(len^) + 1))
+		end := ret
+		lnum: C.int = 1
+		for lnum <= (^C.int)(uintptr(buf) + B_ML_LINE_COUNT)^ {
+			p := ml_get_buf(buf, lnum)
+			for ([^]u8)(p)[0] != 0 {
+				c := ([^]u8)(p)[0]
+				if c == '\n' {
+					c = 0
+				}
+				([^]u8)(end)[0] = c
+				end = transmute(^u8)(uintptr(rawptr(end)) + 1)
+				p = transmute(^u8)(uintptr(rawptr(p)) + 1)
+			}
+			([^]u8)(end)[0] = '\n'
+			end = transmute(^u8)(uintptr(rawptr(end)) + 1)
+			lnum += 1
+		}
+		([^]u8)(end)[0] = 0
+		len^ = C.ptrdiff_t(uintptr(rawptr(end)) - uintptr(rawptr(ret)))
+		return ret
+	}
+	list := rawptr(tv.vval)
+	li := tv_list_first_o(list)
+	for li != nil {
+		len^ += C.ptrdiff_t(libc.strlen(tv_get_string((^Typval_T)(uintptr(li) + 16)))) + (crlf ? 2 : 1)
+		li = (^rawptr)(uintptr(li))^
+	}
+	if len^ == 0 {
+		return nil
+	}
+	ret := (^u8)(xmalloc(C.size_t(len^) + (endnl ? (crlf ? 2 : 1) : 0)))
+	end := ret
+	li = tv_list_first_o(list)
+	for li != nil {
+		s := tv_get_string((^Typval_T)(uintptr(li) + 16))
+		for ([^]u8)(s)[0] != 0 {
+			c := ([^]u8)(s)[0]
+			if c == '\n' {
+				c = 0
+			}
+			([^]u8)(end)[0] = c
+			end = transmute(^u8)(uintptr(rawptr(end)) + 1)
+			s = transmute(cstring)(uintptr(rawptr(s)) + 1)
+		}
+		next := (^rawptr)(uintptr(li))^
+		if endnl || next != nil {
+			if crlf {
+				([^]u8)(end)[0] = '\r'
+				end = transmute(^u8)(uintptr(rawptr(end)) + 1)
+			}
+			([^]u8)(end)[0] = '\n'
+			end = transmute(^u8)(uintptr(rawptr(end)) + 1)
+		}
+		li = next
+	}
+	([^]u8)(end)[0] = 0
+	len^ = C.ptrdiff_t(uintptr(rawptr(end)) - uintptr(rawptr(ret)))
+	return ret
+}
+
+// v:argv setter (eval.c public).
+@(export)
+set_argv_var :: proc "c" (argv: ^^u8, argc: C.int) {
+	context = runtime.default_context()
+	l := tv_list_alloc(C.ssize_t(argc))
+	(^C.int)(uintptr(l) + 72)^ = VAR_FIXED_O
+	i: C.int = 0
+	for i < argc {
+		tv_list_append_string(l, transmute(^u8)(([^]cstring)(argv)[i]), -1)
+		(^C.int)(uintptr(tv_list_last_o(l)) + 20)^ = VAR_FIXED_O
+		i += 1
+	}
+	set_vim_var_list(VV_ARGV_O, l)
+}
+
+// CallbackReader storage release (channel.c public, inlined here).
+callback_reader_free_o :: proc "c" (reader: ^CallbackReader_E) {
+	context = runtime.default_context()
+	callback_free(&reader.cb)
+	ga_clear_r(transmute(^Garray)(uintptr(reader) + 24))
+}
+
+// Job-callback options reader (eval.c public).
+@(export)
+common_job_callbacks :: proc "c" (vopts: rawptr, on_stdout: ^CallbackReader_E, on_stderr: ^CallbackReader_E, on_exit: ^Callback_E) -> bool {
+	context = runtime.default_context()
+	if tv_dict_get_callback(vopts, cstring("on_stdout"), 9, &on_stdout.cb) && tv_dict_get_callback(vopts, cstring("on_stderr"), 9, &on_stderr.cb) && tv_dict_get_callback(vopts, cstring("on_exit"), 7, on_exit) {
+		on_stdout.buffered = tv_dict_get_number(vopts, cstring("stdout_buffered")) != 0
+		on_stderr.buffered = tv_dict_get_number(vopts, cstring("stderr_buffered")) != 0
+		if on_stdout.buffered && on_stdout.cb.type == KCB_NONE_O {
+			on_stdout.self = vopts
+		}
+		if on_stderr.buffered && on_stderr.cb.type == KCB_NONE_O {
+			on_stderr.self = vopts
+		}
+		(^C.int)(uintptr(vopts) + 8)^ += 1
+		return true
+	}
+	callback_reader_free_o(on_stdout)
+	callback_reader_free_o(on_stderr)
+	callback_free(on_exit)
+	return false
+}
+
+// Job-channel lookup (eval.c public).
+@(export)
+find_job :: proc "c" (id: u64, show_error: bool) -> rawptr {
+	context = runtime.default_context()
+	data := find_channel_o(id)
+	if data == nil || (^C.int)(uintptr(data) + CHAN_STREAMTYPE_OFF)^ != KCHSTREAM_PROC_O || proc_is_stopped_o(rawptr(uintptr(data) + CHAN_STREAM_OFF)) {
+		if show_error {
+			if data != nil && (^C.int)(uintptr(data) + CHAN_STREAMTYPE_OFF)^ != KCHSTREAM_PROC_O {
+				emsg(cstring(E900_JOB_S))
+			} else {
+				emsg(cstring(E900_CHAN_S))
+			}
+		}
+		return nil
+	}
+	return data
+}
+
+// —— Batch 28bc: eval.c buf byte/char index pair (exports + weak) ——
+
+// Byte-to-char index for a buffer line (eval.c public).
+@(export)
+buf_byteidx_to_charidx :: proc "c" (buf: rawptr, lnum: C.int, byteidx: C.int) -> C.int {
+	context = runtime.default_context()
+	if buf == nil || (^rawptr)(uintptr(buf) + B_ML_MFP_OFF)^ == nil {
+		return -1
+	}
+	ln := lnum
+	if ln > (^C.int)(uintptr(buf) + B_ML_LINE_COUNT)^ {
+		ln = (^C.int)(uintptr(buf) + B_ML_LINE_COUNT)^
+	}
+	str := ml_get_buf(buf, ln)
+	if ([^]u8)(str)[0] == 0 {
+		return 0
+	}
+	t := str
+	count: C.int = 0
+	for ([^]u8)(t)[0] != 0 && uintptr(rawptr(t)) <= uintptr(rawptr(str)) + uintptr(byteidx) {
+		t = transmute(^u8)(uintptr(rawptr(t)) + uintptr(utfc_ptr2len(transmute(cstring)(t))))
+		count += 1
+	}
+	if ([^]u8)(t)[0] == 0 && byteidx != 0 && t == transmute(^u8)(uintptr(rawptr(str)) + uintptr(byteidx)) {
+		count += 1
+	}
+	return count - 1
+}
+
+// Char-to-byte index for a buffer line (eval.c public).
+@(export)
+buf_charidx_to_byteidx :: proc "c" (buf: rawptr, lnum: C.int, charidx: C.int) -> C.int {
+	context = runtime.default_context()
+	if buf == nil || (^rawptr)(uintptr(buf) + B_ML_MFP_OFF)^ == nil {
+		return -1
+	}
+	ln := lnum
+	if ln > (^C.int)(uintptr(buf) + B_ML_LINE_COUNT)^ {
+		ln = (^C.int)(uintptr(buf) + B_ML_LINE_COUNT)^
+	}
+	str := ml_get_buf(buf, ln)
+	t := str
+	ci := charidx
+	for ([^]u8)(t)[0] != 0 && (ci - 1) > 0 {
+		t = transmute(^u8)(uintptr(rawptr(t)) + uintptr(utfc_ptr2len(transmute(cstring)(t))))
+		ci -= 1
+	}
+	return C.int(uintptr(rawptr(t)) - uintptr(rawptr(str)))
 }

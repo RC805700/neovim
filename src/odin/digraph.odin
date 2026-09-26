@@ -152,9 +152,6 @@ foreign _ {
 	@(link_name = "do_map")
 	do_map :: proc "c" (maptype: C.int, arg: ^u8, mode: C.int, is_abbrev: bool) -> C.int ---
 
-	@(link_name = "eval_to_string")
-	eval_to_string :: proc "c" (arg: ^u8, join_list: bool, use_simple_function: bool) -> ^u8 ---
-
 	@(link_name = "ga_append_via_ptr")
 	ga_append_via_ptr :: proc "c" (gap: ^Garray, item_size: C.size_t) -> rawptr ---
 
@@ -2311,7 +2308,7 @@ get_keymap_str :: proc "c" (wp: rawptr, fmt: ^u8, buf: ^u8, len: C.int) -> C.int
 	curbuf = b_ptr
 	curwin = wp
 	emsg_skip += 1
-	s := eval_to_string(to_evaluate, false, false)
+	s := transmute(^u8)(eval_to_string(transmute(cstring)(to_evaluate), false, false))
 	emsg_skip -= 1
 	curbuf = old_curbuf
 	curwin = old_curwin

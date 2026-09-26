@@ -56,6 +56,10 @@ typedef kvec_t(ContainerStackItem) ContainerStack;
 
 #pragma weak decode_create_map_special_dict
 #pragma weak decode_string
+#pragma weak json_decode_string
+#pragma weak typval_parser_error_free
+#pragma weak mpack_parse_typval
+#pragma weak unpack_typval
 
 /// Create special dictionary
 ///

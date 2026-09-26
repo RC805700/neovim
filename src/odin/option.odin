@@ -976,7 +976,7 @@ did_set_option_o :: proc "c"(
 	b_p_syn_off := 10104 + 0 // probe needed; see AGENTS note
 	_ = b_p_syn_off
 	if varp == transmute(rawptr)(uintptr(curbuf) + B_P_SYN_OFF) {
-		do_syntax_autocmd_r(curbuf, value_changed)
+		do_syntax_autocmd_r(curbuf, false)
 	} else if varp == transmute(rawptr)(uintptr(curbuf) + B_P_FT_OFF) {
 		if ((opt_flags & OPT_MODELINE_S) == 0 || value_changed) {
 			do_filetype_autocmd_r(curbuf, value_changed)
@@ -1440,8 +1440,6 @@ foreign _ {
 	vim_str2nr_r :: proc "c" (start: cstring, prep: ^cstring, len: ^C.int, what: C.int, nptr: ^C.longlong, sptr: ^u64, maxlen: C.size_t, strict: bool, overflow: ^bool) ---
 	@(link_name = "skiptowhite_esc")
 	skiptowhite_esc_r :: proc "c" (p: cstring) -> cstring ---
-	@(link_name = "last_set_msg")
-	last_set_msg_r :: proc "c" (sctx: sctx_T) ---
 	@(link_name = "msg_advance")
 	msg_advance_r :: proc "c" (col: C.int) ---
 	@(link_name = "message_filtered")
@@ -2505,17 +2503,17 @@ do_one_set_option_o :: proc "c"(
 
 		if p_verbose > 0 {
 			if varp == opt_at(opt_idx).varp {
-				sctx_tmp := (^sctx_T)(&opt_at(opt_idx).script_ctx_buf[0])^; last_set_msg_r(sctx_tmp)
+				sctx_tmp := (^sctx_T)(&opt_at(opt_idx).script_ctx_buf[0])^; last_set_msg(sctx_tmp)
 			} else if option_has_scope(opt_idx, kOptScopeWin_S) {
 				addr := uintptr(curwin) + W_P_SCRIPT_CTX_OFF +
 				uintptr(option_scope_idx(opt_idx, kOptScopeWin_S)) * SCCTX_STRIDE
 				sctx_win := (^sctx_T)(addr)^
-				last_set_msg_r(sctx_win)
+				last_set_msg(sctx_win)
 			} else if option_has_scope(opt_idx, kOptScopeBuf_S) {
 				addr := uintptr(curbuf) + B_P_SCRIPT_CTX_OFF +
 				uintptr(option_scope_idx(opt_idx, kOptScopeBuf_S)) * SCCTX_STRIDE
 				sctx_buf2 := (^sctx_T)(addr)^
-				last_set_msg_r(sctx_buf2)
+				last_set_msg(sctx_buf2)
 			}
 		}
 
@@ -2750,10 +2748,6 @@ foreign _ {
 }
 
 foreign _ {
-	@(link_name = "callback_from_typval")
-	callback_from_typval_r :: proc "c" (cb: rawptr, tv: rawptr) -> bool ---
-	@(link_name = "eval_expr")
-	eval_expr_r :: proc "c" (arg: cstring, arg2: rawptr) -> rawptr ---
 	@(link_name = "xcalloc")
 	xcalloc_o :: proc "c" (n: C.size_t, sz: C.size_t) -> rawptr ---
 }
@@ -2774,7 +2768,7 @@ option_set_callback_func :: proc "c"(optval: ^u8, optcb: rawptr) -> C.int {
 	if c0 == '{' ||
 	libc.strncmp(transmute(cstring)(optval), "function(", 9) == 0 ||
 	libc.strncmp(transmute(cstring)(optval), "funcref(", 8) == 0 {
-		tv_ptr = eval_expr_r(transmute(cstring)(optval), nil)
+		tv_ptr = eval_expr(transmute(cstring)(optval), nil)
 		if tv_ptr == nil {
 			return 0 // FAIL
 		}
@@ -2785,7 +2779,7 @@ option_set_callback_func :: proc "c"(optval: ^u8, optcb: rawptr) -> C.int {
 	}
 
 	cb_buf: [24]u8
-	if !callback_from_typval_r(&cb_buf[0], tv_ptr) ||
+	if !callback_from_typval(transmute(^Callback_E)(&cb_buf[0]), (^Typval_T)(tv_ptr)) ||
 	(^C.int)(&cb_buf[0])^ == kCallbackNone_S {
 		tv_free((^Typval_T)(tv_ptr))
 		return 0 // FAIL
@@ -3275,9 +3269,9 @@ foreign _ {
 }
 
 EOL_UNKNOWN_S :: 0
-EOL_UNIX_S :: 1
-EOL_DOS_S :: 2
-EOL_MAC_S :: 3
+EOL_UNIX_S :: 0
+EOL_DOS_S :: 1
+EOL_MAC_S :: 2
 
 FORCE_BIN_S :: 1
 
