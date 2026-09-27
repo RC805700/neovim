@@ -1649,9 +1649,7 @@ beep_flush_r :: proc "c"() {
 
 // xmallocz: allocate size+1 bytes, zeroed
 xmallocz_r :: proc "c"(size: C.size_t) -> ^u8 {
-	p := (^u8)(xmalloc(size + 1))
-	libc.memset(p, 0, size + 1)
-	return p
+	return xmallocz(size)
 }
 // [register part 2: do_put, :registers display, get_reg_contents, write_reg_*]
 
@@ -2864,7 +2862,7 @@ str_to_reg :: proc "c"(y_ptr: ^Yankreg_T, yank_type_arg: C.int, str: rawptr, len
 		}
 	} else {
 		cs := (^u8)(str)
-		newlines = C.size_t(_memcnt(str, C.int('\n'), len))
+		newlines = C.size_t(memcnt(str, C.int('\n'), len))
 		if yank_type == kMTCharWise || len == 0 || (^u8)(uintptr(cs) + uintptr(len) - 1)^ != '\n' {
 			extraline = true
 			newlines += 1 // extra newline at the end
@@ -2949,7 +2947,7 @@ str_to_reg :: proc "c"(y_ptr: ^Yankreg_T, yank_type_arg: C.int, str: rawptr, len
 			pp[lnum] = Str16{data = s, size = s_len}
 
 			// Convert NULs to '\n' to prevent truncation.
-			_memchrsub(pp[lnum].data, 0, '\n', s_len)
+			memchrsub(pp[lnum].data, 0, '\n', s_len)
 
 			start = (^u8)(uintptr(start) + line_len + 1)
 			lnum += 1

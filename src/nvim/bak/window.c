@@ -38,6 +38,8 @@
 #include "eval/window.c.generated.h"
 
 #pragma weak win_has_winnr
+#pragma weak switch_win_noblock
+#pragma weak restore_win_noblock
 #pragma weak win_id2wp
 #pragma weak win_id2wp_tp
 #pragma weak find_win_by_nr

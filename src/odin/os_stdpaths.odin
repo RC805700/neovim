@@ -18,18 +18,12 @@ foreign _ {
 	@(link_name = "NameBuff")
 	name_buff: [4096]u8
 
-	@(link_name = "memchrsub")
-	_memchrsub :: proc(data: rawptr, ch: c.int, x: c.int, len: c.size_t) ---
 	@(link_name = "vim_gettempdir")
 	_vim_gettempdir :: proc() -> cstring ---
 	@(link_name = "path_to_slash")
 	_path_to_slash :: proc(p: cstring) -> cstring ---
-	@(link_name = "memcnt")
-	_memcnt :: proc(data: rawptr, ch: c.int, len: c.size_t) -> c.size_t ---
 	@(link_name = "path_fnamecmp")
 	_path_fnamecmp :: proc(fname1: cstring, fname2: cstring) -> c.int ---
-	@(link_name = "strequal")
-	_strequal :: proc(a: cstring, b: cstring) -> bool ---
 }
 
 // XDG variable type — exact values, C callers pass these ints.
@@ -78,16 +72,16 @@ get_appname :: proc "c" (namelike: bool) -> cstring {
 	// Copy the resolved appname into NameBuff (the C global this function returns; C callers
 	// read NameBuff after the call). os_getenv returns a fresh, NUL-terminated allocation.
 	if env_val == nil {
-		_xstrlcpy(cstring(&name_buff[0]), "nvim", c.size_t(len(name_buff)))
+		xstrlcpy(cstring(&name_buff[0]), "nvim", c.size_t(len(name_buff)))
 	} else {
-		_xstrlcpy(cstring(&name_buff[0]), env_val, c.size_t(len(name_buff)))
+		xstrlcpy(cstring(&name_buff[0]), env_val, c.size_t(len(name_buff)))
 		xfree(rawptr(env_val))
 	}
 
 	if namelike {
 		// Appname may be a relative path, replace slashes to make it name-like.
-		_memchrsub(rawptr(&name_buff[0]), c.int('/'), c.int('-'), c.size_t(len(name_buff)))
-		_memchrsub(rawptr(&name_buff[0]), c.int('\\'), c.int('-'), c.size_t(len(name_buff)))
+		memchrsub(rawptr(&name_buff[0]), c.int('/'), c.int('-'), c.size_t(len(name_buff)))
+		memchrsub(rawptr(&name_buff[0]), c.int('\\'), c.int('-'), c.size_t(len(name_buff)))
 	}
 
 	return cstring(&name_buff[0])
@@ -101,10 +95,10 @@ appname_is_valid :: proc "c" () -> bool {
 	appname := get_appname(false)
 	if (_path_is_absolute(appname)
 		// TODO(justinmk): on Windows, path_is_absolute says "/" is NOT absolute. Should it?
-		|| _strequal(appname, "/")
-		|| _strequal(appname, "\\")
-		|| _strequal(appname, ".")
-		|| _strequal(appname, "..")
+		|| strequal(appname, "/")
+		|| strequal(appname, "\\")
+		|| strequal(appname, ".")
+		|| strequal(appname, "..")
 		|| _str_contains(appname, "/..")
 		|| _str_contains(appname, "../")) {
 		return false
@@ -344,7 +338,7 @@ stdpaths_user_state_subpath :: proc "c" (fname: cstring, trailing_pathseps: c.si
 	context = runtime.default_context()
 	ret := concat_paths(get_xdg_home(c.int(XDGVarType.kXDGStateHome)), fname, true)
 	len := libc.strlen(ret)
-	numcommas := c.size_t(escape_commas ? _memcnt(rawptr(ret), c.int(','), len) : 0)
+	numcommas := c.size_t(escape_commas ? memcnt(rawptr(ret), c.int(','), len) : 0)
 	if numcommas != 0 || trailing_pathseps != 0 {
 		newlen := len + numcommas + trailing_pathseps
 		newret := xmalloc(newlen + 1)

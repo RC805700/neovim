@@ -1298,10 +1298,8 @@ f_remove :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 	}
 }
 
-// —— Batch 8: eval/buffer.c find leaves ——
+// —— Batch 8: eval/buffer.c find leaves (FFI fully rewired) ——
 foreign _ {
-	@(link_name = "buf_ensure_loaded")
-	buf_ensure_loaded_e :: proc "c" (buf: rawptr) -> bool ---
 	@(link_name = "path_with_url")
 	path_with_url_e :: proc "c" (fname: cstring) -> C.int ---
 }
@@ -1372,7 +1370,7 @@ f_bufload :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 		if swap_exists_action_g != SEA_READONLY_O {
 			swap_exists_action_g = SEA_NONE_O
 		}
-		buf_ensure_loaded_e(buf)
+		buf_ensure_loaded(buf)
 	}
 }
 
@@ -1887,8 +1885,6 @@ foreign _ {
 	ml_replace_buf_e :: proc "c" (buf: rawptr, lnum: C.int, line: ^u8, copy: bool, noalloc: bool) -> C.int ---
 	@(link_name = "buf_prompt_text")
 	buf_prompt_text_e :: proc "c" (buf: rawptr) -> ^u8 ---
-	@(link_name = "strnequal")
-	strnequal_e :: proc "c" (a: cstring, b: cstring, n: C.size_t) -> bool ---
 }
 
 // Buffer info dict for getbufinfo().
@@ -2098,7 +2094,7 @@ f_prompt_setprompt :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawp
 		cursor_col := (^C.int)(uintptr(curwin) + W_CURSOR + 4)^
 		prompt_col := (^C.int)(uintptr(buf) + B_PROMPT_START + 4)^
 		if prompt_col < old_prompt_len || prompt_col > old_line_len ||
-			!strnequal_e(transmute(cstring)(old_prompt), transmute(cstring)(rawptr(uintptr(old_line) + uintptr(prompt_col) - uintptr(old_prompt_len))), C.size_t(old_prompt_len)) {
+			!strnequal(transmute(cstring)(old_prompt), transmute(cstring)(rawptr(uintptr(old_line) + uintptr(prompt_col) - uintptr(old_prompt_len))), C.size_t(old_prompt_len)) {
 			ml_replace_buf_e(buf, prompt_lno, transmute(^u8)(new_prompt), true, false)
 			extmark_splice_cols_r(buf, prompt_lno - 1, 0, old_line_len, new_prompt_len, KEXTMARK_NO_UNDO_O)
 			cursor_col = new_prompt_len
@@ -2487,10 +2483,8 @@ f_winbufnr :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 	}
 }
 
-// —— Batch 13: eval/window.c winnr/view/layout/dimensions ——
+// —— Batch 13: eval/window.c winnr/view/layout/dimensions (FFI fully rewired) ——
 foreign _ {
-	@(link_name = "tabpage_index")
-	tabpage_index_e :: proc "c" (ftp: rawptr) -> C.int ---
 	@(link_name = "set_topline")
 	set_topline_e :: proc "c" (wp: rawptr, lnum: C.int) ---
 	@(link_name = "check_topfill")
@@ -2584,10 +2578,10 @@ f_tabpagenr :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 		nr = 0
 		if arg != nil {
 			if libc.strcmp(arg, cstring("$")) == 0 {
-				nr = tabpage_index_e(nil) - 1
+				nr = tabpage_index(nil) - 1
 			} else if libc.strcmp(arg, cstring("#")) == 0 {
 				if valid_tabpage(lastused_tabpage_g) {
-					nr = tabpage_index_e(lastused_tabpage_g)
+					nr = tabpage_index(lastused_tabpage_g)
 				} else {
 					nr = 0
 				}
@@ -2596,7 +2590,7 @@ f_tabpagenr :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 			}
 		}
 	} else {
-		nr = tabpage_index_e(curtab)
+		nr = tabpage_index(curtab)
 	}
 	rettv.vval = transmute(rawptr)(C.longlong(nr))
 }
@@ -3199,7 +3193,7 @@ win_execute_before :: proc "c" (args: ^WinExecute_T, wp: rawptr, tp: rawptr) -> 
 			args.apply_acd = libc.strcmp(transmute(cstring)(&args.cwd[0]), transmute(cstring)(&autocwd[0])) == 0
 		}
 	}
-	if switch_win_noblock_r(transmute(rawptr)(&args.switchwin), wp, tp, true) == OK_R {
+	if switch_win_noblock(transmute(rawptr)(&args.switchwin), wp, tp, true) == OK_R {
 		check_cursor_r(curwin)
 		return true
 	}
@@ -3210,7 +3204,7 @@ win_execute_before :: proc "c" (args: ^WinExecute_T, wp: rawptr, tp: rawptr) -> 
 @(export)
 win_execute_after :: proc "c" (args: ^WinExecute_T) {
 	context = runtime.default_context()
-	restore_win_noblock_r(transmute(rawptr)(&args.switchwin), true)
+	restore_win_noblock(transmute(rawptr)(&args.switchwin), true)
 	if args.apply_acd {
 		xfree(args.save_sfname)
 		do_autochdir()
@@ -3256,14 +3250,14 @@ f_win_execute :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 switch_win :: proc "c" (switchwin: ^Switchwin_T, win: rawptr, tp: rawptr, no_display: bool) -> C.int {
 	context = runtime.default_context()
 	block_autocmds_r()
-	return switch_win_noblock_r(transmute(rawptr)(switchwin), win, tp, no_display)
+	return switch_win_noblock(transmute(rawptr)(switchwin), win, tp, no_display)
 }
 
 // Restore current tabpage and window saved by switch_win().
 @(export)
 restore_win :: proc "c" (switchwin: ^Switchwin_T, no_display: bool) {
 	context = runtime.default_context()
-	restore_win_noblock_r(transmute(rawptr)(switchwin), no_display)
+	restore_win_noblock(transmute(rawptr)(switchwin), no_display)
 	unblock_autocmds_r()
 }
 
@@ -3767,14 +3761,12 @@ f_pathshorten :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 	}
 }
 
-// —— Batch 17: eval/fs.c find/dirname/stat ——
+// —— Batch 17: eval/fs.c find/dirname/stat (FFI fully rewired) ——
 foreign _ {
 	@(link_name = "find_file_in_path_option")
 	find_file_in_path_option_e :: proc "c" (ptr: cstring, len: C.size_t, options: C.int, first: C.int, path_option: cstring, find_what: C.int, rel_fname: cstring, suffixes: cstring, file_to_find: ^rawptr, search_ctx: ^rawptr) -> ^u8 ---
 	@(link_name = "vim_findfile_cleanup")
 	vim_findfile_cleanup_e :: proc "c" (ctx: rawptr) ---
-	@(link_name = "modify_fname")
-	modify_fname_e :: proc "c" (src: ^u8, tilde_file: bool, usedlen: ^C.size_t, fnamep: ^rawptr, bufp: ^rawptr, fnamelen: ^C.size_t) -> C.int ---
 }
 
 FINDFILE_FILE_O :: 0
@@ -3882,7 +3874,7 @@ f_fnamemodify :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 		if (^u8)(rawptr(mods))^ != 0 {
 			usedlen: C.size_t = 0
 			fnamep: rawptr = transmute(rawptr)(fname)
-			modify_fname_e(transmute(^u8)(mods), false, &usedlen, &fnamep, &fbuf, &ln)
+			modify_fname(transmute(^u8)(mods), false, &usedlen, &fnamep, &fbuf, &ln)
 			fname = transmute(cstring)(fnamep)
 		}
 	}
@@ -4796,10 +4788,6 @@ f_writefile :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 }
 
 // —— Batch 20a: eval/vars.c parsing leaves (FFI fully rewired) ——
-foreign _ {
-	@(link_name = "skip_expr")
-	skip_expr_e :: proc "c" (pp: ^cstring, evalarg: rawptr) -> C.int ---
-}
 
 FNE_INCL_BR_O :: 1
 FNE_CHECK_START_O :: 2
@@ -4872,7 +4860,7 @@ eval_one_expr_in_str :: proc "c" (p: ^u8, gap: ^Garray, evaluate: bool) -> ^u8 {
 		return nil
 	}
 	be := transmute(cstring)(block_end)
-	if skip_expr_e(&be, nil) == FAIL_E {
+	if skip_expr(&be, nil) == FAIL_E {
 		return nil
 	}
 	block_end = ([^]u8)(be)
@@ -5011,7 +4999,7 @@ list_hashtable_vars :: proc "c" (ht: rawptr, prefix: cstring, empty: C.int, firs
 		todo -= 1
 		di := uintptr(key) - 17
 		buf: [1025]u8
-		xstrlcpy_o(transmute(cstring)(&buf[0]), prefix, C.size_t(1025))
+		xstrlcpy(transmute(cstring)(&buf[0]), prefix, C.size_t(1025))
 		dik := ([^]u8)(di + 17)
 		xstrlcat(&buf[0], &dik[0], C.size_t(1025))
 		if message_filtered(transmute(cstring)(&buf[0])) {
@@ -5436,10 +5424,8 @@ tv_list_last_o :: proc "c" (l: rawptr) -> rawptr {
 	return (^rawptr)(uintptr(l) + 8)^
 }
 
-// —— Batch 23a: eval/encode.c writer + reader leaves ——
+// —— Batch 23a: eval/encode.c writer + reader leaves (FFI fully rewired) ——
 foreign _ {
-	@(link_name = "xmemscan")
-	xmemscan_e :: proc "c" (addr: rawptr, c: u8, size: C.size_t) -> rawptr ---
 	@(link_name = "eval_msgpack_type_lists")
 	eval_msgpack_type_lists_e: [8]rawptr
 }
@@ -5478,7 +5464,7 @@ encode_list_write :: proc "c" (data: rawptr, buf: cstring, len: C.size_t) {
 	line_end := uintptr(bb)
 	li := tv_list_last_o(list)
 	if li != nil {
-		le := uintptr(xmemscan_e(bb, NL_O, len))
+		le := uintptr(xmemscan(bb, NL_O, len))
 		if le != uintptr(bb) {
 			line_length := C.size_t(le - uintptr(bb))
 			str := (^rawptr)(uintptr(li) + 24)^
@@ -5491,18 +5477,18 @@ encode_list_write :: proc "c" (data: rawptr, buf: cstring, len: C.size_t) {
 			str = rawptr(uintptr(str) + uintptr(li_len))
 			libc.memcpy(str, bb, line_length)
 			([^]u8)(str)[line_length] = 0
-			_memchrsub(str, C.int(NUL), C.int(NL_O), line_length)
+			memchrsub(str, C.int(NUL), C.int(NL_O), line_length)
 		}
 		line_end = le + 1
 	}
 	for line_end < end {
 		line_start := line_end
-		le := uintptr(xmemscan_e(rawptr(line_start), NL_O, C.size_t(end - line_start)))
+		le := uintptr(xmemscan(rawptr(line_start), NL_O, C.size_t(end - line_start)))
 		str: rawptr = nil
 		if le != line_start {
 			line_length := C.size_t(le - line_start)
 			str = rawptr(xmemdupz_o2(transmute(^u8)(line_start), line_length))
-			_memchrsub(str, C.int(NUL), C.int(NL_O), line_length)
+			memchrsub(str, C.int(NUL), C.int(NL_O), line_length)
 		}
 		tv_list_append_allocated_string(list, transmute(^u8)(str))
 		line_end = le + 1
@@ -10578,14 +10564,14 @@ eval_variable :: proc "c" (name: cstring, length: C.int, rettv: ^Typval_T, dip: 
 @(export)
 check_vars :: proc "c" (name: cstring, length: C.size_t) {
 	context = runtime.default_context()
-	if eval_lavars_used_g == nil {
+	if eval_lavars_used == nil {
 		return
 	}
 	varname: cstring = nil
 	ht := find_var_ht(name, length, &varname)
 	if ht == get_funccal_local_ht() || ht == get_funccal_args_ht() {
 		if find_var(name, length, nil, 1) != nil {
-			eval_lavars_used_g^ = true
+			eval_lavars_used^ = true
 		}
 	}
 }
@@ -14241,7 +14227,7 @@ f_exists :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 			n = 0
 		}
 	} else if ([^]u8)(p)[0] == '*' {
-		if strnequal_e(p, cstring("*v:lua."), 7) {
+		if strnequal(p, cstring("*v:lua."), 7) {
 			if nlua_func_exists_e(transmute(cstring)(rawptr(uintptr(rawptr(p)) + 7))) {
 				n = 1
 			}
@@ -15749,10 +15735,6 @@ foreign _ {
 	ctx_free_e :: proc "c" (ctx: rawptr) ---
 	@(link_name = "vim_to_object")
 	vim_to_object_e :: proc "c" (obj: ^Typval_T, arena: rawptr, reuse_strdata: bool) -> Api_Object ---
-	@(link_name = "arena_finish")
-	arena_finish_e :: proc "c" (arena: rawptr) -> rawptr ---
-	@(link_name = "arena_mem_free")
-	arena_mem_free_e :: proc "c" (mem: rawptr) ---
 	@(link_name = "kCtxAll")
 	kCtxAll_g: C.int
 }
@@ -15807,7 +15789,7 @@ f_ctxget :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 	(^Api_Dict)(&obj.data[0])^ = d
 	err := Api_Error{typ = -1, msg = nil}
 	object_to_vim_e(obj, rettv, rawptr(&err))
-	arena_mem_free_e(arena_finish_e(rawptr(&arena)))
+	arena_mem_free(arena_finish(rawptr(&arena)))
 	api_clear_error_r(&err)
 }
 
@@ -15890,7 +15872,7 @@ f_ctxset :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 		ctx_free_e(ctx)
 		(^Context_O)(ctx)^ = tmp
 	}
-	arena_mem_free_e(arena_finish_e(rawptr(&arena)))
+	arena_mem_free(arena_finish(rawptr(&arena)))
 	api_clear_error_r(&err)
 	did_emsg_flag = save_did_emsg
 }
@@ -16160,7 +16142,7 @@ f_rpcrequest :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 	method := tv_get_string((^Typval_T)(uintptr(argvars) + 16))
 	res_mem: rawptr = nil
 	result := rpc_send_call_e(chan_id, method, args, &res_mem, rawptr(&err))
-	arena_mem_free_e(arena_finish_e(rawptr(&arena)))
+	arena_mem_free(arena_finish(rawptr(&arena)))
 	if l_nesting != 0 {
 		libc.memcpy(rawptr(&current_sctx_buf[0]), rawptr(&saved_sctx[0]), 24)
 		exestack.ga_len -= 1
@@ -16184,7 +16166,7 @@ f_rpcrequest :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 	} else {
 		object_to_vim_e(result, rettv, rawptr(&err))
 	}
-	arena_mem_free_e(res_mem)
+	arena_mem_free(res_mem)
 	api_clear_error_r(&err)
 }
 
@@ -16900,11 +16882,7 @@ f_getregionpos :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) 
 	virtual_op_g = save_virtual
 }
 
-// —— Batch 27bq: funcs.c searchpair ——
-foreign _ {
-	@(link_name = "do_searchpair")
-	do_searchpair_e :: proc "c" (spat: cstring, mpat: cstring, epat: cstring, dir: C.int, skip: ^Typval_T, flags: C.int, match_pos: ^Pos_T, lnum_stop: C.int, time_limit: i64) -> C.int ---
-}
+// —— Batch 27bq: funcs.c searchpair (FFI fully rewired) ——
 
 // Shared searchpair()/searchpairpos() engine (C-static in funcs.c).
 searchpair_cmn_o :: proc "c" (argvars: ^Typval_T, match_pos: ^Pos_T) -> C.int {
@@ -16955,7 +16933,7 @@ searchpair_cmn_o :: proc "c" (argvars: ^Typval_T, match_pos: ^Pos_T) -> C.int {
 				}
 			}
 			if !done {
-				retval = do_searchpair_e(transmute(cstring)(spat), transmute(cstring)(mpat), transmute(cstring)(epat), dir, skip, flags, match_pos, lnum_stop, time_limit)
+				retval = do_searchpair(transmute(cstring)(spat), transmute(cstring)(mpat), transmute(cstring)(epat), dir, skip, flags, match_pos, lnum_stop, time_limit)
 			}
 		}
 	}
@@ -18243,7 +18221,7 @@ f_rpcnotify :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 		tv = (^Typval_T)(uintptr(tv) + 16)
 	}
 	ok := rpc_send_event_e(C.ulonglong(transmute(C.longlong)(([^]Typval_T)(argvars)[0].vval)), tv_get_string((^Typval_T)(uintptr(argvars) + 16)), args)
-	arena_mem_free_e(arena_finish_e(rawptr(&arena)))
+	arena_mem_free(arena_finish(rawptr(&arena)))
 	if !ok {
 		semsg(e_invarg2, cstring("Channel doesn't exist"))
 		return
@@ -18609,21 +18587,21 @@ f_stdpath :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 	if p == nil {
 		return
 	}
-	if _strequal(p, cstring("config")) {
+	if strequal(p, cstring("config")) {
 		rettv.vval = transmute(rawptr)(get_xdg_home(C.int(XDGVarType.kXDGConfigHome)))
-	} else if _strequal(p, cstring("data")) {
+	} else if strequal(p, cstring("data")) {
 		rettv.vval = transmute(rawptr)(get_xdg_home(C.int(XDGVarType.kXDGDataHome)))
-	} else if _strequal(p, cstring("cache")) {
+	} else if strequal(p, cstring("cache")) {
 		rettv.vval = transmute(rawptr)(get_xdg_home(C.int(XDGVarType.kXDGCacheHome)))
-	} else if _strequal(p, cstring("state")) {
+	} else if strequal(p, cstring("state")) {
 		rettv.vval = transmute(rawptr)(get_xdg_home(C.int(XDGVarType.kXDGStateHome)))
-	} else if _strequal(p, cstring("log")) {
+	} else if strequal(p, cstring("log")) {
 		rettv.vval = transmute(rawptr)(concat_paths(get_xdg_home(C.int(XDGVarType.kXDGStateHome)), cstring("logs"), true))
-	} else if _strequal(p, cstring("run")) {
+	} else if strequal(p, cstring("run")) {
 		rettv.vval = transmute(rawptr)(stdpaths_get_xdg_var(C.int(XDGVarType.kXDGRuntimeDir)))
-	} else if _strequal(p, cstring("config_dirs")) {
+	} else if strequal(p, cstring("config_dirs")) {
 		get_xdg_var_list_o(C.int(XDGVarType.kXDGConfigDirs), rettv)
-	} else if _strequal(p, cstring("data_dirs")) {
+	} else if strequal(p, cstring("data_dirs")) {
 		get_xdg_var_list_o(C.int(XDGVarType.kXDGDataDirs), rettv)
 	} else {
 		semsg(cstring(E6100_S), p)
@@ -19347,7 +19325,7 @@ f_msgpackdump :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 		li = (^rawptr)(uintptr(li))^
 	}
 	data := packer_take_string_e(&packer)
-	if ([^]Typval_T)(argvars)[1].v_type != VAR_UNKNOWN && _strequal(tv_get_string((^Typval_T)(uintptr(argvars) + 16)), cstring("B")) {
+	if ([^]Typval_T)(argvars)[1].v_type != VAR_UNKNOWN && strequal(tv_get_string((^Typval_T)(uintptr(argvars) + 16)), cstring("B")) {
 		b := tv_blob_alloc_ret(rettv)
 		(^rawptr)(uintptr(b) + 16)^ = rawptr(data.data)
 		(^C.int)(uintptr(b) + 0)^ = C.int(data.size)
@@ -19362,10 +19340,6 @@ f_msgpackdump :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 foreign _ {
 	@(link_name = "mpack_parser_init")
 	mpack_parser_init_e :: proc "c" (p: rawptr, c: u32) ---
-	@(link_name = "alloc_block")
-	alloc_block_e :: proc "c" () -> rawptr ---
-	@(link_name = "free_block")
-	free_block_e :: proc "c" (block: rawptr) ---
 }
 
 MPACK_OK_O :: 0
@@ -19399,7 +19373,7 @@ msgpackparse_unpack_list_o :: proc "c" (list: rawptr, ret_list: rawptr) {
 		return
 	}
 	lrstate := encode_init_lrstate(list)
-	buf := (^u8)(alloc_block_e())
+	buf := (^u8)(alloc_block())
 	buf_size: C.size_t = 0
 	cur_item := Typval_T{v_type = VAR_UNKNOWN, v_lock = VAR_UNLOCKED}
 	parser: [MPARSER_SIZE_O]u8
@@ -19439,7 +19413,7 @@ msgpackparse_unpack_list_o :: proc "c" (list: rawptr, ret_list: rawptr) {
 		typval_parser_error_free(rawptr(&parser[0]))
 		emsg_mpack_error_o(status)
 	}
-	free_block_e(rawptr(buf))
+	free_block(rawptr(buf))
 }
 
 // Blob-based msgpack unpacker (C-static in funcs.c).
@@ -19804,7 +19778,7 @@ encode_str_string_o :: proc "c" (gap: ^Garray, buf: cstring, length: C.size_t) {
 		ga_concat_len_r(gap, cstring("''"), 2)
 		return
 	}
-	ga_grow_r(gap, C.int(2 + length + _memcnt(rawptr(transmute(^u8)(buf)), C.int('\''), length)))
+	ga_grow_r(gap, C.int(2 + length + memcnt(rawptr(transmute(^u8)(buf)), C.int('\''), length)))
 	ga_append_r(gap, '\'')
 	i: C.size_t = 0
 	for i < length {
@@ -23973,7 +23947,7 @@ eval7_o :: proc "c" (arg: ^cstring, rettv: ^Typval_T, evalarg: rawptr, want_stri
 				ret = eval_variable(s, length, rettv, nil, true, false)
 			} else {
 				check_vars(s, C.size_t(length))
-				if rettv.v_type == VAR_UNKNOWN && strnequal_e(s, cstring("v:lua."), 6) {
+				if rettv.v_type == VAR_UNKNOWN && strnequal(s, cstring("v:lua."), 6) {
 					rettv.v_type = VAR_PARTIAL
 					rettv.vval = transmute(rawptr)(get_vim_var_partial(VV_LUA_O))
 					(^C.int)(uintptr(rawptr(rettv.vval)))^ += 1
@@ -24343,7 +24317,7 @@ may_call_simple_func :: proc "c" (arg: cstring, rettv: ^Typval_T) -> C.int {
 	parens := strstr_c(arg, cstring("()"))
 	r: C.int = NOTDONE_O
 	if parens != nil && ([^]u8)(skipwhite(transmute(cstring)(uintptr(rawptr(parens)) + 2)))[0] == 0 {
-		if strnequal_e(arg, cstring("v:lua."), 6) {
+		if strnequal(arg, cstring("v:lua."), 6) {
 			p := transmute(cstring)(uintptr(rawptr(arg)) + 6)
 			if p != transmute(cstring)(parens) && skip_luafunc_name(p) == transmute(cstring)(parens) {
 				r = call_simple_luafunc(p, C.size_t(uintptr(rawptr(parens)) - uintptr(rawptr(p))), rettv)
@@ -25179,7 +25153,7 @@ get_system_output_as_rettv_o :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, 
 		rettv.v_type = VAR_LIST
 		xfree(rawptr(res))
 	} else {
-		_memchrsub(rawptr(res), C.int(0), C.int(1), nread)
+		memchrsub(rawptr(res), C.int(0), C.int(1), nread)
 		rettv.vval = transmute(rawptr)(res)
 	}
 }
@@ -25223,6 +25197,10 @@ EXARG_COOKIE_OFF :: 176
 
 // Moved C static (single live copy; readers all ported here).
 echo_hl_id_g: C.int = 0
+
+// Moved C global (single live copy; set by get_lambda_tv analysis).
+@(export)
+eval_lavars_used: ^bool = nil
 
 // ":echo[!] expr..." (eval.c public).
 @(export)
@@ -27204,8 +27182,6 @@ f_jobstop :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 
 // —— Batch 27cb: funcs.c jobstart engine (FFI fully rewired) ——
 foreign _ {
-	@(link_name = "create_environment")
-	create_environment_e :: proc "c" (job_env: rawptr, clear_env: bool, pty: bool, set_nvim_addr: bool, pty_term_name: cstring) -> rawptr ---
 	@(link_name = "channel_terminal_alloc")
 	channel_terminal_alloc_e :: proc "c" (buf: rawptr, chan: rawptr) ---
 	@(link_name = "terminal_open")
@@ -27379,7 +27355,7 @@ f_jobstart :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 			term_name = cstring("ansi")
 		}
 	}
-	env := create_environment_e(job_env, clear_env, pty, true, term_name)
+	env := create_environment(job_env, clear_env, pty, true, term_name)
 	status: C.longlong = 0
 	chan := channel_job_start_e(transmute(rawptr)(argv), nil, on_stdout, on_stderr, on_exit, pty, rpc, overlapped, detach, stdin_mode, cwd, width, height, env, rawptr(&status))
 	rettv.vval = transmute(rawptr)(status)
@@ -27652,6 +27628,1045 @@ string2float :: proc "c" (text: cstring, ret_value: ^f64) -> C.size_t {
 	return C.size_t(uintptr(rawptr(endp)) - uintptr(rawptr(text)))
 }
 
+// —— Batch 28bn: eval/funcs.c dispatch table logic (exports + weak) ——
+foreign _ {
+	@(link_name = "nvim_odin_funcdef_at")
+	nvim_odin_funcdef_at_e :: proc "c" (i: C.int) -> rawptr ---
+	@(link_name = "nvim_odin_lua_wrapper_addr")
+	nvim_odin_lua_wrapper_addr_e :: proc "c" () -> rawptr ---
+}
+
+// EvalFuncDef mirror (funcs.h:21): 32B cc-probed.
+EvalFuncDef_O :: struct {
+	name:     cstring, // 0
+	min_argc: u8,      // 8
+	max_argc: u8,      // 9
+	base_arg: u8,      // 10
+	fast:     bool,    // 11
+	func:     rawptr,  // 16
+	data:     rawptr,  // 24 (EvalFuncData union, opaque)
+}
+#assert(size_of(EvalFuncDef_O) == 32)
+
+// VimLFunc signature (funcs.h:12).
+VimLFunc_O :: proc "c" (args: ^Typval_T, rvar: ^Typval_T, data: rawptr)
+
+BASE_NONE_O :: 0
+BASE_LAST_O :: 255
+E119_S :: "E119: Not enough arguments for function: %s"
+E_TOOFEWARG_S :: "E119: Not enough arguments for function: %s"
+
+@(private = "file")
+get_function_name_intidx_g: C.int = -1
+@(private = "file")
+get_expr_name_intidx_g: C.int = -1
+
+// Generated perfect-hash transcription (funcs.generated.h:689).
+@(export)
+find_internal_func_hash :: proc "c" (str: cstring, len: C.size_t) -> C.int {
+	context = runtime.default_context()
+	low: C.int = 0
+	high: C.int = 0
+	s := ([^]u8)(str)
+	n := int(len)
+	switch n {
+	case 2:
+		switch s[0] {
+		case 'i': low = 0; high = 1
+		case 'o': low = 1; high = 2
+		case 't': low = 2; high = 3
+		case:
+		}
+	case 3:
+		switch s[0] {
+		case 'a': low = 3; high = 6
+		case 'c': low = 6; high = 8
+		case 'e': low = 8; high = 9
+		case 'g': low = 9; high = 10
+		case 'h': low = 10; high = 11
+		case 'l': low = 11; high = 13
+		case 'm': low = 13; high = 16
+		case 'p': low = 16; high = 17
+		case 's': low = 17; high = 18
+		case 't': low = 18; high = 19
+		case 'x': low = 19; high = 20
+		case:
+		}
+	case 4:
+		switch s[3] {
+		case 'D': low = 20; high = 21
+		case 'b': low = 21; high = 22
+		case 'c': low = 22; high = 23
+		case 'd': low = 23; high = 25
+		case 'e': low = 25; high = 28
+		case 'h': low = 28; high = 31
+		case 'l': low = 31; high = 34
+		case 'm': low = 34; high = 35
+		case 'n': low = 35; high = 38
+		case 'q': low = 38; high = 39
+		case 's': low = 39; high = 41
+		case 't': low = 41; high = 44
+		case 'v': low = 44; high = 45
+		case 'y': low = 45; high = 46
+		case:
+		}
+	case 5:
+		switch s[1] {
+		case 'a': low = 46; high = 48
+		case 'c': low = 48; high = 49
+		case 'h': low = 49; high = 50
+		case 'i': low = 50; high = 51
+		case 'k': low = 51; high = 52
+		case 'l': low = 52; high = 54
+		case 'm': low = 54; high = 55
+		case 'n': low = 55; high = 57
+		case 'o': low = 57; high = 60
+		case 'p': low = 60; high = 61
+		case 'r': low = 61; high = 63
+		case 's': low = 63; high = 65
+		case 't': low = 65; high = 68
+		case 'u': low = 68; high = 69
+		case 'y': low = 69; high = 70
+		case:
+		}
+	case 6:
+		switch s[5] {
+		case '6': low = 70; high = 71
+		case 'd': low = 71; high = 78
+		case 'e': low = 78; high = 84
+		case 'f': low = 84; high = 85
+		case 'g': low = 85; high = 89
+		case 'h': low = 89; high = 90
+		case 'l': low = 90; high = 92
+		case 'm': low = 92; high = 93
+		case 'n': low = 93; high = 94
+		case 'p': low = 94; high = 95
+		case 'r': low = 95; high = 99
+		case 's': low = 99; high = 103
+		case 't': low = 103; high = 110
+		case 'v': low = 110; high = 112
+		case 'w': low = 112; high = 113
+		case 'x': low = 113; high = 115
+		case:
+		}
+	case 7:
+		switch s[2] {
+		case '2': low = 115; high = 116
+		case '3': low = 116; high = 117
+		case 'a': low = 117; high = 123
+		case 'b': low = 123; high = 127
+		case 'c': low = 127; high = 128
+		case 'd': low = 128; high = 130
+		case 'e': low = 130; high = 132
+		case 'f': low = 132; high = 134
+		case 'g': low = 134; high = 135
+		case 'l': low = 135; high = 137
+		case 'n': low = 137; high = 142
+		case 'p': low = 142; high = 143
+		case 'r': low = 143; high = 147
+		case 's': low = 147; high = 152
+		case 't': low = 152; high = 157
+		case 'u': low = 157; high = 158
+		case 'v': low = 158; high = 160
+		case 'x': low = 160; high = 163
+		case:
+		}
+	case 8:
+		switch s[3] {
+		case '1': low = 163; high = 164
+		case '2': low = 164; high = 165
+		case '_': low = 165; high = 166
+		case 'a': low = 166; high = 167
+		case 'b': low = 167; high = 169
+		case 'c': low = 169; high = 177
+		case 'd': low = 177; high = 182
+		case 'e': low = 182; high = 183
+		case 'f': low = 183; high = 190
+		case 'l': low = 190; high = 191
+		case 'm': low = 191; high = 197
+		case 'n': low = 197; high = 199
+		case 'o': low = 199; high = 202
+		case 'p': low = 202; high = 209
+		case 's': low = 209; high = 212
+		case 't': low = 212; high = 216
+		case 'u': low = 216; high = 217
+		case 'w': low = 217; high = 221
+		case 'x': low = 221; high = 222
+		case 'y': low = 222; high = 223
+		case:
+		}
+	case 9:
+		switch s[4] {
+		case '2': low = 223; high = 227
+		case 'D': low = 227; high = 228
+		case '_': low = 228; high = 234
+		case 'a': low = 234; high = 239
+		case 'c': low = 239; high = 243
+		case 'd': low = 243; high = 244
+		case 'e': low = 244; high = 251
+		case 'f': low = 251; high = 254
+		case 'g': low = 254; high = 255
+		case 'h': low = 255; high = 256
+		case 'i': low = 256; high = 261
+		case 'l': low = 261; high = 263
+		case 'm': low = 263; high = 265
+		case 'n': low = 265; high = 267
+		case 'o': low = 267; high = 270
+		case 'r': low = 270; high = 271
+		case 's': low = 271; high = 272
+		case 't': low = 272; high = 274
+		case 'u': low = 274; high = 277
+		case 'x': low = 277; high = 278
+		case:
+		}
+	case 10:
+		switch s[5] {
+		case '_': low = 278; high = 280
+		case 'a': low = 280; high = 285
+		case 'b': low = 285; high = 287
+		case 'c': low = 287; high = 289
+		case 'd': low = 289; high = 293
+		case 'e': low = 293; high = 296
+		case 'f': low = 296; high = 300
+		case 'g': low = 300; high = 302
+		case 'h': low = 302; high = 304
+		case 'i': low = 304; high = 306
+		case 'l': low = 306; high = 308
+		case 'm': low = 308; high = 310
+		case 'n': low = 310; high = 316
+		case 'o': low = 316; high = 317
+		case 'p': low = 317; high = 319
+		case 'q': low = 319; high = 320
+		case 'r': low = 320; high = 323
+		case 's': low = 323; high = 325
+		case 't': low = 325; high = 330
+		case 'w': low = 330; high = 331
+		case:
+		}
+	case 11:
+		switch s[5] {
+		case '_': low = 331; high = 334
+		case 'a': low = 334; high = 336
+		case 'c': low = 336; high = 338
+		case 'd': low = 338; high = 343
+		case 'e': low = 343; high = 348
+		case 'f': low = 348; high = 350
+		case 'g': low = 350; high = 353
+		case 'h': low = 353; high = 355
+		case 'i': low = 355; high = 357
+		case 'm': low = 357; high = 359
+		case 'n': low = 359; high = 362
+		case 'o': low = 362; high = 365
+		case 'p': low = 365; high = 367
+		case 'r': low = 367; high = 372
+		case 's': low = 372; high = 377
+		case 't': low = 377; high = 378
+		case 'u': low = 378; high = 379
+		case 'v': low = 379; high = 380
+		case 'x': low = 380; high = 381
+		case:
+		}
+	case 12:
+		switch s[5] {
+		case '_': low = 381; high = 385
+		case 'b': low = 385; high = 389
+		case 'c': low = 389; high = 391
+		case 'd': low = 391; high = 393
+		case 'e': low = 393; high = 397
+		case 'g': low = 397; high = 400
+		case 'h': low = 400; high = 401
+		case 'i': low = 401; high = 403
+		case 'm': low = 403; high = 405
+		case 'n': low = 405; high = 407
+		case 'o': low = 407; high = 409
+		case 'r': low = 409; high = 411
+		case 's': low = 411; high = 414
+		case 't': low = 414; high = 419
+		case 'u': low = 419; high = 421
+		case:
+		}
+	case 13:
+		switch s[5] {
+		case '_': low = 421; high = 423
+		case 'a': low = 423; high = 427
+		case 'c': low = 427; high = 428
+		case 'd': low = 428; high = 432
+		case 'e': low = 432; high = 435
+		case 'f': low = 435; high = 438
+		case 'g': low = 438; high = 442
+		case 'h': low = 442; high = 443
+		case 'l': low = 443; high = 447
+		case 'm': low = 447; high = 448
+		case 'o': low = 448; high = 449
+		case 'p': low = 449; high = 450
+		case 'r': low = 450; high = 454
+		case 's': low = 454; high = 456
+		case 't': low = 456; high = 458
+		case 'u': low = 458; high = 459
+		case 'w': low = 459; high = 460
+		case 'x': low = 460; high = 461
+		case:
+		}
+	case 14:
+		switch s[5] {
+		case '_': low = 461; high = 463
+		case 'a': low = 463; high = 465
+		case 'b': low = 465; high = 466
+		case 'd': low = 466; high = 467
+		case 'e': low = 467; high = 470
+		case 'g': low = 470; high = 474
+		case 'l': low = 474; high = 476
+		case 'o': low = 476; high = 479
+		case 'p': low = 479; high = 481
+		case 's': low = 481; high = 482
+		case 't': low = 482; high = 483
+		case 'w': low = 483; high = 485
+		case:
+		}
+	case 15:
+		switch s[5] {
+		case '_': low = 485; high = 486
+		case 'b': low = 486; high = 488
+		case 'c': low = 488; high = 489
+		case 'd': low = 489; high = 492
+		case 'g': low = 492; high = 495
+		case 'l': low = 495; high = 496
+		case 'p': low = 496; high = 498
+		case 's': low = 498; high = 501
+		case 't': low = 501; high = 504
+		case 'w': low = 504; high = 505
+		case:
+		}
+	case 16:
+		switch s[9] {
+		case '_': low = 505; high = 506
+		case 'a': low = 506; high = 508
+		case 'c': low = 508; high = 512
+		case 'd': low = 512; high = 514
+		case 'e': low = 514; high = 515
+		case 'g': low = 515; high = 518
+		case 'p': low = 518; high = 519
+		case 's': low = 519; high = 522
+		case 't': low = 522; high = 526
+		case 'u': low = 526; high = 527
+		case 'w': low = 527; high = 529
+		case:
+		}
+	case 17:
+		switch s[9] {
+		case '_': low = 529; high = 533
+		case 'a': low = 533; high = 534
+		case 'c': low = 534; high = 535
+		case 'd': low = 535; high = 536
+		case 'g': low = 536; high = 539
+		case 'h': low = 539; high = 540
+		case 'i': low = 540; high = 542
+		case 's': low = 542; high = 545
+		case 't': low = 545; high = 546
+		case:
+		}
+	case 18:
+		switch s[5] {
+		case '_': low = 546; high = 548
+		case 'b': low = 548; high = 551
+		case 'c': low = 551; high = 552
+		case 'e': low = 552; high = 553
+		case 'g': low = 553; high = 555
+		case 'l': low = 555; high = 556
+		case 'o': low = 556; high = 557
+		case 't': low = 557; high = 558
+		case 'w': low = 558; high = 561
+		case:
+		}
+	case 19:
+		switch s[14] {
+		case '_': low = 561; high = 563
+		case 'c': low = 563; high = 564
+		case 'e': low = 564; high = 569
+		case 'f': low = 569; high = 570
+		case 'g': low = 570; high = 571
+		case 'o': low = 571; high = 574
+		case 'p': low = 574; high = 579
+		case 'r': low = 579; high = 580
+		case 's': low = 580; high = 581
+		case 't': low = 581; high = 583
+		case 'u': low = 583; high = 588
+		case:
+		}
+	case 20:
+		switch s[17] {
+		case 'a': low = 588; high = 591
+		case 'b': low = 591; high = 593
+		case 'd': low = 593; high = 594
+		case 'g': low = 594; high = 595
+		case 'i': low = 595; high = 596
+		case 'n': low = 596; high = 597
+		case 'v': low = 597; high = 600
+		case 'w': low = 600; high = 604
+		case:
+		}
+	case 21:
+		switch s[9] {
+		case 'a': low = 604; high = 605
+		case 'c': low = 605; high = 608
+		case 'e': low = 608; high = 609
+		case 'g': low = 609; high = 612
+		case 'o': low = 612; high = 615
+		case 'r': low = 615; high = 616
+		case 't': low = 616; high = 618
+		case 'u': low = 618; high = 619
+		case:
+		}
+	case 22:
+		switch s[10] {
+		case 'c': low = 619; high = 620
+		case 'd': low = 620; high = 621
+		case 'g': low = 621; high = 622
+		case 'l': low = 622; high = 623
+		case 'o': low = 623; high = 624
+		case 'r': low = 624; high = 625
+		case 'u': low = 625; high = 626
+		case:
+		}
+	case 23:
+		switch s[5] {
+		case 'c': low = 626; high = 627
+		case 'g': low = 627; high = 628
+		case 'l': low = 628; high = 629
+		case 't': low = 629; high = 630
+		case:
+		}
+	case 24:
+		switch s[13] {
+		case 'c': low = 630; high = 631
+		case 'e': low = 631; high = 633
+		case 'o': low = 633; high = 634
+		case 'r': low = 634; high = 636
+		case 's': low = 636; high = 637
+		case 'u': low = 637; high = 638
+		case:
+		}
+	case 25:
+		switch s[9] {
+		case 'a': low = 638; high = 639
+		case 'd': low = 639; high = 640
+		case 's': low = 640; high = 641
+		case:
+		}
+	case 26:
+		switch s[5] {
+		case '_': low = 641; high = 642
+		case 'b': low = 642; high = 643
+		case 's': low = 643; high = 644
+		case:
+		}
+	case 28:
+		switch s[5] {
+		case '_': low = 644; high = 645
+		case 'b': low = 645; high = 646
+		case:
+		}
+	case:
+	}
+	i := low
+	for i < high {
+		nm := (^EvalFuncDef_O)(nvim_odin_funcdef_at_e(i)).name
+		if libc.memcmp(rawptr(transmute(^u8)(str)), rawptr(transmute(^u8)(nm)), len) == 0 {
+			return i
+		}
+		i += 1
+	}
+	return -1
+}
+
+// Builtin lookup (eval/funcs.c public).
+@(export)
+find_internal_func :: proc "c" (name: cstring) -> ^EvalFuncDef_O {
+	context = runtime.default_context()
+	length := libc.strlen(name)
+	index := find_internal_func_hash(name, length)
+	if index >= 0 {
+		return (^EvalFuncDef_O)(nvim_odin_funcdef_at_e(index))
+	}
+	return nil
+}
+
+// Lua-implemented builtin name (eval/funcs.c public).
+@(export)
+find_internal_func_lua :: proc "c" (name: cstring) -> cstring {
+	context = runtime.default_context()
+	fdef := find_internal_func(name)
+	if fdef != nil && fdef.func == nvim_odin_lua_wrapper_addr_e() {
+		return transmute(cstring)(fdef.data)
+	}
+	return nil
+}
+
+// Builtin arity checker (eval/funcs.c public).
+@(export)
+check_internal_func :: proc "c" (fdef: ^EvalFuncDef_O, argcount: C.int) -> C.int {
+	context = runtime.default_context()
+	if argcount < C.int(fdef.min_argc) {
+		semsg(cstring(E_TOOFEWARG_S), fdef.name)
+		return -1
+	} else if argcount > C.int(fdef.max_argc) {
+		semsg(cstring(E_TOOMANYARG_S), fdef.name)
+		return -1
+	}
+	return C.int(fdef.base_arg)
+}
+
+// Builtin direct caller (eval/funcs.c public).
+@(export)
+call_internal_func :: proc "c" (fname: cstring, argcount: C.int, argvars: ^Typval_T, rettv: ^Typval_T) -> C.int {
+	context = runtime.default_context()
+	fdef := find_internal_func(fname)
+	if fdef == nil {
+		return FCERR_UNKNOWN_O
+	} else if argcount < C.int(fdef.min_argc) {
+		return FCERR_TOOFEW_O
+	} else if argcount > C.int(fdef.max_argc) {
+		return FCERR_TOOMANY_O
+	}
+	([^]Typval_T)(argvars)[argcount].v_type = VAR_UNKNOWN
+	fn := transmute(VimLFunc_O)(fdef.func)
+	fn(argvars, rettv, fdef.data)
+	return FCERR_NONE_O
+}
+
+// Builtin method caller (eval/funcs.c public).
+@(export)
+call_internal_method :: proc "c" (fname: cstring, argcount: C.int, argvars: ^Typval_T, rettv: ^Typval_T, basetv: rawptr) -> C.int {
+	context = runtime.default_context()
+	fdef := find_internal_func(fname)
+	if fdef == nil {
+		return FCERR_UNKNOWN_O
+	} else if fdef.base_arg == BASE_NONE_O {
+		return FCERR_NOTMETHOD_O
+	} else if argcount + 1 < C.int(fdef.min_argc) {
+		return FCERR_TOOFEW_O
+	} else if argcount + 1 > C.int(fdef.max_argc) {
+		return FCERR_TOOMANY_O
+	}
+	argv: [21]Typval_T
+	base_index := argcount
+	if fdef.base_arg != BASE_LAST_O {
+		base_index = C.int(fdef.base_arg) - 1
+	}
+	if argcount < base_index {
+		return FCERR_TOOFEW_O
+	}
+	libc.memcpy(rawptr(&argv[0]), rawptr(argvars), C.size_t(base_index) * 16)
+	argv[base_index] = (^Typval_T)(basetv)^
+	libc.memcpy(rawptr(uintptr(&argv[0]) + uintptr(base_index + 1) * 16), rawptr(uintptr(argvars) + uintptr(base_index) * 16), C.size_t(argcount - base_index) * 16)
+	argv[argcount + 1].v_type = VAR_UNKNOWN
+	fn := transmute(VimLFunc_O)(fdef.func)
+	fn(&argv[0], rettv, fdef.data)
+	return FCERR_NONE_O
+}
+
+// Expand-iterator over internal + user functions (eval/funcs.c public).
+@(export)
+get_function_name :: proc "c" (xp: ^expand_T, idx: C.int) -> cstring {
+	context = runtime.default_context()
+	if idx == 0 {
+		get_function_name_intidx_g = -1
+	}
+	if get_function_name_intidx_g < 0 {
+		name := get_user_func_name(xp, idx)
+		if name != nil {
+			if ([^]u8)(name)[0] != 0 && ([^]u8)(name)[0] != '<' && libc.strncmp(xp.xp_pattern, cstring("g:"), 2) == 0 {
+				return cat_prefix_varname('g', name)
+			}
+			return name
+		}
+	}
+	key := (^EvalFuncDef_O)(nvim_odin_funcdef_at_e(get_function_name_intidx_g + 1)).name
+	if key == nil {
+		return nil
+	}
+	get_function_name_intidx_g += 1
+	key_len := libc.strlen(key)
+	libc.memcpy(rawptr(&IObuff[0]), rawptr(transmute(^u8)(key)), key_len)
+	([^]u8)(&IObuff[0])[key_len] = '('
+	if (^EvalFuncDef_O)(nvim_odin_funcdef_at_e(get_function_name_intidx_g)).max_argc == 0 {
+		([^]u8)(&IObuff[0])[key_len + 1] = ')'
+		([^]u8)(&IObuff[0])[key_len + 2] = 0
+	} else {
+		([^]u8)(&IObuff[0])[key_len + 1] = 0
+	}
+	return transmute(cstring)(&IObuff[0])
+}
+
+// Expand-iterator over functions + variables (eval/funcs.c public).
+@(export)
+get_expr_name :: proc "c" (xp: ^expand_T, idx: C.int) -> cstring {
+	context = runtime.default_context()
+	if idx == 0 {
+		get_expr_name_intidx_g = -1
+	}
+	if get_expr_name_intidx_g < 0 {
+		name := get_function_name(xp, idx)
+		if name != nil {
+			return name
+		}
+	}
+	return get_user_var_name(xp, get_expr_name_intidx_g + 1)
+}
+
+// —— Batch 28bm: eval/funcs.c do_searchpair (export + weak) ——
+foreign _ {
+	@(link_name = "decl")
+	decl_pos_e :: proc "c" (p: ^Pos_T) -> C.int ---
+	@(link_name = "incl")
+	incl_pos_e :: proc "c" (p: ^Pos_T) -> C.int ---
+}
+
+// Nested-pair search driver (eval/funcs.c public).
+@(export)
+do_searchpair :: proc "c" (spat: cstring, mpat: cstring, epat: cstring, dir: C.int, skip: ^Typval_T, flags: C.int, match_pos: ^Pos_T, lnum_stop: C.int, time_limit: i64) -> C.int {
+	context = runtime.default_context()
+	retval: C.int = 0
+	nest: C.int = 1
+	use_skip := false
+	options: C.int = SEARCH_KEEP_O
+	save_cpo := p_cpo
+	p_cpo = empty_string_opt()
+	tm := profile_setlimit_e(time_limit)
+	spatlen := libc.strlen(spat)
+	epatlen := libc.strlen(epat)
+	pat2size := C.size_t(spatlen + epatlen + 17)
+	pat2 := (^u8)(xmalloc(pat2size))
+	pat3size := C.size_t(spatlen + libc.strlen(mpat) + epatlen + 25)
+	pat3 := (^u8)(xmalloc(pat3size))
+	pat2len := C.int(libc.snprintf(pat2, pat2size, cstring("\\m\\(%s\\m\\)\\|\\(%s\\m\\)"), spat, epat))
+	pat3len: C.int = 0
+	if ([^]u8)(mpat)[0] == 0 {
+		libc.strcpy(transmute([^]u8)(pat3), transmute(cstring)(pat2))
+		pat3len = pat2len
+	} else {
+		pat3len = C.int(libc.snprintf(pat3, pat3size, cstring("\\m\\(%s\\m\\)\\|\\(%s\\m\\)\\|\\(%s\\m\\)"), spat, epat, mpat))
+	}
+	if (flags & SP_START_O) != 0 {
+		options |= SEARCH_START_O
+	}
+	if skip != nil {
+		use_skip = eval_expr_valid_arg(skip)
+	}
+	save_cursor := (^Pos_T)(uintptr(curwin) + W_CURSOR_OFF)^
+	pos := (^Pos_T)(uintptr(curwin) + W_CURSOR_OFF)^
+	firstpos := Pos_T{}
+	foundpos := Pos_T{}
+	pat := pat3
+	patlen := C.size_t(pat3len)
+	for {
+		sia := searchit_arg_T{}
+		sia.sa_stop_lnum = lnum_stop
+		sia.sa_tm = &tm
+		n := searchit(curwin, curbuf, &pos, nil, Direction(dir), pat, patlen, 1, options, RE_SEARCH_O, &sia)
+		if n == FAIL_E || (firstpos.lnum != 0 && pos_equal_o(pos, firstpos)) {
+			break
+		}
+		if firstpos.lnum == 0 {
+			firstpos = pos
+		}
+		if pos_equal_o(pos, foundpos) {
+			if dir == C.int(Direction.BACKWARD) {
+				decl_pos_e(&pos)
+			} else {
+				incl_pos_e(&pos)
+			}
+		}
+		foundpos = pos
+		options &= ~C.int(SEARCH_START_O)
+		if use_skip {
+			save_pos := (^Pos_T)(uintptr(curwin) + W_CURSOR_OFF)^
+			(^Pos_T)(uintptr(curwin) + W_CURSOR_OFF)^ = pos
+			err := false
+			r := eval_expr_to_bool(skip, &err)
+			(^Pos_T)(uintptr(curwin) + W_CURSOR_OFF)^ = save_pos
+			if err {
+				(^Pos_T)(uintptr(curwin) + W_CURSOR_OFF)^ = save_cursor
+				retval = -1
+				break
+			}
+			if r {
+				continue
+			}
+		}
+		if (dir == C.int(Direction.BACKWARD) && n == 3) || (dir == C.int(Direction.FORWARD) && n == 2) {
+			nest += 1
+			pat = pat2
+		} else {
+			nest -= 1
+			if nest == 1 {
+				pat = pat3
+			}
+		}
+		if nest == 0 {
+			if (flags & SP_RETCOUNT_O) != 0 {
+				retval += 1
+			} else {
+				retval = pos.lnum
+			}
+			if (flags & SP_SETPCMARK_O) != 0 {
+				setpcmark()
+			}
+			(^Pos_T)(uintptr(curwin) + W_CURSOR_OFF)^ = pos
+			if (flags & SP_REPEAT_O) == 0 {
+				break
+			}
+			nest = 1
+		}
+	}
+	if match_pos != nil {
+		match_pos.lnum = (^Pos_T)(uintptr(curwin) + W_CURSOR_OFF).lnum
+		match_pos.col = (^Pos_T)(uintptr(curwin) + W_CURSOR_OFF).col + 1
+	}
+	if ((flags & SP_NOMOVE_O) != 0) || retval == 0 {
+		(^Pos_T)(uintptr(curwin) + W_CURSOR_OFF)^ = save_cursor
+	}
+	xfree(pat2)
+	xfree(pat3)
+	if p_cpo == empty_string_opt() {
+		p_cpo = save_cpo
+	} else {
+		if ([^]u8)(p_cpo)[0] == 0 {
+			set_option_value_give_err(kOptCpoptions_E, str_optval(save_cpo, libc.strlen(transmute(cstring)(save_cpo))), 0)
+		}
+		free_string_option(p_cpo)
+	}
+	return retval
+}
+
+// —— Batch 28bl: eval/funcs.c create_environment (export + weak) ——
+foreign _ {
+	@(link_name = "uv_os_environ")
+	uv_os_environ_e :: proc "c" (envitems: ^rawptr, count: ^C.int) -> C.int ---
+	@(link_name = "uv_os_free_environ")
+	uv_os_free_environ_e :: proc "c" (envitems: rawptr, count: C.int) ---
+	@(link_name = "p_tgc")
+	p_tgc_g: C.int
+}
+
+// uv_env_item_T mirror (uv.h): {name@0, value@8}, 16B.
+Uv_Env_Item_O :: struct {
+	name:  cstring,
+	value: cstring,
+}
+
+VV_SEND_SERVER_O :: 28
+
+@(private = "file")
+pty_ignored_env_g: [7]cstring = {"COLUMNS", "LINES", "TERMCAP", "COLORFGBG", "COLORTERM", "VIM", "VIMRUNTIME"}
+
+// Child-process environment dict builder (eval/funcs.c public).
+@(export)
+create_environment :: proc "c" (job_env: rawptr, clear_env: bool, pty: bool, set_nvim_addr: bool, pty_term_name: cstring) -> rawptr {
+	context = runtime.default_context()
+	env := tv_dict_alloc()
+	if !clear_env {
+		envitems: rawptr = nil
+		envcount: C.int = 0
+		if uv_os_environ_e(&envitems, &envcount) == 0 {
+			i: C.int = 0
+			for i < envcount {
+				item := (^Uv_Env_Item_O)(uintptr(envitems) + uintptr(i) * 16)
+				tv_dict_add_str(env, item.name, libc.strlen(item.name), item.value)
+				i += 1
+			}
+			uv_os_free_environ_e(envitems, envcount)
+		}
+		if pty {
+			for j := 0; j < 7; j += 1 {
+				dv := tv_dict_find(env, pty_ignored_env_g[j], -1)
+				if dv != nil {
+					tv_dict_item_remove(env, dv)
+				}
+			}
+			if p_tgc_g != 0 {
+				tv_dict_add_str(env, cstring("COLORTERM"), 9, cstring("truecolor"))
+			}
+		}
+	}
+	if pty {
+		dv := tv_dict_find(env, cstring("TERM"), 4)
+		if dv != nil {
+			tv_dict_item_remove(env, dv)
+		}
+		tv_dict_add_str(env, cstring("TERM"), 4, pty_term_name)
+	}
+	if set_nvim_addr {
+		nvim_addr := get_vim_var_str(VV_SEND_SERVER_O)
+		if nvim_addr != nil && ([^]u8)(nvim_addr)[0] != 0 {
+			dv := tv_dict_find(env, cstring("NVIM"), 4)
+			if dv != nil {
+				tv_dict_item_remove(env, dv)
+			}
+			tv_dict_add_str(env, cstring("NVIM"), 4, nvim_addr)
+		}
+	}
+	if job_env != nil {
+		tv_dict_extend(env, rawptr((^Typval_T)(job_env).vval), cstring("force"))
+	}
+	return env
+}
+
+foreign _ {
+	@(link_name = "vim_isAbsName")
+	vim_isAbsName_e :: proc "c" (name: cstring) -> bool ---
+}
+
+// —— Batch 28bk: eval/fs.c modify_fname (export + weak, closes fs.c) ——
+VALID_PATH_O :: 1
+VALID_HEAD_O :: 2
+
+// Filename-modifier engine (:p:.:~:h:t:e:r:s:S) (eval/fs.c public).
+@(export)
+modify_fname :: proc "c" (src: ^u8, tilde_file: bool, usedlen: ^C.size_t, fnamep: ^rawptr, bufp: ^rawptr, fnamelen: ^C.size_t) -> C.int {
+	context = runtime.default_context()
+	valid: C.int = 0
+	dirname: [4096]u8
+	has_fullname := false
+	has_homerelative := false
+	c: C.int = 0
+	for {
+		didit := false
+		s_raw := transmute(cstring)(src)
+		if ([^]u8)(s_raw)[usedlen^] == ':' && ([^]u8)(s_raw)[usedlen^ + 1] == 'p' {
+			has_fullname = true
+			valid |= VALID_PATH_O
+			usedlen^ += 2
+			fp := transmute(cstring)(fnamep^)
+			if ([^]u8)(fp)[0] == '~' && !(tilde_file && ([^]u8)(fp)[1] == 0) {
+				fp = expand_env_save(fp)
+				xfree(bufp^)
+				bufp^ = rawptr(transmute(^u8)(fp))
+				fnamep^ = rawptr(transmute(^u8)(fp))
+				if fp == nil {
+					return -1
+				}
+			}
+			p := transmute(cstring)(fnamep^)
+			for ([^]u8)(p)[0] != 0 {
+				if _vim_ispathsep(C.int(([^]u8)(p)[0])) && ([^]u8)(p)[1] == '.' && (([^]u8)(p)[2] == 0 || _vim_ispathsep(C.int(([^]u8)(p)[2])) || (([^]u8)(p)[2] == '.' && (([^]u8)(p)[3] == 0 || _vim_ispathsep(C.int(([^]u8)(p)[3]))))) {
+					break
+				}
+				p = transmute(cstring)(uintptr(rawptr(p)) + uintptr(utfc_ptr2len(p)))
+			}
+			if ([^]u8)(p)[0] != 0 || !vim_isAbsName_e(transmute(cstring)(fnamep^)) {
+				fp2 := FullName_save_e(transmute(cstring)(fnamep^), ([^]u8)(p)[0] != 0)
+				xfree(bufp^)
+				bufp^ = rawptr(fp2)
+				fnamep^ = rawptr(fp2)
+				if fp2 == nil {
+					return -1
+				}
+			}
+			if os_isdir(transmute(cstring)(fnamep^)) {
+				fp3 := xstrnsave_c(transmute(cstring)(fnamep^), libc.strlen(transmute(cstring)(fnamep^)) + 2)
+				xfree(bufp^)
+				bufp^ = rawptr(fp3)
+				fnamep^ = rawptr(fp3)
+				add_pathsep(transmute(^u8)(fnamep^))
+			}
+		}
+		for {
+			if ([^]u8)(s_raw)[usedlen^] != ':' {
+				break
+			}
+			c = C.int(([^]u8)(s_raw)[usedlen^ + 1])
+			if c != '.' && c != '~' && c != '8' {
+				break
+			}
+			usedlen^ += 2
+			if c == '8' {
+				continue
+			}
+			pbuf: rawptr = nil
+			p: cstring = nil
+			if !has_fullname && !has_homerelative {
+				if ([^]u8)(transmute(cstring)(fnamep^))[0] == '~' {
+					p = transmute(cstring)(expand_env_save(transmute(cstring)(fnamep^)))
+					pbuf = rawptr(transmute(^u8)(p))
+				} else {
+					p = transmute(cstring)(FullName_save_e(transmute(cstring)(fnamep^), false))
+					pbuf = rawptr(transmute(^u8)(p))
+				}
+			} else {
+				p = transmute(cstring)(fnamep^)
+			}
+			has_fullname = false
+			if p != nil {
+				dirnamelen: C.size_t = 0
+				if c == '.' {
+					os_dirname(transmute(cstring)(&dirname[0]), 4096)
+					if has_homerelative {
+						s := xstrdup_o(transmute(^u8)(&dirname[0]))
+						dirnamelen = home_replace(nil, transmute(cstring)(s), transmute(cstring)(&dirname[0]), 4096, true)
+						xfree(rawptr(s))
+					}
+					if dirnamelen == 0 {
+						dirnamelen = libc.strlen(transmute(cstring)(&dirname[0]))
+					}
+					if _path_fnamencmp(p, transmute(cstring)(&dirname[0]), C.int(dirnamelen)) == 0 {
+						p = transmute(cstring)(uintptr(rawptr(p)) + uintptr(dirnamelen))
+						if _vim_ispathsep(C.int(([^]u8)(p)[0])) {
+							for ([^]u8)(p)[0] != 0 && _vim_ispathsep(C.int(([^]u8)(p)[0])) {
+								p = transmute(cstring)(uintptr(rawptr(p)) + 1)
+							}
+							fnamep^ = rawptr(transmute(^u8)(p))
+							if pbuf != nil {
+								xfree(bufp^)
+								bufp^ = pbuf
+								pbuf = nil
+							}
+						}
+					}
+				} else {
+					dirnamelen = home_replace(nil, p, transmute(cstring)(&dirname[0]), 4096, true)
+					if ([^]u8)(&dirname[0])[0] == '~' {
+						s := xmemdupz_o2(transmute(^u8)(&dirname[0]), dirnamelen)
+						fnamep^ = rawptr(s)
+						xfree(bufp^)
+						bufp^ = rawptr(s)
+						has_homerelative = true
+					}
+				}
+				xfree(pbuf)
+			}
+		}
+		fi := FileInfo{}
+		os_fileinfo2(transmute(cstring)(fnamep^), &fi)
+		s: cstring = nil
+		if ([^]u8)(s_raw)[usedlen^] == ':' && ([^]u8)(s_raw)[usedlen^ + 1] == 'h' {
+			s = transmute(cstring)(uintptr(rawptr(fnamep^)) + uintptr(fi.rest_off))
+			fnamep^ = rawptr(uintptr(rawptr(fnamep^)) + uintptr(fi.prefix_off))
+		}
+		tail := transmute(cstring)(path_tail_e(transmute(cstring)(fnamep^)))
+		fnamelen^ = libc.strlen(transmute(cstring)(fnamep^))
+		for ([^]u8)(s_raw)[usedlen^] == ':' && ([^]u8)(s_raw)[usedlen^ + 1] == 'h' {
+			valid |= VALID_HEAD_O
+			usedlen^ += 2
+			for uintptr(rawptr(tail)) > uintptr(rawptr(s)) && _after_pathsep(s, tail) != 0 {
+				tail = transmute(cstring)(mb_ptr_back(transmute(^u8)(fnamep^), transmute(^u8)(tail)))
+			}
+			if uintptr(rawptr(tail)) <= uintptr(rawptr(s)) {
+				fnamelen^ = C.size_t(uintptr(rawptr(s)) - uintptr(rawptr(fnamep^)))
+			} else {
+				fnamelen^ = C.size_t(uintptr(rawptr(tail)) - uintptr(rawptr(fnamep^)))
+			}
+			if fnamelen^ == 0 {
+				xfree(bufp^)
+				dot := xstrdup_o(transmute(^u8)(cstring(".")))
+				bufp^ = rawptr(dot)
+				fnamep^ = rawptr(dot)
+				tail = transmute(cstring)(dot)
+				fnamelen^ = 1
+			} else {
+				for uintptr(rawptr(tail)) > uintptr(rawptr(s)) && _after_pathsep(s, tail) == 0 {
+					tail = transmute(cstring)(mb_ptr_back(transmute(^u8)(fnamep^), transmute(^u8)(tail)))
+				}
+			}
+		}
+		if ([^]u8)(s_raw)[usedlen^] == ':' && ([^]u8)(s_raw)[usedlen^ + 1] == '8' {
+			usedlen^ += 2
+		}
+		if ([^]u8)(s_raw)[usedlen^] == ':' && ([^]u8)(s_raw)[usedlen^ + 1] == 't' {
+			usedlen^ += 2
+			fnamelen^ -= C.size_t(uintptr(rawptr(tail)) - uintptr(rawptr(fnamep^)))
+			fnamep^ = rawptr(transmute(^u8)(tail))
+		}
+		for ([^]u8)(s_raw)[usedlen^] == ':' && (([^]u8)(s_raw)[usedlen^ + 1] == 'e' || ([^]u8)(s_raw)[usedlen^ + 1] == 'r') {
+			is_second_e := uintptr(rawptr(fnamep^)) > uintptr(rawptr(tail))
+			if ([^]u8)(s_raw)[usedlen^ + 1] == 'e' && is_second_e {
+				s = transmute(cstring)(uintptr(rawptr(fnamep^)) - 2)
+			} else {
+				s = transmute(cstring)(uintptr(rawptr(fnamep^)) + uintptr(fnamelen^) - 1)
+			}
+			for uintptr(rawptr(s)) > uintptr(rawptr(tail)) {
+				if ([^]u8)(s)[0] == '.' {
+					break
+				}
+				s = transmute(cstring)(uintptr(rawptr(s)) - 1)
+			}
+			if ([^]u8)(s_raw)[usedlen^ + 1] == 'e' {
+				if uintptr(rawptr(s)) > uintptr(rawptr(tail)) {
+					newstart := transmute(cstring)(uintptr(rawptr(s)) + 1)
+					fnamelen^ += C.size_t(uintptr(rawptr(fnamep^)) - uintptr(rawptr(newstart)))
+					fnamep^ = rawptr(transmute(^u8)(newstart))
+				} else if uintptr(rawptr(fnamep^)) <= uintptr(rawptr(tail)) {
+					fnamelen^ = 0
+				}
+			} else {
+				t1 := tail
+				f1 := transmute(cstring)(fnamep^)
+				maxs := t1
+				if uintptr(rawptr(f1)) > uintptr(rawptr(t1)) {
+					maxs = f1
+				}
+				if uintptr(rawptr(s)) > uintptr(rawptr(maxs)) {
+					fnamelen^ = C.size_t(uintptr(rawptr(s)) - uintptr(rawptr(fnamep^)))
+				}
+			}
+			usedlen^ += 2
+		}
+		if ([^]u8)(s_raw)[usedlen^] == ':' && (([^]u8)(s_raw)[usedlen^ + 1] == 's' || (([^]u8)(s_raw)[usedlen^ + 1] == 'g' && ([^]u8)(s_raw)[usedlen^ + 2] == 's')) {
+			s = transmute(cstring)(uintptr(rawptr(s_raw)) + uintptr(usedlen^) + 2)
+			flags := cstring("")
+			if ([^]u8)(s_raw)[usedlen^ + 1] == 'g' {
+				flags = cstring("g")
+				s = transmute(cstring)(uintptr(rawptr(s)) + 1)
+			}
+			sep := C.int(([^]u8)(s)[0])
+			s = transmute(cstring)(uintptr(rawptr(s)) + 1)
+			if sep != 0 {
+				p := _vim_strchr(s, sep)
+				if p != nil {
+					pat := xmemdupz_o2(transmute(^u8)(s), C.size_t(uintptr(rawptr(p)) - uintptr(rawptr(s))))
+					s = transmute(cstring)(uintptr(rawptr(p)) + 1)
+					p = _vim_strchr(s, sep)
+					if p != nil {
+						sub := xmemdupz_o2(transmute(^u8)(s), C.size_t(uintptr(rawptr(p)) - uintptr(rawptr(s))))
+						str := xmemdupz_o2(transmute(^u8)(fnamep^), fnamelen^)
+						usedlen^ = C.size_t(uintptr(rawptr(p)) + 1 - uintptr(rawptr(s_raw)))
+						slen: C.size_t = 0
+						s = do_string_sub(transmute(cstring)(str), fnamelen^, transmute(cstring)(pat), transmute(cstring)(sub), nil, flags, &slen)
+						fnamep^ = rawptr(transmute(^u8)(s))
+						fnamelen^ = slen
+						xfree(bufp^)
+						bufp^ = rawptr(transmute(^u8)(s))
+						didit = true
+						xfree(rawptr(sub))
+						xfree(rawptr(str))
+					}
+					xfree(rawptr(pat))
+				}
+				if didit {
+					continue
+				}
+			}
+		}
+		break
+	}
+	if ([^]u8)(transmute(cstring)(src))[usedlen^] == ':' && ([^]u8)(transmute(cstring)(src))[usedlen^ + 1] == 'S' {
+		c2 := ([^]u8)(transmute(cstring)(fnamep^))[fnamelen^]
+		if c2 != 0 {
+			([^]u8)(transmute(cstring)(fnamep^))[fnamelen^] = 0
+		}
+		p2 := vim_strsave_shellescape_e(transmute(cstring)(fnamep^), false, false)
+		if c2 != 0 {
+			([^]u8)(transmute(cstring)(fnamep^))[fnamelen^] = c2
+		}
+		xfree(bufp^)
+		bufp^ = rawptr(p2)
+		fnamep^ = rawptr(p2)
+		fnamelen^ = libc.strlen(transmute(cstring)(p2))
+		usedlen^ += 2
+	}
+	return valid
+}
+
 // —— Batch 28be: eval.c name-end + source/verbose message leaves ——
 foreign _ {
 	@(link_name = "get_scriptname")
@@ -27769,6 +28784,62 @@ last_set_msg :: proc "c" (script_ctx: sctx_T) {
 		xfree(rawptr(transmute(^u8)(p)))
 	}
 	verbose_leave()
+}
+
+// —— Batch 28bj: eval/window.c noblock pair (exports + weak, closes window.c) ——
+
+// Window/tab switch without autocmd blocking (eval/window.c public).
+@(export)
+switch_win_noblock :: proc "c" (switchwin: rawptr, win: rawptr, tp: rawptr, no_display: bool) -> C.int {
+	context = runtime.default_context()
+	sw := (^Switchwin_T)(switchwin)
+	libc.memset(switchwin, 0, size_of(Switchwin_T))
+	sw.sw_curwin = curwin
+	if win == curwin {
+		sw.sw_same_win = true
+	} else {
+		sw.sw_visual_active = VIsual_active
+		VIsual_active = false
+	}
+	if tp != nil {
+		sw.sw_curtab = curtab
+		if no_display {
+			unuse_tabpage(curtab)
+			use_tabpage(tp)
+		} else {
+			goto_tabpage_tp(tp, false, false)
+		}
+	}
+	if !win_valid(win) {
+		return FAIL_E
+	}
+	curwin = win
+	curbuf = (^rawptr)(uintptr(win) + W_BUFFER_OFF)^
+	return OK_E
+}
+
+// Restore tabpage/window saved by switch_win (eval/window.c public).
+@(export)
+restore_win_noblock :: proc "c" (switchwin: rawptr, no_display: bool) {
+	context = runtime.default_context()
+	sw := (^Switchwin_T)(switchwin)
+	if sw.sw_curtab != nil && valid_tabpage(sw.sw_curtab) {
+		if no_display {
+			old_tp_curwin := (^rawptr)(uintptr(curtab) + TP_CURWIN_OFF)^
+			unuse_tabpage(curtab)
+			(^rawptr)(uintptr(curtab) + TP_CURWIN_OFF)^ = old_tp_curwin
+			use_tabpage(sw.sw_curtab)
+		} else {
+			goto_tabpage_tp(sw.sw_curtab, false, false)
+		}
+	}
+	if !sw.sw_same_win {
+		VIsual_active = sw.sw_visual_active
+	}
+	if win_valid(sw.sw_curwin) {
+		curwin = sw.sw_curwin
+		curbuf = (^rawptr)(uintptr(curwin) + W_BUFFER_OFF)^
+	}
 }
 
 // —— Batch 28bi: eval.c garbage_collect (export + weak, last big one) ——

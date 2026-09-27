@@ -159,6 +159,16 @@ PRAGMA_DIAG_POP
 PRAGMA_DIAG_POP
 
 #pragma weak tv_get_buf
+#pragma weak create_environment
+#pragma weak do_searchpair
+#pragma weak find_internal_func_hash
+#pragma weak find_internal_func
+#pragma weak find_internal_func_lua
+#pragma weak check_internal_func
+#pragma weak call_internal_func
+#pragma weak call_internal_method
+#pragma weak get_function_name
+#pragma weak get_expr_name
 #pragma weak tv_get_buf_from_arg
 #pragma weak get_buf_arg
 #pragma weak f_abs
@@ -8051,3 +8061,7 @@ void f_xor(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
   rettv->vval.v_number = tv_get_number_chk(&argvars[0], NULL)
                          ^ tv_get_number_chk(&argvars[1], NULL);
 }
+
+// Odin port accessors (Batch 28bn): expose the generated functions[] table.
+const EvalFuncDef *nvim_odin_funcdef_at(int i) { return &functions[i]; }
+void *nvim_odin_lua_wrapper_addr(void) { return (void *)&lua_wrapper; }

@@ -1453,7 +1453,7 @@ did_set_colorcolumn :: proc "c"(args: ^optset_T) -> cstring {
 	win := args.os_win
 	varp := (^^u8)(args.os_varp)
 	local_ptr := (^^u8)(uintptr(win) + W_P_CC_OFF)
-	return check_colorcolumn_r(varp^, transmute(rawptr)(varp) == transmute(rawptr)(local_ptr) ? win : nil)
+	return check_colorcolumn(transmute(cstring)(varp^), transmute(rawptr)(varp) == transmute(rawptr)(local_ptr) ? win : nil)
 }
 
 @(export)

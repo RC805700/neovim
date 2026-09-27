@@ -195,12 +195,6 @@ foreign _ {
 	os_strerror :: proc "c" (err: c.int) -> cstring ---
 
 	// memory (link to C x* allocators)
-	@(link_name = "xstrdup")
-	xstrdup :: proc "c" (s: ^u8) -> ^u8 ---
-	@(link_name = "xmemdupz")
-	xmemdupz :: proc "c" (data: rawptr, len: c.size_t) -> ^u8 ---
-	@(link_name = "xstrlcat")
-	xstrlcat :: proc "c" (dst: ^u8, src: ^u8, size: c.size_t) -> c.size_t ---
 	@(link_name = "vim_strchr")
 	vim_strchr :: proc "c" (s: ^u8, c: c.int) -> ^u8 ---
 }

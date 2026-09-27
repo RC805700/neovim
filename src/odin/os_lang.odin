@@ -61,9 +61,6 @@ foreign _ {
 	@(link_name = "path_tail_with_sep")
 	path_tail_with_sep :: proc(fname: cstring) -> cstring ---
 
-	@(link_name = "xstrlcpy")
-	xstrlcpy :: proc(dst: cstring, src: cstring, dsize: c.size_t) -> c.size_t ---
-
 	@(link_name = "bindtextdomain")
 	bindtextdomain :: proc(domainname: cstring, dirname: cstring) -> cstring ---
 

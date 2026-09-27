@@ -62,6 +62,37 @@ bool entered_free_all_mem = false;
 
 // Weak symbols for Odin override (via linker's preference for strong symbols)
 #pragma weak try_malloc
+#pragma weak arena_finish
+#pragma weak xstrdup
+#pragma weak xmemdupz
+#pragma weak xstrlcpy
+#pragma weak xstrlcat
+#pragma weak xmallocz
+#pragma weak xmemcpyz
+#pragma weak memchrsub
+#pragma weak memcnt
+#pragma weak strequal
+#pragma weak strnequal
+#pragma weak xstrdupnul
+#pragma weak xstrndup
+#pragma weak xmemdup
+#pragma weak xstpcpy
+#pragma weak xstpncpy
+#pragma weak xstrchrnul
+#pragma weak xmemrchr
+#pragma weak xmemscan
+#pragma weak strchrsub
+#pragma weak strcnt
+#pragma weak mergesort_list
+#pragma weak time_to_bytes
+#pragma weak alloc_block
+#pragma weak arena_alloc_block
+#pragma weak arena_alloc
+#pragma weak free_block
+#pragma weak arena_mem_free
+#pragma weak arena_allocz
+#pragma weak arena_memdupz
+#pragma weak arena_strdup
 #pragma weak verbose_try_malloc
 #pragma weak xmalloc
 #pragma weak xfree

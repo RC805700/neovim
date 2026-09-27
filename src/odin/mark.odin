@@ -1064,10 +1064,10 @@ fname2fnum :: proc "c"(fm: ^Xfmark_T) {
 	// First expand "~/" in the file name to the home directory.
 	if fm.fname^ == '~' && vim_ispathsep_nocolon(C.int((^u8)(uintptr(fm.fname) + 1)^)) {
 		len := expand_env("~/", transmute(cstring)(&name_buff[0]), C.int(size_of(name_buff)))
-		_xstrlcpy(transmute(cstring)(uintptr(&name_buff[0]) + uintptr(len)),
+		xstrlcpy(transmute(cstring)(uintptr(&name_buff[0]) + uintptr(len)),
 			transmute(cstring)(uintptr(fm.fname) + 2), C.size_t(MAXPATHL_INT) - len)
 	} else {
-		_xstrlcpy(transmute(cstring)(&name_buff[0]), transmute(cstring)(fm.fname), MAXPATHL_INT)
+		xstrlcpy(transmute(cstring)(&name_buff[0]), transmute(cstring)(fm.fname), MAXPATHL_INT)
 	}
 
 	// Try to shorten the file name.

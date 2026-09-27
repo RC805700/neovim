@@ -1783,8 +1783,6 @@ slang_clear_sug :: proc "c"(lp: ^Slang_T) {
 foreign _ {
 	@(link_name = "xcalloc")
 	xcalloc_sp :: proc "c" (n: C.size_t, sz: C.size_t) -> rawptr ---
-	@(link_name = "xstrdup")
-	xstrdup_r :: proc "c" (s: cstring) -> ^u8 ---
 }
 
 // XFREE_CLEAR(ptr): xfree(ptr); ptr = NULL. pp is the address of the field.
@@ -3812,11 +3810,6 @@ decor_redraw_col_inline :: proc "c"(wp: rawptr, col: C.int, hidden: bool, ds: ra
 // e_format C global (char*), referenced by other files:
 @(export)
 e_format: cstring = "E759: Format error in spell file"
-
-foreign _ {
-	@(link_name = "xmemdupz")
-	xmemdupz_sp :: proc "c" (s: ^u8, len: C.size_t) -> ^u8 ---
-}
 
 #assert(size_of(Slang_T) == 4352)
 #assert(offset_of(Slang_T, sl_wordcount_buf) == 128)

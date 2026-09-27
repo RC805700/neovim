@@ -147,11 +147,7 @@ func_ptr_ref :: proc "c" (fp: rawptr) {
 	}
 }
 
-// —— Batch 24c: fname_trans_sid + get_func_arity ——
-foreign _ {
-	@(link_name = "find_internal_func")
-	find_internal_func_e :: proc "c" (name: cstring) -> rawptr ---
-}
+// —— Batch 24c: fname_trans_sid + get_func_arity (FFI fully rewired) ——
 
 // ufunc_T garray offsets (cc-probed): uf_varargs@0 (bool), uf_args@16, uf_def_args@40.
 UF_VARARGS_OFF_O :: 0
@@ -222,10 +218,10 @@ get_func_arity :: proc "c" (name: cstring, required: ^C.int, optional: ^C.int, v
 	context = runtime.default_context()
 	argcount: C.int = 0
 	min_argcount: C.int = 0
-	fdef := find_internal_func_e(name)
+	fdef := find_internal_func(name)
 	if fdef != nil {
-		argcount = C.int(([^]u8)(fdef)[EVALFUNC_MAX_ARGC_OFF_O])
-		min_argcount = C.int(([^]u8)(fdef)[EVALFUNC_MIN_ARGC_OFF_O])
+		argcount = C.int(fdef.max_argc)
+		min_argcount = C.int(fdef.min_argc)
 		varargs^ = false
 	} else {
 		fname_buf: [FLEN_FIXED_O + 1]u8
@@ -290,7 +286,7 @@ builtin_function_o :: proc "c" (name: cstring, len: C.int) -> bool {
 translated_function_exists :: proc "c" (name: cstring) -> bool {
 	context = runtime.default_context()
 	if builtin_function_o(name, -1) {
-		return find_internal_func_e(name) != nil
+		return find_internal_func(name) != nil
 	}
 	return find_func(name) != nil
 }
@@ -501,7 +497,7 @@ trans_function_name :: proc "c" (pp: ^cstring, skip: bool, flags: C.int, fdp: ra
 			break
 		}
 		if !skip && (flags & TFN_QUIET_O) == 0 && (flags & TFN_NO_DEREF_O) == 0 {
-			cp := _xmemrchr(transmute(cstring)(ll_name), ':', C.size_t(ll_name_len))
+			cp := xmemrchr(transmute(cstring)(ll_name), ':', C.size_t(ll_name_len))
 			if cp != nil && uintptr(rawptr(cp)) < uintptr(rawptr(end)) {
 				semsg(cstring(E884_S), start)
 				break
@@ -724,10 +720,6 @@ foreign _ {
 	nlua_call_vlua_e :: proc "c" (s: cstring, len: C.size_t, args: ^Typval_T, argcount: C.int, ret_tv: ^Typval_T) ---
 	@(link_name = "nlua_exec_typval_callable")
 	nlua_exec_typval_callable_e :: proc "c" (lua_cb: C.int, argcount: C.int, argvars: ^Typval_T, rettv: ^Typval_T) -> C.int ---
-	@(link_name = "call_internal_func")
-	call_internal_func_e :: proc "c" (fname: cstring, argcount: C.int, argvars: ^Typval_T, rettv: ^Typval_T) -> C.int ---
-	@(link_name = "call_internal_method")
-	call_internal_method_e :: proc "c" (fname: cstring, argcount: C.int, argvars: ^Typval_T, rettv: ^Typval_T, basetv: rawptr) -> C.int ---
 }
 
 FC_RANGE_O :: 0x02
@@ -885,9 +877,9 @@ call_func :: proc "c" (funcname: cstring, len: C.int, rettv: ^Typval_T, argcount
 				error = call_user_func_check_o(fp, argcount, av, rettv, fe, selfdict)
 			}
 		} else if fe.basetv != nil {
-			error = call_internal_method_e(fname, argcount, av, rettv, fe.basetv)
+			error = call_internal_method(fname, argcount, av, rettv, fe.basetv)
 		} else {
-			error = call_internal_func_e(fname, argcount, av, rettv)
+			error = call_internal_func(fname, argcount, av, rettv)
 		}
 		update_force_abort_e()
 	}
@@ -1010,10 +1002,10 @@ get_user_func_name :: proc "c" (xp: rawptr, idx: C.int) -> cstring {
 		}
 		length := cat_func_name_o(([^]u8)(&IObuff[0]), IOSIZE_O, fp)
 		if (^C.int)(uintptr(xp) + XP_CONTEXT_OFF_O)^ != EXPAND_USER_FUNC_O {
-			xstrlcpy_o(transmute(cstring)(rawptr(uintptr(rawptr(cstring(&IObuff[0]))) + uintptr(length))), cstring("("), IOSIZE_O - C.size_t(length))
+			xstrlcpy(transmute(cstring)(rawptr(uintptr(rawptr(cstring(&IObuff[0]))) + uintptr(length))), cstring("("), IOSIZE_O - C.size_t(length))
 			if !(^bool)(uintptr(fp) + UF_VARARGS_OFF_O)^ && (^C.int)(uintptr(fp) + UF_ARGS_OFF_O)^ == 0 {
 				length += 1
-				xstrlcpy_o(transmute(cstring)(rawptr(uintptr(rawptr(cstring(&IObuff[0]))) + uintptr(length))), cstring(")"), IOSIZE_O - C.size_t(length))
+				xstrlcpy(transmute(cstring)(rawptr(uintptr(rawptr(cstring(&IObuff[0]))) + uintptr(length))), cstring(")"), IOSIZE_O - C.size_t(length))
 			}
 		}
 		return cstring(&IObuff[0])
@@ -1150,8 +1142,6 @@ foreign _ {
 	p_mfd_g: C.longlong
 	@(link_name = "trylevel")
 	trylevel_g: C.int
-	@(link_name = "eval_lavars_used")
-	eval_lavars_used_g: ^bool
 	@(link_name = "verbose_enter_scroll")
 	verbose_enter_scroll_e :: proc "c" () ---
 	@(link_name = "verbose_leave_scroll")
@@ -2250,7 +2240,7 @@ alloc_ufunc_o :: proc "c" (name: cstring, namelen: C.size_t) -> rawptr {
 	context = runtime.default_context()
 	length := C.size_t(240) + namelen + 1
 	fp := xcalloc(1, length)
-	_xmemcpyz(rawptr(uintptr(fp) + UF_NAME_OFF_O), transmute(rawptr)(name), C.size_t(namelen))
+	xmemcpyz(rawptr(uintptr(fp) + UF_NAME_OFF_O), transmute(rawptr)(name), C.size_t(namelen))
 	(^C.size_t)(uintptr(fp) + 232)^ = namelen
 	if ([^]u8)(name)[0] == 0x80 {
 		exp_len := namelen + 3
@@ -2417,7 +2407,7 @@ get_lambda_tv :: proc "c" (arg: ^cstring, rettv: ^Typval_T, evalarg: rawptr) -> 
 	fp: rawptr = nil
 	pt: rawptr = nil
 	varargs := false
-	old_eval_lavars := eval_lavars_used_g
+	old_eval_lavars := eval_lavars_used
 	eval_lavars := false
 	tofree: rawptr = nil
 	s := skipwhite(transmute(cstring)(rawptr(uintptr(transmute(rawptr)(arg^)) + 1)))
@@ -2434,21 +2424,21 @@ get_lambda_tv :: proc "c" (arg: ^cstring, rettv: ^Typval_T, evalarg: rawptr) -> 
 		if pnewargs != nil {
 			ga_clear_strings_e(pnewargs)
 		}
-		eval_lavars_used_g = old_eval_lavars
+		eval_lavars_used = old_eval_lavars
 		return FAIL_E
 	}
 	if evaluate {
-		eval_lavars_used_g = &eval_lavars
+		eval_lavars_used = &eval_lavars
 	}
 	arg^ = skipwhite(transmute(cstring)(rawptr(uintptr(transmute(rawptr)(arg^)) + 1)))
 	start := arg^
-	ret = skip_expr_e(arg, evalarg)
+	ret = skip_expr(arg, transmute(^Evalarg_T)(evalarg))
 	end := arg^
 	if ret == FAIL_E {
 		if pnewargs != nil {
 			ga_clear_strings_e(pnewargs)
 		}
-		eval_lavars_used_g = old_eval_lavars
+		eval_lavars_used = old_eval_lavars
 		return FAIL_E
 	}
 	if evalarg != nil {
@@ -2461,7 +2451,7 @@ get_lambda_tv :: proc "c" (arg: ^cstring, rettv: ^Typval_T, evalarg: rawptr) -> 
 		if pnewargs != nil {
 			ga_clear_strings_e(pnewargs)
 		}
-		eval_lavars_used_g = old_eval_lavars
+		eval_lavars_used = old_eval_lavars
 		return FAIL_E
 	}
 	arg^ = transmute(cstring)(rawptr(uintptr(transmute(rawptr)(arg^)) + 1))
@@ -2477,7 +2467,7 @@ get_lambda_tv :: proc "c" (arg: ^cstring, rettv: ^Typval_T, evalarg: rawptr) -> 
 		([^]cstring)(newlines.ga_data)[uintptr(newlines.ga_len)] = transmute(cstring)(np)
 		newlines.ga_len += 1
 		libc.memcpy(np, rawptr(&RETURN_LIT_O[0]), 7)
-		_xmemcpyz(rawptr(uintptr(np) + 7), transmute(rawptr)(start), C.size_t(uintptr(transmute(rawptr)(end)) - uintptr(transmute(rawptr)(start))))
+		xmemcpyz(rawptr(uintptr(np) + 7), transmute(rawptr)(start), C.size_t(uintptr(transmute(rawptr)(end)) - uintptr(transmute(rawptr)(start))))
 		if strstr_c(transmute(cstring)(rawptr(uintptr(np) + 7)), cstring("a:")) == nil {
 			(^C.int)(uintptr(fp) + UF_FLAGS_OFF_O)^ |= FC_NOARGS_O
 		}
@@ -2508,7 +2498,7 @@ get_lambda_tv :: proc "c" (arg: ^cstring, rettv: ^Typval_T, evalarg: rawptr) -> 
 		rettv.vval = transmute(rawptr)(pt)
 		rettv.v_type = VAR_PARTIAL
 	}
-	eval_lavars_used_g = old_eval_lavars
+	eval_lavars_used = old_eval_lavars
 	if tofree != nil {
 		xfree(tofree)
 	}
@@ -2755,10 +2745,8 @@ set_ref_in_func :: proc "c" (name: cstring, fp_in: rawptr, copyID: C.int) -> boo
 	return abort
 }
 
-// —— Batch 24x: :call/:defer command ——
+// —— Batch 24x: :call/:defer command (FFI fully rewired) ——
 foreign _ {
-	@(link_name = "check_internal_func")
-	check_internal_func_e :: proc "c" (fdef: rawptr, argcount: C.int) -> C.int ---
 	@(link_name = "did_throw")
 	did_throw_g: bool
 	@(link_name = "emsg_severe")
@@ -2846,11 +2834,11 @@ ex_defer_inner_o :: proc "c" (name: cstring, arg: ^cstring, partial: rawptr, eva
 	argcount += partial_argc
 	if r == OK_E {
 		if builtin_function_o(name, -1) {
-			fdef := find_internal_func_e(name)
+			fdef := find_internal_func(name)
 			if fdef == nil {
 				emsg_funcname(cstring("E117: Unknown function: %s"), name)
 				r = FAIL_E
-			} else if check_internal_func_e(fdef, argcount) == -1 {
+			} else if check_internal_func(fdef, argcount) == -1 {
 				r = FAIL_E
 			}
 		} else {
@@ -3025,8 +3013,8 @@ get_return_cmd :: proc "c" (rettv: rawptr) -> cstring {
 	} else {
 		slen = C.size_t(libc.strlen(s))
 	}
-	xstrlcpy_o(transmute(cstring)(&IObuff[0]), cstring(":return "), C.size_t(IOSIZE_O))
-	xstrlcpy_o(transmute(cstring)(&IObuff[8]), s, C.size_t(IOSIZE_O - 8))
+	xstrlcpy(transmute(cstring)(&IObuff[0]), cstring(":return "), C.size_t(IOSIZE_O))
+	xstrlcpy(transmute(cstring)(&IObuff[8]), s, C.size_t(IOSIZE_O - 8))
 	IObufflen := 8 + slen
 	if IObufflen >= C.size_t(IOSIZE_O) {
 		libc.memcpy(rawptr(&IObuff[IOSIZE_O - 4]), rawptr(&DOT3_O[0]), 4)

@@ -7,9 +7,6 @@ import "core:c/libc"
 
 // C globals / helpers accessed by Odin
 foreign _ {
-	@(link_name = "xstrlcpy")
-	_xstrlcpy :: proc(dst: cstring, src: cstring, dsize: c.size_t) -> c.size_t ---
-
 	@(link_name = "ga_init")
 	_ga_init :: proc(gap: ^Garray, itemsize: c.int, growsize: c.int) ---
 
@@ -98,7 +95,7 @@ os_get_uname :: proc "c" (uid: c.uint, s: cstring, len: c.size_t) -> c.int {
 	context = runtime.default_context()
 	pw := posix.getpwuid(posix.uid_t(uid))
 	if pw != nil && pw.pw_name != nil && !_cstr_empty(pw.pw_name) {
-		_xstrlcpy(s, pw.pw_name, len)
+		xstrlcpy(s, pw.pw_name, len)
 		return OK
 	}
 	// snprintf(s, len, "%d", (int)uid)

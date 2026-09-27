@@ -51,6 +51,7 @@
 #include "eval/fs.c.generated.h"
 
 #pragma weak f_chdir
+#pragma weak modify_fname
 #pragma weak f_delete
 #pragma weak f_executable
 #pragma weak f_exepath

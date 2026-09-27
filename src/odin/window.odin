@@ -184,22 +184,13 @@ K_ERROR_TYPE_EXCEPTION_O :: 2
 E1159_S :: "E1159: Cannot split a window when closing the buffer"
 E1312_S :: "E1312: Not allowed to change the window layout in this autocmd"
 
-foreign _ {
-	@(link_name = "nvim_odin_get_frame_locked")
-	nvim_odin_get_frame_locked_r :: proc "c" () -> C.int ---
-	@(link_name = "nvim_odin_frame_locked_inc")
-	nvim_odin_frame_locked_inc_r :: proc "c" () ---
-	@(link_name = "nvim_odin_frame_locked_dec")
-	nvim_odin_frame_locked_dec_r :: proc "c" () ---
-	@(link_name = "nvim_odin_window_layout_lock")
-	nvim_odin_window_layout_lock_r :: proc "c" () ---
-	@(link_name = "nvim_odin_window_layout_unlock")
-	nvim_odin_window_layout_unlock_r :: proc "c" () ---
-	@(link_name = "nvim_odin_get_split_disallowed")
-	nvim_odin_get_split_disallowed_r :: proc "c" () -> C.int ---
-	@(link_name = "nvim_odin_get_close_disallowed")
-	nvim_odin_get_close_disallowed_r :: proc "c" () -> C.int ---
-}
+// Moved window.c statics (single live copies; C twins die with the file).
+frame_locked_g: C.int = 0
+split_disallowed_g: C.int = 0
+close_disallowed_g: C.int = 0
+min_set_ch_g: C.longlong = 1
+last_win_id_g: C.int = 999
+command_frame_height_g: bool = true
 // api_set_error_r/api_clear_error_r/emsg reused from option.odin.
 
 @(export)
@@ -213,25 +204,27 @@ frame2win :: proc "c"(frp: rawptr) -> rawptr {
 
 @(export)
 frames_locked :: proc "c"() -> bool {
-	return nvim_odin_get_frame_locked_r() != 0
+	return frame_locked_g != 0
 }
 
 frame_locked_inc_o :: proc "c"() {
-	nvim_odin_frame_locked_inc_r()
+	frame_locked_g += 1
 }
 
 frame_locked_dec_o :: proc "c"() {
-	nvim_odin_frame_locked_dec_r()
+	frame_locked_g -= 1
 }
 
 @(export)
 window_layout_lock :: proc "c"() {
-	nvim_odin_window_layout_lock_r()
+	split_disallowed_g += 1
+	close_disallowed_g += 1
 }
 
 @(export)
 window_layout_unlock :: proc "c"() {
-	nvim_odin_window_layout_unlock_r()
+	split_disallowed_g -= 1
+	close_disallowed_g -= 1
 }
 
 @(export)
@@ -251,8 +244,8 @@ window_layout_locked :: proc "c"(cmd: C.int) -> bool {
 // message when locked.
 @(export)
 window_layout_locked_err :: proc "c"(cmd: C.int, err: ^Api_Error) -> bool {
-	if nvim_odin_get_split_disallowed_r() > 0 || nvim_odin_get_close_disallowed_r() > 0 {
-		if nvim_odin_get_close_disallowed_r() == 0 && cmd == CMD_TABNEW_O {
+	if split_disallowed_g > 0 || close_disallowed_g > 0 {
+		if close_disallowed_g == 0 && cmd == CMD_TABNEW_O {
 			api_set_error_r(err, K_ERROR_TYPE_EXCEPTION_O, "%s",
 				transmute(rawptr)(cstring(E1159_S)))
 		} else {
@@ -580,12 +573,6 @@ win_altframe_o :: proc "c" (win: rawptr, tp: rawptr) -> rawptr {
 W_WINBAR_HEIGHT_OFF :: 436
 STATUS_HEIGHT_O :: 1
 
-foreign _ {
-	@(link_name = "nvim_odin_get_min_set_ch")
-	nvim_odin_get_min_set_ch_r :: proc "c" () -> C.longlong ---
-	@(link_name = "nvim_odin_set_min_set_ch")
-	nvim_odin_set_min_set_ch_r :: proc "c" (v: C.longlong) ---
-}
 // set_option_value/num_optval/Rows/p_ch/kOptCmdheight_E/global_stl_height_r reused.
 
 is_bottom_win_o :: proc "c" (wp: rawptr) -> bool {
@@ -690,12 +677,12 @@ frame_new_height :: proc "c"(topfrp: rawptr, height_in: C.int, topfirst: bool, w
 	height := height_in
 	if (^rawptr)(uintptr(topfrp) + FR_PARENT_OFF)^ == nil && set_ch {
 		// topframe: update the command line height, with side effects.
-		new_ch := max(nvim_odin_get_min_set_ch_r(),
+		new_ch := max(min_set_ch_g,
 			C.longlong(p_ch) + C.longlong((^C.int)(uintptr(topfrp) + FR_HEIGHT_OFF)^) - C.longlong(height))
 		if new_ch != C.longlong(p_ch) {
-			save_ch := nvim_odin_get_min_set_ch_r()
+			save_ch := min_set_ch_g
 			set_option_value(kOptCmdheight_E, num_optval(new_ch), 0)
-			nvim_odin_set_min_set_ch_r(save_ch)
+			min_set_ch_g = save_ch
 		}
 		height = min(Rows - C.int(p_ch) - 		tabline_height() - 		global_stl_height(), height)
 	}
@@ -2307,10 +2294,7 @@ clear_snapshot_rec_o :: proc "c"(fr: rawptr) {
 }
 
 xstrdup_o :: proc "c"(s: ^u8) -> ^u8 {
-	n := libc.strlen(transmute(cstring)(s))
-	dup := (^u8)(xmalloc_sp(n + 1))
-	libc.memcpy(dup, s, n + 1)
-	return dup
+	return xstrdup(s)
 }
 
 @(export)
@@ -2417,8 +2401,6 @@ W_NEXT_MATCH_ID_OFF :: 9144
 VAR_SCOPE_O :: 1
 
 foreign _ {
-	@(link_name = "nvim_odin_next_win_id")
-	nvim_odin_next_win_id_r :: proc "c" () -> C.int ---
 	@(link_name = "window_handles")
 	window_handles_g: Map_int_ptr_t
 	// grid_assign_handle: Odin export in grid.odin (Batch 2e).
@@ -2436,7 +2418,8 @@ win_alloc :: proc "c"(after: rawptr, hidden: bool) -> rawptr {
 	// are never NULL before the option defaults have been applied.
 	nvim_odin_init_winopt_r(new_wp)
 
-	(^C.int)(uintptr(new_wp) + W_HANDLE_OFF)^ = nvim_odin_next_win_id_r()
+	last_win_id_g += 1
+	(^C.int)(uintptr(new_wp) + W_HANDLE_OFF)^ = last_win_id_g
 	new_item: bool = false
 	slot := map_put_ref_int_ptr_t(&window_handles_g,
 		(^C.int)(uintptr(new_wp) + W_HANDLE_OFF)^, nil, &new_item)
@@ -2679,10 +2662,6 @@ foreign _ {
 	reset_dragwin_r :: proc "c" () ---
 	@(link_name = "terminal_check_size")
 	terminal_check_size_r :: proc "c" (term: rawptr) ---
-	@(link_name = "switch_win_noblock")
-	switch_win_noblock_r :: proc "c" (switchwin: rawptr, win: rawptr, tp: rawptr, no_display: bool) -> C.int ---
-	@(link_name = "restore_win_noblock")
-	restore_win_noblock_r :: proc "c" (switchwin: rawptr, no_display: bool) ---
 	@(link_name = "tabpage_handles")
 	tabpage_handles_g: Map_int_ptr_t
 	@(link_name = "global_alist")
@@ -2915,10 +2894,10 @@ win_new_tabpage :: proc "c"(after: C.int, filename: cstring, enter: bool, first:
 		// Trigger autocommands in the context of the new window.
 		switchwin: Switchwin_T
 		// tp_curwin is valid in newtp: does not fail.
-		switch_win_noblock_r(&switchwin, (^rawptr)(uintptr(newtp) + TP_CURWIN_OFF)^, newtp, true)
+		switch_win_noblock(&switchwin, (^rawptr)(uintptr(newtp) + TP_CURWIN_OFF)^, newtp, true)
 		apply_autocmds(EVENT_WINNEW_O, nil, nil, false, curbuf)
 		apply_autocmds(EVENT_TABNEW_O, filename, filename, false, curbuf)
-		restore_win_noblock_r(&switchwin, true)
+		restore_win_noblock(&switchwin, true)
 	}
 	return newtp
 }
@@ -2932,8 +2911,6 @@ foreign _ {
 	skip_win_fix_scroll_g: bool
 	@(link_name = "diff_need_scrollbind")
 	diff_need_scrollbind_g: bool
-	@(link_name = "nvim_odin_set_command_frame_height")
-	nvim_odin_set_command_frame_height_r :: proc "c" (v: bool) ---
 }
 
 // Start using tab page "tp" (C static: no export/weak).
@@ -2950,9 +2927,9 @@ enter_tabpage_o :: proc "c"(tp: rawptr, old_curbuf: rawptr, trigger_enter_autocm
 		// OptionSet and adjust the cmdline row without touching frame sizes.
 		new_ch := p_ch
 		p_ch = prev_p_ch
-		nvim_odin_set_command_frame_height_r(false)
+		command_frame_height_g = false
 		set_option_value(kOptCmdheight_E, num_optval(new_ch), 0)
-		nvim_odin_set_command_frame_height_r(true)
+		command_frame_height_g = true
 	} else if old_curtab != curtab {
 		tabpage_check_windows_o(old_curtab)
 	}
@@ -3456,8 +3433,6 @@ foreign _ {
 	diffopt_closeoff_r :: proc "c" () -> bool ---
 	@(link_name = "ui_call_win_close")
 	ui_call_win_close_r :: proc "c" (grid: C.longlong) ---
-	@(link_name = "nvim_odin_set_split_disallowed")
-	nvim_odin_set_split_disallowed_r :: proc "c" (v: C.int) ---
 	@(link_name = "p_ru")
 	p_ru_g: C.int
 	@(link_name = "redraw_cmdline")
@@ -3863,7 +3838,7 @@ win_close :: proc "c"(win: rawptr, free_buf: bool, force: bool) -> C.int {
 	}
 	// Now we are really going to close the window. Disallow any autocommand
 	// to split a window to avoid trouble.
-	nvim_odin_set_split_disallowed_r(nvim_odin_get_split_disallowed_r() + 1)
+	split_disallowed_g += 1
 	was_floating := (^bool)(uintptr(win) + W_FLOATING_OFF)^
 	if ui_has(K_UIMULTIGRID_O) {
 		ui_call_win_close_r(C.longlong((^C.int)(uintptr(win) + W_GRID_HANDLE_OFF)^))
@@ -3979,7 +3954,7 @@ win_close :: proc "c"(win: rawptr, free_buf: bool, force: bool) -> C.int {
 		// is removed it's no longer safe to do that.
 		apply_autocmds(EVENT_TABLEAVE_O, nil, nil, false, curbuf)
 	}
-	nvim_odin_set_split_disallowed_r(nvim_odin_get_split_disallowed_r() - 1)
+	split_disallowed_g -= 1
 	// After closing the help or quickfix window, try restoring the window
 	// layout from before it was opened.
 	if help_window || quickfix_window {
@@ -4853,8 +4828,6 @@ KWINOPT_SCROLL_O :: 33
 SID_WINLAYOUT_O :: -7
 
 foreign _ {
-	@(link_name = "nvim_odin_get_command_frame_height")
-	nvim_odin_get_command_frame_height_r :: proc "c" () -> bool ---
 	@(link_name = "grid_clear")
 	grid_clear_r :: proc "c" (grid: rawptr, start_row: C.int, end_row: C.int, start_col: C.int, end_col: C.int, attr: C.int) ---
 	@(link_name = "default_gridview")
@@ -4910,7 +4883,7 @@ command_height :: proc "c"() {
 		(^C.int)(uintptr((^rawptr)(uintptr(frp) + FR_WIN_OFF)^) + W_P_WFH_OFF)^ != 0 {
 		frp = (^rawptr)(uintptr(frp) + FR_PREV_OFF)^
 	}
-	for p_ch > C.longlong(old_p_ch) && nvim_odin_get_command_frame_height_r() {
+	for p_ch > C.longlong(old_p_ch) && command_frame_height_g {
 		if frp == nil {
 			emsg(cstring(E36_S))
 			p_ch = C.longlong(old_p_ch)
@@ -4923,7 +4896,7 @@ command_height :: proc "c"() {
 		frp = (^rawptr)(uintptr(frp) + FR_PREV_OFF)^
 	}
 	if C.longlong(p_ch) < C.longlong(old_p_ch) &&
-		nvim_odin_get_command_frame_height_r() && frp != nil {
+		command_frame_height_g && frp != nil {
 		frame_add_height_o(frp, C.int(C.longlong(old_p_ch) - C.longlong(p_ch)))
 	}
 	// Recompute window positions.
@@ -4944,7 +4917,7 @@ command_height :: proc "c"() {
 	// Use the value of p_ch that we remembered. This is needed for when
 	// the GUI starts up and when p_ch was changed in another tab page.
 	(^C.longlong)(uintptr(curtab) + TP_CH_USED_OFF)^ = C.longlong(p_ch)
-	nvim_odin_set_min_set_ch_r(C.longlong(p_ch))
+	min_set_ch_g = C.longlong(p_ch)
 }
 
 // ── Batch 21: prompt-window enter/leave ──────────────────────────────────────
@@ -5417,8 +5390,6 @@ VALID_CROW_O :: 0x10
 foreign _ {
 	@(link_name = "skip_update_topline")
 	skip_update_topline_g: bool
-	@(link_name = "nvim_odin_get_last_win_id")
-	nvim_odin_get_last_win_id_r :: proc "c" () -> C.int ---
 }
 
 // Set the fraction of the cursor position in the window (for scroll restore).
@@ -5517,7 +5488,7 @@ win_new_width :: proc "c"(wp: rawptr, width_in: C.int) {
 // Last allocated window handle.
 @(export)
 get_last_winid :: proc "c"() -> C.int {
-	return nvim_odin_get_last_win_id_r()
+	return last_win_id_g
 }
 
 // Don't let autocommands close the given window (lock count).
@@ -6167,7 +6138,7 @@ foreign _ {
 // Error if splitting is currently disallowed (e.g. buffer is closing).
 @(export)
 check_split_disallowed_err :: proc "c"(wp: rawptr, err: rawptr) -> bool {
-	if nvim_odin_get_split_disallowed_r() > 0 {
+	if split_disallowed_g > 0 {
 		api_set_error_r(err, 2, cstring(E242_S), nil)
 		return false
 	}
@@ -6298,7 +6269,7 @@ win_drag_status_line :: proc "c"(dragwin: rawptr, offset_in: C.int) {
 		room = Rows - cmdline_row
 		if (^rawptr)(uintptr(curfr) + FR_NEXT_OFF)^ != nil {
 			room -= C.int(p_ch) + global_stl_height()
-		} else if nvim_odin_get_min_set_ch_r() > 0 {
+		} else if min_set_ch_g > 0 {
 			room -= 1
 		}
 		room = max(room, 0)
@@ -6688,7 +6659,7 @@ win_set_buf :: proc "c"(win: rawptr, buf: rawptr, err: rawptr) {
 	switchwin: Switchwin_T
 	win_result: C.int = 0
 	// TRY_WRAP: wrapped calls don't throw; plain block is exact.
-	win_result = switch_win_noblock_r(&switchwin, win, tab, true)
+	win_result = switch_win_noblock(&switchwin, win, tab, true)
 	if win_result != FAIL {
 		save_acd := p_acd_g
 		if !switchwin.sw_same_win {
@@ -6707,7 +6678,7 @@ win_set_buf :: proc "c"(win: rawptr, buf: rawptr, err: rawptr) {
 	}
 	// If window is not current, state logic will not validate its cursor.
 	validate_cursor_r(curwin)
-	restore_win_noblock_r(&switchwin, true)
+	restore_win_noblock(&switchwin, true)
 	RedrawingDisabled -= 1
 }
 
@@ -7121,7 +7092,7 @@ wingotofile_o :: proc "c"(nchar: C.int, prenum: C.int, prenum1: C.int) {
 		wp: rawptr = nil
 		if (swb_flags_g & (KOPT_SWB_USEOPEN_O | KOPT_SWB_USETAB_O)) != 0 &&
 			(^C.int)(uintptr(transmute(rawptr)(&cmdmod_cmod_flags)) + CMOD_TAB_OFF)^ == 0 {
-			wp = swbuf_goto_win_with_buf_r(buflist_findname_exp(transmute(cstring)(ptr)))
+			wp = swbuf_goto_win_with_buf(buflist_findname_exp(transmute(cstring)(ptr)))
 		}
 		if wp == nil && win_split(0, 0) == OK {
 			(^bool)(uintptr(curwin) + W_P_SCB_OFF)^ = false // RESET_BINDING
@@ -7360,7 +7331,7 @@ do_window :: proc "c"(nchar: C.int, prenum_in: C.int, xchar_in: C.int) {
 	case '-':
 		win_setheight((^C.int)(uintptr(curwin) + W_HEIGHT_OFF)^ - prenum1)
 	case Ctrl__O, '_':
-		win_setheight(prenum != 0 ? prenum : Rows - C.int(nvim_odin_get_min_set_ch_r()))
+		win_setheight(prenum != 0 ? prenum : Rows - C.int(min_set_ch_g))
 	case '>':
 		win_setwidth((^C.int)(uintptr(curwin) + W_WIDTH_OFF)^ + prenum1)
 	case '<':
@@ -8044,4 +8015,198 @@ may_trigger_win_scrolled_resized :: proc "c"() {
 			transmute(cstring)(&scroll_winid[0]), false, buf)
 	}
 	may_trigger_recursive_b47 = false
+}
+
+// —— Batch 48: window.c switchbuf/colorcolumn/winmin leaves (exports + weak) ——
+
+// Jump to window with buf in another tabpage (window.c public).
+@(export)
+buf_jump_open_tab :: proc "c" (buf: rawptr) -> rawptr {
+	wp := buf_jump_open_win(buf)
+	if wp != nil {
+		return wp
+	}
+	tp := first_tabpage
+	for tp != nil {
+		if tp == curtab {
+			tp = (^rawptr)(uintptr(tp) + TP_NEXT_OFF)^
+			continue
+		}
+		w := (^rawptr)(uintptr(tp) + TP_FIRSTWIN_OFF)^
+		for w != nil {
+			if (^rawptr)(uintptr(w) + W_BUFFER_OFF)^ == buf {
+				goto_tabpage_win(tp, w)
+				if curwin != w {
+					return nil
+				}
+				return w
+			}
+			w = (^rawptr)(uintptr(w) + W_NEXT_OFF)^
+		}
+		tp = (^rawptr)(uintptr(tp) + TP_NEXT_OFF)^
+	}
+	return nil
+}
+
+// switchbuf jump driver (window.c public).
+@(export)
+swbuf_goto_win_with_buf :: proc "c" (buf: rawptr) -> rawptr {
+	wp: rawptr = nil
+	if buf == nil {
+		return nil
+	}
+	if (swb_flags_g & KOPT_SWB_USEOPEN_O) != 0 {
+		wp = buf_jump_open_win(buf)
+	}
+	if wp == nil && (swb_flags_g & KOPT_SWB_USETAB_O) != 0 {
+		wp = buf_jump_open_tab(buf)
+	}
+	return wp
+}
+
+// colorcolumn validator (window.c public).
+@(export)
+check_colorcolumn :: proc "c" (cc: cstring, wp: rawptr) -> cstring {
+	if wp != nil && (^rawptr)(uintptr(wp) + W_BUFFER_OFF)^ == nil {
+		return nil
+	}
+	s: ^u8 = empty_string_opt()
+	if cc != nil {
+		s = transmute(^u8)(cc)
+	} else if wp != nil {
+		s = transmute(^u8)((^rawptr)(uintptr(wp) + W_P_CC_OFF)^)
+	}
+	tw: C.longlong = 0
+	if wp != nil {
+		tw = (^C.longlong)(uintptr((^rawptr)(uintptr(wp) + W_BUFFER_OFF)^) + B_P_TW_OFF2)^
+	}
+	count: C.uint = 0
+	color_cols: [256]C.int
+	for ([^]u8)(s)[0] != 0 && count < 255 {
+		col: C.int = 0
+		if ([^]u8)(s)[0] == '-' || ([^]u8)(s)[0] == '+' {
+			col = ([^]u8)(s)[0] == '-' ? -1 : 1
+			s = transmute(^u8)(uintptr(rawptr(s)) + 1)
+			if !ascii_isdigit_o(([^]u8)(s)[0]) {
+				return e_invarg
+			}
+			col = col * getdigits_int(transmute(^^u8)(&s), true, 0)
+			if tw == 0 {
+				// skip
+			} else {
+				if !((col >= 0 && tw <= C.longlong(max(C.int)) - C.longlong(col) && tw + C.longlong(col) >= C.longlong(min(C.int))) || (col < 0 && tw >= C.longlong(min(C.int)) - C.longlong(col) && tw + C.longlong(col) <= C.longlong(max(C.int)))) {
+					libc.abort()
+				}
+				col += C.int(tw)
+				if col < 0 {
+					// skip
+				} else {
+					color_cols[uintptr(count)] = col - 1
+					count += 1
+				}
+			}
+			// shared tail: advance past separator
+			if ([^]u8)(s)[0] == 0 {
+				break
+			}
+			if ([^]u8)(s)[0] != ',' {
+				return e_invarg
+			}
+			s = transmute(^u8)(uintptr(rawptr(s)) + 1)
+			if ([^]u8)(s)[0] == 0 {
+				return e_invarg
+			}
+			continue
+		} else if ascii_isdigit_o(([^]u8)(s)[0]) {
+			col = getdigits_int(transmute(^^u8)(&s), true, 0)
+		} else {
+			return e_invarg
+		}
+		color_cols[uintptr(count)] = col - 1
+		count += 1
+		if ([^]u8)(s)[0] == 0 {
+			break
+		}
+		if ([^]u8)(s)[0] != ',' {
+			return e_invarg
+		}
+		s = transmute(^u8)(uintptr(rawptr(s)) + 1)
+		if ([^]u8)(s)[0] == 0 {
+			return e_invarg
+		}
+	}
+	// NOTE: C's `goto skip` arms skip only the store, not the separator tail.
+	// The two branches above replicate that exactly (store-gated, tail-shared).
+	if wp == nil {
+		return nil
+	}
+	xfree((^rawptr)(uintptr(wp) + W_P_CC_COLS_OFF)^)
+	if count == 0 {
+		(^rawptr)(uintptr(wp) + W_P_CC_COLS_OFF)^ = nil
+	} else {
+		cols := (^C.int)(xmalloc(C.size_t(count + 1) * 4))
+		qsort_r(rawptr(&color_cols[0]), C.size_t(count), 4, int_cmp_o)
+		j: C.uint = 0
+		i: C.uint = 0
+		for i < count {
+			if j == 0 || ([^]C.int)(cols)[uintptr(j - 1)] != color_cols[uintptr(i)] {
+				([^]C.int)(cols)[uintptr(j)] = color_cols[uintptr(i)]
+				j += 1
+			}
+			i += 1
+		}
+		([^]C.int)(cols)[uintptr(j)] = -1
+		(^rawptr)(uintptr(wp) + W_P_CC_COLS_OFF)^ = rawptr(cols)
+	}
+	return nil
+}
+
+// qsort comparator for color columns (window.c static).
+int_cmp_o :: proc "c" (s1: rawptr, s2: rawptr) -> C.int {
+	a := (^C.int)(s1)^
+	b := (^C.int)(s2)^
+	if a < b {
+		return -1
+	} else if a > b {
+		return 1
+	}
+	return 0
+}
+
+// winminheight validator (window.c public).
+@(export)
+did_set_winminheight :: proc "c" (args: rawptr) -> cstring {
+	first := true
+	for p_wmh_opt > 0 {
+		room := Rows - C.int(p_ch)
+		needed := min_rows_for_all_tabpages()
+		if room >= needed {
+			break
+		}
+		p_wmh_opt -= 1
+		if first {
+			emsg(cstring(E36_S))
+			first = false
+		}
+	}
+	return nil
+}
+
+// winminwidth validator (window.c public).
+@(export)
+did_set_winminwidth :: proc "c" (args: rawptr) -> cstring {
+	first := true
+	for p_wmw_opt > 0 {
+		room := Columns
+		needed := frame_minwidth_o(topframe_g, nil)
+		if room >= needed {
+			break
+		}
+		p_wmw_opt -= 1
+		if first {
+			emsg(cstring(E36_S))
+			first = false
+		}
+	}
+	return nil
 }

@@ -172,8 +172,6 @@ foreign _ {
 	_vim_strsave_escaped :: proc(s: cstring, esc: cstring) -> cstring ---
 	@(link_name = "skipwhite")
 	_skipwhite :: proc(p: cstring) -> cstring ---
-	@(link_name = "skip_expr")
-	_skip_expr :: proc(pp: ^cstring, evalarg: rawptr) -> c.int ---
 	@(link_name = "after_pathsep")
 	_after_pathsep :: proc(b: cstring, p: cstring) -> c.int ---
 	@(link_name = "path_tail")
@@ -188,26 +186,15 @@ foreign _ {
 	_ExpandInit :: proc(xp: rawptr) ---
 	@(link_name = "ExpandOne")
 	_ExpandOne :: proc(xp: rawptr, str: cstring, orig: cstring, options: c.int, mode: c.int) -> cstring ---
-	@(link_name = "modify_fname")
-	_modify_fname :: proc(src: cstring, tilde_file: bool, usedlen: ^c.size_t, fnamep: ^cstring, buf: ^cstring, flen: ^c.size_t) -> c.int ---
 	@(link_name = "path_is_absolute")
 	_path_is_absolute :: proc(fname: cstring) -> bool ---
 	@(link_name = "internal_error")
 	_internal_error :: proc(w: cstring) ---
 	@(link_name = "striequal")
 	_striequal :: proc(a: cstring, b: cstring) -> bool ---
-	@(link_name = "xmemrchr")
-	_xmemrchr :: proc(s: cstring, ch: u8, len: c.size_t) -> cstring ---
-	@(link_name = "xstrlcat")
-	_xstrlcat :: proc(dst: cstring, src: cstring, dsize: c.size_t) -> c.size_t ---
-
-	@(link_name = "xmemdupz")
-	_xmemdupz :: proc(data: rawptr, len: c.size_t) -> cstring ---
 
 	@(link_name = "strcasecmp")
 	_strcasecmp :: proc(a: cstring, b: cstring) -> c.int ---
-	@(link_name = "xmemcpyz")
-	_xmemcpyz :: proc(dst: rawptr, src: rawptr, len: c.size_t) ---
 }
 
 @(export)
@@ -412,7 +399,7 @@ expand_env_esc :: proc "c" (srcp: cstring, dst: cstring, dstlenp: c.int, esc_cha
 			varp := s
 			s += 2
 			stmp: cstring = cstring(rawptr(s))
-			_skip_expr(&stmp, nil)
+			skip_expr(&stmp, nil)
 			s = uintptr(rawptr(stmp))
 			if ([^]u8)(s)[0] == '`' {
 				s += 1
@@ -502,7 +489,7 @@ expand_env_esc :: proc "c" (srcp: cstring, dst: cstring, dstlenp: c.int, esc_cha
 			if var != 0 && ([^]u8)(var)[0] != 0 {
 				vl := c.int(libc.strlen(cstring(rawptr(var))))
 				if c.size_t(vl) + libc.strlen(cstring(rawptr(tail))) + 1 < c.size_t(dl) {
-					_xstrlcpy(cstring(rawptr(d)), cstring(rawptr(var)), c.size_t(dl))
+					xstrlcpy(cstring(rawptr(d)), cstring(rawptr(var)), c.size_t(dl))
 					dl -= vl
 					if _after_pathsep(cstring(rawptr(d)), cstring(rawptr(d + uintptr(vl)))) != 0 && _vim_ispathsep(c.int(([^]u8)(tail)[0])) {
 						tail += 1
@@ -573,7 +560,7 @@ home_replace :: proc "c" (buf: rawptr, src: cstring, dst: cstring, dstlen: c.siz
 		usedlen: c.size_t = 0
 		flen := libc.strlen(homedir_env_mod)
 		fbuf := cstring(nil)
-		_modify_fname(homedir_env_mod, false, &usedlen, &homedir_env_mod, &fbuf, &flen)
+		modify_fname(transmute(^u8)(homedir_env_mod), false, transmute(^c.size_t)(&usedlen), transmute(^rawptr)(&homedir_env_mod), transmute(^rawptr)(&fbuf), transmute(^c.size_t)(&flen))
 		flen = libc.strlen(homedir_env_mod)
 		if _vim_ispathsep(c.int(([^]u8)(_uptr(homedir_env_mod))[flen - 1])) {
 			([^]u8)(_uptr(homedir_env_mod))[flen - 1] = 0
@@ -657,7 +644,7 @@ get_env_name :: proc "c" (xp: ^expand_T, idx: c.int) -> cstring {
 	context = runtime.default_context()
 	envname := os_getenvname_at_index(c.size_t(idx))
 	if envname != nil {
-		_xstrlcpy(cstring(rawptr(&xp.xp_buf[0])), envname, c.size_t(EXPAND_BUF_LEN))
+		xstrlcpy(cstring(rawptr(&xp.xp_buf[0])), envname, c.size_t(EXPAND_BUF_LEN))
 		xfree(rawptr(envname))
 		return cstring(rawptr(&xp.xp_buf[0]))
 	}
@@ -674,7 +661,7 @@ os_setenv_append_path :: proc "c" (fname: cstring) -> bool {
 	tail := _path_tail_with_sep(fname)
 	dirlen := c.size_t(uintptr(rawptr(tail)) - uintptr(rawptr(fname)))
 	os_buf: [MAXPATHL]u8
-	_xmemcpyz(&os_buf[0], rawptr(fname), dirlen)
+	xmemcpyz(&os_buf[0], rawptr(fname), dirlen)
 	path := os_getenv("PATH")
 	pathlen := c.size_t(0)
 	if path != nil {
@@ -687,7 +674,7 @@ os_setenv_append_path :: proc "c" (fname: cstring) -> bool {
 		if pathlen == 0 {
 			([^]u8)(temp)[0] = 0
 		} else {
-			_xstrlcpy(cstring(temp), path, newlen)
+			xstrlcpy(cstring(temp), path, newlen)
 			if u8(ENV_SEPCHAR) != ([^]u8)(path)[pathlen - 1] {
 				_xstrlcat(cstring(temp), ENV_SEPSTR, newlen)
 			}
@@ -773,7 +760,7 @@ vim_env_iter_rev :: proc "c" (delim: u8, val: cstring, iter: rawptr, dir: ^cstri
 		varend = cstring(rawptr(uintptr(rawptr(val)) + uintptr(libc.strlen(val)) - 1))
 	}
 	varlen := c.size_t(uintptr(rawptr(varend)) - uintptr(rawptr(val))) + 1
-	colon := _xmemrchr(val, delim, varlen)
+	colon := xmemrchr(val, delim, varlen)
 	if colon == nil {
 		([^]c.size_t)(len)[0] = varlen
 		([^]cstring)(dir)[0] = val
@@ -787,7 +774,7 @@ vim_env_iter_rev :: proc "c" (delim: u8, val: cstring, iter: rawptr, dir: ^cstri
 @(export)
 vim_get_prefix_from_exepath :: proc "c" (exe_name: cstring) {
 	context = runtime.default_context()
-	_xstrlcpy(exe_name, 	get_vim_var_str(VV_PROGPATH), c.size_t(MAXPATHL))
+	xstrlcpy(exe_name, 	get_vim_var_str(VV_PROGPATH), c.size_t(MAXPATHL))
 	path_end := _path_tail_with_sep(exe_name)
 	([^]u8)(path_end)[0] = 0
 	path_end = _path_tail(exe_name)

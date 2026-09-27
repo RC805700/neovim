@@ -1484,7 +1484,7 @@ ex_sort :: proc "c"(eap: rawptr) {
 				string_compare_o(transmute(rawptr)(s),
 					transmute(rawptr)(sortbuf1_f)) != 0 {
 				// Copy: may invalidate in ml_append(); needed for unique.
-				xstrlcpy_o(cstring(sortbuf1_f), cstring(s),
+				xstrlcpy(cstring(sortbuf1_f), cstring(s),
 					C.size_t(maxlen) + 1)
 				if !ml_append_c(lnum, sortbuf1_f, 0, false) {
 					break
@@ -1703,7 +1703,7 @@ ex_uniq :: proc "c"(eap: rawptr) {
 				if is_match {
 					delete_lnum = get_lnum
 				} else {
-					xstrlcpy_o(cstring(sortbuf1_f),
+					xstrlcpy(cstring(sortbuf1_f),
 						cstring((^u8)(uintptr(s) + uintptr(start_col))),
 						C.size_t(maxlen) + 1)
 				}
@@ -1721,7 +1721,7 @@ ex_uniq :: proc "c"(eap: rawptr) {
 						delete_lnum = get_lnum
 					}
 					match_continue = false
-					xstrlcpy_o(cstring(sortbuf1_f),
+					xstrlcpy(cstring(sortbuf1_f),
 						cstring((^u8)(uintptr(s) + uintptr(start_col))),
 						C.size_t(maxlen) + 1)
 				}
@@ -1738,7 +1738,7 @@ ex_uniq :: proc "c"(eap: rawptr) {
 						delete_lnum = get_lnum
 					}
 					match_continue = false
-					xstrlcpy_o(cstring(sortbuf1_f),
+					xstrlcpy(cstring(sortbuf1_f),
 						cstring((^u8)(uintptr(s) + uintptr(start_col))),
 						C.size_t(maxlen) + 1)
 				}
@@ -2131,16 +2131,16 @@ make_filter_cmd :: proc "c"(cmd: cstring, itmp: cstring, otmp: cstring, do_in: b
 
 	if is_pwsh {
 		if itmp != nil {
-			xstrlcpy_o(cstring(buf), cstring("& { Get-Content "), total - 1)
+			xstrlcpy(cstring(buf), cstring("& { Get-Content "), total - 1)
 			_xstrlcat(cstring(buf), itmp, total - 1)
 			_xstrlcat(cstring(buf), cstring(" | & "), total - 1)
 			_xstrlcat(cstring(buf), cmd, total - 1)
 			_xstrlcat(cstring(buf), cstring(" }"), total - 1)
 		} else if do_in {
-			xstrlcpy_o(cstring(buf), cstring(" $input | "), total - 1)
+			xstrlcpy(cstring(buf), cstring(" $input | "), total - 1)
 			_xstrlcat(cstring(buf), cmd, total)
 		} else {
-			xstrlcpy_o(cstring(buf), cmd, total)
+			xstrlcpy(cstring(buf), cmd, total)
 		}
 	} else {
 		// Delimiters for concatenated commands with redirections.
@@ -2151,7 +2151,7 @@ make_filter_cmd :: proc "c"(cmd: cstring, itmp: cstring, otmp: cstring, do_in: b
 				libc.snprintf(buf, total, cstring("(%s)"), cmd)
 			}
 		} else {
-			xstrlcpy_o(cstring(buf), cmd, total)
+			xstrlcpy(cstring(buf), cmd, total)
 		}
 
 		if itmp != nil {
@@ -2547,7 +2547,7 @@ do_bang :: proc "c"(addr_count: C.int, eap: rawptr, forceit: bool, do_in: bool, 
 			}
 			newcmd = (^u8)(xmalloc(C.size_t(libc.strlen(cstring(prevcmd_f))) +
 				2 * C.size_t(libc.strlen(cstring(p_shq_g))) + 1))
-			xstrlcpy_o(cstring(newcmd), cstring(p_shq_g),
+			xstrlcpy(cstring(newcmd), cstring(p_shq_g),
 				C.size_t(libc.strlen(cstring(prevcmd_f))) +
 				2 * C.size_t(libc.strlen(cstring(p_shq_g))) + 1)
 			_xstrlcat(cstring(newcmd), cstring(prevcmd_f),
@@ -5383,7 +5383,7 @@ do_sub_msg :: proc "c"(count_only: bool) -> bool {
 			count_only) &&
 		messaging_r() {
 		if got_int {
-			xstrlcpy_o(cstring(&msg_buf_g[0]), cstring("(Interrupted) "),
+			xstrlcpy(cstring(&msg_buf_g[0]), cstring("(Interrupted) "),
 				MSG_BUF_LEN_O)
 		} else {
 			([^]u8)(&msg_buf_g[0])[0] = 0

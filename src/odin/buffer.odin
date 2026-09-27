@@ -20,13 +20,13 @@ foreign _ {
 	lastbuf_g: rawptr
 	@(link_name = "channel_job_running")
 	channel_job_running_r :: proc "c" (id: u64) -> bool ---
-	@(link_name = "nvim_odin_get_top_file_num")
-	nvim_odin_get_top_file_num_r :: proc "c" () -> C.int ---
-	@(link_name = "nvim_odin_get_buf_free_count")
-	nvim_odin_get_buf_free_count_r :: proc "c" () -> C.int ---
 	@(link_name = "buffer_handles")
 	buffer_handles_g: Map_int_ptr_t
 }
+
+// Moved buffer.c statics (single live copies; C twins die with the file).
+top_file_num_g: C.int = 1
+buf_free_count_g: C.int = 0
 // emsg/B_TERMINAL_OFF/curbuf reused from sibling files.
 
 // semsg_int mirrors semsg(fmt, int): ints pass through libc.snprintf ..any
@@ -393,7 +393,7 @@ Bufref_T :: struct {
 // @return the highest possible buffer number
 @(export)
 get_highest_fnum :: proc "c"() -> C.int {
-	return nvim_odin_get_top_file_num_r() - 1
+	return top_file_num_g - 1
 }
 
 // Store "buf" in "bufref" and set the free count.
@@ -401,7 +401,7 @@ get_highest_fnum :: proc "c"() -> C.int {
 set_bufref :: proc "c"(bufref: ^Bufref_T, buf: rawptr) {
 	bufref.br_buf = buf
 	bufref.br_fnum = buf == nil ? 0 : (^C.int)(uintptr(buf) + B_FNUM_OFF)^
-	bufref.br_buf_free_count = nvim_odin_get_buf_free_count_r()
+	bufref.br_buf_free_count = buf_free_count_g
 }
 
 // Return true if "bufref->br_buf" points to the same buffer as when
@@ -409,7 +409,7 @@ set_bufref :: proc "c"(bufref: ^Bufref_T, buf: rawptr) {
 // Only goes through the buffer list if buf_free_count changed.
 @(export)
 bufref_valid :: proc "c"(bufref: ^Bufref_T) -> bool {
-	if bufref.br_buf_free_count == nvim_odin_get_buf_free_count_r() {
+	if bufref.br_buf_free_count == buf_free_count_g {
 		return true
 	}
 	return buf_valid(bufref.br_buf) &&
@@ -484,8 +484,6 @@ W14_S :: "W14: Warning: List of file names overflow"
 CHANGEDTICK_S :: "changedtick"
 
 foreign _ {
-	@(link_name = "nvim_odin_set_top_file_num")
-	nvim_odin_set_top_file_num_r :: proc "c" (v: C.int) ---
 	// fname_expand/buflist_setfpos now defined below — call directly.
 	@(link_name = "in_assert_fails")
 	in_assert_fails_g: bool
@@ -756,9 +754,9 @@ buflist_new :: proc "c"(ffname_arg: cstring, sfname_arg: cstring, lnum: C.int, f
 			(^rawptr)(uintptr(buf) + B_PREV_OFF)^ = lastbuf_g
 		}
 		lastbuf_g = buf
-		top := nvim_odin_get_top_file_num_r()
+		top := top_file_num_g
 		(^C.int)(uintptr(buf) + B_FNUM_OFF)^ = top
-		nvim_odin_set_top_file_num_r(top + 1)
+		top_file_num_g = top + 1
 		new_item: bool = false
 		slot := map_put_ref_int_ptr_t(&buffer_handles_g,
 			(^C.int)(uintptr(buf) + B_FNUM_OFF)^, nil, &new_item)
@@ -768,7 +766,7 @@ buflist_new :: proc "c"(ffname_arg: cstring, sfname_arg: cstring, lnum: C.int, f
 			if emsg_silent == 0 && !in_assert_fails_g {
 				msg_delay_r(3001, true) // make sure it is noticed
 			}
-			nvim_odin_set_top_file_num_r(1)
+			top_file_num_g = 1
 		}
 		// Always copy the options from the current buffer.
 		buf_copy_options(buf, BCO_ALWAYS_S)
@@ -972,8 +970,6 @@ E_NOALT_S :: "E23: No alternate file"
 E_BUFNOTFOUND_S :: "E92: Buffer %d not found"
 
 foreign _ {
-	@(link_name = "swbuf_goto_win_with_buf")
-	swbuf_goto_win_with_buf_r :: proc "c" (buf: rawptr) -> rawptr ---
 	@(link_name = "swb_flags")
 	swb_flags_g: C.uint
 	@(link_name = "tabpage_new")
@@ -1015,7 +1011,7 @@ buflist_getfile :: proc "c"(n: C.int, lnum_in: C.int, options: C.int, forceit: C
 	}
 	if (options & GETF_SWITCH_O) != 0 {
 		// If 'switchbuf' is set jump to the window containing "buf".
-		wp = swbuf_goto_win_with_buf_r(buf)
+		wp = swbuf_goto_win_with_buf(buf)
 		// If 'switchbuf' contains "split", "vsplit" or "newtab" and the
 		// current buffer isn't empty: open new tab or window
 		if wp == nil &&
@@ -1501,10 +1497,10 @@ do_buffer_ext :: proc "c"(action: C.int, start: C.int, dir: C.int, count_in: C.i
 				one_window(firstwin, nil) {
 				// Switch to buf's holder window without entering it.
 				switchwin: Switchwin_T
-				rv := switch_win_noblock_r(&switchwin, firstwin, curtab, true)
+				rv := switch_win_noblock(&switchwin, firstwin, curtab, true)
 				// retry (recurse)
 				do_buffer_ext(action, start, dir, count, flags)
-				restore_win_noblock_r(&switchwin, true)
+				restore_win_noblock(&switchwin, true)
 				_ = rv
 			}
 			if buf != curbuf && bufref_valid(&bref) &&
@@ -1646,7 +1642,7 @@ do_buffer_ext :: proc "c"(action: C.int, start: C.int, dir: C.int, count_in: C.i
 	}
 	// make "buf" the current buffer
 	// If 'switchbuf' is set jump to the window containing "buf".
-	if action == DOBUF_SPLIT_O && swbuf_goto_win_with_buf_r(buf) != nil {
+	if action == DOBUF_SPLIT_O && swbuf_goto_win_with_buf(buf) != nil {
 		return OK
 	}
 	// Whether splitting or not, don't open a closing buffer in more windows.
@@ -1762,7 +1758,7 @@ set_curbuf :: proc "c"(buf: rawptr, action: C.int, update_jumplist: bool) {
 		// enter some buffer. Using the last one is hopefully OK.
 		enter_buffer_o(valid ? buf : lastbuf_g)
 		if old_tw != (^C.longlong)(uintptr(curbuf) + B_P_TW_OFF2)^ {
-			check_colorcolumn_r(nil, curwin)
+			check_colorcolumn(nil, curwin)
 		}
 	}
 	if bufref_valid(&prevbufref) &&
@@ -2047,7 +2043,7 @@ handle_swap_exists :: proc "c"(old_curbuf: ^Bufref_T) {
 		if buf != nil {
 			enter_buffer_o(buf)
 			if old_tw != (^C.longlong)(uintptr(curbuf) + B_P_TW_OFF2)^ {
-				check_colorcolumn_r(nil, curwin)
+				check_colorcolumn(nil, curwin)
 			}
 		}
 		// If "old_curbuf" is NULL we are in big trouble here...
@@ -2082,8 +2078,6 @@ DO_NOT_FREE_CNT_O :: 0x3fffffff
 JUMPLISTSIZE_O :: 100
 
 foreign _ {
-	@(link_name = "nvim_odin_set_buf_free_count")
-	nvim_odin_set_buf_free_count_r :: proc "c" (v: C.int) ---
 	@(link_name = "aubuflocal_remove")
 	aubuflocal_remove_r :: proc "c" (buf: rawptr) ---
 	@(link_name = "au_pending_free_buf")
@@ -2094,7 +2088,7 @@ foreign _ {
 // The file itself must have been dealt with already (buf_freeall).
 free_buffer_o :: proc "c"(buf: rawptr) {
 	map_del_int_ptr_t(&buffer_handles_g, (^C.int)(uintptr(buf) + B_FNUM_OFF)^, nil)
-	nvim_odin_set_buf_free_count_r(nvim_odin_get_buf_free_count_r() + 1)
+	buf_free_count_g += 1
 	// b:changedtick uses an item in buf_T.
 	free_buffer_stuff_o(buf, KBFF_CLEAR_WININFO_O)
 	vars := (^rawptr)(uintptr(buf) + B_VARS_OFF)^
@@ -2293,7 +2287,7 @@ open_buffer :: proc "c"(read_stdin: bool, eap: rawptr, flags_arg: C.int) -> C.in
 		emsg(cstring(E83_S))
 		enter_buffer_o(curbuf)
 		if old_tw != (^C.longlong)(uintptr(curbuf) + B_P_TW_OFF2)^ {
-			check_colorcolumn_r(nil, curwin)
+			check_colorcolumn(nil, curwin)
 		}
 		return FAIL
 	}
@@ -2487,11 +2481,11 @@ do_bufdel :: proc "c"(command: C.int, arg_in: cstring, addr_count: C.int, start_
 		}
 		if deleted == 0 {
 			if command == DOBUF_UNLOAD_O {
-				xstrlcpy_o(transmute(cstring)(&IObuff[0]), cstring(E515_S), IOSIZE_O)
+				xstrlcpy(transmute(cstring)(&IObuff[0]), cstring(E515_S), IOSIZE_O)
 			} else if command == DOBUF_DEL_O {
-				xstrlcpy_o(transmute(cstring)(&IObuff[0]), cstring(E516_S), IOSIZE_O)
+				xstrlcpy(transmute(cstring)(&IObuff[0]), cstring(E516_S), IOSIZE_O)
 			} else {
-				xstrlcpy_o(transmute(cstring)(&IObuff[0]), cstring(E517_S), IOSIZE_O)
+				xstrlcpy(transmute(cstring)(&IObuff[0]), cstring(E517_S), IOSIZE_O)
 			}
 			errormsg = transmute(cstring)(&IObuff[0])
 		} else if C.longlong(deleted) >= p_report {
@@ -3625,7 +3619,7 @@ buflist_list :: proc "c"(eap: rawptr) {
 		if !skip {
 			name := buf_spname(buf)
 			if name != nil {
-				xstrlcpy_o(cstring(&name_buff[0]), cstring(name), MAXPATHL)
+				xstrlcpy(cstring(&name_buff[0]), cstring(name), MAXPATHL)
 			} else {
 				home_replace(buf,
 					cstring((^u8)((^rawptr)(uintptr(buf) + B_FNAME)^)),
@@ -4239,7 +4233,7 @@ maketitle :: proc "c"() {
 					(^u8)(uintptr(name) + uintptr(namelen))).end_off)
 				name = (^u8)(uintptr(name) + uintptr(namelen))
 			}
-			xstrlcpy_o(cstring(&buf[0]), cstring(name), IOSIZE_O)
+			xstrlcpy(cstring(&buf[0]), cstring(name), IOSIZE_O)
 			trans_characters_o(&buf[0], IOSIZE_O)
 		}
 	}

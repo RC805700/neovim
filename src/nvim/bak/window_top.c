@@ -89,6 +89,11 @@ void nvim_odin_init_winopt(win_T *win);
 // The C definitions below remain as weak fallbacks; the strong Odin
 // definitions win at link time.
 #pragma weak win_valid
+#pragma weak buf_jump_open_tab
+#pragma weak swbuf_goto_win_with_buf
+#pragma weak check_colorcolumn
+#pragma weak did_set_winminheight
+#pragma weak did_set_winminwidth
 #pragma weak tabpage_win_valid
 #pragma weak win_find_by_handle
 #pragma weak win_valid_any_tab

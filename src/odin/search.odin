@@ -2234,8 +2234,6 @@ find_rawstring_end :: proc "c"(linep: ^u8, startpos: ^Pos_T, endpos: ^Pos_T) -> 
 }
 
 foreign _ {
-	@(link_name = "xmemdupz")
-	xmemdupz_c :: proc "c" (s: ^u8, len: C.size_t) -> ^u8 ---
 }
 
 // Check matchpairs option for "*initc".

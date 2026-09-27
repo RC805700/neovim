@@ -4,11 +4,6 @@ import "base:runtime"
 import "core:c"
 import "core:dynlib"
 
-foreign _ {
-	@(link_name = "xstrdup")
-	_xstrdup :: proc "c" (s: cstring) -> cstring ---
-}
-
 @(export)
 os_libcall :: proc "c" (libname, funcname: cstring, argv: cstring, argi: c.int, str_out: ^cstring, int_out: ^c.int) -> bool {
 	context = runtime.default_context()

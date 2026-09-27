@@ -807,8 +807,6 @@ optval_to_cstr_o :: proc "c"(o_in: OptVal) -> ^u8 {
 }
 
 foreign _ {
-	@(link_name = "xstrdup")
-	xstrdup_r2 :: proc "c" (s: cstring) -> ^u8 ---
 	@(link_name = "xmalloc")
 	xmalloc_o :: proc "c" (n: C.size_t) -> rawptr ---
 }
@@ -2181,7 +2179,7 @@ option_value2string_o :: proc "c"(opt: ^vimoption_T, opt_flags: C.int) {
 				home_replace(nil, transmute(cstring)(strv), transmute(cstring)(&name_buff[0]), 4096, false)
 			}
 		} else if strv != nil {
-			xstrlcpy_o(transmute(cstring)(&name_buff[0]), transmute(cstring)(strv), 4096)
+			xstrlcpy(transmute(cstring)(&name_buff[0]), transmute(cstring)(strv), 4096)
 		} else {
 			b_set(&name_buff[0], 0, 0)
 		}
@@ -3344,8 +3342,6 @@ set_fileformat :: proc "c"(eol_style: C.int, opt_flags: C.int) {
 // ── winopt_T copy/clear/didset ───────────────────────────────────────────────
 
 foreign _ {
-	@(link_name = "check_colorcolumn")
-	check_colorcolumn_r :: proc "c" (cc: ^u8, wp: rawptr) -> cstring ---
 	@(link_name = "briopt_check")
 	briopt_check_r :: proc "c" (briopt: ^u8, wp: rawptr) -> bool ---
 	@(link_name = "free_operatorfunc_option")
@@ -3439,7 +3435,7 @@ didset_window_options :: proc "c"(wp: rawptr, valid_cursor: bool) {
 	} else {
 		(^C.int)(uintptr(wp) + W_SKIPCOL_OFF)^ = 0
 	}
-	check_colorcolumn_r(nil, wp)
+	check_colorcolumn(nil, wp)
 	briopt_check_r(nil, wp)
 	fill_culopt_flags(nil, wp)
 	set_chars_option(wp, (^^u8)(uintptr(wp) + 1208)^, kFillchars_S, true, nil, 0)
@@ -3491,8 +3487,6 @@ foreign _ {
 	p_icon_g: C.int
 	@(link_name = "getuid")
 	getuid_c :: proc "c" () -> C.int ---
-	@(link_name = "xmemdupz")
-	xmemdupz_o2 :: proc "c" (s: ^u8, len: C.size_t) -> ^u8 ---
 	@(link_name = "nvim_odin_switch_option_context")
 	nvim_odin_switch_option_context :: proc "c" (ctx: rawptr, scope: C.int, from: rawptr, err: rawptr) -> bool ---
 	@(link_name = "nvim_odin_restore_option_context")
@@ -4832,8 +4826,6 @@ foreign _ {
 	ns_hl_def_c :: proc "c" (ns: C.int, hl_id: C.int, attrs: HlAttrs, attr_id: C.int, info: rawptr) ---
 	@(link_name = "syn_check_group")
 	syn_check_group_c :: proc "c" (name: ^u8, len: C.size_t) -> C.int ---
-	@(link_name = "xstrchrnul")
-	xstrchrnul_c :: proc "c" (str: ^u8, c: C.int) -> ^u8 ---
 }
 
 
@@ -4889,7 +4881,7 @@ parse_winhl_opt :: proc "c"(winhl: ^u8, wp: rawptr) -> bool {
 		}
 		nlen := uintptr(transmute(rawptr)(colon)) - uintptr(p)
 		hi := (^u8)(uintptr(colon) + 1)
-		commap := xstrchrnul_c(hi, ',')
+		commap := xstrchrnul(hi, ',')
 		len := uintptr(commap) - uintptr(hi)
 		hl_id: C.int = -1
 		if len != 0 {
@@ -5106,8 +5098,6 @@ foreign _ {
 	arena_dict_c :: proc "c" (arena: rawptr, size: C.size_t) -> Api_Dict ---
 	@(link_name = "nvim_odin_put_c")
 	put_c_dict_c :: proc "c" (d: rawptr, key: cstring, value: Api_Object) ---
-	@(link_name = "xstrlcpy")
-	xstrlcpy_o :: proc "c" (dst: cstring, src: cstring, dsize: C.size_t) -> C.size_t ---
 }
 
 CSTR_AS_OBJ :: #force_inline proc "c"(s: ^u8) -> Api_Object {

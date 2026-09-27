@@ -1494,7 +1494,7 @@ foldAddMarker :: proc "c" (buf: rawptr, pos: Pos_T, marker: ^u8, markerlen: C.si
 	newline := (^u8)(xmalloc(line_len + markerlen + libc.strlen(transmute(cstring)(cms)) + 1))
 	libc.memcpy(newline, line, line_len + 1)
 	if p == nil || line_is_comment {
-		_xmemcpyz((^u8)(uintptr(newline) + uintptr(line_len)), marker, markerlen)
+		xmemcpyz((^u8)(uintptr(newline) + uintptr(line_len)), marker, markerlen)
 		added = markerlen
 	} else {
 		cms_p := C.size_t(uintptr(p) - uintptr(transmute(rawptr)(cms)))
