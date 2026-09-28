@@ -5,18 +5,6 @@ import "base:runtime"
 import "core:sys/posix"
 import "core:c/libc"
 
-// C globals / helpers accessed by Odin
-foreign _ {
-	@(link_name = "ga_init")
-	_ga_init :: proc(gap: ^Garray, itemsize: c.int, growsize: c.int) ---
-
-	@(link_name = "ga_clear")
-	_ga_clear :: proc(gap: ^Garray) ---
-
-	@(link_name = "ga_clear_strings")
-	_ga_clear_strings :: proc(gap: ^Garray) ---
-}
-
 // All user names (for ~user completion as done by shell).
 ga_users: Garray = {ga_len = 0, ga_maxlen = 0, ga_itemsize = 0, ga_growsize = 1, ga_data = nil}
 
@@ -50,7 +38,7 @@ os_get_usernames :: proc "c" (users: ^Garray) -> c.int {
 	if users == nil {
 		return FAIL
 	}
-	_ga_init(users, c.int(size_of(cstring)), 20)
+	ga_init(users, c.int(size_of(cstring)), 20)
 
 	posix.setpwent()
 	for {
@@ -138,7 +126,7 @@ os_get_userdir :: proc "c" (name: cstring) -> cstring {
 
 @(export)
 free_users :: proc "c" () {
-	_ga_clear_strings(&ga_users)
+	ga_clear_strings(&ga_users)
 }
 
 // Find all user names for user completion. Done only once and then cached.

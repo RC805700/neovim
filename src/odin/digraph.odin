@@ -146,9 +146,6 @@ foreign _ {
 	@(link_name = "do_map")
 	do_map :: proc "c" (maptype: C.int, arg: ^u8, mode: C.int, is_abbrev: bool) -> C.int ---
 
-	@(link_name = "ga_append_via_ptr")
-	ga_append_via_ptr :: proc "c" (gap: ^Garray, item_size: C.size_t) -> rawptr ---
-
 	@(link_name = "msg_col")
 	msg_col: C.int
 
@@ -2199,7 +2196,7 @@ ex_loadkeymap :: proc "c" (eap: rawptr) {
 	b := curbuf
 	kstate := buf_kmap_state(b)
 	kstate^ = 0
-	_ga_init(buf_kmap_ga(b), C.int(size_of(KmapT)), 20)
+	ga_init(buf_kmap_ga(b), C.int(size_of(KmapT)), 20)
 
 	p_cpo = transmute(^u8)(cstring("C"))
 
@@ -2281,7 +2278,7 @@ keymap_unload :: proc "c"() {
 
 	p_cpo = save_cpo
 
-	_ga_clear(kga)
+	ga_clear(kga)
 	kstate^ &= ~i16(KEYMAP_LOADED)
 	status_redraw_curbuf()
 }

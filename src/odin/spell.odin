@@ -21,9 +21,7 @@ foreign _ {
 	@(link_name = "hash_hash")
 	hash_hash_r :: proc "c" (key: cstring) -> C.size_t ---
 
-	// ga_init_r/ga_clear_r already declared in register.odin — reuse directly.
-	@(link_name = "ga_clear_strings")
-	ga_clear_strings_r :: proc "c" (gap: rawptr) ---
+	// ga_init/ga_clear/ga_clear_strings are Odin exports (garray.odin) — call directly.
 
 	// ── spellfile.c (still C) ──
 	@(link_name = "spell_load_file")
@@ -1576,7 +1574,7 @@ foreign _ {
 
 @(export)
 init_syl_tab :: proc "c"(slang: ^Slang_T) -> C.int {
-	ga_init_r(&slang.sl_syl_items, size_of(Syl_Item_T), 4)
+	ga_init(&slang.sl_syl_items, size_of(Syl_Item_T), 4)
 	p := _vim_strchr(transmute(cstring)(slang.sl_syllable), '/')
 	for p != nil {
 		q := transmute(^u8)(p)
@@ -1599,7 +1597,7 @@ init_syl_tab :: proc "c"(slang: ^Slang_T) -> C.int {
 
 		// GA_APPEND_VIA_PTR(syl_item_T, &slang->sl_syl_items)
 		if slang.sl_syl_items.ga_len >= slang.sl_syl_items.ga_maxlen {
-			ga_grow_sp(&slang.sl_syl_items, 1)
+			ga_grow(&slang.sl_syl_items, 1)
 		}
 		syl := (^Syl_Item_T)(uintptr(slang.sl_syl_items.ga_data) + uintptr(slang.sl_syl_items.ga_len) * size_of(Syl_Item_T))
 		slang.sl_syl_items.ga_len += 1
@@ -1607,11 +1605,6 @@ init_syl_tab :: proc "c"(slang: ^Slang_T) -> C.int {
 		syl.sy_len = l
 	}
 	return 1 // OK
-}
-
-foreign _ {
-	@(link_name = "ga_grow")
-	ga_grow_sp :: proc "c" (gap: rawptr, n: C.int) ---
 }
 
 count_syllables :: proc "c"(slang: ^Slang_T, word: ^u8) -> C.int {
@@ -1668,8 +1661,8 @@ slang_alloc :: proc "c"(lang: ^u8) -> ^Slang_T {
 	if lang != nil {
 		lp.sl_name = xstrdup_r(transmute(cstring)(lang))
 	}
-	ga_init_r(&lp.sl_rep, size_of(Fromto_T), 10)
-	ga_init_r(&lp.sl_repsal, size_of(Fromto_T), 10)
+	ga_init(&lp.sl_rep, size_of(Fromto_T), 10)
+	ga_init(&lp.sl_repsal, size_of(Fromto_T), 10)
 	lp.sl_compmax = MAXWLEN
 	lp.sl_compsylmax = MAXWLEN
 	hash_init_r(&lp.sl_wordcount_buf[0])
@@ -1719,12 +1712,12 @@ slang_clear :: proc "c"(lp: ^Slang_T) {
 			item := (^rawptr)(uintptr(lp.sl_sal.ga_data) + uintptr(i) * size_of(rawptr))
 			xfree(item^)
 		}
-		ga_clear_r(&lp.sl_sal)
+		ga_clear(&lp.sl_sal)
 	} else {
 		for i := C.int(0); i < lp.sl_sal.ga_len; i += 1 {
 			free_salitem((^Salitem_T)(uintptr(lp.sl_sal.ga_data) + uintptr(i) * size_of(Salitem_T)))
 		}
-		ga_clear_r(&lp.sl_sal)
+		ga_clear(&lp.sl_sal)
 	}
 
 	for i := C.int(0); i < lp.sl_prefixcnt; i += 1 {
@@ -1742,9 +1735,9 @@ slang_clear :: proc "c"(lp: ^Slang_T) {
 	xfree_clear_sp(&lp.sl_compallflags)
 
 	xfree_clear_sp(&lp.sl_syllable)
-	ga_clear_r(&lp.sl_syl_items)
+	ga_clear(&lp.sl_syl_items)
 
-	ga_clear_strings_r(&lp.sl_comppat)
+	ga_clear_strings(&lp.sl_comppat)
 
 	hash_clear_all_r(&lp.sl_wordcount_buf[0], WC_KEY_OFF)
 	hash_init_r(&lp.sl_wordcount_buf[0])
@@ -1764,7 +1757,7 @@ ga_deep_clear_fromto :: proc "c"(gap: ^Garray) {
 	for i := C.int(0); i < gap.ga_len; i += 1 {
 		free_fromto((^Fromto_T)(uintptr(gap.ga_data) + uintptr(i) * size_of(Fromto_T)))
 	}
-	ga_clear_r(gap)
+	ga_clear(gap)
 }
 
 @(export)
@@ -2039,7 +2032,7 @@ parse_spelllang :: proc "c"(wp: rawptr) -> ^u8 {
 	parse_spell_recursive = true
 
 	ga: Garray
-	ga_init_r(&ga, size_of(Langp_T), 2)
+	ga_init(&ga, size_of(Langp_T), 2)
 	clear_midword(wp)
 
 	spl_copy := xstrdup_r(transmute(cstring)(sb_p_spl_r(sb)))
@@ -2143,7 +2136,7 @@ parse_spelllang :: proc "c"(wp: rawptr) -> ^u8 {
 
 				if region_mask != 0 {
 					if ga.ga_len >= ga.ga_maxlen {
-						ga_grow_sp(&ga, 1)
+						ga_grow(&ga, 1)
 					}
 					p_ := langp_entry(&ga, ga.ga_len)
 					ga.ga_len += 1
@@ -2223,7 +2216,7 @@ parse_spelllang :: proc "c"(wp: rawptr) -> ^u8 {
 
 			if region_mask != 0 {
 				if ga.ga_len >= ga.ga_maxlen {
-					ga_grow_sp(&ga, 1)
+					ga_grow(&ga, 1)
 				}
 				p_ := langp_entry(&ga, ga.ga_len)
 				ga.ga_len += 1
@@ -2238,7 +2231,7 @@ parse_spelllang :: proc "c"(wp: rawptr) -> ^u8 {
 	}
 
 	// Store the new b_langp value.
-	ga_clear_r(sb_langp_r(sb))
+	ga_clear(sb_langp_r(sb))
 	sb_langp_r(sb)^ = ga
 
 	// Figure out sound folding and REP languages.
@@ -3208,7 +3201,7 @@ foreign _ {
 spell_free_all :: proc "c"() {
 	buf := firstbuf
 	for buf != nil {
-		ga_clear_r((^Garray)(uintptr(buf) + 11264 + SB_LANGP_OFF)) // buf_T.b_s embedded, .b_langp @+800
+		ga_clear((^Garray)(uintptr(buf) + 11264 + SB_LANGP_OFF)) // buf_T.b_s embedded, .b_langp @+800
 		buf = (^rawptr)(uintptr(buf) + B_NEXT_OFF)^
 	}
 

@@ -205,7 +205,6 @@ foreign nvim {
 
   // early_init helpers (formerly called inside C's early_init)
   exestack: Garray
-  ga_grow :: proc(gap: ^Garray, n: c.int) ---
   // os_realtime — PORTED to Odin (time.odin)
   runtime_init :: proc() ---
   // highlight_init — PORTED to Odin

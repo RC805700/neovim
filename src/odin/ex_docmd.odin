@@ -3577,7 +3577,7 @@ do_cmdline :: proc "c" (cmdline: cstring, fgetline: LineGetter, cookie: rawptr, 
 	libc.memset(rawptr(&cs[0]), 0, 1288)
 	([^]C.int)(uintptr(rawptr(&cs[0])) + CSTACK_IDX_OFF)[0] = -1
 	lines_ga: Garray
-	ga_init_r2(&lines_ga, 16, 10)
+	ga_init(&lines_ga, 16, 10)
 	current_line: C.int = 0
 	fname: cstring = nil
 	breakpoint: ^C.int = nil
@@ -3947,7 +3947,7 @@ deep_clear_lines_ga_o :: proc "c" (gap: ^Garray) {
 	for i: C.int = 0; i < gap.ga_len; i += 1 {
 		xfree(([^]rawptr)(uintptr(gap.ga_data) + uintptr(i) * 16)[0])
 	}
-	ga_clear_r(gap)
+	ga_clear(gap)
 }
 
 // —— Batch 23d: ex_docmd.c one-command engine (plain, C-static) ——

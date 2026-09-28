@@ -14,6 +14,7 @@
 
 #include "math.c.generated.h"
 
+#pragma weak xfpclassify
 int xfpclassify(double d)
   FUNC_ATTR_CONST
 {
@@ -33,12 +34,14 @@ int xfpclassify(double d)
   }
 }
 
+#pragma weak xisinf
 int xisinf(double d)
   FUNC_ATTR_CONST
 {
   return FP_INFINITE == xfpclassify(d);
 }
 
+#pragma weak xisnan
 int xisnan(double d)
   FUNC_ATTR_CONST
 {
@@ -46,6 +49,7 @@ int xisnan(double d)
 }
 
 /// Count trailing zeroes at the end of bit field.
+#pragma weak xctz
 int xctz(uint64_t x)
 {
   // If x == 0, that means all bits are zeroes.
@@ -76,6 +80,7 @@ int xctz(uint64_t x)
 }
 
 /// Count number of set bits in bit field.
+#pragma weak xpopcount
 unsigned xpopcount(uint64_t x)
 {
   // Use compiler builtin if possible.
@@ -95,6 +100,7 @@ unsigned xpopcount(uint64_t x)
 }
 
 /// For overflow detection, add a digit safely to an int value.
+#pragma weak vim_append_digit_int
 int vim_append_digit_int(int *value, int digit)
 {
   int x = *value;
@@ -106,6 +112,7 @@ int vim_append_digit_int(int *value, int digit)
 }
 
 /// Return something that fits into an int.
+#pragma weak trim_to_int
 int trim_to_int(int64_t x)
 {
   return x > INT_MAX ? INT_MAX : x < INT_MIN ? INT_MIN : (int)x;

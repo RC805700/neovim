@@ -383,17 +383,6 @@ foreign _ {
 	@(link_name = "get_op_char")
 	get_op_char_r :: proc "c" (optype: C.int) -> C.int ---
 
-	@(link_name = "ga_init")
-	ga_init_r :: proc "c" (gap: ^Garray, itemsize: C.int, growsize: C.int) ---
-	@(link_name = "ga_concat_len")
-	ga_concat_len_r :: proc "c" (gap: ^Garray, s: cstring, len: C.size_t) ---
-	@(link_name = "ga_append")
-	ga_append_r :: proc "c" (gap: ^Garray, c: u8) ---
-	@(link_name = "ga_set_growsize")
-	ga_set_growsize_r :: proc "c" (gap: ^Garray, growsize: C.int) ---
-	@(link_name = "ga_clear")
-	ga_clear_r :: proc "c" (gap: ^Garray) ---
-
 	@(link_name = "ngettext")
 	ngettext_r :: proc "c" (msgid, msgid_plural: cstring, n: C.long) -> cstring ---
 }
@@ -911,7 +900,7 @@ execreg_line_continuation :: proc "c"(lines: ^Str16, idx: ^C.size_t) -> ^u8 {
 	cmd_end := cmd_start
 
 	ga: Garray
-	ga_init_r(&ga, C.int(size_of(u8)), 400)
+	ga_init(&ga, C.int(size_of(u8)), 400)
 
 	// search backwards to find the first line of this command.
 	for {
@@ -928,23 +917,23 @@ execreg_line_continuation :: proc "c"(lines: ^Str16, idx: ^C.size_t) -> ^u8 {
 
 	// join all the lines
 	tmp := (^Str16)(uintptr(lines) + uintptr(cmd_start) * size_of(Str16))
-	ga_concat_len_r(&ga, transmute(cstring)(tmp.data), tmp.size)
+	ga_concat_len(&ga, transmute(cstring)(tmp.data), tmp.size)
 	j := cmd_start + 1
 	for j <= cmd_end {
 		tmp = (^Str16)(uintptr(lines) + uintptr(j) * size_of(Str16))
 		p := (^u8)(skipwhite(transmute(cstring)(tmp.data)))
 		if p^ == '\\' {
 			if ga.ga_len > 400 {
-				ga_set_growsize_r(&ga, min(ga.ga_len, 8000))
+				ga_set_growsize(&ga, min(ga.ga_len, 8000))
 			}
 			p = (^u8)(uintptr(p) + 1)
-			ga_concat_len_r(&ga, transmute(cstring)(p), C.size_t(uintptr(tmp.data) + uintptr(tmp.size) - uintptr(p)))
+			ga_concat_len(&ga, transmute(cstring)(p), C.size_t(uintptr(tmp.data) + uintptr(tmp.size) - uintptr(p)))
 		}
 		j += 1
 	}
-	ga_append_r(&ga, 0)
+	ga_append(&ga, 0)
 	str := xmemdupz(ga.ga_data, C.size_t(ga.ga_len))
-	ga_clear_r(&ga)
+	ga_clear(&ga)
 
 	idx^ = cmd_start
 	return str
@@ -1774,7 +1763,7 @@ do_put :: proc "c" (regname: C.int, reg_arg: ^Yankreg_T, dir_arg: C.int, count_a
 		if has_textput_events {
 			add_last_insert -= 1
 			if add_last_insert == 0 {
-				ga_clear_r(&last_insert_ga)
+				ga_clear(&last_insert_ga)
 			}
 		}
 

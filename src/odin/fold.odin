@@ -194,10 +194,6 @@ foreign _ {
 	put_line_r :: proc "c" (fd: ^libc.FILE, s: cstring) -> C.int ---
 	@(link_name = "put_eol")
 	put_eol_r :: proc "c" (fd: ^libc.FILE) -> C.int ---
-	@(link_name = "ga_grow")
-	ga_grow_r :: proc "c" (gap: ^Garray, n: C.int) ---
-	@(link_name = "ga_init")
-	ga_init_r2 :: proc "c" (gap: ^Garray, itemsize: C.int, growsize: C.int) ---
 	// xmemcpyz reused from os_env.odin's _xmemcpyz
 	// line_breakcheck reused from input.odin's line_breakcheck
 	@(link_name = "mb_adjust_cursor")
@@ -647,11 +643,11 @@ foldCreate :: proc "c" (wp: rawptr, start_arg: Pos_T, end_arg: Pos_T) {
 		}
 	}
 
-	ga_grow_r(gap, 1)
+	ga_grow(gap, 1)
 	{
 		fp_ins := fp_at(gap, i)
 		fold_ga: Garray
-		ga_init_r2(&fold_ga, C.int(size_of(Fold_T)), 10)
+		ga_init(&fold_ga, C.int(size_of(Fold_T)), 10)
 
 		// Count folds that will be contained in the new fold.
 		cont: C.int = 0
@@ -662,7 +658,7 @@ foldCreate :: proc "c" (wp: rawptr, start_arg: Pos_T, end_arg: Pos_T) {
 			cont += 1
 		}
 		if cont > 0 {
-			ga_grow_r(&fold_ga, cont)
+			ga_grow(&fold_ga, cont)
 			// First fold starts before new fold? New fold starts there.
 			start_rel.lnum = min(start_rel.lnum, fp_ins.fd_top)
 
@@ -968,7 +964,7 @@ foldMoveTo :: proc "c" (updown: bool, dir: C.int, count: C.int) -> C.int {
 /// Init fold info in a new window.
 @(export)
 foldInitWin :: proc "c" (new_win: rawptr) {
-	ga_init_r2(w_ga(new_win, W_FOLDS), C.int(size_of(Fold_T)), 10)
+	ga_init(w_ga(new_win, W_FOLDS), C.int(size_of(Fold_T)), 10)
 }
 
 /// Find entry in win->w_lines[] for buffer line lnum; -1 if not found.
@@ -1037,13 +1033,13 @@ foldAdjustCursor :: proc "c" (wp: rawptr) {
 /// Deep-copy garray of folds.
 @(export)
 cloneFoldGrowArray :: proc "c" (from: ^Garray, to: ^Garray) {
-	ga_init_r2(to, from.ga_itemsize, from.ga_growsize)
+	ga_init(to, from.ga_itemsize, from.ga_growsize)
 
 	if GA_EMPTY_F(from) {
 		return
 	}
 
-	ga_grow_r(to, from.ga_len)
+	ga_grow(to, from.ga_len)
 
 	from_p := transmute([^]Fold_T)(from.ga_data)
 	to_p := transmute([^]Fold_T)(to.ga_data)
@@ -1249,7 +1245,7 @@ deleteFoldEntry :: proc "c" (wp: rawptr, gap: ^Garray, idx: C.int, recursive: bo
 		}
 	} else {
 		moved := fp.fd_nested.ga_len
-		ga_grow_r(gap, moved - 1)
+		ga_grow(gap, moved - 1)
 		{
 			// re-fetch fp, array may have been reallocated
 			fp = fp_at(gap, idx)
@@ -2244,14 +2240,14 @@ foldUpdateIEMSRecurse :: proc "c" (gap: ^Garray, level: C.int, startlnum: C.int,
 // ── foldInsert / foldSplit / foldRemove / foldMerge / foldMoveRange ─────────
 
 foldInsert :: proc "c" (gap: ^Garray, i: C.int) {
-	ga_grow_r(gap, 1)
+	ga_grow(gap, 1)
 
 	fp := fp_at(gap, i)
 	if gap.ga_len > 0 && i < gap.ga_len {
 		libc.memmove(fp_at(gap, i+1), fp, size_of(Fold_T) * C.size_t(gap.ga_len - i))
 	}
 	gap.ga_len += 1
-	ga_init_r2(&fp.fd_nested, C.int(size_of(Fold_T)), 10)
+	ga_init(&fp.fd_nested, C.int(size_of(Fold_T)), 10)
 }
 
 foldSplit :: proc "c" (buf: rawptr, gap: ^Garray, i: C.int, top: C.int, bot: C.int) {
@@ -2273,7 +2269,7 @@ foldSplit :: proc "c" (buf: rawptr, gap: ^Garray, i: C.int, top: C.int, bot: C.i
 	if fp2 != nil {
 		length := gap1.ga_len - C.int(uintptr(fp2)-uintptr(gap1.ga_data))/C.int(size_of(Fold_T))
 		if length > 0 {
-			ga_grow_r(gap2, length)
+			ga_grow(gap2, length)
 			for idx: C.int = 0; idx < length; idx += 1 {
 				dst := fp_at(gap2, C.int(idx))
 				src := (^Fold_T)(uintptr(fp2) + uintptr(idx) * size_of(Fold_T))
@@ -2451,7 +2447,7 @@ foldMerge :: proc "c" (wp: rawptr, fp1: ^Fold_T, gap: ^Garray, fp2: ^Fold_T) {
 	}
 
 	if !GA_EMPTY_F(gap2) {
-		ga_grow_r(gap1, gap2.ga_len)
+		ga_grow(gap1, gap2.ga_len)
 		for idx: C.int = 0; idx < gap2.ga_len; idx += 1 {
 			dst := fp_at(gap1, gap1.ga_len)
 			dst^ = fp_at(gap2, C.int(idx))^

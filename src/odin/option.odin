@@ -4450,7 +4450,7 @@ ExpandSettingSubtract :: proc "c"(xp: rawptr, regmatch: rawptr, numMatches: ^C.i
 		option_copy := xstrdup_r2(transmute(cstring)(option_val))
 		next_val := option_copy
 		ga: Garray
-		ga_init_o(&ga, 8, 10)
+		ga_init(&ga, 8, 10)
 
 		for {
 			item := next_val
@@ -4534,15 +4534,8 @@ ExpandSettingSubtract :: proc "c"(xp: rawptr, regmatch: rawptr, numMatches: ^C.i
 	return ExpandOldSetting(numMatches, matches)
 }
 
-foreign _ {
-	@(link_name = "ga_init")
-	ga_init_o :: proc "c" (gap: ^Garray, itemsize: C.int, growsize: C.int) ---
-	@(link_name = "ga_grow")
-	ga_grow_o :: proc "c" (gap: ^Garray, n: C.int) ---
-}
-
 ga_append_ptr :: proc "c"(gap: ^Garray, item: rawptr) {
-	ga_grow_o(gap, 1)
+	ga_grow(gap, 1)
 	if gap.ga_data == nil {
 		return
 	}
@@ -4752,8 +4745,6 @@ is_ascii_digit :: #force_inline proc "c"(b: u8) -> bool {
 }
 
 foreign _ {
-	@(link_name = "ga_concat_strings")
-	ga_concat_strings_c :: proc "c" (gap: ^Garray, sep: cstring) -> ^u8 ---
 	@(link_name = "sort_strings")
 	sort_strings_c :: proc "c" (files: rawptr, count: C.int) ---
 	@(link_name = "concat_str")
@@ -4930,7 +4921,7 @@ OP_REMOVING_FOR :: 3 // OP_REMOVING
 OP_NONE_FOR :: 0
 
 ga_append_str :: proc "c"(gap: ^Garray, item: ^u8) {
-	ga_grow_o(gap, 1)
+	ga_grow(gap, 1)
 	if gap.ga_data == nil {
 		return
 	}
@@ -4985,7 +4976,7 @@ object_as_optval_for :: proc "c"(opt_idx: C.int, o: Api_Object, op: C.int, error
 	} else if oc.t == kObjectTypeArray_S {
 		arr := (^Api_Array)(uintptr(&oc) + OBJ_DATA_OFF)^
 		ga: Garray
-		ga_init_o(&ga, 8, 4)
+		ga_init(&ga, 8, 4)
 		ai: C.size_t = 0
 		for ai < arr.size {
 			item_ptr := (^Api_Object)(uintptr(arr.items) + uintptr(ai) * size_of(Api_Object))
@@ -5010,13 +5001,13 @@ object_as_optval_for :: proc "c"(opt_idx: C.int, o: Api_Object, op: C.int, error
 			}
 			ai += 1
 		}
-		str = ga_concat_strings_c(&ga, ",")
+		str = ga_concat_strings(&ga, ",")
 		ga_deep_clear_ptr(&ga)
 	} else {
 		// kObjectTypeDict
 		dict := (^Api_Dict)(uintptr(&oc) + OBJ_DATA_OFF)^
 		ga: Garray
-		ga_init_o(&ga, 8, 4)
+		ga_init(&ga, 8, 4)
 		di: C.size_t = 0
 		for di < dict.size {
 			kv_ptr := (^Key_Value_Pair)(uintptr(dict.items) + uintptr(di) * size_of(Key_Value_Pair))
@@ -5052,7 +5043,7 @@ object_as_optval_for :: proc "c"(opt_idx: C.int, o: Api_Object, op: C.int, error
 		if is_flaglist && !is_comma {
 			sep = cstring("")
 		}
-		str = ga_concat_strings_c(&ga, sep)
+		str = ga_concat_strings(&ga, sep)
 	}
 		ga_deep_clear_ptr(&ga)
 	}

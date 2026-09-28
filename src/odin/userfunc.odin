@@ -1240,7 +1240,7 @@ call_user_func :: proc "c" (fp: rawptr, argcount: C.int, argvars: ^Typval_T, ret
 	(^C.int)(uintptr(fc) + FC_LEVEL_OFF_O)^ = ex_nesting_level_g
 	(^C.int)(uintptr(fc) + FC_BREAKPOINT_OFF_O)^ = dbg_find_breakpoint_e(false, transmute(cstring)(rawptr(uintptr(fp) + UF_NAME_OFF_O)), 0)
 	(^C.int)(uintptr(fc) + FC_DBG_TICK_OFF_O)^ = debug_tick_g
-	ga_init_r2((^Garray)(uintptr(fc) + FC_UFUNCS_OFF_O), 8, 1)
+	ga_init((^Garray)(uintptr(fc) + FC_UFUNCS_OFF_O), 8, 1)
 	if libc.strncmp(transmute(cstring)(rawptr(uintptr(fp) + UF_NAME_OFF_O)), cstring("<lambda>"), 8) == 0 {
 		islambda = true
 	}
@@ -1651,7 +1651,7 @@ handle_defer_one_o :: proc "c" (funccal: rawptr) {
 			tv_clear((^Typval_T)(uintptr(dr) + DR_ARGV_OFF_O + uintptr(i) * 16))
 		}
 	}
-	ga_clear_r((^Garray)(uintptr(funccal) + FC_DEFER_OFF_O))
+	ga_clear((^Garray)(uintptr(funccal) + FC_DEFER_OFF_O))
 }
 
 // —— Batch 24q: funccall cleanup cluster ——
@@ -1710,7 +1710,7 @@ register_closure_o :: proc "c" (fp: rawptr) {
 	funccal_unref_o((^rawptr)(uintptr(fp) + UF_SCOPED_OFF_O)^, fp, false)
 	(^rawptr)(uintptr(fp) + UF_SCOPED_OFF_O)^ = current_funccal
 	(^C.int)(uintptr(current_funccal) + FC_REFCOUNT_OFF_O)^ += 1
-	ga_grow_r((^Garray)(uintptr(current_funccal) + FC_UFUNCS_OFF_O), 1)
+	ga_grow((^Garray)(uintptr(current_funccal) + FC_UFUNCS_OFF_O), 1)
 	ufgap := (^Garray)(uintptr(current_funccal) + FC_UFUNCS_OFF_O)
 	([^]rawptr)(ufgap.ga_data)[uintptr(ufgap.ga_len)] = fp
 	ufgap.ga_len += 1
@@ -1726,7 +1726,7 @@ free_funccal_o :: proc "c" (fc: rawptr) {
 			([^]rawptr)(ufgap.ga_data)[uintptr(i)] = nil
 		}
 	}
-	ga_clear_r((^Garray)(uintptr(fc) + FC_UFUNCS_OFF_O))
+	ga_clear((^Garray)(uintptr(fc) + FC_UFUNCS_OFF_O))
 	func_ptr_unref((^rawptr)(uintptr(fc) + FC_FUNC_OFF_O)^)
 	xfree(fc)
 }
@@ -1907,10 +1907,10 @@ get_func_tv :: proc "c" (name: cstring, len: C.int, rettv: ^Typval_T, arg: ^cstr
 		i: C.int = 0
 		if get_vim_var_nr(VV_TESTING_O) != 0 {
 			if funcargs.ga_itemsize == 0 {
-				ga_init_r2(&funcargs, 8, 50)
+				ga_init(&funcargs, 8, 50)
 			}
 			for i < argcount {
-				ga_grow_r(&funcargs, 1)
+				ga_grow(&funcargs, 1)
 				([^]rawptr)(funcargs.ga_data)[uintptr(funcargs.ga_len)] = rawptr(&argvars[i])
 				funcargs.ga_len += 1
 				i += 1
@@ -2061,9 +2061,9 @@ add_defer :: proc "c" (name: cstring, argcount_arg: C.int, argvars: ^Typval_T) {
 	fc := current_funccal
 	defer_ga := (^Garray)(uintptr(fc) + FC_DEFER_OFF_O)
 	if (^C.int)(uintptr(defer_ga) + 12)^ == 0 {
-		ga_init_r2(defer_ga, DEFER_STRIDE_O, 10)
+		ga_init(defer_ga, DEFER_STRIDE_O, 10)
 	}
-	ga_grow_r(defer_ga, 1)
+	ga_grow(defer_ga, 1)
 	dr := rawptr(uintptr(defer_ga.ga_data) + uintptr(defer_ga.ga_len) * DEFER_STRIDE_O)
 	defer_ga.ga_len += 1
 	(^rawptr)(uintptr(dr) + DR_NAME_OFF_O)^ = rawptr(saved_name)
@@ -2271,7 +2271,7 @@ one_function_arg_o :: proc "c" (arg: cstring, newargs: ^Garray, skip: bool) -> c
 		return arg
 	}
 	if newargs != nil {
-		ga_grow_r(newargs, 1)
+		ga_grow(newargs, 1)
 		c := ([^]u8)(p)[0]
 		([^]u8)(p)[0] = 0
 		arg_copy := transmute(cstring)(xstrdup_o(transmute(^u8)(arg)))
@@ -2303,10 +2303,10 @@ get_function_args_o :: proc "c" (argp: ^cstring, endchar: u8, newargs: ^Garray, 
 	arg := argp^
 	p := arg
 	if newargs != nil {
-		ga_init_r2(newargs, 8, 3)
+		ga_init(newargs, 8, 3)
 	}
 	if default_args != nil {
-		ga_init_r2(default_args, 8, 3)
+		ga_init(default_args, 8, 3)
 	}
 	if varargs != nil {
 		varargs^ = false
@@ -2333,7 +2333,7 @@ get_function_args_o :: proc "c" (argp: ^cstring, endchar: u8, newargs: ^Garray, 
 				expr := p
 				rettv := Typval_T{v_type = VAR_NUMBER}
 				if eval1(&p, &rettv, nil) != FAIL_E {
-					ga_grow_r(default_args, 1)
+					ga_grow(default_args, 1)
 					for uintptr(transmute(rawptr)(p)) > uintptr(transmute(rawptr)(expr)) && ascii_iswhite(([^]u8)(transmute(rawptr)(uintptr(transmute(rawptr)(p)) - 1))[0]) {
 						p = transmute(cstring)(rawptr(uintptr(transmute(rawptr)(p)) - 1))
 					}
@@ -2354,10 +2354,10 @@ get_function_args_o :: proc "c" (argp: ^cstring, endchar: u8, newargs: ^Garray, 
 				if !skip {
 					semsg(cstring(E1068_S), cstring(","), p)
 					if newargs != nil {
-						ga_clear_strings_e(newargs)
+						ga_clear_strings(newargs)
 					}
 					if default_args != nil {
-						ga_clear_strings_e(default_args)
+						ga_clear_strings(default_args)
 					}
 					return FAIL_E
 				}
@@ -2379,10 +2379,10 @@ get_function_args_o :: proc "c" (argp: ^cstring, endchar: u8, newargs: ^Garray, 
 	}
 	if ([^]u8)(p)[0] != endchar {
 		if newargs != nil {
-			ga_clear_strings_e(newargs)
+			ga_clear_strings(newargs)
 		}
 		if default_args != nil {
-			ga_clear_strings_e(default_args)
+			ga_clear_strings(default_args)
 		}
 		return FAIL_E
 	}
@@ -2416,7 +2416,7 @@ get_lambda_tv :: proc "c" (arg: ^cstring, rettv: ^Typval_T, evalarg: rawptr) -> 
 	ret = get_function_args_o(arg, '-', pnewargs, &varargs, nil, false)
 	if ret == FAIL_E || ([^]u8)(arg^)[0] != '>' {
 		if pnewargs != nil {
-			ga_clear_strings_e(pnewargs)
+			ga_clear_strings(pnewargs)
 		}
 		eval_lavars_used = old_eval_lavars
 		return FAIL_E
@@ -2430,7 +2430,7 @@ get_lambda_tv :: proc "c" (arg: ^cstring, rettv: ^Typval_T, evalarg: rawptr) -> 
 	end := arg^
 	if ret == FAIL_E {
 		if pnewargs != nil {
-			ga_clear_strings_e(pnewargs)
+			ga_clear_strings(pnewargs)
 		}
 		eval_lavars_used = old_eval_lavars
 		return FAIL_E
@@ -2443,7 +2443,7 @@ get_lambda_tv :: proc "c" (arg: ^cstring, rettv: ^Typval_T, evalarg: rawptr) -> 
 	if ([^]u8)(arg^)[0] != '}' {
 		semsg(cstring(E451_S), arg^)
 		if pnewargs != nil {
-			ga_clear_strings_e(pnewargs)
+			ga_clear_strings(pnewargs)
 		}
 		eval_lavars_used = old_eval_lavars
 		return FAIL_E
@@ -2454,8 +2454,8 @@ get_lambda_tv :: proc "c" (arg: ^cstring, rettv: ^Typval_T, evalarg: rawptr) -> 
 		lname, lsize := get_lambda_name_o()
 		fp = alloc_ufunc_o(lname, lsize)
 		pt = xcalloc(1, 48)
-		ga_init_r2(&newlines, 8, 1)
-		ga_grow_r(&newlines, 1)
+		ga_init(&newlines, 8, 1)
+		ga_grow(&newlines, 1)
 		length := C.size_t(7) + C.size_t(uintptr(transmute(rawptr)(end)) - uintptr(transmute(rawptr)(start))) + 1
 		np := transmute([^]u8)(xmalloc(length))
 		([^]cstring)(newlines.ga_data)[uintptr(newlines.ga_len)] = transmute(cstring)(np)
@@ -2468,7 +2468,7 @@ get_lambda_tv :: proc "c" (arg: ^cstring, rettv: ^Typval_T, evalarg: rawptr) -> 
 		(^C.int)(uintptr(fp) + UF_REFCOUNT_OFF_O)^ = 1
 		hash_add_e(rawptr(&func_hashtab), transmute(^u8)(rawptr(uintptr(fp) + UF_NAME_OFF_O)))
 		([^]Garray)(uintptr(fp) + UF_ARGS_OFF_O)[0] = newargs
-		ga_init_r2((^Garray)(uintptr(fp) + UF_DEF_ARGS_OFF_O), 8, 1)
+		ga_init((^Garray)(uintptr(fp) + UF_DEF_ARGS_OFF_O), 8, 1)
 		(^rawptr)(uintptr(fp) + UF_LINES_OFF_O + 16)^ = newlines.ga_data
 		(^C.int)(uintptr(fp) + UF_LINES_OFF_O)^ = newlines.ga_len
 		if current_funccal != nil && eval_lavars {
@@ -3314,7 +3314,7 @@ get_function_body_o :: proc "c" (eap: rawptr, newlines: ^Garray, line_arg_in: cs
 				}
 			}
 		}
-		ga_grow_r(newlines, 1 + sourcing_lnum_off)
+		ga_grow(newlines, 1 + sourcing_lnum_off)
 		lp := transmute(cstring)(xstrdup_o(transmute(^u8)(theline)))
 		([^]cstring)(newlines.ga_data)[uintptr(newlines.ga_len)] = lp
 		newlines.ga_len += 1
@@ -3543,9 +3543,9 @@ list_one_function_o :: proc "c" (eap: rawptr, name: cstring, p: cstring) -> rawp
 // Clear a ufunc's arg/def/line arrays (static in C).
 func_clear_items_o :: proc "c" (fp: rawptr) {
 	context = runtime.default_context()
-	ga_clear_strings_e((^Garray)(uintptr(fp) + UF_ARGS_OFF_O))
-	ga_clear_strings_e((^Garray)(uintptr(fp) + UF_DEF_ARGS_OFF_O))
-	ga_clear_strings_e((^Garray)(uintptr(fp) + UF_LINES_OFF_O))
+	ga_clear_strings((^Garray)(uintptr(fp) + UF_ARGS_OFF_O))
+	ga_clear_strings((^Garray)(uintptr(fp) + UF_DEF_ARGS_OFF_O))
+	ga_clear_strings((^Garray)(uintptr(fp) + UF_LINES_OFF_O))
 	if ((^C.int)(uintptr(fp) + UF_FLAGS_OFF_O)^ & FC_LUAREF_O) != 0 {
 		api_free_luaref_e((^C.int)(uintptr(fp) + UF_LUAREF_OFF_O)^)
 		(^C.int)(uintptr(fp) + UF_LUAREF_OFF_O)^ = LUA_NOREF_O
@@ -3841,8 +3841,8 @@ ex_function :: proc "c" (eap: rawptr) {
 		}
 	}
 	p = skipwhite(transmute(cstring)(rawptr(uintptr(transmute(rawptr)(p)) + 1)))
-	ga_init_r2(&newargs, 8, 3)
-	ga_init_r2(&newlines, 8, 3)
+	ga_init(&newargs, 8, 3)
+	ga_init(&newlines, 8, 3)
 	if !skip {
 		if name != nil {
 			arg = name
@@ -4125,8 +4125,8 @@ goto_epilogue :: proc "c" (stage: C.int, fp: ^rawptr, free_fp: bool, newargs: ^G
 	context = runtime.default_context()
 	if stage == 1 {
 		if fp^ != nil {
-			ga_init_r2((^Garray)(uintptr(fp^) + UF_ARGS_OFF_O), 8, 1)
-			ga_init_r2((^Garray)(uintptr(fp^) + UF_DEF_ARGS_OFF_O), 8, 1)
+			ga_init((^Garray)(uintptr(fp^) + UF_ARGS_OFF_O), 8, 1)
+			ga_init((^Garray)(uintptr(fp^) + UF_DEF_ARGS_OFF_O), 8, 1)
 		}
 		if fp^ != nil {
 			nx := (^rawptr)(uintptr(fp^) + UF_NAME_EXP_OFF_O)^
@@ -4153,9 +4153,9 @@ goto_epilogue :: proc "c" (stage: C.int, fp: ^rawptr, free_fp: bool, newargs: ^G
 		}
 	}
 	if stage >= 1 {
-		ga_clear_strings_e(newargs)
-		ga_clear_strings_e(default_args)
-		ga_clear_strings_e(newlines)
+		ga_clear_strings(newargs)
+		ga_clear_strings(default_args)
+		ga_clear_strings(newlines)
 	}
 	goto_ret_free(stage, fp, free_fp, newargs, default_args, newlines, line_to_free, fdp, name, saved_did_emsg, show_block, eap)
 }

@@ -15,6 +15,7 @@
 #include "garray.c.generated.h"  // IWYU pragma: keep
 
 /// Clear an allocated growing array.
+#pragma weak ga_clear
 void ga_clear(garray_T *gap)
 {
   xfree(gap->ga_data);
@@ -28,6 +29,7 @@ void ga_clear(garray_T *gap)
 /// Clear a growing array that contains a list of strings.
 ///
 /// @param gap
+#pragma weak ga_clear_strings
 void ga_clear_strings(garray_T *gap)
 {
   GA_DEEP_CLEAR_PTR(gap);
@@ -38,6 +40,7 @@ void ga_clear_strings(garray_T *gap)
 /// @param gap
 /// @param itemsize
 /// @param growsize
+#pragma weak ga_init
 void ga_init(garray_T *gap, int itemsize, int growsize)
 {
   gap->ga_data = NULL;
@@ -51,6 +54,7 @@ void ga_init(garray_T *gap, int itemsize, int growsize)
 ///
 /// @param gap
 /// @param growsize
+#pragma weak ga_set_growsize
 void ga_set_growsize(garray_T *gap, int growsize)
 {
   if (growsize < 1) {
@@ -65,6 +69,7 @@ void ga_set_growsize(garray_T *gap, int growsize)
 ///
 /// @param gap
 /// @param n
+#pragma weak ga_grow
 void ga_grow(garray_T *gap, int n)
 {
   if (gap->ga_maxlen - gap->ga_len >= n) {
@@ -101,6 +106,7 @@ void ga_grow(garray_T *gap, int n)
 /// list of file names in allocated memory.
 ///
 /// @param gap
+#pragma weak ga_remove_duplicate_strings
 void ga_remove_duplicate_strings(garray_T *gap)
 {
   char **fnames = gap->ga_data;
@@ -130,6 +136,7 @@ void ga_remove_duplicate_strings(garray_T *gap)
 /// @param sep
 ///
 /// @returns the concatenated strings
+#pragma weak ga_concat_strings
 char *ga_concat_strings(const garray_T *gap, const char *sep)
   FUNC_ATTR_NONNULL_RET
 {
@@ -168,6 +175,7 @@ char *ga_concat_strings(const garray_T *gap, const char *sep)
 ///
 /// @param gap
 /// @param s
+#pragma weak ga_concat
 void ga_concat(garray_T *gap, const char *restrict s)
 {
   if (s == NULL) {
@@ -182,6 +190,7 @@ void ga_concat(garray_T *gap, const char *restrict s)
 /// @param[out]  gap  Growarray to modify.
 /// @param[in]  s  String to concatenate.
 /// @param[in]  len  String length.
+#pragma weak ga_concat_len
 void ga_concat_len(garray_T *const gap, const char *restrict s, const size_t len)
   FUNC_ATTR_NONNULL_ALL
 {
@@ -198,11 +207,13 @@ void ga_concat_len(garray_T *const gap, const char *restrict s, const size_t len
 ///
 /// @param gap
 /// @param c
+#pragma weak ga_append
 void ga_append(garray_T *gap, uint8_t c)
 {
   GA_APPEND(uint8_t, gap, c);
 }
 
+#pragma weak ga_append_via_ptr
 void *ga_append_via_ptr(garray_T *gap, size_t item_size)
 {
   if ((int)item_size != gap->ga_itemsize) {

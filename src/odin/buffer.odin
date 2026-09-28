@@ -286,7 +286,7 @@ foreign _ {
 	@(link_name = "clear_cpt_callbacks")
 	clear_cpt_callbacks_r :: proc "c" (callbacks: ^^rawptr, count: C.int) ---
 }
-// clear_string_option/xfree/keymap_ga_clear/ga_clear_r/vim_regfree/
+// clear_string_option/xfree/keymap_ga_clear/ga_clear/vim_regfree/
 // callback_free_r/B_P_*/SB_*/B_S_OFF reused.
 
 clear_str_at_o :: #force_inline proc "c"(buf: rawptr, off: uintptr) {
@@ -326,7 +326,7 @@ free_buf_options :: proc "c"(buf: rawptr, free_p_ff: bool) {
 	xfree_clear_at_o(buf, B_P_VTS_ARR_OFF)
 	clear_str_at_o(buf, B_P_KEYMAP_OFF)
 	keymap_ga_clear((^Garray)(uintptr(buf) + B_KMAP_GA_OFF))
-	ga_clear_r((^Garray)(uintptr(buf) + B_KMAP_GA_OFF))
+	ga_clear((^Garray)(uintptr(buf) + B_KMAP_GA_OFF))
 	clear_str_at_o(buf, B_P_COM_OFF)
 	clear_str_at_o(buf, B_P_CMS_OFF)
 	clear_str_at_o(buf, B_P_NF_OFF)
@@ -595,7 +595,7 @@ free_buffer_stuff_o :: proc "c"(buf: rawptr, free_flags: C.int) {
 	if (free_flags & KBFF_CLEAR_WININFO_O) != 0 {
 		clear_wininfo_o(buf) // including window-local options
 		free_buf_options(buf, true)
-		ga_clear_r(transmute(^Garray)(uintptr(buf) + B_S_LANGP_OFF))
+		ga_clear(transmute(^Garray)(uintptr(buf) + B_S_LANGP_OFF))
 	}
 	// Avoid losing b:changedtick when deleting buffer: clearing variables
 	// implies using clear_tv() on b:changedtick and that sets changedtick
@@ -3553,10 +3553,10 @@ buflist_list :: proc "c"(eap: rawptr) {
 	msg_ext_set_kind(cstring("list_cmd"))
 	arg := (^cstring)(uintptr(eap))^
 	if vim_strchr(transmute(^u8)(arg), 't') != nil {
-		ga_init_o(&buflist, 8, 50)
+		ga_init(&buflist, 8, 50)
 		b := firstbuf
 		for b != nil {
-			ga_grow_o(&buflist, 1)
+			ga_grow(&buflist, 1)
 			([^]rawptr)(buflist.ga_data)[buflist.ga_len] = b
 			buflist.ga_len += 1
 			b = (^rawptr)(uintptr(b) + B_NEXT_OFF)^
@@ -3716,7 +3716,7 @@ buflist_list :: proc "c"(eap: rawptr) {
 	}
 
 	if buflist_data != nil {
-		ga_clear_r(&buflist)
+		ga_clear(&buflist)
 	}
 }
 

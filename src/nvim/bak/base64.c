@@ -65,6 +65,7 @@ static inline uint32_t vim_htobe32(uint32_t host_32bits)
 /// @param src String to encode
 /// @param src_len Length of the string
 /// @return Base64 encoded string
+#pragma weak base64_encode
 char *base64_encode(const char *src, size_t src_len)
   FUNC_ATTR_NONNULL_ALL
 {
@@ -141,6 +142,7 @@ char *base64_encode(const char *src, size_t src_len)
 /// @param src_len Length of {src}
 /// @param [out] out_lenp Returns the length of the decoded string
 /// @return Decoded string
+#pragma weak base64_decode
 char *base64_decode(const char *src, size_t src_len, size_t *out_lenp)
   FUNC_ATTR_NONNULL_ALL
 {

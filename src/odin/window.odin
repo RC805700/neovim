@@ -6012,7 +6012,7 @@ win_set_inner_size :: proc "c"(wp: rawptr, valid_cursor: bool) {
 // Save window sizes (width+vsep, height per window + total avail).
 @(export)
 win_size_save :: proc "c"(gap: ^Garray) {
-	ga_init_r2(gap, size_of(C.int), 1)
+	ga_init(gap, size_of(C.int), 1)
 	ga_grow(gap, win_count() * 2 + 1)
 	// first entry is the total lines available for windows
 	([^]C.int)(gap.ga_data)[gap.ga_len] =

@@ -75,7 +75,7 @@ tv_op_blob_o :: proc "c" (tv1: ^Typval_T, tv2: ^Typval_T, op: cstring) -> C.int 
 	}
 	blen := tv_blob_len_o(b2)
 	if blen > 0 {
-		ga_grow_r((^Garray)(b1), blen)
+		ga_grow((^Garray)(b1), blen)
 		len1 := (^C.int)(b1)^ // bv_ga.ga_len
 		data1 := (^rawptr)(uintptr(b1) + 16)^ // bv_ga.ga_data
 		data2 := (^rawptr)(uintptr(b2) + 16)^
@@ -243,8 +243,6 @@ eexe_mod_op :: proc "c" (tv1: ^Typval_T, tv2: ^Typval_T, op: cstring) -> C.int {
 
 // —— Batch 3: eval/deprecated.c ——
 foreign _ {
-	@(link_name = "ga_append")
-	ga_append_e :: proc "c" (gap: ^Garray, c: u8) ---
 	@(link_name = "reverse_text")
 	reverse_text_e :: proc "c" (s: ^u8) -> ^u8 ---
 	@(link_name = "channel_job_start")
@@ -484,7 +482,7 @@ f_add :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 			error := false
 			n := tv_get_number_chk(a1, &error)
 			if !error {
-				ga_append_e((^Garray)(b), u8(n))
+				ga_append((^Garray)(b), u8(n))
 				tv_copy(a0, rettv)
 			}
 		}
@@ -659,8 +657,6 @@ foreign _ {
 	hash_lock_e :: proc "c" (ht: rawptr) ---
 	@(link_name = "hash_unlock")
 	hash_unlock_e :: proc "c" (ht: rawptr) ---
-	@(link_name = "ga_concat")
-	ga_concat_e :: proc "c" (gap: ^Garray, s: cstring) ---
 }
 
 FILTERMAP_FILTER_O :: 0
@@ -903,7 +899,7 @@ filter_map_string_o :: proc "c" (str: cstring, filtermap: C.int, expr: ^Typval_T
 	// set_vim_var_nr() doesn't set the type.
 		set_vim_var_type(VV_KEY_O, VAR_NUMBER)
 	ga: Garray
-	ga_init_r2(&ga, 1, 80)
+	ga_init(&ga, 1, 80)
 	idx: C.int = 0
 	p := uintptr(rawptr(str))
 	for ([^]u8)(p)[0] != 0 {
@@ -924,17 +920,17 @@ filter_map_string_o :: proc "c" (str: cstring, filtermap: C.int, expr: ^Typval_T
 				emsg(cstring(E_STRING_REQUIRED_S))
 				break
 			} else {
-				ga_concat_e(&ga, transmute(cstring)((rawptr)(newtv.vval)))
+				ga_concat(&ga, transmute(cstring)((rawptr)(newtv.vval)))
 			}
 		} else if filtermap == FILTERMAP_FOREACH_O || !rem {
-			ga_concat_e(&ga, transmute(cstring)((rawptr)(tv.vval)))
+			ga_concat(&ga, transmute(cstring)((rawptr)(tv.vval)))
 		}
 		tv_clear(&newtv)
 		tv_clear(&tv)
 		idx += 1
 		p += uintptr(ln)
 	}
-	ga_append_e(&ga, 0)
+	ga_append(&ga, 0)
 	rettv.vval = ga.ga_data
 }
 
@@ -1246,7 +1242,7 @@ f_insert :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 			semsg(e_invarg2, tv_get_string(a1))
 			return
 		}
-		ga_grow_r((^Garray)(b), 1)
+		ga_grow((^Garray)(b), 1)
 		p := (^rawptr)(uintptr(b) + 16)^
 		libc.memmove(rawptr(uintptr(rawptr(p)) + uintptr(before) + 1), rawptr(uintptr(rawptr(p)) + uintptr(before)), C.size_t(blen - before))
 		([^]u8)(p)[uintptr(before)] = u8(val)
@@ -2625,7 +2621,7 @@ f_winrestcmd :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 	context = runtime.default_context()
 	buf: [50]u8
 	ga: Garray
-	ga_init_r2(&ga, 1, 70)
+	ga_init(&ga, 1, 70)
 	for i := 0; i < 2; i += 1 {
 		winnr: C.int = 1
 		wp := firstwin
@@ -2635,14 +2631,14 @@ f_winrestcmd :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 				continue
 			}
 			libc.snprintf(&buf[0], C.size_t(size_of(buf)), cstring(":%dresize %d|"), winnr, (^C.int)(uintptr(wp) + W_HEIGHT_OFF)^)
-			ga_concat_len_r(&ga, transmute(cstring)(&buf[0]), C.size_t(libc.strlen(transmute(cstring)(&buf[0]))))
+			ga_concat_len(&ga, transmute(cstring)(&buf[0]), C.size_t(libc.strlen(transmute(cstring)(&buf[0]))))
 			libc.snprintf(&buf[0], C.size_t(size_of(buf)), cstring("vert :%dresize %d|"), winnr, (^C.int)(uintptr(wp) + W_WIDTH_OFF)^)
-			ga_concat_len_r(&ga, transmute(cstring)(&buf[0]), C.size_t(libc.strlen(transmute(cstring)(&buf[0]))))
+			ga_concat_len(&ga, transmute(cstring)(&buf[0]), C.size_t(libc.strlen(transmute(cstring)(&buf[0]))))
 			winnr += 1
 			wp = (^rawptr)(uintptr(wp) + W_NEXT_OFF)^
 		}
 	}
-	ga_append_e(&ga, 0)
+	ga_append(&ga, 0)
 	rettv.v_type = VAR_STRING
 	rettv.vval = ga.ga_data
 }
@@ -3430,8 +3426,6 @@ foreign _ {
 	ExpandCleanup_e :: proc "c" (xp: rawptr) ---
 	@(link_name = "globpath")
 	globpath_e :: proc "c" (path: cstring, file: cstring, ga: ^Garray, expand_options: C.int, dirs: bool) ---
-	@(link_name = "ga_clear_strings")
-	ga_clear_strings_e :: proc "c" (gap: ^Garray) ---
 	@(link_name = "path_is_absolute")
 	path_is_absolute_e :: proc "c" (fname: cstring) -> bool ---
 	@(link_name = "path_tail")
@@ -3534,10 +3528,10 @@ f_globpath :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 	file := tv_get_string_buf_chk(a1, &buf1[0])
 	if file != nil && !error {
 		ga: Garray
-		ga_init_r2(&ga, 8, 10)
+		ga_init(&ga, 8, 10)
 		globpath_e(tv_get_string(a0), file, &ga, flags, false)
 		if rettv.v_type == VAR_STRING {
-			rettv.vval = transmute(rawptr)(ga_concat_strings_c(&ga, cstring("\n")))
+			rettv.vval = transmute(rawptr)(ga_concat_strings(&ga, cstring("\n")))
 		} else {
 			tv_list_alloc_ret(transmute(^Typval)(rettv), ga.ga_len)
 			i: C.int = 0
@@ -3546,7 +3540,7 @@ f_globpath :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 				i += 1
 			}
 		}
-		ga_clear_strings_e(&ga)
+		ga_clear_strings(&ga)
 	} else {
 		rettv.vval = nil
 	}
@@ -4126,7 +4120,7 @@ f_readdir :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 			i += 1
 		}
 	}
-	ga_clear_strings_e(&ga)
+	ga_clear_strings(&ga)
 }
 
 // "rename({from}, {to})" function.
@@ -4220,7 +4214,7 @@ read_blob_o :: proc "c" (fd: ^libc.FILE, rettv: ^Typval_T, offset: i64, size_arg
 	if off != 0 && libc.fseek(fd, libc.long(off), whence) != 0 {
 		return OK_E
 	}
-	ga_grow_r((^Garray)(blob), C.int(size))
+	ga_grow((^Garray)(blob), C.int(size))
 	(^Garray)(blob).ga_len = C.int(size)
 	ga := (^Garray)(blob)
 	n := libc.fread(ga.ga_data, C.size_t(1), C.size_t(size), fd)
@@ -4872,7 +4866,7 @@ eval_one_expr_in_str :: proc "c" (p: ^u8, gap: ^Garray, evaluate: bool) -> ^u8 {
 		if expr_val == nil {
 			return nil
 		}
-		ga_concat_e(gap, transmute(cstring)(expr_val))
+		ga_concat(gap, transmute(cstring)(expr_val))
 		xfree(rawptr(expr_val))
 	}
 	return &block_end[1]
@@ -4882,7 +4876,7 @@ eval_one_expr_in_str :: proc "c" (p: ^u8, gap: ^Garray, evaluate: bool) -> ^u8 {
 eval_all_expr_in_str_o :: proc "c" (str: ^u8) -> ^u8 {
 	context = runtime.default_context()
 	ga: Garray
-	ga_init_r2(&ga, 1, 80)
+	ga_init(&ga, 1, 80)
 	p := ([^]u8)(str)
 	for p[0] != 0 {
 		escaped_brace := false
@@ -4895,10 +4889,10 @@ eval_all_expr_in_str_o :: proc "c" (str: ^u8) -> ^u8 {
 			escaped_brace = true
 		} else if p[0] == '}' {
 			semsg(cstring(E_STRAY_CURLY_S), transmute(cstring)(str))
-			ga_clear_r(&ga)
+			ga_clear(&ga)
 			return nil
 		}
-		ga_concat_len_r(&ga, transmute(cstring)(lit_start), C.size_t(uintptr(p) - uintptr(lit_start)))
+		ga_concat_len(&ga, transmute(cstring)(lit_start), C.size_t(uintptr(p) - uintptr(lit_start)))
 		if p[0] == 0 {
 			break
 		}
@@ -4908,11 +4902,11 @@ eval_all_expr_in_str_o :: proc "c" (str: ^u8) -> ^u8 {
 		}
 		p = ([^]u8)(eval_one_expr_in_str(&p[0], &ga, true))
 		if p == nil {
-			ga_clear_r(&ga)
+			ga_clear(&ga)
 			return nil
 		}
 	}
-	ga_append_r(&ga, 0)
+	ga_append(&ga, 0)
 	return (^u8)(ga.ga_data)
 }
 
@@ -5443,7 +5437,7 @@ NL_O :: 10
 @(export)
 encode_blob_write :: proc "c" (data: rawptr, buf: cstring, len: C.size_t) -> C.int {
 	context = runtime.default_context()
-	ga_concat_len_r((^Garray)(data), buf, len)
+	ga_concat_len((^Garray)(data), buf, len)
 	return C.int(len)
 }
 
@@ -6714,10 +6708,10 @@ f_list2blob :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 			if !error {
 				semsg(cstring(E_BLOBVAL_S), C.int(n))
 			}
-			ga_clear_r((^Garray)(blob))
+			ga_clear((^Garray)(blob))
 			return
 		}
-		ga_append_r((^Garray)(blob), u8(n))
+		ga_append((^Garray)(blob), u8(n))
 		li = (^rawptr)(li)^
 	}
 }
@@ -6972,7 +6966,7 @@ list_join_inner_o :: proc "c" (gap: ^Garray, l: rawptr, sep: cstring, join_gap: 
 			return FAIL_E
 		}
 		sumlen += size
-		ga_grow_r(join_gap, 1)
+		ga_grow(join_gap, 1)
 		p := &([^]Join_T)(join_gap.ga_data)[join_gap.ga_len]
 		p.s_data = transmute(cstring)(data)
 		p.s_size = size
@@ -6985,17 +6979,17 @@ list_join_inner_o :: proc "c" (gap: ^Garray, l: rawptr, sep: cstring, join_gap: 
 	if join_gap.ga_len >= 2 {
 		sumlen += seplen * C.size_t(join_gap.ga_len - 1)
 	}
-	ga_grow_r(gap, C.int(sumlen) + 2)
+	ga_grow(gap, C.int(sumlen) + 2)
 	i: C.int = 0
 	for i < join_gap.ga_len && !got_int {
 		if first {
 			first = false
 		} else {
-			ga_concat_len_r(gap, sep, seplen)
+			ga_concat_len(gap, sep, seplen)
 		}
 		p := &([^]Join_T)(join_gap.ga_data)[i]
 		if p.s_data != nil {
-			ga_concat_len_r(gap, p.s_data, p.s_size)
+			ga_concat_len(gap, p.s_data, p.s_size)
 		}
 		line_breakcheck()
 		i += 1
@@ -7021,17 +7015,17 @@ f_list2str :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 		return
 	}
 	ga: Garray
-	ga_init_r2(&ga, 1, 80)
+	ga_init(&ga, 1, 80)
 	buf: [22]u8
 	li := tv_list_first_o(l)
 	for li != nil {
 		n := tv_get_number((^Typval_T)(uintptr(li) + 16))
 		buflen := utf_char2bytes(C.int(n), &buf[0])
 		buf[buflen] = 0
-		ga_concat_len_r(&ga, transmute(cstring)(&buf[0]), C.size_t(buflen))
+		ga_concat_len(&ga, transmute(cstring)(&buf[0]), C.size_t(buflen))
 		li = (^rawptr)(li)^
 	}
-	ga_append_r(&ga, 0)
+	ga_append(&ga, 0)
 	rettv.vval = ga.ga_data
 }
 
@@ -8019,7 +8013,7 @@ E_BLOBLEN_S :: "E972: Blob value does not have the right number of bytes"
 tv_blob_alloc :: proc "c" () -> rawptr {
 	context = runtime.default_context()
 	blob := xcalloc(1, 32)
-	ga_init_r2((^Garray)(blob), 1, 100)
+	ga_init((^Garray)(blob), 1, 100)
 	return blob
 }
 
@@ -8027,7 +8021,7 @@ tv_blob_alloc :: proc "c" () -> rawptr {
 @(export)
 tv_blob_free :: proc "c" (b: rawptr) {
 	context = runtime.default_context()
-	ga_clear_r((^Garray)(b))
+	ga_clear((^Garray)(b))
 	xfree(b)
 }
 
@@ -8100,7 +8094,7 @@ tv_blob_slice_o :: proc "c" (blob: rawptr, len: C.int, n1: C.longlong, n2: C.lon
 	} else {
 		new_blob := tv_blob_alloc()
 		sz := C.int(b - a + 1)
-		ga_grow_r((^Garray)(new_blob), sz)
+		ga_grow((^Garray)(new_blob), sz)
 		(^Garray)(new_blob).ga_len = sz
 		i := C.int(a)
 		for i <= C.int(b) {
@@ -8194,7 +8188,7 @@ tv_blob_set_append :: proc "c" (blob: rawptr, idx: C.int, byte: u8) {
 	gap := (^Garray)(blob)
 	if idx <= gap.ga_len {
 		if idx == gap.ga_len {
-			ga_grow_r(gap, 1)
+			ga_grow(gap, 1)
 			gap.ga_len += 1
 		}
 		tv_blob_set_o(blob, idx, byte)
@@ -9083,14 +9077,14 @@ tv_list_join :: proc "c" (gap: ^Garray, l: rawptr, sep: cstring) -> C.int {
 		return OK_E
 	}
 	join_ga: Garray
-	ga_init_r2(&join_ga, C.int(size_of(Join_T)), tv_list_len_o(l))
+	ga_init(&join_ga, C.int(size_of(Join_T)), tv_list_len_o(l))
 	retval := list_join_inner_o(gap, l, sep, &join_ga)
 	i: C.int = 0
 	for i < join_ga.ga_len {
 		xfree(([^]Join_T)(join_ga.ga_data)[i].tofree)
 		i += 1
 	}
-	ga_clear_r(&join_ga)
+	ga_clear(&join_ga)
 	return retval
 }
 
@@ -9111,9 +9105,9 @@ f_join :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 	rettv.v_type = VAR_STRING
 	if sep != nil {
 		ga: Garray
-		ga_init_r2(&ga, 1, 80)
+		ga_init(&ga, 1, 80)
 		tv_list_join(&ga, (rawptr)(a0.vval), sep)
-		ga_append_r(&ga, 0)
+		ga_append(&ga, 0)
 		rettv.vval = ga.ga_data
 	} else {
 		rettv.vval = nil
@@ -9131,11 +9125,11 @@ foreign _ {
 encode_tv2echo :: proc "c" (tv: ^Typval_T, len: ^C.size_t) -> ^u8 {
 	context = runtime.default_context()
 	ga: Garray
-	ga_init_r2(&ga, 1, 80)
+	ga_init(&ga, 1, 80)
 	if tv.v_type == VAR_STRING || tv.v_type == VAR_FUNC {
 		s := (rawptr)(tv.vval)
 		if s != nil {
-			ga_concat_e(&ga, transmute(cstring)(s))
+			ga_concat(&ga, transmute(cstring)(s))
 		}
 	} else {
 		encode_vim_to_echo_o(&ga, tv, cstring(":echo argument"))
@@ -9143,7 +9137,7 @@ encode_tv2echo :: proc "c" (tv: ^Typval_T, len: ^C.size_t) -> ^u8 {
 	if len != nil {
 		len^ = C.size_t(ga.ga_len)
 	}
-	ga_append_r(&ga, 0)
+	ga_append(&ga, 0)
 	return ([^]u8)(ga.ga_data)
 }
 
@@ -9211,7 +9205,7 @@ decode_string :: proc "c" (s: cstring, len: C.size_t, force_blob: bool, s_alloca
 			(^C.int)(uintptr(b))^ = C.int(len)
 			(^C.int)(uintptr(b) + 4)^ = C.int(len)
 		} else {
-			ga_concat_len_r((^Garray)(b), s, len)
+			ga_concat_len((^Garray)(b), s, len)
 		}
 		return tv
 	}
@@ -9450,7 +9444,7 @@ tv_blob_remove :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, arg_errmsg: cs
 			}
 			blob := tv_blob_alloc()
 			(^C.int)(uintptr(blob) + 0)^ = C.int(end - idx + 1)
-			ga_grow_r((^Garray)(blob), C.int(end - idx + 1))
+			ga_grow((^Garray)(blob), C.int(end - idx + 1))
 			p := rawptr((^rawptr)(uintptr(b) + 16)^)
 			libc.memmove((^rawptr)(uintptr(blob) + 16)^, rawptr(uintptr(rawptr(p)) + uintptr(idx)), C.size_t(end - idx + 1))
 			tv_blob_set_ret_o(rettv, blob)
@@ -10212,7 +10206,7 @@ var_redir_start :: proc "c" (name: cstring, append: bool) -> C.int {
 	}
 	redir_varname_g = transmute(cstring)(xstrdup_o(transmute(^u8)(name)))
 	redir_lval_g = xcalloc(1, 96)
-	ga_init_r2(&redir_ga_g, 1, 500)
+	ga_init(&redir_ga_g, 1, 500)
 	redir_endp_g = get_lval(redir_varname_g, nil, redir_lval_g, false, false, 0, FNE_CHECK_START_O)
 	if redir_endp_g == nil || (^rawptr)(uintptr(redir_lval_g) + LL_NAME_OFF_O)^ == nil || ([^]u8)(redir_endp_g)[0] != 0 {
 		clear_lval(redir_lval_g)
@@ -10253,7 +10247,7 @@ var_redir_str :: proc "c" (value: cstring, value_len: C.int) {
 	if length == -1 {
 		length = C.int(libc.strlen(value))
 	}
-	ga_grow_r(&redir_ga_g, length)
+	ga_grow(&redir_ga_g, length)
 	libc.memmove(rawptr(uintptr(redir_ga_g.ga_data) + uintptr(redir_ga_g.ga_len)), transmute(rawptr)(value), C.size_t(length))
 	redir_ga_g.ga_len += length
 }
@@ -10264,7 +10258,7 @@ var_redir_stop :: proc "c" () {
 	context = runtime.default_context()
 	if redir_lval_g != nil {
 		if redir_endp_g != nil {
-			ga_append_e(&redir_ga_g, 0)
+			ga_append(&redir_ga_g, 0)
 			tv := Typval_T{v_type = VAR_STRING, v_lock = VAR_UNLOCKED, vval = transmute(rawptr)(redir_ga_g.ga_data)}
 			redir_endp_g = get_lval(redir_varname_g, nil, redir_lval_g, false, false, 0, FNE_CHECK_START_O)
 			if redir_endp_g != nil && (^rawptr)(uintptr(redir_lval_g) + LL_NAME_OFF_O)^ != nil {
@@ -12404,10 +12398,6 @@ foreign _ {
 	c_fmod :: proc "c" (x, y: f64) -> f64 ---
 	@(link_name = "pow")
 	c_pow :: proc "c" (x, y: f64) -> f64 ---
-	@(link_name = "xisinf")
-	xisinf_e :: proc "c" (d: f64) -> C.int ---
-	@(link_name = "xisnan")
-	xisnan_e :: proc "c" (d: f64) -> C.int ---
 }
 
 VARNUMBER_MAX_O :: 9223372036854775807
@@ -12474,7 +12464,7 @@ f_pow :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 f_isinf :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 	context = runtime.default_context()
 	av0 := ([^]Typval_T)(argvars)[0]
-	if av0.v_type == VAR_FLOAT && xisinf_e(transmute(f64)(av0.vval)) != 0 {
+	if av0.v_type == VAR_FLOAT && xisinf(transmute(f64)(av0.vval)) != 0 {
 		if transmute(f64)(av0.vval) > 0.0 {
 			rettv.vval = transmute(rawptr)(C.longlong(1))
 		} else {
@@ -12488,7 +12478,7 @@ f_isinf :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 f_isnan :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 	context = runtime.default_context()
 	av0 := ([^]Typval_T)(argvars)[0]
-	if av0.v_type == VAR_FLOAT && xisnan_e(transmute(f64)(av0.vval)) != 0 {
+	if av0.v_type == VAR_FLOAT && xisnan(transmute(f64)(av0.vval)) != 0 {
 		rettv.vval = transmute(rawptr)(C.longlong(1))
 	} else {
 		rettv.vval = transmute(rawptr)(C.longlong(0))
@@ -13360,7 +13350,7 @@ execute_common :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, arg_off: C.int
 		msg_silent += 1
 	}
 	capture_local := Garray{}
-	ga_init_r2(&capture_local, 1, 80)
+	ga_init(&capture_local, 1, 80)
 	capture_ga_g = rawptr(&capture_local)
 	redir_off_g = false
 	if !echo_output {
@@ -13385,7 +13375,7 @@ execute_common :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, arg_off: C.int
 	} else {
 		msg_col = save_msg_col
 	}
-	ga_append_e(&capture_local, 0)
+	ga_append(&capture_local, 0)
 	rettv.v_type = VAR_STRING
 	rettv.vval = transmute(rawptr)(capture_local.ga_data)
 	capture_ga_g = save_capture
@@ -14755,7 +14745,7 @@ foreign _ {
 may_add_state_char_o :: proc "c" (gap: ^Garray, include: cstring, ch: u8) {
 	context = runtime.default_context()
 	if include == nil || _vim_strchr(include, C.int(ch)) != nil {
-		ga_append_r(gap, ch)
+		ga_append(gap, ch)
 	}
 }
 
@@ -14764,7 +14754,7 @@ may_add_state_char_o :: proc "c" (gap: ^Garray, include: cstring, ch: u8) {
 f_state :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 	context = runtime.default_context()
 	ga := Garray{}
-	ga_init_r2(&ga, 1, 20)
+	ga_init(&ga, 1, 20)
 	include: cstring = nil
 	if ([^]Typval_T)(argvars)[0].v_type != VAR_UNKNOWN {
 		include = tv_get_string((^Typval_T)(uintptr(argvars)))
@@ -15607,7 +15597,7 @@ repeat_blob_o :: proc "c" (blob_tv: ^Typval_T, n: C.longlong, rettv: ^Typval_T) 
 		return
 	}
 	newblob := rawptr(rettv.vval)
-	ga_grow_r((^Garray)(uintptr(newblob)), C.int(length))
+	ga_grow((^Garray)(uintptr(newblob)), C.int(length))
 	(^C.int)(uintptr(newblob))^ = C.int(length)
 	i: C.longlong = 0
 	for i < slen {
@@ -16124,7 +16114,7 @@ f_rpcrequest :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 		saved_bufnr = autocmd_bufnr_g
 		save_funccal(rawptr(&funccal_entry[0]))
 		libc.memcpy(rawptr(&current_sctx_buf[0]), rawptr(&provider_caller_scope_g.script_ctx), 24)
-		ga_grow_r(&exestack, 1)
+		ga_grow(&exestack, 1)
 		(^Estack)(rawptr(uintptr(exestack.ga_data) + uintptr(exestack.ga_len) * 32))^ = provider_caller_scope_g.es_entry
 		exestack.ga_len += 1
 		autocmd_fname_g = provider_caller_scope_g.autocmd_fname
@@ -16381,7 +16371,7 @@ f_inputrestore :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) 
 @(export)
 f_inputsave :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 	context = runtime.default_context()
-	ga_grow_r(&ga_userinput_g, 1)
+	ga_grow(&ga_userinput_g, 1)
 	p := rawptr(uintptr(ga_userinput_g.ga_data) + uintptr(ga_userinput_g.ga_len) * TASAVE_SIZE)
 	ga_userinput_g.ga_len += 1
 	save_typeahead_e(p)
@@ -17448,7 +17438,7 @@ f_spellsuggest :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) 
 		tv_list_append_allocated_string(rawptr(rettv.vval), transmute(^u8)(p))
 		i += 1
 	}
-	ga_clear_r(&ga)
+	ga_clear(&ga)
 	(^C.int)(uintptr(curwin) + W_P_SPELL_OFF)^ = wo_spell_save
 }
 
@@ -19568,8 +19558,6 @@ tv_list_set_copyid_o :: proc "c" (l: rawptr, copyid: C.int) {
 
 // —— Batch 23e: string-mode scalar emits + CONVERT_ONE_VALUE (dormant) ——
 foreign _ {
-	@(link_name = "xfpclassify")
-	xfpclassify_e :: proc "c" (d: f64) -> C.int ---
 	@(link_name = "vim_snprintf_safelen")
 	vim_snprintf_safelen_e :: proc "c" (str: ^u8, str_m: C.size_t, fmt: cstring, #c_vararg args: ..any) -> C.size_t ---
 	@(link_name = "nvim_odin_get_echo_emsg")
@@ -19596,7 +19584,7 @@ xdigits_o := [16]u8{'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 
 convert_to_json_string_o :: proc "c" (gap: ^Garray, buf: cstring, length: C.size_t) -> C.int {
 	context = runtime.default_context()
 	if buf == nil {
-		ga_concat_len_r(gap, cstring("\"\""), 2)
+		ga_concat_len(gap, cstring("\"\""), 2)
 		return OK_E
 	}
 	utf_len := C.size_t(length)
@@ -19626,8 +19614,8 @@ convert_to_json_string_o :: proc "c" (gap: ^Garray, buf: cstring, length: C.size
 			}
 		}
 	}
-	ga_append_r(gap, '"')
-	ga_grow_r(gap, C.int(str_len))
+	ga_append(gap, '"')
+	ga_grow(gap, C.int(str_len))
 	i = 0
 	for i < utf_len {
 		ch := utf_ptr2char(transmute(cstring)(rawptr(uintptr(rawptr(buf)) + uintptr(i))))
@@ -19636,21 +19624,21 @@ convert_to_json_string_o :: proc "c" (gap: ^Garray, buf: cstring, length: C.size
 			shift = 1
 		}
 		if ch == 8 {
-			ga_concat_len_r(gap, cstring("\\b"), 2)
+			ga_concat_len(gap, cstring("\\b"), 2)
 		} else if ch == 9 {
-			ga_concat_len_r(gap, cstring("\\t"), 2)
+			ga_concat_len(gap, cstring("\\t"), 2)
 		} else if ch == 10 {
-			ga_concat_len_r(gap, cstring("\\n"), 2)
+			ga_concat_len(gap, cstring("\\n"), 2)
 		} else if ch == 12 {
-			ga_concat_len_r(gap, cstring("\\f"), 2)
+			ga_concat_len(gap, cstring("\\f"), 2)
 		} else if ch == 13 {
-			ga_concat_len_r(gap, cstring("\\r"), 2)
+			ga_concat_len(gap, cstring("\\r"), 2)
 		} else if ch == '"' {
-			ga_concat_len_r(gap, cstring("\\\""), 2)
+			ga_concat_len(gap, cstring("\\\""), 2)
 		} else if ch == '\\' {
-			ga_concat_len_r(gap, cstring("\\\\"), 2)
+			ga_concat_len(gap, cstring("\\\\"), 2)
 		} else if ch >= 0x20 && utf_printable_e(C.int(ch)) {
-			ga_concat_len_r(gap, transmute(cstring)(rawptr(uintptr(rawptr(buf)) + uintptr(i))), shift)
+			ga_concat_len(gap, transmute(cstring)(rawptr(uintptr(rawptr(buf)) + uintptr(i))), shift)
 		} else if ch < 0x10000 {
 			eb: [6]u8
 			eb[0] = '\\'; eb[1] = 'u'
@@ -19658,7 +19646,7 @@ convert_to_json_string_o :: proc "c" (gap: ^Garray, buf: cstring, length: C.size
 			eb[3] = u8(xdigits_o[(ch >> 8) & 0xF])
 			eb[4] = u8(xdigits_o[(ch >> 4) & 0xF])
 			eb[5] = u8(xdigits_o[ch & 0xF])
-			ga_concat_len_r(gap, transmute(cstring)(&eb[0]), 6)
+			ga_concat_len(gap, transmute(cstring)(&eb[0]), 6)
 		} else {
 			tmp := ch - 0x10000
 			hi := 0xD800 + ((tmp >> 10) & 0x3FF)
@@ -19674,11 +19662,11 @@ convert_to_json_string_o :: proc "c" (gap: ^Garray, buf: cstring, length: C.size
 			eb[9] = u8(xdigits_o[(lo >> 8) & 0xF])
 			eb[10] = u8(xdigits_o[(lo >> 4) & 0xF])
 			eb[11] = u8(xdigits_o[lo & 0xF])
-			ga_concat_len_r(gap, transmute(cstring)(&eb[0]), 12)
+			ga_concat_len(gap, transmute(cstring)(&eb[0]), 12)
 		}
 		i += shift
 	}
-	ga_append_r(gap, '"')
+	ga_append(gap, '"')
 	return OK_E
 }
 
@@ -19686,11 +19674,11 @@ convert_to_json_string_o :: proc "c" (gap: ^Garray, buf: cstring, length: C.size
 conv_error_o :: proc "c" (msg: cstring, mpstack: ^MPConvStack_O, objname: cstring) -> C.int {
 	context = runtime.default_context()
 	msg_ga := Garray{}
-	ga_init_r2(&msg_ga, 1, 80)
+	ga_init(&msg_ga, 1, 80)
 	i: C.size_t = 0
 	for i < mpstack.size {
 		if i != 0 {
-			ga_concat_len_r(&msg_ga, cstring(", "), 2)
+			ga_concat_len(&msg_ga, cstring(", "), 2)
 		}
 		v := ([^]MPConvStackVal_O)(mpstack.items)[i]
 		if v.type == C.int(MPConvStackValType_O.kMPConvDict) {
@@ -19707,7 +19695,7 @@ conv_error_o :: proc "c" (msg: cstring, mpstack: ^MPConvStack_O, objname: cstrin
 			kstr := encode_tv2string(&ktv, nil)
 			libc.snprintf(transmute([^]u8)(&IObuff[0]), 1025, cstring("key %s"), kstr)
 			xfree(rawptr(transmute(^u8)(kstr)))
-			ga_concat_e(&msg_ga, transmute(cstring)(&IObuff[0]))
+			ga_concat(&msg_ga, transmute(cstring)(&IObuff[0]))
 		} else if v.type == C.int(MPConvStackValType_O.kMPConvPairs) || v.type == C.int(MPConvStackValType_O.kMPConvList) {
 			l := (^rawptr)(&v.data[0])^
 			cursor := (^rawptr)(&v.data[8])^
@@ -19731,27 +19719,27 @@ conv_error_o :: proc "c" (msg: cstring, mpstack: ^MPConvStack_O, objname: cstrin
 			}
 			if v.type == C.int(MPConvStackValType_O.kMPConvList) || tgt == nil || (ttv.v_type != VAR_LIST && tv_list_len_o(rawptr(ttv.vval)) <= 0) {
 				libc.snprintf(transmute([^]u8)(&IObuff[0]), 1025, cstring("index %i"), idx)
-				ga_concat_e(&msg_ga, transmute(cstring)(&IObuff[0]))
+				ga_concat(&msg_ga, transmute(cstring)(&IObuff[0]))
 			} else {
 				first := tv_list_first_o(rawptr(ttv.vval))
 				ktv := (^Typval_T)(uintptr(first) + 16)^
 				key := encode_tv2echo(&ktv, nil)
 				libc.snprintf(transmute([^]u8)(&IObuff[0]), 1025, cstring("key %s at index %i from special map"), key, idx)
 				xfree(rawptr(transmute(^u8)(key)))
-				ga_concat_e(&msg_ga, transmute(cstring)(&IObuff[0]))
+				ga_concat(&msg_ga, transmute(cstring)(&IObuff[0]))
 			}
 		} else if v.type == C.int(MPConvStackValType_O.kMPConvPartial) {
 			if (^C.int)(&v.data[0])^ == C.int(MPConvPartialStage_O.kMPConvPartialSelf) {
-				ga_concat_len_r(&msg_ga, cstring("partial"), 7)
+				ga_concat_len(&msg_ga, cstring("partial"), 7)
 			} else if (^C.int)(&v.data[0])^ == C.int(MPConvPartialStage_O.kMPConvPartialEnd) {
-				ga_concat_len_r(&msg_ga, cstring("partial self dictionary"), 23)
+				ga_concat_len(&msg_ga, cstring("partial self dictionary"), 23)
 			}
 		} else {
 			arg := (^rawptr)(&v.data[0])^
 			argv := (^rawptr)(&v.data[8])^
 			idx := C.int(uintptr(arg) - uintptr(argv)) / 16 - 1
 			libc.snprintf(transmute([^]u8)(&IObuff[0]), 1025, cstring("argument %i"), idx)
-			ga_concat_e(&msg_ga, transmute(cstring)(&IObuff[0]))
+			ga_concat(&msg_ga, transmute(cstring)(&IObuff[0]))
 		}
 		i += 1
 	}
@@ -19760,7 +19748,7 @@ conv_error_o :: proc "c" (msg: cstring, mpstack: ^MPConvStack_O, objname: cstrin
 	} else {
 		semsg(msg, objname, transmute(cstring)(msg_ga.ga_data))
 	}
-	ga_clear_r(&msg_ga)
+	ga_clear(&msg_ga)
 	return FAIL_E
 }
 
@@ -19771,39 +19759,39 @@ FP_INFINITE_O :: 1
 encode_str_string_o :: proc "c" (gap: ^Garray, buf: cstring, length: C.size_t) {
 	context = runtime.default_context()
 	if buf == nil {
-		ga_concat_len_r(gap, cstring("''"), 2)
+		ga_concat_len(gap, cstring("''"), 2)
 		return
 	}
-	ga_grow_r(gap, C.int(2 + length + memcnt(rawptr(transmute(^u8)(buf)), C.int('\''), length)))
-	ga_append_r(gap, '\'')
+	ga_grow(gap, C.int(2 + length + memcnt(rawptr(transmute(^u8)(buf)), C.int('\''), length)))
+	ga_append(gap, '\'')
 	i: C.size_t = 0
 	for i < length {
 		if ([^]u8)(buf)[i] == '\'' {
-			ga_append_r(gap, '\'')
+			ga_append(gap, '\'')
 		}
-		ga_append_r(gap, ([^]u8)(buf)[i])
+		ga_append(gap, ([^]u8)(buf)[i])
 		i += 1
 	}
-	ga_append_r(gap, '\'')
+	ga_append(gap, '\'')
 }
 
 // String-mode CONV_BLOB (0z hex with dots).
 encode_str_blob_o :: proc "c" (gap: ^Garray, blob: rawptr, length: C.int) {
 	context = runtime.default_context()
 	if length == 0 {
-		ga_concat_len_r(gap, cstring("0z"), 2)
+		ga_concat_len(gap, cstring("0z"), 2)
 		return
 	}
-	ga_grow_r(gap, 2 + 2 * length + (length - 1) / 4)
-	ga_concat_len_r(gap, cstring("0z"), 2)
+	ga_grow(gap, 2 + 2 * length + (length - 1) / 4)
+	ga_concat_len(gap, cstring("0z"), 2)
 	numbuf: [65]u8
 	i: C.int = 0
 	for i < length {
 		if i > 0 && (i & 3) == 0 {
-			ga_append_r(gap, '.')
+			ga_append(gap, '.')
 		}
 		n := libc.snprintf(&numbuf[0], 65, cstring("%02X"), C.int(tv_blob_get_o(blob, i)))
-		ga_concat_len_r(gap, transmute(cstring)(&numbuf[0]), C.size_t(n))
+		ga_concat_len(gap, transmute(cstring)(&numbuf[0]), C.size_t(n))
 		i += 1
 	}
 }
@@ -19813,23 +19801,23 @@ encode_str_number_o :: proc "c" (gap: ^Garray, num: C.longlong) {
 	context = runtime.default_context()
 	numbuf: [65]u8
 	n := libc.snprintf(&numbuf[0], 65, cstring("%ld"), num)
-	ga_concat_len_r(gap, transmute(cstring)(&numbuf[0]), C.size_t(n))
+	ga_concat_len(gap, transmute(cstring)(&numbuf[0]), C.size_t(n))
 }
 
 // String-mode CONV_FLOAT (nan/inf/%g).
 encode_str_float_o :: proc "c" (gap: ^Garray, flt: f64) {
 	context = runtime.default_context()
-	if xfpclassify_e(flt) == FP_NAN_O {
-		ga_concat_len_r(gap, cstring("str2float('nan')"), 16)
-	} else if xfpclassify_e(flt) == FP_INFINITE_O {
+	if xfpclassify(flt) == FP_NAN_O {
+		ga_concat_len(gap, cstring("str2float('nan')"), 16)
+	} else if xfpclassify(flt) == FP_INFINITE_O {
 		if flt < 0 {
-			ga_append_r(gap, '-')
+			ga_append(gap, '-')
 		}
-		ga_concat_len_r(gap, cstring("str2float('inf')"), 16)
+		ga_concat_len(gap, cstring("str2float('inf')"), 16)
 	} else {
 		numbuf: [65]u8
 		n := vim_snprintf_safelen_e(&numbuf[0], 65, cstring("%g"), flt)
-		ga_concat_len_r(gap, transmute(cstring)(&numbuf[0]), n)
+		ga_concat_len(gap, transmute(cstring)(&numbuf[0]), n)
 	}
 }
 
@@ -19856,12 +19844,12 @@ convert_one_value_string_o :: proc "c" (gap: ^Garray, mpstack: ^MPConvStack_O, c
 		s := transmute(cstring)(tv.vval)
 		if s == nil {
 			_internal_error(cstring("string(): NULL function name"))
-			ga_concat_len_r(gap, cstring("function(NULL"), 13)
+			ga_concat_len(gap, cstring("function(NULL"), 13)
 		} else {
-			ga_concat_len_r(gap, cstring("function("), 9)
+			ga_concat_len(gap, cstring("function("), 9)
 			encode_str_string_o(gap, s, C.size_t(libc.strlen(s)))
 		}
-		ga_append_r(gap, ')')
+		ga_append(gap, ')')
 	} else if tv.v_type == VAR_PARTIAL {
 		pt := rawptr(tv.vval)
 		fun: cstring = nil
@@ -19874,11 +19862,11 @@ convert_one_value_string_o :: proc "c" (gap: ^Garray, mpstack: ^MPConvStack_O, c
 		}
 		if fun == nil {
 			_internal_error(cstring("string(): NULL function name"))
-			ga_concat_len_r(gap, cstring("function(NULL"), 13)
+			ga_concat_len(gap, cstring("function(NULL"), 13)
 		} else {
-			ga_concat_len_r(gap, cstring("function("), 9)
+			ga_concat_len(gap, cstring("function("), 9)
 			name_off := gap.ga_len
-			ga_concat_e(gap, prefix)
+			ga_concat(gap, prefix)
 			encode_str_string_o(gap, fun, C.size_t(libc.strlen(fun)))
 			([^]u8)(gap.ga_data)[uintptr(name_off)] = '\''
 			plen := C.size_t(libc.strlen(prefix))
@@ -19896,14 +19884,14 @@ convert_one_value_string_o :: proc "c" (gap: ^Garray, mpstack: ^MPConvStack_O, c
 	} else if tv.v_type == VAR_LIST {
 		l := rawptr(tv.vval)
 		if l == nil || tv_list_len_o(l) == 0 {
-			ga_concat_len_r(gap, cstring("[]"), 2)
+			ga_concat_len(gap, cstring("[]"), 2)
 		} else {
 			saved := tv_list_copyid_o(l)
 			if (^C.int)(uintptr(l) + 68)^ == copyID {
 				encode_recurse_o(gap, mpstack, l, C.int(MPConvStackValType_O.kMPConvList))
 			} else {
 				(^C.int)(uintptr(l) + 68)^ = copyID
-				ga_append_r(gap, '[')
+				ga_append(gap, '[')
 				v := MPConvStackVal_O{}
 				v.type = C.int(MPConvStackValType_O.kMPConvList)
 				v.tv = tv
@@ -19915,23 +19903,23 @@ convert_one_value_string_o :: proc "c" (gap: ^Garray, mpstack: ^MPConvStack_O, c
 		}
 	} else if tv.v_type == VAR_BOOL {
 		if C.int(transmute(C.longlong)(tv.vval)) != 0 {
-			ga_concat_len_r(gap, cstring("v:true"), 6)
+			ga_concat_len(gap, cstring("v:true"), 6)
 		} else {
-			ga_concat_len_r(gap, cstring("v:false"), 7)
+			ga_concat_len(gap, cstring("v:false"), 7)
 		}
 	} else if tv.v_type == VAR_SPECIAL {
-		ga_concat_len_r(gap, cstring("v:null"), 6)
+		ga_concat_len(gap, cstring("v:null"), 6)
 	} else if tv.v_type == VAR_DICT {
 		d := rawptr(tv.vval)
 		if d == nil || (^C.size_t)(uintptr(d) + 24)^ == 0 {
-			ga_concat_len_r(gap, cstring("{}"), 2)
+			ga_concat_len(gap, cstring("{}"), 2)
 		} else {
 			saved := (^C.int)(uintptr(d) + 12)^
 			if (^C.int)(uintptr(d) + 12)^ == copyID {
 				encode_recurse_o(gap, mpstack, d, C.int(MPConvStackValType_O.kMPConvDict))
 			} else {
 				(^C.int)(uintptr(d) + 12)^ = copyID
-				ga_append_r(gap, '{')
+				ga_append(gap, '{')
 				v := MPConvStackVal_O{}
 				v.type = C.int(MPConvStackValType_O.kMPConvDict)
 				v.tv = tv
@@ -19976,7 +19964,7 @@ encode_echo_recurse_o :: proc "c" (gap: ^Garray, mpstack: ^MPConvStack_O, val: r
 	} else {
 		libc.snprintf(&ebuf[0], 72, cstring("[...@%zu]"), backref)
 	}
-	ga_concat_e(gap, transmute(cstring)(&ebuf[0]))
+	ga_concat(gap, transmute(cstring)(&ebuf[0]))
 }
 
 // Mode-dispatched RECURSE (string default, echo when flagged).
@@ -20014,7 +20002,7 @@ encode_str_recurse_o :: proc "c" (gap: ^Garray, mpstack: ^MPConvStack_O, val: ra
 	}
 	ebuf: [72]u8
 	libc.snprintf(&ebuf[0], 72, cstring("{E724@%zu}"), backref)
-	ga_concat_e(gap, transmute(cstring)(&ebuf[0]))
+	ga_concat(gap, transmute(cstring)(&ebuf[0]))
 }
 
 // —— Batch 23f: string-mode walker loop + driver + encode_tv2string ——
@@ -20030,13 +20018,13 @@ encode_str_walker_o :: proc "c" (gap: ^Garray, mpstack: ^MPConvStack_O, tv_top: 
 			if todo == 0 {
 				d := (^rawptr)(&cur.data[0])^
 				(^C.int)(uintptr(d) + 12)^ = cur.saved_copyID
-				ga_append_r(gap, '}')
+				ga_append(gap, '}')
 				mpconv_stack_pop_o(mpstack)
 				continue
 			}
 			d := (^rawptr)(&cur.data[0])^
 			if todo != (^C.size_t)(uintptr(d) + 24)^ {
-				ga_concat_len_r(gap, cstring(", "), 2)
+				ga_concat_len(gap, cstring(", "), 2)
 			}
 			hi := (^rawptr)(&cur.data[16])^
 			for (^rawptr)(uintptr(hi) + 8)^ == nil || (^rawptr)(uintptr(hi) + 8)^ == rawptr(&hash_removed_c) {
@@ -20048,20 +20036,20 @@ encode_str_walker_o :: proc "c" (gap: ^Garray, mpstack: ^MPConvStack_O, tv_top: 
 			(^rawptr)(&cur.data[16])^ = rawptr(uintptr(hi) + 16)
 			key := transmute(cstring)((^rawptr)(uintptr(hi) + 8)^)
 			encode_str_string_o(gap, key, C.size_t(libc.strlen(key)))
-			ga_concat_len_r(gap, cstring(": "), 2)
+			ga_concat_len(gap, cstring(": "), 2)
 			tv = (^Typval_T)(uintptr(di))
 		} else if cur.type == C.int(MPConvStackValType_O.kMPConvList) {
 			li := (^rawptr)(&cur.data[8])^
 			if li == nil {
 				l := (^rawptr)(&cur.data[0])^
 				tv_list_set_copyid_o(l, cur.saved_copyID)
-				ga_append_r(gap, ']')
+				ga_append(gap, ']')
 				mpconv_stack_pop_o(mpstack)
 				continue
 			}
 			l := (^rawptr)(&cur.data[0])^
 			if li != tv_list_first_o(l) {
-				ga_concat_len_r(gap, cstring(", "), 2)
+				ga_concat_len(gap, cstring(", "), 2)
 			}
 			tv = (^Typval_T)(uintptr(li) + 16)
 			(^rawptr)(&cur.data[8])^ = (^rawptr)(uintptr(li))^
@@ -20070,20 +20058,20 @@ encode_str_walker_o :: proc "c" (gap: ^Garray, mpstack: ^MPConvStack_O, tv_top: 
 			if li == nil {
 				l := (^rawptr)(&cur.data[0])^
 				tv_list_set_copyid_o(l, cur.saved_copyID)
-				ga_append_r(gap, '}')
+				ga_append(gap, '}')
 				mpconv_stack_pop_o(mpstack)
 				continue
 			}
 			l := (^rawptr)(&cur.data[0])^
 			if li != tv_list_first_o(l) {
-				ga_concat_len_r(gap, cstring(", "), 2)
+				ga_concat_len(gap, cstring(", "), 2)
 			}
 			pair := rawptr((^Typval_T)(uintptr(li) + 16).vval)
 			if convert_one_value_string_o(gap, mpstack, cur, (^Typval_T)(uintptr(tv_list_first_o(pair)) + 16), copyID, objname) == FAIL_E {
 				mpconv_stack_destroy_o(mpstack)
 				return FAIL_E
 			}
-			ga_concat_len_r(gap, cstring(": "), 2)
+			ga_concat_len(gap, cstring(": "), 2)
 			tv = (^Typval_T)(uintptr(tv_list_last_o(pair)) + 16)
 			(^rawptr)(&cur.data[8])^ = (^rawptr)(uintptr(li))^
 		} else if cur.type == C.int(MPConvStackValType_O.kMPConvPartial) {
@@ -20095,11 +20083,11 @@ encode_str_walker_o :: proc "c" (gap: ^Garray, mpstack: ^MPConvStack_O, tv_top: 
 					argc = (^C.int)(uintptr(pt) + PT_ARGC_OFF_O)^
 				}
 				if argc != 0 {
-					ga_concat_len_r(gap, cstring(", "), 2)
+					ga_concat_len(gap, cstring(", "), 2)
 				}
 				(^C.int)(&cur.data[0])^ = C.int(MPConvPartialStage_O.kMPConvPartialSelf)
 				if pt != nil && argc > 0 {
-					ga_append_r(gap, '[')
+					ga_append(gap, '[')
 					v := MPConvStackVal_O{}
 					v.type = C.int(MPConvStackValType_O.kMPConvPartialList)
 					v.saved_copyID = copyID - 1
@@ -20117,9 +20105,9 @@ encode_str_walker_o :: proc "c" (gap: ^Garray, mpstack: ^MPConvStack_O, tv_top: 
 				}
 				if dict != nil {
 					used := C.int((^C.size_t)(uintptr(dict) + 24)^)
-					ga_concat_len_r(gap, cstring(", "), 2)
+					ga_concat_len(gap, cstring(", "), 2)
 					if used == 0 {
-						ga_concat_len_r(gap, cstring("{}"), 2)
+						ga_concat_len(gap, cstring("{}"), 2)
 						continue
 					}
 					saved := (^C.int)(uintptr(dict) + 12)^
@@ -20128,7 +20116,7 @@ encode_str_walker_o :: proc "c" (gap: ^Garray, mpstack: ^MPConvStack_O, tv_top: 
 						continue
 					}
 					(^C.int)(uintptr(dict) + 12)^ = copyID
-					ga_append_r(gap, '{')
+					ga_append(gap, '{')
 					v := MPConvStackVal_O{}
 					v.type = C.int(MPConvStackValType_O.kMPConvDict)
 					v.saved_copyID = saved
@@ -20139,7 +20127,7 @@ encode_str_walker_o :: proc "c" (gap: ^Garray, mpstack: ^MPConvStack_O, tv_top: 
 					mpconv_stack_push_o(mpstack, v)
 				}
 			} else {
-				ga_append_r(gap, ')')
+				ga_append(gap, ')')
 				mpconv_stack_pop_o(mpstack)
 			}
 			continue
@@ -20147,12 +20135,12 @@ encode_str_walker_o :: proc "c" (gap: ^Garray, mpstack: ^MPConvStack_O, tv_top: 
 			arg := (^rawptr)(&cur.data[0])^
 			todo := (^C.size_t)(&cur.data[16])^
 			if todo == 0 {
-				ga_append_r(gap, ']')
+				ga_append(gap, ']')
 				mpconv_stack_pop_o(mpstack)
 				continue
 			}
 			if arg != (^rawptr)(&cur.data[8])^ {
-				ga_concat_len_r(gap, cstring(", "), 2)
+				ga_concat_len(gap, cstring(", "), 2)
 			}
 			tv = (^Typval_T)(uintptr(arg))
 			(^rawptr)(&cur.data[0])^ = rawptr(uintptr(arg) + 16)
@@ -20190,14 +20178,14 @@ encode_vim_to_string_o :: proc "c" (gap: ^Garray, tv: ^Typval_T, objname: cstrin
 encode_tv2string :: proc "c" (tv: ^Typval_T, length: ^C.size_t) -> cstring {
 	context = runtime.default_context()
 	ga := Garray{}
-	ga_init_r2(&ga, 1, 80)
+	ga_init(&ga, 1, 80)
 	evs_ret := encode_vim_to_string_o(&ga, tv, cstring("encode_tv2string() argument"))
 	_ = evs_ret
 	nvim_odin_set_echo_emsg_e(false)
 	if length != nil {
 		length^ = C.size_t(ga.ga_len)
 	}
-	ga_append_r(&ga, 0)
+	ga_append(&ga, 0)
 	return transmute(cstring)(ga.ga_data)
 }
 
@@ -20206,17 +20194,17 @@ encode_tv2string :: proc "c" (tv: ^Typval_T, length: ^C.size_t) -> cstring {
 // JSON float (E474-FAIL on nan/inf, else %g).
 encode_json_float_o :: proc "c" (gap: ^Garray, flt: f64) -> C.int {
 	context = runtime.default_context()
-	if xfpclassify_e(flt) == FP_NAN_O {
+	if xfpclassify(flt) == FP_NAN_O {
 		emsg(cstring("E474: Unable to represent NaN value in JSON"))
 		return FAIL_E
 	}
-	if xfpclassify_e(flt) == FP_INFINITE_O {
+	if xfpclassify(flt) == FP_INFINITE_O {
 		emsg(cstring("E474: Unable to represent infinity in JSON"))
 		return FAIL_E
 	}
 	numbuf: [65]u8
 	n := vim_snprintf_safelen_e(&numbuf[0], 65, cstring("%g"), flt)
-	ga_concat_len_r(gap, transmute(cstring)(&numbuf[0]), n)
+	ga_concat_len(gap, transmute(cstring)(&numbuf[0]), n)
 	return OK_E
 }
 
@@ -20246,34 +20234,34 @@ convert_one_value_json_o :: proc "c" (gap: ^Garray, mpstack: ^MPConvStack_O, cur
 		b := rawptr(tv.vval)
 		length := tv_blob_len_o(b)
 		if length == 0 {
-			ga_concat_len_r(gap, cstring("[]"), 2)
+			ga_concat_len(gap, cstring("[]"), 2)
 		} else {
-			ga_append_r(gap, '[')
+			ga_append(gap, '[')
 			numbuf: [65]u8
 			i: C.int = 0
 			for i < length {
 				if i > 0 {
-					ga_concat_len_r(gap, cstring(", "), 2)
+					ga_concat_len(gap, cstring(", "), 2)
 				}
 				n := libc.snprintf(&numbuf[0], 65, cstring("%d"), C.int(tv_blob_get_o(b, i)))
-				ga_concat_len_r(gap, transmute(cstring)(&numbuf[0]), C.size_t(n))
+				ga_concat_len(gap, transmute(cstring)(&numbuf[0]), C.size_t(n))
 				i += 1
 			}
-			ga_append_r(gap, ']')
+			ga_append(gap, ']')
 		}
 	} else if tv.v_type == VAR_FUNC || tv.v_type == VAR_PARTIAL {
 		return conv_error_o(cstring("E474: Error while dumping %s, %s: attempt to dump function reference"), mpstack, objname)
 	} else if tv.v_type == VAR_LIST {
 		l := rawptr(tv.vval)
 		if l == nil || tv_list_len_o(l) == 0 {
-			ga_concat_len_r(gap, cstring("[]"), 2)
+			ga_concat_len(gap, cstring("[]"), 2)
 		} else {
 			saved := tv_list_copyid_o(l)
 			if (^C.int)(uintptr(l) + 68)^ == copyID {
 				encode_json_recurse_o(mpstack, l, C.int(MPConvStackValType_O.kMPConvList))
 			} else {
 				(^C.int)(uintptr(l) + 68)^ = copyID
-				ga_append_r(gap, '[')
+				ga_append(gap, '[')
 				v := MPConvStackVal_O{}
 				v.type = C.int(MPConvStackValType_O.kMPConvList)
 				v.tv = tv
@@ -20285,16 +20273,16 @@ convert_one_value_json_o :: proc "c" (gap: ^Garray, mpstack: ^MPConvStack_O, cur
 		}
 	} else if tv.v_type == VAR_BOOL {
 		if C.int(transmute(C.longlong)(tv.vval)) != 0 {
-			ga_concat_len_r(gap, cstring("true"), 4)
+			ga_concat_len(gap, cstring("true"), 4)
 		} else {
-			ga_concat_len_r(gap, cstring("false"), 5)
+			ga_concat_len(gap, cstring("false"), 5)
 		}
 	} else if tv.v_type == VAR_SPECIAL {
-		ga_concat_len_r(gap, cstring("null"), 4)
+		ga_concat_len(gap, cstring("null"), 4)
 	} else if tv.v_type == VAR_DICT {
 		d := rawptr(tv.vval)
 		if d == nil || (^C.size_t)(uintptr(d) + 24)^ == 0 {
-			ga_concat_len_r(gap, cstring("{}"), 2)
+			ga_concat_len(gap, cstring("{}"), 2)
 		} else if (^C.size_t)(uintptr(d) + 24)^ == 2 {
 			type_di := tv_dict_find(d, cstring("_TYPE"), 5)
 			val_di := tv_dict_find(d, cstring("_VAL"), 4)
@@ -20313,16 +20301,16 @@ convert_one_value_json_o :: proc "c" (gap: ^Garray, mpstack: ^MPConvStack_O, cur
 				if i < 8 {
 					vv := (^Typval_T)(uintptr(val_di))
 					if i == KMPNIL_O {
-						ga_concat_len_r(gap, cstring("null"), 4)
+						ga_concat_len(gap, cstring("null"), 4)
 						special_done = true
 					} else if i == KMPBOOLEAN_O {
 						if vv.v_type != VAR_NUMBER {
 							special_fail = true
 						} else {
 							if transmute(C.longlong)(vv.vval) != 0 {
-								ga_concat_len_r(gap, cstring("true"), 4)
+								ga_concat_len(gap, cstring("true"), 4)
 							} else {
-								ga_concat_len_r(gap, cstring("false"), 5)
+								ga_concat_len(gap, cstring("false"), 5)
 							}
 							special_done = true
 						}
@@ -20349,7 +20337,7 @@ convert_one_value_json_o :: proc "c" (gap: ^Garray, mpstack: ^MPConvStack_O, cur
 									if transmute(C.longlong)(stv.vval) > 0 {
 										numbuf: [65]u8
 										n := libc.snprintf(&numbuf[0], 65, cstring("%llu"), number)
-										ga_concat_len_r(gap, transmute(cstring)(&numbuf[0]), C.size_t(n))
+										ga_concat_len(gap, transmute(cstring)(&numbuf[0]), C.size_t(n))
 									} else {
 										encode_str_number_o(gap, -i64(number))
 									}
@@ -20394,7 +20382,7 @@ convert_one_value_json_o :: proc "c" (gap: ^Garray, mpstack: ^MPConvStack_O, cur
 								special_done = true
 							} else {
 								(^C.int)(uintptr(al) + 68)^ = copyID
-								ga_append_r(gap, '[')
+								ga_append(gap, '[')
 								v := MPConvStackVal_O{}
 								v.type = C.int(MPConvStackValType_O.kMPConvList)
 								v.tv = tv
@@ -20411,7 +20399,7 @@ convert_one_value_json_o :: proc "c" (gap: ^Garray, mpstack: ^MPConvStack_O, cur
 						} else {
 							vl := rawptr(vv.vval)
 							if vl == nil || tv_list_len_o(vl) == 0 {
-								ga_concat_len_r(gap, cstring("{}"), 2)
+								ga_concat_len(gap, cstring("{}"), 2)
 								special_done = true
 							} else {
 								ok := true
@@ -20433,7 +20421,7 @@ convert_one_value_json_o :: proc "c" (gap: ^Garray, mpstack: ^MPConvStack_O, cur
 										special_done = true
 									} else {
 										(^C.int)(uintptr(vl) + 68)^ = copyID
-										ga_append_r(gap, '{')
+										ga_append(gap, '{')
 										v := MPConvStackVal_O{}
 										v.type = C.int(MPConvStackValType_O.kMPConvPairs)
 										v.tv = tv
@@ -20491,7 +20479,7 @@ convert_one_value_json_o :: proc "c" (gap: ^Garray, mpstack: ^MPConvStack_O, cur
 					encode_json_recurse_o(mpstack, d, C.int(MPConvStackValType_O.kMPConvDict))
 				} else {
 					(^C.int)(uintptr(d) + 12)^ = copyID
-					ga_append_r(gap, '{')
+					ga_append(gap, '{')
 					v := MPConvStackVal_O{}
 					v.type = C.int(MPConvStackValType_O.kMPConvDict)
 					v.tv = tv
@@ -20509,7 +20497,7 @@ convert_one_value_json_o :: proc "c" (gap: ^Garray, mpstack: ^MPConvStack_O, cur
 				encode_json_recurse_o(mpstack, d, C.int(MPConvStackValType_O.kMPConvDict))
 			} else {
 				(^C.int)(uintptr(d) + 12)^ = copyID
-				ga_append_r(gap, '{')
+				ga_append(gap, '{')
 				v := MPConvStackVal_O{}
 				v.type = C.int(MPConvStackValType_O.kMPConvDict)
 				v.tv = tv
@@ -20537,13 +20525,13 @@ encode_json_walker_o :: proc "c" (gap: ^Garray, mpstack: ^MPConvStack_O, tv_top:
 			if todo == 0 {
 				d := (^rawptr)(&cur.data[0])^
 				(^C.int)(uintptr(d) + 12)^ = cur.saved_copyID
-				ga_append_r(gap, '}')
+				ga_append(gap, '}')
 				mpconv_stack_pop_o(mpstack)
 				continue
 			}
 			d := (^rawptr)(&cur.data[0])^
 			if todo != (^C.size_t)(uintptr(d) + 24)^ {
-				ga_concat_len_r(gap, cstring(", "), 2)
+				ga_concat_len(gap, cstring(", "), 2)
 			}
 			hi := (^rawptr)(&cur.data[16])^
 			for (^rawptr)(uintptr(hi) + 8)^ == nil || (^rawptr)(uintptr(hi) + 8)^ == rawptr(&hash_removed_c) {
@@ -20558,20 +20546,20 @@ encode_json_walker_o :: proc "c" (gap: ^Garray, mpstack: ^MPConvStack_O, tv_top:
 				mpconv_stack_destroy_o(mpstack)
 				return FAIL_E
 			}
-			ga_concat_len_r(gap, cstring(": "), 2)
+			ga_concat_len(gap, cstring(": "), 2)
 			tv = (^Typval_T)(uintptr(di))
 		} else if cur.type == C.int(MPConvStackValType_O.kMPConvList) {
 			li := (^rawptr)(&cur.data[8])^
 			if li == nil {
 				l := (^rawptr)(&cur.data[0])^
 				tv_list_set_copyid_o(l, cur.saved_copyID)
-				ga_append_r(gap, ']')
+				ga_append(gap, ']')
 				mpconv_stack_pop_o(mpstack)
 				continue
 			}
 			l := (^rawptr)(&cur.data[0])^
 			if li != tv_list_first_o(l) {
-				ga_concat_len_r(gap, cstring(", "), 2)
+				ga_concat_len(gap, cstring(", "), 2)
 			}
 			tv = (^Typval_T)(uintptr(li) + 16)
 			(^rawptr)(&cur.data[8])^ = (^rawptr)(uintptr(li))^
@@ -20580,13 +20568,13 @@ encode_json_walker_o :: proc "c" (gap: ^Garray, mpstack: ^MPConvStack_O, tv_top:
 			if li == nil {
 				l := (^rawptr)(&cur.data[0])^
 				tv_list_set_copyid_o(l, cur.saved_copyID)
-				ga_append_r(gap, '}')
+				ga_append(gap, '}')
 				mpconv_stack_pop_o(mpstack)
 				continue
 			}
 			l := (^rawptr)(&cur.data[0])^
 			if li != tv_list_first_o(l) {
-				ga_concat_len_r(gap, cstring(", "), 2)
+				ga_concat_len(gap, cstring(", "), 2)
 			}
 			pair := rawptr((^Typval_T)(uintptr(li) + 16).vval)
 			ktv := (^Typval_T)(uintptr(tv_list_first_o(pair)) + 16)
@@ -20599,7 +20587,7 @@ encode_json_walker_o :: proc "c" (gap: ^Garray, mpstack: ^MPConvStack_O, tv_top:
 				mpconv_stack_destroy_o(mpstack)
 				return FAIL_E
 			}
-			ga_concat_len_r(gap, cstring(": "), 2)
+			ga_concat_len(gap, cstring(": "), 2)
 			tv = (^Typval_T)(uintptr(tv_list_last_o(pair)) + 16)
 			(^rawptr)(&cur.data[8])^ = (^rawptr)(uintptr(li))^
 		} else if cur.type == C.int(MPConvStackValType_O.kMPConvPartial) || cur.type == C.int(MPConvStackValType_O.kMPConvPartialList) {
@@ -20609,12 +20597,12 @@ encode_json_walker_o :: proc "c" (gap: ^Garray, mpstack: ^MPConvStack_O, tv_top:
 			arg := (^rawptr)(&cur.data[0])^
 			todo := (^C.size_t)(&cur.data[16])^
 			if todo == 0 {
-				ga_append_r(gap, ']')
+				ga_append(gap, ']')
 				mpconv_stack_pop_o(mpstack)
 				continue
 			}
 			if arg != (^rawptr)(&cur.data[8])^ {
-				ga_concat_len_r(gap, cstring(", "), 2)
+				ga_concat_len(gap, cstring(", "), 2)
 			}
 			tv = (^Typval_T)(uintptr(arg))
 			(^rawptr)(&cur.data[0])^ = rawptr(uintptr(arg) + 16)
@@ -20647,16 +20635,16 @@ encode_vim_to_json_o :: proc "c" (gap: ^Garray, tv: ^Typval_T, objname: cstring)
 encode_tv2json :: proc "c" (tv: ^Typval_T, length: ^C.size_t) -> cstring {
 	context = runtime.default_context()
 	ga := Garray{}
-	ga_init_r2(&ga, 1, 80)
+	ga_init(&ga, 1, 80)
 	evj_ret := encode_vim_to_json_o(&ga, tv, cstring("encode_tv2json() argument"))
 	if evj_ret == FAIL_E {
-		ga_clear_r(&ga)
+		ga_clear(&ga)
 	}
 	nvim_odin_set_echo_emsg_e(false)
 	if length != nil {
 		length^ = C.size_t(ga.ga_len)
 	}
-	ga_append_r(&ga, 0)
+	ga_append(&ga, 0)
 	return transmute(cstring)(ga.ga_data)
 }
 
@@ -22338,15 +22326,15 @@ typval2string_o :: proc "c" (tv: ^Typval_T, join_list: bool) -> cstring {
 	context = runtime.default_context()
 	if join_list && tv.v_type == VAR_LIST {
 		ga := Garray{}
-		ga_init_r2(&ga, 1, 80)
+		ga_init(&ga, 1, 80)
 		l := rawptr(tv.vval)
 		if l != nil {
 			tv_list_join(&ga, l, cstring("\n"))
 			if tv_list_len_o(l) > 0 {
-				ga_append_r(&ga, NL_O)
+				ga_append(&ga, NL_O)
 			}
 		}
-		ga_append_r(&ga, 0)
+		ga_append(&ga, 0)
 		return transmute(cstring)(ga.ga_data)
 	} else if tv.v_type == VAR_LIST || tv.v_type == VAR_DICT {
 		return encode_tv2string(tv, nil)
@@ -23018,13 +23006,13 @@ eval_number_o :: proc "c" (arg: ^cstring, rettv: ^Typval_T, evaluate: bool, want
 			if !ascii_isxdigit_o(([^]u8)(bp + 1)[0]) {
 				if blob != nil {
 					emsg(cstring(E973_S))
-					ga_clear_r((^Garray)(blob))
+					ga_clear((^Garray)(blob))
 					xfree(blob)
 				}
 				return FAIL_E
 			}
 			if blob != nil {
-				ga_append_r((^Garray)(blob), u8((hex2nr_e(C.int(([^]u8)(bp)[0])) << 4) + hex2nr_e(C.int(([^]u8)(bp + 1)[0]))))
+				ga_append((^Garray)(blob), u8((hex2nr_e(C.int(([^]u8)(bp)[0])) << 4) + hex2nr_e(C.int(([^]u8)(bp + 1)[0]))))
 			}
 			if ([^]u8)(bp + 2)[0] == '.' && ascii_isxdigit_o(([^]u8)(bp + 3)[0]) {
 				bp += 1
@@ -23814,7 +23802,7 @@ eval_interp_string :: proc "c" (arg: ^cstring, rettv: ^Typval_T, evaluate: bool)
 	context = runtime.default_context()
 	ret: C.int = OK_E
 	ga := Garray{}
-	ga_init_r2(&ga, 1, 80)
+	ga_init(&ga, 1, 80)
 	arg^ = transmute(cstring)(uintptr(rawptr(arg^)) + 1)
 	quote := ([^]u8)(arg^)[0]
 	arg^ = transmute(cstring)(uintptr(rawptr(arg^)) + 1)
@@ -23829,7 +23817,7 @@ eval_interp_string :: proc "c" (arg: ^cstring, rettv: ^Typval_T, evaluate: bool)
 			break
 		}
 		if evaluate {
-			ga_concat_e(&ga, transmute(cstring)(tv.vval))
+			ga_concat(&ga, transmute(cstring)(tv.vval))
 			tv_clear(&tv)
 		}
 		if ([^]u8)(arg^)[0] != '{' {
@@ -23845,7 +23833,7 @@ eval_interp_string :: proc "c" (arg: ^cstring, rettv: ^Typval_T, evaluate: bool)
 	}
 	rettv.v_type = VAR_STRING
 	if ret != FAIL_E && evaluate {
-		ga_append_r(&ga, 0)
+		ga_append(&ga, 0)
 	}
 	rettv.vval = ga.ga_data
 	return OK_E
@@ -24746,7 +24734,7 @@ do_string_sub :: proc "c" (str: cstring, length: C.size_t, pat: cstring, sub: cs
 	ga := Garray{}
 	save_cpo := p_cpo
 	p_cpo = empty_string_opt()
-	ga_init_r2(&ga, 1, 200)
+	ga_init(&ga, 1, 200)
 	regmatch.rm_ic = p_ic
 	regmatch.regprog = vim_regcomp(pat, RE_MAGIC + RE_STRING_O)
 	if regmatch.regprog != nil {
@@ -24768,10 +24756,10 @@ do_string_sub :: proc "c" (str: cstring, length: C.size_t, pat: cstring, sub: cs
 			}
 			sublen = vim_regsub_e(&regmatch, sub, expr, transmute(^u8)(tail), 0, REGSUB_MAGIC_O)
 			if sublen <= 0 {
-				ga_clear_r(&ga)
+				ga_clear(&ga)
 				break
 			}
-			ga_grow_r(&ga, C.int(uintptr(rawptr(end)) - uintptr(rawptr(tail))) + sublen - C.int(uintptr(rawptr(regmatch.endp[0])) - uintptr(rawptr(regmatch.startp[0]))))
+			ga_grow(&ga, C.int(uintptr(rawptr(end)) - uintptr(rawptr(tail))) + sublen - C.int(uintptr(rawptr(regmatch.endp[0])) - uintptr(rawptr(regmatch.startp[0]))))
 			i := C.int(uintptr(rawptr(regmatch.startp[0])) - uintptr(rawptr(tail)))
 			libc.memmove(rawptr(uintptr(ga.ga_data) + uintptr(ga.ga_len)), rawptr(transmute(^u8)(tail)), C.size_t(i))
 			vim_regsub_e(&regmatch, sub, expr, transmute(^u8)(uintptr(ga.ga_data) + uintptr(ga.ga_len) + uintptr(i)), sublen, REGSUB_COPY_O + REGSUB_MAGIC_O)
@@ -24800,7 +24788,7 @@ do_string_sub :: proc "c" (str: cstring, length: C.size_t, pat: cstring, sub: cs
 		length_out = length
 	}
 	ret := transmute(cstring)(xstrnsave_c(str_out, length_out))
-	ga_clear_r(&ga)
+	ga_clear(&ga)
 	if p_cpo == empty_string_opt() {
 		p_cpo = save_cpo
 	} else {
@@ -25285,7 +25273,7 @@ ex_execute :: proc "c" (eap: rawptr) {
 	rettv := Typval_T{}
 	ret: C.int = OK_E
 	ga := Garray{}
-	ga_init_r2(&ga, 1, 80)
+	ga_init(&ga, 1, 80)
 	skip := (^bool)(uintptr(eap) + EXARG_SKIP_OFF)^
 	if skip {
 		emsg_skip += 1
@@ -25311,7 +25299,7 @@ ex_execute :: proc "c" (eap: rawptr) {
 				need_free = true
 			}
 			length := C.size_t(libc.strlen(argstr))
-			ga_grow_r(&ga, C.int(length) + 2)
+			ga_grow(&ga, C.int(length) + 2)
 			if ga.ga_len > 0 {
 				([^]u8)(ga.ga_data)[ga.ga_len] = ' '
 				ga.ga_len += 1
@@ -25343,7 +25331,7 @@ ex_execute :: proc "c" (eap: rawptr) {
 			do_cmdline(transmute(cstring)(ga.ga_data), transmute(LineGetter)((^rawptr)(uintptr(eap) + EXARG_GETLINE_OFF)^), (^rawptr)(uintptr(eap) + EXARG_COOKIE_OFF)^, DOCMD_NOWAIT_O | DOCMD_VERBOSE_O)
 		}
 	}
-	ga_clear_r(&ga)
+	ga_clear(&ga)
 	if skip {
 		emsg_skip -= 1
 	}
@@ -26776,7 +26764,7 @@ eval_addblob_o :: proc "c" (tv1: ^Typval_T, tv2: ^Typval_T) {
 	len2 := i64(tv_blob_len_o(b2))
 	totallen := len1 + len2
 	if totallen >= 0 && totallen <= i64(max(C.int)) {
-		ga_grow_r((^Garray)(b), C.int(totallen))
+		ga_grow((^Garray)(b), C.int(totallen))
 		if len1 > 0 {
 			libc.memmove(rawptr((^rawptr)(uintptr(b) + 16)^), (^rawptr)(uintptr(b1) + 16)^, C.size_t(len1))
 		}
@@ -29501,7 +29489,7 @@ set_argv_var :: proc "c" (argv: ^^u8, argc: C.int) {
 callback_reader_free_o :: proc "c" (reader: ^CallbackReader_E) {
 	context = runtime.default_context()
 	callback_free(&reader.cb)
-	ga_clear_r(transmute(^Garray)(uintptr(reader) + 24))
+	ga_clear(transmute(^Garray)(uintptr(reader) + 24))
 }
 
 // Job-callback options reader (eval.c public).
