@@ -3975,7 +3975,7 @@ win_close :: proc "c"(win: rawptr, free_buf: bool, force: bool) -> C.int {
 			dwin = (^rawptr)(uintptr(dwin) + W_NEXT_OFF)^
 		}
 		if diffcount == 1 {
-			do_cmdline_cmd_r(cstring("diffoff!"))
+			do_cmdline_cmd(cstring("diffoff!"))
 		}
 	}
 	(^bool)(uintptr(curwin) + W_POS_CHANGED_OFF)^ = true
@@ -7169,16 +7169,16 @@ do_window :: proc "c"(nchar: C.int, prenum_in: C.int, xchar_in: C.int) {
 	case Ctrl_Q_O, 'q':
 		reset_VIsual_and_resel_r() // stop Visual mode
 		cmd_with_count_o(cstring("quit"), &cbuf[0], size_of(cbuf), C.longlong(prenum))
-		do_cmdline_cmd_r(transmute(cstring)(&cbuf[0]))
+		do_cmdline_cmd(transmute(cstring)(&cbuf[0]))
 	// close current window
 	case Ctrl_C, 'c':
 		reset_VIsual_and_resel_r() // stop Visual mode
 		cmd_with_count_o(cstring("close"), &cbuf[0], size_of(cbuf), C.longlong(prenum))
-		do_cmdline_cmd_r(transmute(cstring)(&cbuf[0]))
+		do_cmdline_cmd(transmute(cstring)(&cbuf[0]))
 	// close preview window
 	case Ctrl_Z_O, 'z':
 		reset_VIsual_and_resel_r() // stop Visual mode
-		do_cmdline_cmd_r(cstring("pclose"))
+		do_cmdline_cmd(cstring("pclose"))
 	// cursor to preview window
 	case 'P':
 		wp: rawptr = nil
@@ -7199,7 +7199,7 @@ do_window :: proc "c"(nchar: C.int, prenum_in: C.int, xchar_in: C.int) {
 	case Ctrl_O_O, 'o':
 		reset_VIsual_and_resel_r() // stop Visual mode
 		cmd_with_count_o(cstring("only"), &cbuf[0], size_of(cbuf), C.longlong(prenum))
-		do_cmdline_cmd_r(transmute(cstring)(&cbuf[0]))
+		do_cmdline_cmd(transmute(cstring)(&cbuf[0]))
 	// cursor to next/previous window with wrap around
 	case Ctrl_W, 'w', 'W':
 		if firstwin == lastwin_g && prenum != 1 { // just one window
@@ -7474,7 +7474,7 @@ do_window_newwindow :: proc "c"(nchar: C.int, prenum: C.int) {
 		xstrlcat(&cbuf[0], transmute(^u8)(cstring("v")), size_of(cbuf))
 	}
 	xstrlcat(&cbuf[0], transmute(^u8)(cstring("new")), size_of(cbuf))
-	do_cmdline_cmd_r(transmute(cstring)(&cbuf[0]))
+	do_cmdline_cmd(transmute(cstring)(&cbuf[0]))
 }
 
 // ── Batch 45: viewport + ui flush ────────────────────────────────────────────

@@ -170,6 +170,10 @@ static void didset_options_sctx(int opt_flags, int *buf)
 
 static void didset_options_sctx(int opt_flags, int *buf);
 
+// Forward declaration (owned by Odin since ex_docmd.c Batch 10;
+// the options table below takes its address).
+const char *did_set_findfunc(optset_T *args);
+
 
 // options[] is initialized in options.generated.h.
 // The options with a NULL variable are 'hidden': a set command for them is

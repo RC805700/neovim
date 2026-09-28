@@ -161,7 +161,7 @@ foreign nvim {
   msg_row: c.int
   Rows: c.int
   Columns: c.int
-  msg_scroll: bool
+  msg_scroll: c.int
   no_wait_return: c.int // C EXTERN int (globals.h:191), NOT bool
   debug_break_level: c.int
   starting: c.int
@@ -758,7 +758,7 @@ main :: proc() {
   default_grid_alloc()
   set_init_2(headless_mode)
 
-  msg_scroll = true
+  msg_scroll = 1
   no_wait_return = 1
   init_highlight(true, false)
   ui_comp_syn_init()
@@ -864,7 +864,7 @@ main :: proc() {
   starting = NO_BUFFERS
   no_wait_return = 0
   if !exmode_active {
-    msg_scroll = false
+    msg_scroll = 0
   }
 
   if params.edit_type == c.int(EditType.EDIT_STDIN) && !recoverymode {
@@ -927,7 +927,5 @@ main :: proc() {
 // ── C function declarations for filetype/syntax enable ──
 @(link_prefix = "", default_calling_convention = "c")
 foreign nvim {
-  filetype_plugin_enable :: proc() ---
-  filetype_maybe_enable :: proc() ---
   syn_maybe_enable :: proc() ---
 }

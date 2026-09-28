@@ -140,12 +140,6 @@ foreign _ {
 	@(link_name = "source_runtime")
 	source_runtime :: proc "c" (name: ^u8, flags: C.int) -> C.int ---
 
-	@(link_name = "do_cmdline_cmd")
-	do_cmdline_cmd :: proc "c" (cmd: ^u8) -> C.int ---
-
-	@(link_name = "getline_equal")
-	getline_equal :: proc "c" (fgetline: LineGetter, cookie: rawptr, func: LineGetter) -> bool ---
-
 	@(link_name = "getsourceline")
 	getsourceline :: proc "c" (c: C.int, cookie: rawptr, indent: C.int, do_concat: bool) -> ^u8 ---
 
@@ -2165,7 +2159,7 @@ keymap_init :: proc "c" () -> ^u8 {
 	p_keymap := p_keymap_slot^ // the char* value stored in b_p_keymap
 	if p_keymap == nil || p_keymap^ == 0 {
 		keymap_unload()
-		do_cmdline_cmd(transmute(^u8)(cstring("unlet! b:keymap_name")))
+		do_cmdline_cmd(cstring("unlet! b:keymap_name"))
 	} else {
 		buflen := len(cstring(p_keymap)) + len(cstring(p_enc)) + 14
 		buf := (^u8)(xmalloc(C.size_t(buflen)))

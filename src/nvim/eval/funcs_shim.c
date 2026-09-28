@@ -26,6 +26,8 @@
 static void float_op_wrapper(typval_T *argvars, typval_T *rettv, EvalFuncData fptr);
 static void api_wrapper(typval_T *argvars, typval_T *rettv, EvalFuncData fptr);
 static void lua_wrapper(typval_T *argvars, typval_T *rettv, EvalFuncData fptr);
+// Forward declaration (owned by Odin since ex_docmd.c Batch 6; table takes its address).
+void f_fullcommand(typval_T *argvars, typval_T *rettv, EvalFuncData fptr);
 
 #include "funcs.generated.h"
 

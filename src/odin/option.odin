@@ -3348,8 +3348,6 @@ foreign _ {
 	free_operatorfunc_option :: proc "c" () ---
 	@(link_name = "free_tagfunc_option")
 	free_tagfunc_option :: proc "c" () ---
-	@(link_name = "free_findfunc_option")
-	free_findfunc_option :: proc "c" () ---
 	@(link_name = "nvim_odin_clear_p_term_ttytype")
 	nvim_odin_clear_p_term_ttytype :: proc "c" () ---
 	@(link_name = "fenc_default")

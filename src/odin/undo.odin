@@ -197,8 +197,6 @@ foreign _ {
 	text_locked_r :: proc "c" () -> bool ---
 	@(link_name = "text_locked_msg")
 	text_locked_msg_r :: proc "c" () ---
-	@(link_name = "expr_map_locked")
-	expr_map_locked_r :: proc "c" () -> bool ---
 	@(link_name = "virtual_active")
 	virtual_active_r :: proc "c" (wp: rawptr) -> bool ---
 	@(link_name = "coladvance")
@@ -429,7 +427,7 @@ undo_allowed :: proc "c" (buf: rawptr) -> bool {
 	}
 
 	// Don't allow changes while editing the cmdline.
-	if textlock != 0 || expr_map_locked_r() {
+	if textlock != 0 || expr_map_locked() {
 		emsg(e_textlock)
 		return false
 	}

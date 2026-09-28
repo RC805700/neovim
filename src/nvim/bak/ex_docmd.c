@@ -143,8 +143,8 @@ static const char e_no_line_number_to_use_for_sflnum[]
 static const char e_no_script_file_name_to_substitute_for_script[]
   = N_("E1274: No script file name to substitute for \"<script>\"");
 
-static int quitmore = 0;
-static bool ex_pressedreturn = false;
+extern int quitmore;
+extern bool ex_pressedreturn;
 
 // Struct for storing a line inside a while/for loop
 typedef struct {
@@ -186,7 +186,7 @@ struct dbg_stuff {
 // Declare cmdnames[].
 #include "ex_cmds_defs.generated.h"
 
-static char dollar_command[2] = { '$', 0 };
+extern char dollar_command[2];
 
 static void save_dbg_stuff(struct dbg_stuff *dsp)
 {
@@ -355,7 +355,7 @@ static void msg_verbose_cmd(linenr_T lnum, char *cmd)
   no_wait_return--;
 }
 
-static int cmdline_call_depth = 0;  ///< recursiveness
+extern int cmdline_call_depth;  ///< recursiveness
 
 /// Start executing an Ex command line.
 ///
@@ -2468,20 +2468,10 @@ doend:
   return ea.nextcmd;
 }
 
-static char ex_error_buf[MSG_BUF_LEN];
-
 /// @return an error message with argument included.
 /// Uses a static buffer, only the last error will be kept.
 /// "msg" will be translated, caller should use N_().
-char *ex_errmsg(const char *const msg, ...)
-  FUNC_ATTR_NONNULL_ALL FUNC_ATTR_PRINTF(1, 2)
-{
-  va_list ap;
-  va_start(ap, msg);
-  vim_vsnprintf(ex_error_buf, MSG_BUF_LEN, _(msg), ap);
-  va_end(ap);
-  return ex_error_buf;
-}
+/// (Odin port: ex_docmd.odin owns ex_errmsg + ex_error_buf; C callers link there.)
 
 /// The "+" string used in place of an empty command in Ex mode.
 /// This string is used in pointer comparison.
@@ -3826,7 +3816,8 @@ void ex_ni(exarg_T *eap)
 
 /// Stub function for script command which is Not Implemented. NI!
 /// Skips over ":perl <<EOF" constructs.
-static void ex_script_ni(exarg_T *eap)
+#pragma weak ex_script_ni
+void ex_script_ni(exarg_T *eap)
 {
   if (!eap->skip) {
     ex_ni(eap);
@@ -4594,7 +4585,8 @@ theend:
   return tab_number;
 }
 
-static void ex_autocmd(exarg_T *eap)
+#pragma weak ex_autocmd
+void ex_autocmd(exarg_T *eap)
 {
   // Disallow autocommands in secure mode.
   if (secure) {
@@ -4608,7 +4600,8 @@ static void ex_autocmd(exarg_T *eap)
 }
 
 /// ":doautocmd": Apply the automatic commands to the current buffer.
-static void ex_doautocmd(exarg_T *eap)
+#pragma weak ex_doautocmd
+void ex_doautocmd(exarg_T *eap)
 {
   char *arg = eap->arg;
   int call_do_modelines = check_nomodeline(&arg);
@@ -4624,7 +4617,8 @@ static void ex_doautocmd(exarg_T *eap)
 /// :[N]bunload[!] [N] [bufname] unload buffer
 /// :[N]bdelete[!] [N] [bufname] delete buffer from buffer list
 /// :[N]bwipeout[!] [N] [bufname] delete buffer really
-static void ex_bunload(exarg_T *eap)
+#pragma weak ex_bunload
+void ex_bunload(exarg_T *eap)
 {
   eap->errmsg = do_bufdel(eap->cmdidx == CMD_bdelete
                           ? DOBUF_DEL
@@ -4637,13 +4631,15 @@ static void ex_bunload(exarg_T *eap)
 
 /// :[N]buffer [N]       to buffer N
 /// :[N]sbuffer [N]      to buffer N
-static void ex_buffer(exarg_T *eap)
+#pragma weak ex_buffer
+void ex_buffer(exarg_T *eap)
 {
   do_exbuffer(eap);
 }
 
 /// ":buffer" command and alike.
-static void do_exbuffer(exarg_T *eap)
+#pragma weak do_exbuffer
+void do_exbuffer(exarg_T *eap)
 {
   if (*eap->arg) {
     eap->errmsg = ex_errmsg(e_trailing_arg, eap->arg);
@@ -4661,7 +4657,8 @@ static void do_exbuffer(exarg_T *eap)
 
 /// :[N]bmodified [N]    to next mod. buffer
 /// :[N]sbmodified [N]   to next mod. buffer
-static void ex_bmodified(exarg_T *eap)
+#pragma weak ex_bmodified
+void ex_bmodified(exarg_T *eap)
 {
   goto_buffer(eap, DOBUF_MOD, FORWARD, (int)eap->line2);
   if (eap->do_ecmd_cmd != NULL) {
@@ -4671,7 +4668,8 @@ static void ex_bmodified(exarg_T *eap)
 
 /// :[N]bnext [N]        to next buffer
 /// :[N]sbnext [N]       split and to next buffer
-static void ex_bnext(exarg_T *eap)
+#pragma weak ex_bnext
+void ex_bnext(exarg_T *eap)
 {
   goto_buffer(eap, DOBUF_CURRENT, FORWARD, (int)eap->line2);
   if (eap->do_ecmd_cmd != NULL) {
@@ -4683,7 +4681,8 @@ static void ex_bnext(exarg_T *eap)
 /// :[N]bprevious [N]    to previous buffer
 /// :[N]sbNext [N]       split and to previous buffer
 /// :[N]sbprevious [N]   split and to previous buffer
-static void ex_bprevious(exarg_T *eap)
+#pragma weak ex_bprevious
+void ex_bprevious(exarg_T *eap)
 {
   goto_buffer(eap, DOBUF_CURRENT, BACKWARD, (int)eap->line2);
   if (eap->do_ecmd_cmd != NULL) {
@@ -4695,7 +4694,8 @@ static void ex_bprevious(exarg_T *eap)
 /// :bfirst              to first buffer
 /// :sbrewind            split and to first buffer
 /// :sbfirst             split and to first buffer
-static void ex_brewind(exarg_T *eap)
+#pragma weak ex_brewind
+void ex_brewind(exarg_T *eap)
 {
   goto_buffer(eap, DOBUF_FIRST, FORWARD, 0);
   if (eap->do_ecmd_cmd != NULL) {
@@ -4705,7 +4705,8 @@ static void ex_brewind(exarg_T *eap)
 
 /// :blast               to last buffer
 /// :sblast              split and to last buffer
-static void ex_blast(exarg_T *eap)
+#pragma weak ex_blast
+void ex_blast(exarg_T *eap)
 {
   goto_buffer(eap, DOBUF_LAST, BACKWARD, 0);
   if (eap->do_ecmd_cmd != NULL) {
@@ -4788,7 +4789,8 @@ char *get_command_name(expand_T *xp, int idx)
   return cmdnames[idx].cmd_name;
 }
 
-static void ex_colorscheme(exarg_T *eap)
+#pragma weak ex_colorscheme
+void ex_colorscheme(exarg_T *eap)
 {
   if (*eap->arg == NUL) {
     char *expr = xstrdup("g:colors_name");
@@ -4810,7 +4812,8 @@ static void ex_colorscheme(exarg_T *eap)
   }
 }
 
-static void ex_highlight(exarg_T *eap)
+#pragma weak ex_highlight
+void ex_highlight(exarg_T *eap)
 {
   if (*eap->arg == NUL && eap->cmd[2] == '!') {
     msg(_("Greetings, Vim user!"), 0);
@@ -4863,7 +4866,8 @@ bool before_quit_autocmds(win_T *wp, bool quit_all, bool forceit)
 
 /// ":quit": quit current window, quit Vim if the last window is closed.
 /// ":{nr}quit": quit window {nr}
-static void ex_quit(exarg_T *eap)
+#pragma weak ex_quit
+void ex_quit(exarg_T *eap)
 {
   // Don't quit while editing the command line.
   if (text_locked()) {
@@ -4924,7 +4928,8 @@ static void ex_quit(exarg_T *eap)
 }
 
 /// ":cquit".
-static void ex_cquit(exarg_T *eap)
+#pragma weak ex_cquit
+void ex_cquit(exarg_T *eap)
   FUNC_ATTR_NORETURN
 {
   // this does not always pass on the exit code to the Manx compiler. why?
@@ -4951,7 +4956,8 @@ int before_quit_all(exarg_T *eap)
 }
 
 /// ":qall": try to quit all windows
-static void ex_quitall(exarg_T *eap)
+#pragma weak ex_quitall
+void ex_quitall(exarg_T *eap)
 {
   if (before_quit_all(eap) == FAIL) {
     return;
@@ -4967,7 +4973,8 @@ static void ex_quitall(exarg_T *eap)
 /// ":restart": restart the Nvim server (using ":qall!").
 /// ":restart +cmd": restart the Nvim server using ":cmd".
 /// ":restart +cmd <command>": restart the Nvim server using ":cmd" and runs <command> in the new server.
-static void ex_restart(exarg_T *eap)
+#pragma weak ex_restart
+void ex_restart(exarg_T *eap)
 {
   if (!eap->forceit) {
     dict_T *extra_d = tv_dict_alloc();  // Pass +cmd in the `extra` param of nlua_call_excmd.
@@ -5231,7 +5238,8 @@ fail_1:
 }
 
 /// ":close": close current window, unless it is the last one
-static void ex_close(exarg_T *eap)
+#pragma weak ex_close
+void ex_close(exarg_T *eap)
 {
   win_T *win = NULL;
   int winnr = 0;
@@ -5255,7 +5263,8 @@ static void ex_close(exarg_T *eap)
 }
 
 /// ":pclose": Close any preview window.
-static void ex_pclose(exarg_T *eap)
+#pragma weak ex_pclose
+void ex_pclose(exarg_T *eap)
 {
   FOR_ALL_WINDOWS_IN_TAB(win, curtab) {
     if (win->w_p_pvw) {
@@ -5308,7 +5317,8 @@ void ex_win_close(int forceit, win_T *win, tabpage_T *tp)
 
 /// ":tabclose": close current tab page, unless it is the last one.
 /// ":tabclose N": close tab page N.
-static void ex_tabclose(exarg_T *eap)
+#pragma weak ex_tabclose
+void ex_tabclose(exarg_T *eap)
 {
   if (first_tabpage->tp_next == NULL) {
     emsg(_("E784: Cannot close last tab page"));
@@ -5338,7 +5348,8 @@ static void ex_tabclose(exarg_T *eap)
 }
 
 /// ":tabonly": close all tab pages except the current one
-static void ex_tabonly(exarg_T *eap)
+#pragma weak ex_tabonly
+void ex_tabonly(exarg_T *eap)
 {
   if (first_tabpage->tp_next == NULL) {
     msg(_("Already only one tab page"), 0);
@@ -5447,7 +5458,8 @@ void tabpage_close_other(tabpage_T *tp, int forceit)
 }
 
 /// ":only".
-static void ex_only(exarg_T *eap)
+#pragma weak ex_only
+void ex_only(exarg_T *eap)
 {
   if (window_layout_locked(CMD_only)) {
     return;
@@ -5469,7 +5481,8 @@ static void ex_only(exarg_T *eap)
   close_others(true, eap->forceit, false);
 }
 
-static void ex_hide(exarg_T *eap)
+#pragma weak ex_hide
+void ex_hide(exarg_T *eap)
 {
   // ":hide" or ":hide | cmd": hide current window
   if (eap->skip) {
@@ -5502,7 +5515,8 @@ static void ex_hide(exarg_T *eap)
 }
 
 /// ":stop" and ":suspend": Suspend Vim.
-static void ex_stop(exarg_T *eap)
+#pragma weak ex_stop
+void ex_stop(exarg_T *eap)
 {
   if (!eap->forceit) {
     autowrite_all();
@@ -5513,7 +5527,8 @@ static void ex_stop(exarg_T *eap)
 }
 
 /// ":exit", ":xit" and ":wq": Write file and quit the current window.
-static void ex_exit(exarg_T *eap)
+#pragma weak ex_exit
+void ex_exit(exarg_T *eap)
 {
   // Don't quit while editing the command line.
   if (text_locked()) {
@@ -5568,19 +5583,22 @@ static void ex_print(exarg_T *eap)
   ex_no_reprint = true;
 }
 
-static void ex_goto(exarg_T *eap)
+#pragma weak ex_goto
+void ex_goto(exarg_T *eap)
 {
   goto_byte(eap->line2);
 }
 
 /// ":preserve".
-static void ex_preserve(exarg_T *eap)
+#pragma weak ex_preserve
+void ex_preserve(exarg_T *eap)
 {
   ml_preserve(curbuf, true, true);
 }
 
 /// ":recover".
-static void ex_recover(exarg_T *eap)
+#pragma weak ex_recover
+void ex_recover(exarg_T *eap)
 {
   // Set recoverymode right away to avoid the ATTENTION prompt.
   recoverymode = true;
@@ -5597,13 +5615,14 @@ static void ex_recover(exarg_T *eap)
 }
 
 /// Command modifier used in a wrong way.
-static void ex_wrongmodifier(exarg_T *eap)
+#pragma weak ex_wrongmodifier
+void ex_wrongmodifier(exarg_T *eap)
 {
   eap->errmsg = _(e_invcmd);
 }
 
 /// callback function for 'findfunc'
-static Callback ffu_cb;
+extern Callback ffu_cb;
 
 static Callback *get_findfunc_callback(void)
 {
@@ -5859,7 +5878,8 @@ void tabpage_new(void)
 }
 
 /// :tabnext command
-static void ex_tabnext(exarg_T *eap)
+#pragma weak ex_tabnext
+void ex_tabnext(exarg_T *eap)
 {
   int tab_number;
 
@@ -5906,7 +5926,8 @@ static void ex_tabnext(exarg_T *eap)
 }
 
 /// :tabmove command
-static void ex_tabmove(exarg_T *eap)
+#pragma weak ex_tabmove
+void ex_tabmove(exarg_T *eap)
 {
   int tab_number = get_tabpage_arg(eap);
   if (eap->errmsg == NULL) {
@@ -5915,7 +5936,8 @@ static void ex_tabmove(exarg_T *eap)
 }
 
 /// :tabs command: List tabs and their contents.
-static void ex_tabs(exarg_T *eap)
+#pragma weak ex_tabs
+void ex_tabs(exarg_T *eap)
 {
   int tabcount = 1;
 
@@ -5967,7 +5989,8 @@ static void ex_tabs(exarg_T *eap)
 /// Detaches the current UI.
 ///
 /// ":detach!" with bang (!) detaches all UIs _except_ the current UI.
-static void ex_detach(exarg_T *eap)
+#pragma weak ex_detach
+void ex_detach(exarg_T *eap)
 {
   // come on pooky let's burn this mf down
   if (eap && eap->forceit) {
@@ -6027,7 +6050,8 @@ static void ex_detach(exarg_T *eap)
 ///
 /// ":connect <address>" detaches the current UI and connects to the given server.
 /// ":connect! <address>" stops the current server if no other UIs are attached, then connects to the given server.
-static void ex_connect(exarg_T *eap)
+#pragma weak ex_connect
+void ex_connect(exarg_T *eap)
 {
   bool stop_server = eap->forceit ? (ui_active() == 1) : false;
 
@@ -6049,7 +6073,8 @@ static void ex_connect(exarg_T *eap)
 
 /// ":mode":
 /// If no argument given, get the screen size and redraw.
-static void ex_mode(exarg_T *eap)
+#pragma weak ex_mode
+void ex_mode(exarg_T *eap)
 {
   if (*eap->arg == NUL) {
     must_redraw = UPD_CLEAR;
@@ -6061,7 +6086,8 @@ static void ex_mode(exarg_T *eap)
 
 /// ":resize".
 /// set, increment or decrement current window height
-static void ex_resize(exarg_T *eap)
+#pragma weak ex_resize
+void ex_resize(exarg_T *eap)
 {
   win_T *wp = curwin;
 
@@ -6089,7 +6115,8 @@ static void ex_resize(exarg_T *eap)
 }
 
 /// ":find [+command] <file>" command.
-static void ex_find(exarg_T *eap)
+#pragma weak ex_find
+void ex_find(exarg_T *eap)
 {
   if (!check_can_set_curbuf_forceit(eap->forceit)) {
     return;
@@ -6128,7 +6155,8 @@ static void ex_find(exarg_T *eap)
 }
 
 /// ":edit", ":badd", ":balt", ":visual".
-static void ex_edit(exarg_T *eap)
+#pragma weak ex_edit
+void ex_edit(exarg_T *eap)
 {
   char *ffname = eap->cmdidx == CMD_enew ? NULL : eap->arg;
 
@@ -6153,6 +6181,82 @@ static void ex_edit(exarg_T *eap)
 ///
 /// @param old_curwin  curwin before doing a split or NULL
 #pragma weak do_exedit
+#pragma weak ends_excmd
+#pragma weak find_nextcmd
+#pragma weak check_nextcmd
+#pragma weak cmd_has_expr_args
+#pragma weak checkforcmd
+#pragma weak skip_range
+#pragma weak get_cmd_default_range
+#pragma weak set_cmd_dflall_range
+#pragma weak set_cmd_count
+#pragma weak not_exiting
+#pragma weak update_topline_cursor
+#pragma weak expr_map_locked
+#pragma weak get_bad_opt
+#pragma weak getargcmd
+#pragma weak skip_cmd_arg
+#pragma weak set_cmd_addr_type
+#pragma weak is_cmd_ni
+#pragma weak is_map_cmd
+#pragma weak is_loclist_cmd
+#pragma weak get_command_name
+#pragma weak invalid_range
+#pragma weak separate_nextcmd
+#pragma weak excmd_get_argt
+#pragma weak excmd_get_cmdidx
+#pragma weak find_ex_command
+#pragma weak cmd_exists
+#pragma weak f_fullcommand
+#pragma weak modifier_len
+#pragma weak get_pressedreturn
+#pragma weak set_pressedreturn
+#pragma weak getline_equal
+#pragma weak getline_cookie
+#pragma weak set_no_hlsearch
+#pragma weak ex_may_print
+#pragma weak free_findfunc_option
+#pragma weak set_ref_in_findfunc
+#pragma weak getargopt
+#pragma weak expand_argopt
+#pragma weak find_cmdline_var
+#pragma weak eval_vars
+#pragma weak expand_sfile
+#pragma weak expand_filename
+#pragma weak expand_findfunc
+#pragma weak did_set_findfunc
+#pragma weak verify_command
+#pragma weak get_address
+#pragma weak ex_ni
+#pragma weak parse_cmd_address
+#pragma weak parse_command_modifiers
+#pragma weak apply_cmdmod
+#pragma weak undo_cmdmod
+#pragma weak save_current_state
+#pragma weak restore_current_state
+#pragma weak ex_win_close
+#pragma weak tabpage_close
+#pragma weak tabpage_close_other
+#pragma weak tabpage_new
+#pragma weak changedir_func
+#pragma weak ex_cd
+#pragma weak before_quit_autocmds
+#pragma weak before_quit_all
+#pragma weak do_sleep
+#pragma weak open_exfile
+#pragma weak filetype_plugin_enable
+#pragma weak filetype_maybe_enable
+#pragma weak handle_did_throw
+#pragma weak replace_makeprg
+#pragma weak ex_splitview
+#pragma weak exec_normal_cmd
+#pragma weak exec_normal
+#pragma weak parse_cmdline
+#pragma weak do_cmdline_cmd
+#pragma weak execute_cmd
+#pragma weak do_cmdline
+#pragma weak do_exmode
+#pragma weak vim_mkdir_emsg
 void do_exedit(exarg_T *eap, win_T *old_curwin)
 {
   // ":vi" command ends Ex mode.
@@ -6278,17 +6382,20 @@ void do_exedit(exarg_T *eap, win_T *old_curwin)
 }
 
 /// ":gui" and ":gvim" when there is no GUI.
-static void ex_nogui(exarg_T *eap)
+#pragma weak ex_nogui
+void ex_nogui(exarg_T *eap)
 {
   eap->errmsg = _("E25: Nvim does not have a built-in GUI");
 }
 
-static void ex_popup(exarg_T *eap)
+#pragma weak ex_popup
+void ex_popup(exarg_T *eap)
 {
   pum_make_popup(eap->arg, eap->forceit);
 }
 
-static void ex_swapname(exarg_T *eap)
+#pragma weak ex_swapname
+void ex_swapname(exarg_T *eap)
 {
   if (curbuf->b_ml.ml_mfp == NULL || curbuf->b_ml.ml_mfp->mf_fname == NULL) {
     msg(_("No swap file"), 0);
@@ -6300,7 +6407,8 @@ static void ex_swapname(exarg_T *eap)
 /// ":syncbind" forces all 'scrollbind' windows to have the same relative
 /// offset.
 /// (1998-11-02 16:21:01  R. Edward Ralston <eralston@computer.org>)
-static void ex_syncbind(exarg_T *eap)
+#pragma weak ex_syncbind
+void ex_syncbind(exarg_T *eap)
 {
   linenr_T vtopline;  // Target topline (including fill)
 
@@ -6352,7 +6460,8 @@ static void ex_syncbind(exarg_T *eap)
   }
 }
 
-static void ex_read(exarg_T *eap)
+#pragma weak ex_read
+void ex_read(exarg_T *eap)
 {
   int empty = (curbuf->b_ml.ml_flags & ML_EMPTY);
 
@@ -6406,7 +6515,7 @@ static void ex_read(exarg_T *eap)
   }
 }
 
-static char *prev_dir = NULL;
+extern char *prev_dir;
 
 #ifdef EXITFREE
 void free_cd_dir(void)
@@ -6576,7 +6685,8 @@ void ex_cd(exarg_T *eap)
 }
 
 /// ":pwd".
-static void ex_pwd(exarg_T *eap)
+#pragma weak ex_pwd
+void ex_pwd(exarg_T *eap)
 {
   if (os_dirname(NameBuff, MAXPATHL) == OK) {
 #ifdef BACKSLASH_IN_FILENAME
@@ -6601,7 +6711,8 @@ static void ex_pwd(exarg_T *eap)
 }
 
 /// ":=".
-static void ex_equal(exarg_T *eap)
+#pragma weak ex_equal
+void ex_equal(exarg_T *eap)
 {
   if (*eap->arg != NUL && *eap->arg != '|') {
     // equivalent to :lua= expr
@@ -6612,7 +6723,8 @@ static void ex_equal(exarg_T *eap)
   }
 }
 
-static void ex_sleep(exarg_T *eap)
+#pragma weak ex_sleep
+void ex_sleep(exarg_T *eap)
 {
   if (cursor_valid(curwin)) {
     setcursor_mayforce(curwin, true);
@@ -6656,7 +6768,8 @@ void do_sleep(int64_t msec, bool hide_cursor)
 }
 
 /// ":winsize" command (obsolete).
-static void ex_winsize(exarg_T *eap)
+#pragma weak ex_winsize
+void ex_winsize(exarg_T *eap)
 {
   char *arg = eap->arg;
 
@@ -6675,7 +6788,8 @@ static void ex_winsize(exarg_T *eap)
   }
 }
 
-static void ex_wincmd(exarg_T *eap)
+#pragma weak ex_wincmd
+void ex_wincmd(exarg_T *eap)
 {
   int xchar = NUL;
   char *p;
@@ -6707,7 +6821,8 @@ static void ex_wincmd(exarg_T *eap)
 }
 
 /// Handle command that work like operators: ":delete", ":yank", ":>" and ":<".
-static void ex_operators(exarg_T *eap)
+#pragma weak ex_operators
+void ex_operators(exarg_T *eap)
 {
   oparg_T oa;
 
@@ -6754,7 +6869,8 @@ static void ex_operators(exarg_T *eap)
 }
 
 /// ":put".
-static void ex_put(exarg_T *eap)
+#pragma weak ex_put
+void ex_put(exarg_T *eap)
 {
   // ":0put" works like ":1put!".
   if (eap->line2 == 0) {
@@ -6768,7 +6884,8 @@ static void ex_put(exarg_T *eap)
 }
 
 /// ":iput".
-static void ex_iput(exarg_T *eap)
+#pragma weak ex_iput
+void ex_iput(exarg_T *eap)
 {
   // ":0iput" works like ":1iput!".
   if (eap->line2 == 0) {
@@ -6782,7 +6899,8 @@ static void ex_iput(exarg_T *eap)
 }
 
 /// Handle ":copy" and ":move".
-static void ex_copymove(exarg_T *eap)
+#pragma weak ex_copymove
+void ex_copymove(exarg_T *eap)
 {
   const char *errormsg = NULL;
   linenr_T n = get_address(eap, &eap->arg, eap->addr_type, false, false, false, 1, &errormsg);
@@ -6814,6 +6932,7 @@ static void ex_copymove(exarg_T *eap)
 }
 
 /// Print the current line if flags were given to the Ex command.
+#pragma weak ex_may_print
 void ex_may_print(exarg_T *eap)
 {
   if (eap->flags != 0) {
@@ -6824,7 +6943,8 @@ void ex_may_print(exarg_T *eap)
 }
 
 /// ":smagic" and ":snomagic".
-static void ex_submagic(exarg_T *eap)
+#pragma weak ex_submagic
+void ex_submagic(exarg_T *eap)
 {
   const optmagic_T saved = magic_overruled;
 
@@ -6834,7 +6954,8 @@ static void ex_submagic(exarg_T *eap)
 }
 
 /// ":smagic" and ":snomagic" preview callback.
-static int ex_submagic_preview(exarg_T *eap, int cmdpreview_ns, handle_T cmdpreview_bufnr)
+#pragma weak ex_submagic_preview
+int ex_submagic_preview(exarg_T *eap, int cmdpreview_ns, handle_T cmdpreview_bufnr)
 {
   const optmagic_T saved = magic_overruled;
 
@@ -6846,7 +6967,8 @@ static int ex_submagic_preview(exarg_T *eap, int cmdpreview_ns, handle_T cmdprev
 }
 
 /// ":join".
-static void ex_join(exarg_T *eap)
+#pragma weak ex_join
+void ex_join(exarg_T *eap)
 {
   curwin->w_cursor.lnum = eap->line1;
   if (eap->line1 == eap->line2) {
@@ -6865,7 +6987,8 @@ static void ex_join(exarg_T *eap)
 }
 
 /// ":[addr]@r": execute register
-static void ex_at(exarg_T *eap)
+#pragma weak ex_at
+void ex_at(exarg_T *eap)
 {
   int prev_len = typebuf.tb_len;
 
@@ -6899,13 +7022,15 @@ static void ex_at(exarg_T *eap)
 }
 
 /// ":!".
-static void ex_bang(exarg_T *eap)
+#pragma weak ex_bang
+void ex_bang(exarg_T *eap)
 {
   do_bang(eap->addr_count, eap, eap->forceit, true, true);
 }
 
 /// ":undo".
-static void ex_undo(exarg_T *eap)
+#pragma weak ex_undo
+void ex_undo(exarg_T *eap)
 {
   if (eap->addr_count != 1) {
     if (eap->forceit) {
@@ -6942,7 +7067,8 @@ static void ex_undo(exarg_T *eap)
   }
 }
 
-static void ex_wundo(exarg_T *eap)
+#pragma weak ex_wundo
+void ex_wundo(exarg_T *eap)
 {
   uint8_t hash[UNDO_HASH_SIZE];
 
@@ -6950,7 +7076,8 @@ static void ex_wundo(exarg_T *eap)
   u_write_undo(eap->arg, eap->forceit, curbuf, hash);
 }
 
-static void ex_rundo(exarg_T *eap)
+#pragma weak ex_rundo
+void ex_rundo(exarg_T *eap)
 {
   uint8_t hash[UNDO_HASH_SIZE];
 
@@ -6959,13 +7086,15 @@ static void ex_rundo(exarg_T *eap)
 }
 
 /// ":redo".
-static void ex_redo(exarg_T *eap)
+#pragma weak ex_redo
+void ex_redo(exarg_T *eap)
 {
   u_redo(1);
 }
 
 /// ":earlier" and ":later".
-static void ex_later(exarg_T *eap)
+#pragma weak ex_later
+void ex_later(exarg_T *eap)
 {
   int count = 0;
   bool sec = false;
@@ -6999,7 +7128,8 @@ static void ex_later(exarg_T *eap)
 }
 
 /// ":redir": start/stop redirection.
-static void ex_redir(exarg_T *eap)
+#pragma weak ex_redir
+void ex_redir(exarg_T *eap)
 {
   char *arg = eap->arg;
 
@@ -7082,7 +7212,8 @@ static void ex_redir(exarg_T *eap)
 }
 
 /// ":redraw": force redraw
-static void ex_redraw(exarg_T *eap)
+#pragma weak ex_redraw
+void ex_redraw(exarg_T *eap)
 {
   if (cmdpreview) {
     return;  // Ignore :redraw during 'inccommand' preview. #9777
@@ -7118,7 +7249,8 @@ static void ex_redraw(exarg_T *eap)
 }
 
 /// ":redrawstatus": force redraw of status line(s) and window bar(s)
-static void ex_redrawstatus(exarg_T *eap)
+#pragma weak ex_redrawstatus
+void ex_redrawstatus(exarg_T *eap)
 {
   if (cmdpreview) {
     return;  // Ignore :redrawstatus during 'inccommand' preview. #9777
@@ -7148,7 +7280,8 @@ static void ex_redrawstatus(exarg_T *eap)
 }
 
 /// ":redrawtabline": force redraw of the tabline
-static void ex_redrawtabline(exarg_T *eap FUNC_ATTR_UNUSED)
+#pragma weak ex_redrawtabline
+void ex_redrawtabline(exarg_T *eap FUNC_ATTR_UNUSED)
 {
   const int r = RedrawingDisabled;
   const int p = p_lz;
@@ -7221,7 +7354,8 @@ FILE *open_exfile(char *fname, int forceit, char *mode)
 }
 
 /// ":mark" and ":k".
-static void ex_mark(exarg_T *eap)
+#pragma weak ex_mark
+void ex_mark(exarg_T *eap)
 {
   if (*eap->arg == NUL) {               // No argument?
     emsg(_(e_argreq));
@@ -7312,7 +7446,8 @@ bool expr_map_locked(void)
 }
 
 /// ":normal[!] {commands}": Execute normal mode commands.
-static void ex_normal(exarg_T *eap)
+#pragma weak ex_normal
+void ex_normal(exarg_T *eap)
 {
   if (curbuf->terminal && State & MODE_TERMINAL) {
     emsg("Can't re-enter normal mode from terminal mode");
@@ -7393,7 +7528,8 @@ static void ex_normal(exarg_T *eap)
 }
 
 /// ":startinsert", ":startreplace" and ":startgreplace"
-static void ex_startinsert(exarg_T *eap)
+#pragma weak ex_startinsert
+void ex_startinsert(exarg_T *eap)
 {
   if (eap->forceit) {
     // cursor line can be zero on startup
@@ -7430,7 +7566,8 @@ static void ex_startinsert(exarg_T *eap)
 }
 
 /// ":stopinsert"
-static void ex_stopinsert(exarg_T *eap)
+#pragma weak ex_stopinsert
+void ex_stopinsert(exarg_T *eap)
 {
   restart_edit = 0;
   stop_insert_mode = true;
@@ -7469,7 +7606,8 @@ void exec_normal(bool was_typed, bool use_vpeekc)
   }
 }
 
-static void ex_checkpath(exarg_T *eap)
+#pragma weak ex_checkpath
+void ex_checkpath(exarg_T *eap)
 {
   find_pattern_in_path(NULL, 0, 0, false, false, CHECK_PATH, 1,
                        eap->forceit ? ACTION_SHOW_ALL : ACTION_SHOW,
@@ -7477,14 +7615,16 @@ static void ex_checkpath(exarg_T *eap)
 }
 
 /// ":psearch"
-static void ex_psearch(exarg_T *eap)
+#pragma weak ex_psearch
+void ex_psearch(exarg_T *eap)
 {
   g_do_tagpreview = (int)p_pvh;
   ex_findpat(eap);
   g_do_tagpreview = 0;
 }
 
-static void ex_findpat(exarg_T *eap)
+#pragma weak ex_findpat
+void ex_findpat(exarg_T *eap)
 {
   bool whole = true;
   int action;
@@ -7537,14 +7677,16 @@ static void ex_findpat(exarg_T *eap)
 }
 
 /// ":ptag", ":ptselect", ":ptjump", ":ptnext", etc.
-static void ex_ptag(exarg_T *eap)
+#pragma weak ex_ptag
+void ex_ptag(exarg_T *eap)
 {
   g_do_tagpreview = (int)p_pvh;    // will be reset to 0 in ex_tag_cmd()
   ex_tag_cmd(eap, cmdnames[eap->cmdidx].cmd_name + 1);
 }
 
 /// ":pedit"
-static void ex_pedit(exarg_T *eap)
+#pragma weak ex_pedit
+void ex_pedit(exarg_T *eap)
 {
   win_T *curwin_save = curwin;
   prepare_preview_window();
@@ -7556,7 +7698,8 @@ static void ex_pedit(exarg_T *eap)
 }
 
 /// ":pbuffer"
-static void ex_pbuffer(exarg_T *eap)
+#pragma weak ex_pbuffer
+void ex_pbuffer(exarg_T *eap)
 {
   win_T *curwin_save = curwin;
   prepare_preview_window();
@@ -7586,7 +7729,8 @@ static void back_to_current_window(win_T *curwin_save)
 }
 
 /// ":stag", ":stselect" and ":stjump".
-static void ex_stag(exarg_T *eap)
+#pragma weak ex_stag
+void ex_stag(exarg_T *eap)
 {
   postponed_split = -1;
   postponed_split_flags = cmdmod.cmod_split;
@@ -7597,7 +7741,8 @@ static void ex_stag(exarg_T *eap)
 }
 
 /// ":tag", ":tselect", ":tjump", ":tnext", etc.
-static void ex_tag(exarg_T *eap)
+#pragma weak ex_tag
+void ex_tag(exarg_T *eap)
 {
   ex_tag_cmd(eap, cmdnames[eap->cmdidx].cmd_name);
 }
@@ -8029,7 +8174,8 @@ char *expand_sfile(char *arg)
 }
 
 /// ":rshada" and ":wshada".
-static void ex_shada(exarg_T *eap)
+#pragma weak ex_shada
+void ex_shada(exarg_T *eap)
 {
   char *save_shada = p_shada;
   if (*p_shada == NUL) {
@@ -8043,9 +8189,9 @@ static void ex_shada(exarg_T *eap)
   p_shada = save_shada;
 }
 
-static TriState filetype_detect = kNone;
-static TriState filetype_plugin = kNone;
-static TriState filetype_indent = kNone;
+extern TriState filetype_detect;
+extern TriState filetype_plugin;
+extern TriState filetype_indent;
 
 /// ":filetype [plugin] [indent] {on,off,detect}"
 /// on: Load the filetype.vim file to install autocommands for file types.
@@ -8054,7 +8200,8 @@ static TriState filetype_indent = kNone;
 /// plugin off: load ftplugof.vim
 /// indent on: load filetype.vim and indent.vim
 /// indent off: load indoff.vim
-static void ex_filetype(exarg_T *eap)
+#pragma weak ex_filetype
+void ex_filetype(exarg_T *eap)
 {
   if (*eap->arg == NUL) {
     // Print current status.
@@ -8148,7 +8295,8 @@ void filetype_maybe_enable(void)
 }
 
 /// ":setfiletype [FALLBACK] {name}"
-static void ex_setfiletype(exarg_T *eap)
+#pragma weak ex_setfiletype
+void ex_setfiletype(exarg_T *eap)
 {
   if (curbuf->b_did_filetype) {
     return;
@@ -8165,7 +8313,8 @@ static void ex_setfiletype(exarg_T *eap)
   }
 }
 
-static void ex_digraphs(exarg_T *eap)
+#pragma weak ex_digraphs
+void ex_digraphs(exarg_T *eap)
 {
   if (*eap->arg != NUL) {
     putdigraph(eap->arg);
@@ -8181,13 +8330,15 @@ void set_no_hlsearch(bool flag)
 }
 
 /// ":nohlsearch"
-static void ex_nohlsearch(exarg_T *eap)
+#pragma weak ex_nohlsearch
+void ex_nohlsearch(exarg_T *eap)
 {
   set_no_hlsearch(true);
   redraw_all_later(UPD_SOME_VALID);
 }
 
-static void ex_fold(exarg_T *eap)
+#pragma weak ex_fold
+void ex_fold(exarg_T *eap)
 {
   if (foldManualAllowed(true)) {
     pos_T start = { eap->line1, 1, 0 };
@@ -8196,14 +8347,16 @@ static void ex_fold(exarg_T *eap)
   }
 }
 
-static void ex_foldopen(exarg_T *eap)
+#pragma weak ex_foldopen
+void ex_foldopen(exarg_T *eap)
 {
   pos_T start = { eap->line1, 1, 0 };
   pos_T end = { eap->line2, 1, 0 };
   opFoldRange(start, end, eap->cmdidx == CMD_foldopen, eap->forceit, false);
 }
 
-static void ex_folddo(exarg_T *eap)
+#pragma weak ex_folddo
+void ex_folddo(exarg_T *eap)
 {
   // First set the marks for all lines closed/open.
   for (linenr_T lnum = eap->line1; lnum <= eap->line2; lnum++) {
@@ -8239,7 +8392,8 @@ void set_pressedreturn(bool val)
 }
 
 /// ":checkhealth [plugins]"
-static void ex_checkhealth(exarg_T *eap)
+#pragma weak ex_checkhealth
+void ex_checkhealth(exarg_T *eap)
 {
   // Suppress the Lua error (E5108) so the VIMRUNTIME diagnostic is the primary error.
   emsg_off++;
@@ -8262,7 +8416,8 @@ static void ex_checkhealth(exarg_T *eap)
   }
 }
 
-static void ex_terminal(exarg_T *eap)
+#pragma weak ex_terminal
+void ex_terminal(exarg_T *eap)
 {
   const int scroll_save = msg_scroll;
   msg_scroll = false;
@@ -8291,37 +8446,43 @@ static void ex_terminal(exarg_T *eap)
 }
 
 /// ":log {name}"
-static void ex_log(exarg_T *eap)
+#pragma weak ex_log
+void ex_log(exarg_T *eap)
 {
   nlua_call_excmd("vim._core.ex_cmd", "ex_log", eap, &cmdmod, NULL);
 }
 
 /// ":lsp {subcmd} {clients}"
-static void ex_lsp(exarg_T *eap)
+#pragma weak ex_lsp
+void ex_lsp(exarg_T *eap)
 {
   nlua_call_excmd("vim._core.ex_cmd", "ex_lsp", eap, &cmdmod, NULL);
 }
 
 /// ":packdel {name}"
-static void ex_packdel(exarg_T *eap)
+#pragma weak ex_packdel
+void ex_packdel(exarg_T *eap)
 {
   nlua_call_excmd("vim._core.ex_cmd", "ex_packdel", eap, &cmdmod, NULL);
 }
 
 /// ":packupdate {name}"
-static void ex_packupdate(exarg_T *eap)
+#pragma weak ex_packupdate
+void ex_packupdate(exarg_T *eap)
 {
   nlua_call_excmd("vim._core.ex_cmd", "ex_packupdate", eap, &cmdmod, NULL);
 }
 
 /// ":uptime"
-static void ex_uptime(exarg_T *eap)
+#pragma weak ex_uptime
+void ex_uptime(exarg_T *eap)
 {
   nlua_call_excmd("vim._core.ex_cmd", "ex_uptime", eap, &cmdmod, NULL);
 }
 
 /// ":fclose"
-static void ex_fclose(exarg_T *eap)
+#pragma weak ex_fclose
+void ex_fclose(exarg_T *eap)
 {
   win_float_remove(eap->forceit, eap->line1);
 }
@@ -8631,3 +8792,8 @@ bool is_map_cmd(cmdidx_T cmdidx)
          || func == ex_abbreviate    // :abbreviate, :iabbrev, etc.
          || func == ex_abclear;      // :abclear, :iabclear, etc.
 }
+
+// Odin port accessors (Batch 4): expose the generated cmdnames[] table.
+const CommandDefinition *nvim_odin_cmddef_at(int i) { return &cmdnames[i]; }
+// Odin port accessor (Batch 14): address of file-static exmode_plus.
+void *nvim_odin_exmode_plus_addr(void) { return (void *)exmode_plus; }

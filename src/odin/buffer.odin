@@ -574,7 +574,7 @@ trigger_undo_ftplugin_o :: proc "c"(buf: rawptr, win: rawptr) {
 	(^C.int)(uintptr(buf) + B_LOCKED_OFF)^ += 1
 	(^C.int)(uintptr(win) + W_LOCKED_OFF)^ += 1
 	// b:undo_ftplugin may be set, undo it
-	do_cmdline_cmd_r(cstring("if exists('b:undo_ftplugin') | exe b:undo_ftplugin | endif"))
+	do_cmdline_cmd(cstring("if exists('b:undo_ftplugin') | exe b:undo_ftplugin | endif"))
 	(^C.int)(uintptr(buf) + B_LOCKED_OFF)^ -= 1
 	(^C.int)(uintptr(win) + W_LOCKED_OFF)^ -= 1
 	window_layout_unlock()
@@ -972,8 +972,6 @@ E_BUFNOTFOUND_S :: "E92: Buffer %d not found"
 foreign _ {
 	@(link_name = "swb_flags")
 	swb_flags_g: C.uint
-	@(link_name = "tabpage_new")
-	tabpage_new_r :: proc "c" () ---
 	@(link_name = "p_sol")
 	p_sol_g: C.int
 }
@@ -1018,7 +1016,7 @@ buflist_getfile :: proc "c"(n: C.int, lnum_in: C.int, options: C.int, forceit: C
 			(swb_flags_g & (KOPT_SWB_VSPLIT_O | KOPT_SWB_SPLIT_O | KOPT_SWB_NEWTAB_O)) != 0 &&
 			!buf_is_empty(curbuf) {
 			if (swb_flags_g & KOPT_SWB_NEWTAB_O) != 0 {
-				tabpage_new_r()
+				tabpage_new()
 			} else if win_split(0, (swb_flags_g & KOPT_SWB_VSPLIT_O) != 0 ? WSP_VERT_O : 0) == FAIL {
 				return FAIL
 			}
@@ -2056,7 +2054,7 @@ handle_swap_exists :: proc "c"(old_curbuf: ^Bufref_T) {
 		cs: [16]u8
 		enter_cleanup_r(&cs[0])
 		// User selected Recover at ATTENTION prompt.
-		msg_scroll = true
+		msg_scroll = 1
 		ml_recover_r(false)
 		msg_puts(cstring("\n")) // don't overwrite the last message
 		cmdline_row = msg_row
@@ -3834,7 +3832,7 @@ fileinfo :: proc "c"(fullname: C.int, shorthelp: C.int, dont_truncate: bool) {
 		// Temporarily set msg_scroll to avoid truncation.
 		msg_start()
 		n := msg_scroll
-		msg_scroll = true
+		msg_scroll = 1
 		msg_msg(cstring(buffer), 0)
 		msg_scroll = n
 	} else {

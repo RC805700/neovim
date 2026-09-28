@@ -9,8 +9,6 @@ foreign _ {
 	p_hls: C.int
 	@(link_name = "no_hlsearch")
 	no_hlsearch: bool
-	@(link_name = "set_no_hlsearch")
-	set_no_hlsearch_r :: proc "c" (flag: bool) ---
 	@(link_name = "p_ic")
 	p_ic: C.int
 	@(link_name = "p_scs")
@@ -446,7 +444,7 @@ save_re_pat :: proc "c"(idx: C.int, pat: ^u8, patlen: C.size_t, magic: C.int) {
 	if p_hls != 0 {
 		redraw_all_later(UPD_SOME_VALID_S)
 	}
-	set_no_hlsearch_r(false)
+	set_no_hlsearch(false)
 }
 
 @(export)
@@ -490,7 +488,7 @@ restore_search_patterns :: proc "c"() {
 	mr_pattern = saved_mr_pattern
 	mr_patternlen = saved_mr_patternlen
 	last_idx = saved_spats_last_idx
-	set_no_hlsearch_r(saved_spats_no_hlsearch)
+	set_no_hlsearch(saved_spats_no_hlsearch)
 }
 
 @(export)
@@ -537,7 +535,7 @@ restore_last_search_pattern :: proc "c"() {
 	saved_last_search_spat.patlen = 0
 	set_vv_searchforward()
 	last_idx = saved_last_idx
-	set_no_hlsearch_r(saved_no_hlsearch)
+	set_no_hlsearch(saved_no_hlsearch)
 }
 
 save_incsearch_state :: proc "c"() {
@@ -1885,7 +1883,7 @@ do_search :: proc "c"(
 
 	if no_hlsearch && options & SEARCH_KEEP == 0 {
 		redraw_all_later(UPD_SOME_VALID_S)
-		set_no_hlsearch_r(false)
+		set_no_hlsearch(false)
 	}
 
 	strcopy: ^u8 = nil

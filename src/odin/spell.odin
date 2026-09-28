@@ -81,8 +81,6 @@ foreign _ {
 	spell_suggest_list_r :: proc "c" (gap: rawptr, word: cstring, maxcount: C.int, need_cap: bool, interactive: bool) ---
 
 	// ── buffer/ex_cmds helpers ──
-	@(link_name = "do_cmdline_cmd")
-	do_cmdline_cmd_r :: proc "c" (cmd: cstring) -> C.int ---
 }
 
 // These are DEFINED here (C defined them in spell.c) — spellfile.c links to them.
@@ -1844,7 +1842,7 @@ spell_load_lang :: proc "c"(lang: ^u8) {
 			libc.snprintf(&autocmd_buf[0], 512,
 				"autocmd VimEnter * call v:lua.require'nvim.spellfile'.get('%s')|set spell",
 				transmute(cstring)(lang))
-			do_cmdline_cmd_r(transmute(cstring)(&autocmd_buf[0]))
+			do_cmdline_cmd(transmute(cstring)(&autocmd_buf[0]))
 		} else {
 			semsg_sp(cstring("Warning: Cannot find word list \"%s.%s.spl\" or \"%s.ascii.spl\""),
 				transmute(cstring)(lang), transmute(cstring)(spell_enc()), transmute(cstring)(lang))
@@ -3582,7 +3580,7 @@ ex_spelldump :: proc "c"(eap: rawptr) {
 	// Read 'spelllang' from the current window BEFORE creating a new one.
 	spl_copy := xstrdup_r(transmute(cstring)(sb_p_spl_r(win_s_r(curwin))))
 
-	do_cmdline_cmd_r("new")
+	do_cmdline_cmd("new")
 
 	// enable spelling locally in the new window (set_option_value takes
 	// OptIndex+OptVal in this tree — use Ex commands instead)
@@ -3590,7 +3588,7 @@ ex_spelldump :: proc "c"(eap: rawptr) {
 	libc.snprintf(&setcmd[0], MAXPATHL_S, "setlocal spell spelllang=%s",
 		transmute(cstring)(spl_copy))
 	xfree(spl_copy)
-	do_cmdline_cmd_r(transmute(cstring)(&setcmd[0]))
+	do_cmdline_cmd(transmute(cstring)(&setcmd[0]))
 
 	if !buf_is_empty(curbuf) {
 		return

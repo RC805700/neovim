@@ -692,7 +692,7 @@ filter_map_one_o :: proc "c" (tv: ^Typval_T, expr: ^Typval_T, filtermap: C.int, 
 	newtv.v_type = VAR_UNKNOWN
 	if filtermap == FILTERMAP_FOREACH_O && expr.v_type == VAR_STRING {
 		// foreach() is not limited to an expression.
-		do_cmdline_cmd_r(transmute(cstring)((rawptr)(expr.vval)))
+		do_cmdline_cmd(transmute(cstring)((rawptr)(expr.vval)))
 		if did_emsg_flag == 0 {
 			retval = OK_E
 		}
@@ -3263,8 +3263,6 @@ restore_win :: proc "c" (switchwin: ^Switchwin_T, no_display: bool) {
 
 // —— Batch 16: eval/fs.c simple leaves ——
 foreign _ {
-	@(link_name = "changedir_func")
-	changedir_func_e :: proc "c" (new_dir: cstring, scope: C.int) -> bool ---
 	@(link_name = "delete_recursive")
 	delete_recursive_e :: proc "c" (name: cstring) -> C.int ---
 	@(link_name = "vim_copyfile")
@@ -3315,7 +3313,7 @@ f_chdir :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 	} else if (^rawptr)(uintptr(curtab) + TP_LOCALDIR_OFF)^ != nil {
 		scope = KCDSCOPE_TABPAGE_O
 	}
-	if !changedir_func_e(transmute(cstring)((rawptr)(a0.vval)), scope) {
+	if !changedir_func(transmute(cstring)((rawptr)(a0.vval)), scope) {
 		if (^rawptr)(rettv.vval) != nil {
 			xfree((rawptr)(rettv.vval))
 			rettv.vval = nil
@@ -3442,8 +3440,6 @@ foreign _ {
 	path_tail_with_sep_e :: proc "c" (fname: ^u8) -> ^u8 ---
 	@(link_name = "can_add_defer")
 	can_add_defer_e :: proc "c" () -> bool ---
-	@(link_name = "vim_mkdir_emsg")
-	vim_mkdir_emsg_e :: proc "c" (name: cstring, prot: C.int) -> C.int ---
 	@(link_name = "FullName_save")
 	FullName_save_e :: proc "c" (fname: cstring, force: bool) -> ^u8 ---
 	@(link_name = "add_defer")
@@ -3721,7 +3717,7 @@ f_mkdir :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 		}
 	}
 	if transmute(C.longlong)(rettv.vval) == FAIL_E {
-		rettv.vval = transmute(rawptr)(C.longlong(vim_mkdir_emsg_e(dir, prot)))
+		rettv.vval = transmute(rawptr)(C.longlong(vim_mkdir_emsg(dir, prot)))
 	}
 	if transmute(C.longlong)(rettv.vval) == OK_E && created == nil && (defer_del || defer_rec) {
 		created = transmute(cstring)(FullName_save_e(dir, false))
@@ -10612,10 +10608,10 @@ list_arg_vars_o :: proc "c" (eap: rawptr, arg: cstring, first: ^C.int) -> cstrin
 	context = runtime.default_context()
 	a := arg
 	error := false
-	for ends_excmd_e(C.int(([^]u8)(a)[0])) == 0 && !got_int {
+	for ends_excmd(C.int(([^]u8)(a)[0])) == 0 && !got_int {
 		if error || (^bool)(uintptr(eap) + 72)^ {
 			a = transmute(cstring)(find_name_end(a, nil, nil, 3))
-			if !ascii_iswhite(([^]u8)(a)[0]) && ends_excmd_e(C.int(([^]u8)(a)[0])) == 0 {
+			if !ascii_iswhite(([^]u8)(a)[0]) && ends_excmd(C.int(([^]u8)(a)[0])) == 0 {
 				emsg_severe_g = true
 				semsg(cstring(E488_S), a)
 				break
@@ -10804,7 +10800,7 @@ ex_let :: proc "c" (eap: rawptr) {
 		first_list := C.int(1)
 		if ([^]u8)(arg)[0] == '[' {
 			emsg(e_invarg_s)
-		} else if ends_excmd_e(C.int(([^]u8)(arg)[0])) == 0 {
+		} else if ends_excmd(C.int(([^]u8)(arg)[0])) == 0 {
 			arg = transmute(cstring)(list_arg_vars_o(eap, arg, &first_list))
 		} else if !(^bool)(uintptr(eap) + 72)^ {
 			first := C.int(1)
@@ -10816,7 +10812,7 @@ ex_let :: proc "c" (eap: rawptr) {
 			list_func_vars(&first)
 			list_vim_vars_o(&first)
 		}
-		(^rawptr)(uintptr(eap) + 32)^ = transmute(rawptr)(check_nextcmd_r(transmute(^u8)(arg)))
+		(^rawptr)(uintptr(eap) + 32)^ = transmute(rawptr)(check_nextcmd(transmute(^u8)(arg)))
 		return
 	}
 	if ([^]u8)(expr)[0] == '=' && ([^]u8)(expr)[1] == '<' && ([^]u8)(expr)[2] == '<' {
@@ -11010,7 +11006,7 @@ ex_unletlock_o :: proc "c" (eap: rawptr, argstart: cstring, deep: C.int, glv_fla
 			if (^rawptr)(uintptr(&lv[0]) + LL_NAME_OFF_O)^ == nil {
 				error = true
 			}
-			if name_end == nil || (!ascii_iswhite(([^]u8)(name_end)[0]) && ends_excmd_e(C.int(([^]u8)(name_end)[0])) == 0) {
+			if name_end == nil || (!ascii_iswhite(([^]u8)(name_end)[0]) && ends_excmd(C.int(([^]u8)(name_end)[0])) == 0) {
 				if name_end != nil {
 					emsg_severe_g = true
 					semsg(cstring(E488_S), name_end)
@@ -11036,11 +11032,11 @@ ex_unletlock_o :: proc "c" (eap: rawptr, argstart: cstring, deep: C.int, glv_fla
 			}
 		}
 		arg = skipwhite(name_end)
-		if ends_excmd_e(C.int(([^]u8)(arg)[0])) != 0 {
+		if ends_excmd(C.int(([^]u8)(arg)[0])) != 0 {
 			break
 		}
 	}
-	(^rawptr)(uintptr(eap) + 32)^ = transmute(rawptr)(check_nextcmd_r(transmute(^u8)(arg)))
+	(^rawptr)(uintptr(eap) + 32)^ = transmute(rawptr)(check_nextcmd(transmute(^u8)(arg)))
 }
 
 // ":unlet[!] var ..." command.
@@ -13372,12 +13368,12 @@ execute_common :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, arg_off: C.int
 	}
 	av0 := ([^]Typval_T)(argvars)[arg_off]
 	if av0.v_type != VAR_LIST {
-		do_cmdline_cmd(transmute(^u8)(tv_get_string((^Typval_T)(uintptr(argvars) + uintptr(arg_off) * 16))))
+		do_cmdline_cmd(tv_get_string((^Typval_T)(uintptr(argvars) + uintptr(arg_off) * 16)))
 	} else if rawptr(av0.vval) != nil {
 		list := rawptr(av0.vval)
 		tv_list_ref_o(list)
 		cookie := GetListLineCookie{l = list, li = tv_list_first_o(list)}
-		do_cmdline_e(nil, get_list_line, rawptr(&cookie), DOCMD_NOWAIT_O | DOCMD_VERBOSE_O | DOCMD_REPEAT_O | DOCMD_KEYTYPED_O)
+		do_cmdline(nil, transmute(LineGetter)(get_list_line), rawptr(&cookie), DOCMD_NOWAIT_O | DOCMD_VERBOSE_O | DOCMD_REPEAT_O | DOCMD_KEYTYPED_O)
 		tv_list_unref(list)
 	}
 	msg_silent = save_msg_silent
@@ -16349,7 +16345,7 @@ f_inputlist :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 	msg_start()
 	msg_row = Rows - 1
 	lines_left = Rows
-	msg_scroll = true
+	msg_scroll = 1
 	msg_clr_eos_r()
 	l := rawptr(([^]Typval_T)(argvars)[0].vval)
 	li := tv_list_first_o(l)
@@ -22171,7 +22167,7 @@ eval0 :: proc "c" (arg: cstring, rettv: ^Typval_T, eap: rawptr, evalarg: rawptr)
 	p := skipwhite(arg)
 	ret := eval1(&p, rettv, evalarg)
 	if ret != FAIL_E {
-		end_error = ends_excmd_e(C.int(([^]u8)(p)[0])) == 0
+		end_error = ends_excmd(C.int(([^]u8)(p)[0])) == 0
 	}
 	if ret == FAIL_E || end_error {
 		if ret != FAIL_E {
@@ -22185,7 +22181,7 @@ eval0 :: proc "c" (arg: cstring, rettv: ^Typval_T, eap: rawptr, evalarg: rawptr)
 			}
 		}
 		if eap != nil && p != nil {
-			nextcmd := transmute(rawptr)(check_nextcmd_r(transmute(^u8)(p)))
+			nextcmd := transmute(rawptr)(check_nextcmd(transmute(^u8)(p)))
 			if nextcmd != nil && ([^]u8)(nextcmd)[0] != '|' {
 				(^rawptr)(uintptr(eap) + EXARG_NEXTCMD_OFF_O)^ = nextcmd
 			}
@@ -22193,7 +22189,7 @@ eval0 :: proc "c" (arg: cstring, rettv: ^Typval_T, eap: rawptr, evalarg: rawptr)
 		return FAIL_E
 	}
 	if eap != nil {
-		(^rawptr)(uintptr(eap) + EXARG_NEXTCMD_OFF_O)^ = transmute(rawptr)(check_nextcmd_r(transmute(^u8)(p)))
+		(^rawptr)(uintptr(eap) + EXARG_NEXTCMD_OFF_O)^ = transmute(rawptr)(check_nextcmd(transmute(^u8)(p)))
 	}
 	return ret
 }
@@ -23617,7 +23613,7 @@ get_lval :: proc "c" (name: cstring, rettv: rawptr, lp: rawptr, unlet: bool, ski
 	expr_end: cstring = nil
 	p := find_name_end(name, &expr_start, &expr_end, fne_flags)
 	if expr_start != nil {
-		if unlet && !ascii_iswhite(([^]u8)(p)[0]) && ends_excmd_e(C.int(([^]u8)(p)[0])) == 0 && ([^]u8)(p)[0] != '[' && ([^]u8)(p)[0] != '.' {
+		if unlet && !ascii_iswhite(([^]u8)(p)[0]) && ends_excmd(C.int(([^]u8)(p)[0])) == 0 && ([^]u8)(p)[0] != '[' && ([^]u8)(p)[0] != '.' {
 			semsg(cstring(E488_S), p)
 			return nil
 		}
@@ -24350,11 +24346,7 @@ grow_string_tv :: proc "c" (tv1: ^Typval_T, s2: cstring) -> C.int {
 	return OK_E
 }
 
-// —— Batch 28ay: eval.c set_context_for_expression (export + weak) ——
-foreign _ {
-	@(link_name = "cmd_has_expr_args")
-	cmd_has_expr_args_e :: proc "c" (cmdidx: C.int) -> bool ---
-}
+// —— Batch 28ay: eval.c set_context_for_expression (FFI fully rewired) ——
 
 EXPAND_COMMANDS_O :: 1
 EXPAND_USER_VARS_O :: 15
@@ -24460,7 +24452,7 @@ set_context_for_expression :: proc "c" (xp: ^expand_T, arg: cstring, cmdidx: C.i
 			}
 		}
 	}
-	if cmd_has_expr_args_e(cmdidx) && xp.xp_context == EXPAND_EXPRESSION_O {
+	if cmd_has_expr_args(cmdidx) && xp.xp_context == EXPAND_EXPRESSION_O {
 		for {
 			n := skiptowhite(cur)
 			if n == cur {
@@ -25178,8 +25170,6 @@ foreign _ {
 	msg_clr_eos_e :: proc "c" () ---
 	@(link_name = "emsg_multiline")
 	emsg_multiline_e :: proc "c" (str: cstring, kind: cstring, hl_id: C.int, hist: bool) ---
-	@(link_name = "do_cmdline")
-	do_cmdline_raw_e :: proc "c" (cmdline: cstring, fgetline: rawptr, cookie: rawptr, flags: C.int) -> C.int ---
 	@(link_name = "force_abort")
 	force_abort_g: bool
 }
@@ -25254,7 +25244,7 @@ ex_echo :: proc "c" (eap: rawptr) {
 		tv_clear(&rettv)
 		arg = skipwhite(arg)
 	}
-	(^rawptr)(uintptr(eap) + EXARG_NEXTCMD_OFF)^ = transmute(rawptr)(check_nextcmd_r(transmute(^u8)(arg)))
+	(^rawptr)(uintptr(eap) + EXARG_NEXTCMD_OFF)^ = transmute(rawptr)(check_nextcmd(transmute(^u8)(arg)))
 	clear_evalarg(&evalarg, eap)
 	msg_ext_set_append(false)
 	if skip {
@@ -25350,14 +25340,14 @@ ex_execute :: proc "c" (eap: rawptr) {
 				did_emsg_set(save_did_emsg != 0)
 			}
 		} else if cmdidx == CMD_EXECUTE_O {
-			do_cmdline_raw_e(transmute(cstring)(ga.ga_data), (^rawptr)(uintptr(eap) + EXARG_GETLINE_OFF)^, (^rawptr)(uintptr(eap) + EXARG_COOKIE_OFF)^, DOCMD_NOWAIT_O | DOCMD_VERBOSE_O)
+			do_cmdline(transmute(cstring)(ga.ga_data), transmute(LineGetter)((^rawptr)(uintptr(eap) + EXARG_GETLINE_OFF)^), (^rawptr)(uintptr(eap) + EXARG_COOKIE_OFF)^, DOCMD_NOWAIT_O | DOCMD_VERBOSE_O)
 		}
 	}
 	ga_clear_r(&ga)
 	if skip {
 		emsg_skip -= 1
 	}
-	(^rawptr)(uintptr(eap) + EXARG_NEXTCMD_OFF)^ = transmute(rawptr)(check_nextcmd_r(transmute(^u8)(arg)))
+	(^rawptr)(uintptr(eap) + EXARG_NEXTCMD_OFF)^ = transmute(rawptr)(check_nextcmd(transmute(^u8)(arg)))
 }
 
 // —— Batch 28an: eval.c GC-marking cluster ——
@@ -25751,10 +25741,6 @@ set_var_lval :: proc "c" (lp: rawptr, endp: cstring, rettv: ^Typval_T, copy: boo
 
 // —— Batch 28am: eval.c timer core (exports + weak) ——
 foreign _ {
-	@(link_name = "get_pressedreturn")
-	get_pressedreturn_e :: proc "c" () -> bool ---
-	@(link_name = "set_pressedreturn")
-	set_pressedreturn_e :: proc "c" (val: bool) ---
 	@(link_name = "discard_current_exception")
 	discard_current_exception_e :: proc "c" () ---
 }
@@ -25842,7 +25828,7 @@ timer_due_cb :: proc "c" (tw: ^TimeWatcher, data: rawptr) {
 	timer := (^Timer_T)(data)
 	save_did_emsg := did_emsg_g()
 	called_emsg_before := called_emsg
-	save_ex_pressedreturn := get_pressedreturn_e()
+	save_ex_pressedreturn := get_pressedreturn()
 	if timer.stopped || timer.paused {
 		return
 	}
@@ -25865,7 +25851,7 @@ timer_due_cb :: proc "c" (tw: ^TimeWatcher, data: rawptr) {
 		}
 	}
 	did_emsg_set(save_did_emsg != 0)
-	set_pressedreturn_e(save_ex_pressedreturn)
+	set_pressedreturn(save_ex_pressedreturn)
 	if timer.emsg_count >= 3 {
 		timer_stop(timer)
 	}

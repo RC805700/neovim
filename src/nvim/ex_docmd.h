@@ -30,6 +30,65 @@ enum {
 
 enum { DIALOG_MSG_SIZE = 1000, };  ///< buffer size for dialog messages
 
+// Odin port: ex_docmd.odin owns ex_errmsg (fixed 2-arg impl) + ex_error_buf.
+// All live C callers pass exactly (single-%s format, one string arg),
+// which is ABI-identical to the old variadic for every real call.
+char *ex_errmsg(const char *msg, ...);
+
+// Odin port: declarations for the symbols now owned by src/odin/ex_docmd.odin.
+// (ex_docmd.c was fully ported and moved to bak/; its generated header no
+// longer exists on clean builds, so the decls live C files need are kept here
+// verbatim from the last generated header.)
+DLLEXPORT void do_exmode(void);
+DLLEXPORT int do_cmdline_cmd(const char *cmd);
+DLLEXPORT int do_cmdline(char *cmdline, LineGetter fgetline, void *cookie, int flags);
+DLLEXPORT void handle_did_throw(void);
+DLLEXPORT bool getline_equal(LineGetter fgetline, void *cookie, LineGetter func);
+DLLEXPORT void set_cmd_addr_type(exarg_T *eap, char *p);
+DLLEXPORT linenr_T get_cmd_default_range(exarg_T *eap);
+DLLEXPORT void set_cmd_dflall_range(exarg_T *eap);
+DLLEXPORT void set_cmd_count(exarg_T *eap, linenr_T count, bool validate);
+DLLEXPORT bool is_cmd_ni(cmdidx_T cmdidx);
+DLLEXPORT bool parse_cmdline(char **cmdline, exarg_T *eap, CmdParseInfo *cmdinfo, const char **errormsg);
+DLLEXPORT int execute_cmd(exarg_T *eap, CmdParseInfo *cmdinfo, bool preview);
+DLLEXPORT int parse_command_modifiers(exarg_T *eap, const char **errormsg, cmdmod_T *cmod, bool skip_only);
+DLLEXPORT void apply_cmdmod(cmdmod_T *cmod);
+DLLEXPORT void undo_cmdmod(cmdmod_T *cmod) FUNC_ATTR_NONNULL_ALL;
+DLLEXPORT int parse_cmd_address(exarg_T *eap, const char **errormsg, bool silent) FUNC_ATTR_NONNULL_ALL;
+DLLEXPORT int modifier_len(char *cmd);
+DLLEXPORT cmdidx_T excmd_get_cmdidx(const char *cmd, size_t len);
+DLLEXPORT uint32_t excmd_get_argt(cmdidx_T idx);
+DLLEXPORT linenr_T get_address(exarg_T *eap, char **ptr, cmd_addr_T addr_type, bool skip, bool silent, int to_other_file, int address_count, const char **errormsg) FUNC_ATTR_NONNULL_ARG(2, 8);
+DLLEXPORT int expand_filename(exarg_T *eap, char **cmdlinep, const char **errormsgp);
+DLLEXPORT void separate_nextcmd(exarg_T *eap);
+DLLEXPORT int getargopt(exarg_T *eap);
+DLLEXPORT int expand_argopt(char *pat, expand_T *xp, regmatch_T *rmp, char ***matches, int *numMatches);
+DLLEXPORT int ends_excmd(int c) FUNC_ATTR_CONST;
+DLLEXPORT void ex_win_close(int forceit, win_T *win, tabpage_T *tp);
+DLLEXPORT void tabpage_close(int forceit);
+DLLEXPORT void tabpage_close_other(tabpage_T *tp, int forceit);
+DLLEXPORT int expand_findfunc(expand_T *xp, char *pat, char ***files, int *numMatches);
+DLLEXPORT void tabpage_new(void);
+DLLEXPORT void do_exedit(exarg_T *eap, win_T *old_curwin);
+DLLEXPORT bool changedir_func(char *new_dir, CdScope scope);
+DLLEXPORT void ex_cd(exarg_T *eap);
+DLLEXPORT void do_sleep(int64_t msec, bool hide_cursor);
+DLLEXPORT int vim_mkdir_emsg(const char *const name, const int prot) FUNC_ATTR_NONNULL_ALL;
+DLLEXPORT void update_topline_cursor(void);
+DLLEXPORT bool expr_map_locked(void);
+DLLEXPORT void ex_normal(exarg_T *eap);
+DLLEXPORT void exec_normal_cmd(char *cmd, int remap, bool silent);
+DLLEXPORT void exec_normal(bool was_typed, bool use_vpeekc);
+DLLEXPORT ssize_t find_cmdline_var(const char *src, size_t *usedlen) FUNC_ATTR_NONNULL_ALL;
+DLLEXPORT void filetype_plugin_enable(void);
+DLLEXPORT void filetype_maybe_enable(void);
+DLLEXPORT void set_no_hlsearch(bool flag);
+DLLEXPORT bool is_loclist_cmd(int cmdidx) FUNC_ATTR_PURE FUNC_ATTR_WARN_UNUSED_RESULT;
+DLLEXPORT bool get_pressedreturn(void) FUNC_ATTR_PURE FUNC_ATTR_WARN_UNUSED_RESULT;
+DLLEXPORT void set_pressedreturn(bool val);
+DLLEXPORT void ex_terminal(exarg_T *eap);
+DLLEXPORT bool is_map_cmd(cmdidx_T cmdidx);
+
 /// Structure used to save the current state.  Used when executing Normal mode
 /// commands while in any other mode.
 typedef struct {
@@ -44,4 +103,22 @@ typedef struct {
   tasave_T tabuf;
 } save_state_T;
 
-#include "ex_docmd.h.generated.h"
+// NOTE: ex_docmd.c was fully ported to Odin and moved to bak/, so
+// ex_docmd.h.generated.h is no longer generated. The declarations live C
+// files need are hand-maintained below (verbatim from the old generated
+// header). Do NOT re-add the generated include.
+DLLEXPORT bool save_current_state(save_state_T *sst) FUNC_ATTR_NONNULL_ALL;
+DLLEXPORT void restore_current_state(save_state_T *sst) FUNC_ATTR_NONNULL_ALL;
+DLLEXPORT char *check_nextcmd(char *p);
+DLLEXPORT char *eval_vars(char *src, const char *srcstart, size_t *usedlen, linenr_T *lnump, const char **errormsg, int *escaped, bool empty_is_error);
+DLLEXPORT char *expand_sfile(char *arg);
+DLLEXPORT char *find_ex_command(exarg_T *eap, int *full) FUNC_ATTR_NONNULL_ARG(1);
+DLLEXPORT char *find_nextcmd(const char *p);
+DLLEXPORT char *get_command_name(expand_T *xp, int idx);
+DLLEXPORT char *getargcmd(char **argp);
+DLLEXPORT void *getline_cookie(LineGetter fgetline, void *cookie);
+DLLEXPORT char *invalid_range(exarg_T *eap);
+DLLEXPORT FILE *open_exfile(char *fname, int forceit, char *mode);
+DLLEXPORT char *replace_makeprg(exarg_T *eap, char *arg, char **cmdlinep);
+DLLEXPORT char *skip_cmd_arg(char *p, bool rembs);
+DLLEXPORT char *skip_range(const char *cmd, int *ctx);

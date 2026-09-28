@@ -1174,8 +1174,6 @@ foreign _ {
 	saveRedobuff_e :: proc "c" (save: rawptr) ---
 	@(link_name = "restoreRedobuff")
 	restoreRedobuff_e :: proc "c" (save: rawptr) ---
-	@(link_name = "do_cmdline")
-	do_cmdline_e :: proc "c" (cmdline: cstring, fgetline: proc "c" (c: C.int, cookie: rawptr, indent: C.int, do_concat: bool) -> cstring, cookie: rawptr, flags: C.int) -> C.int ---
 }
 
 FC_SANDBOX_O :: 0x40
@@ -1439,7 +1437,7 @@ call_user_func :: proc "c" (fp: rawptr, argcount: C.int, argvars: ^Typval_T, ret
 		eval1(&p, rettv, rawptr(&ea2))
 		ex_nesting_level_g -= 1
 	} else {
-		do_cmdline_e(nil, get_func_line, rawptr(fc), DOCMD_VERBOSE_O | DOCMD_NOWAIT_O | DOCMD_REPEAT_O)
+		do_cmdline(nil, transmute(LineGetter)(get_func_line), rawptr(fc), DOCMD_VERBOSE_O | DOCMD_NOWAIT_O | DOCMD_REPEAT_O)
 	}
 	handle_defer_one_o(current_funccal)
 	RedrawingDisabled -= 1
@@ -1950,10 +1948,6 @@ set_ref_in_func_args :: proc "c" (copyID: C.int) -> bool {
 
 // —— Batch 24n: ex_delfunction ——
 // (func_remove_e shim removed in 24ad: calls func_remove_o now.)
-foreign _ {
-	@(link_name = "ends_excmd")
-	ends_excmd_e :: proc "c" (c: C.int) -> C.int ---
-}
 
 EXARG_ARG_OFF_O :: 0
 EXARG_NEXTCMD_OFF_O :: 32
@@ -1981,12 +1975,12 @@ ex_delfunction :: proc "c" (eap: rawptr) {
 		}
 		return
 	}
-	if ends_excmd_e(C.int(([^]u8)(skipwhite(p))[0])) == 0 {
+	if ends_excmd(C.int(([^]u8)(skipwhite(p))[0])) == 0 {
 		xfree(rawptr(name))
 		semsg(cstring(E488_S), p)
 		return
 	}
-	(^rawptr)(uintptr(eap) + EXARG_NEXTCMD_OFF_O)^ = transmute(rawptr)(check_nextcmd_r(transmute(^u8)(p)))
+	(^rawptr)(uintptr(eap) + EXARG_NEXTCMD_OFF_O)^ = transmute(rawptr)(check_nextcmd(transmute(^u8)(p)))
 	if (^rawptr)(uintptr(eap) + EXARG_NEXTCMD_OFF_O)^ != nil {
 		([^]u8)(p)[0] = 0
 	}
@@ -2920,13 +2914,13 @@ ex_call :: proc "c" (eap: rawptr) {
 		failed = ex_call_inner_o(eap, name, &arg, startarg, &funcexe, rawptr(&ea)) != 0
 	}
 	if (!aborting_r() || did_throw_g) && (!failed || (^C.int)(uintptr((^rawptr)(uintptr(eap) + EXARG_CSTACK_OFF_O)^) + CS_TRYLEVEL_OFF_O)^ > 0) {
-		if ends_excmd_e(C.int(([^]u8)(arg)[0])) == 0 {
+		if ends_excmd(C.int(([^]u8)(arg)[0])) == 0 {
 			if !failed && !aborting_r() {
 				emsg_severe_g = true
 				semsg(cstring(E488_S), arg)
 			}
 		} else {
-			(^rawptr)(uintptr(eap) + EXARG_NEXTCMD_OFF_O)^ = transmute(rawptr)(check_nextcmd_r(transmute(^u8)(arg)))
+			(^rawptr)(uintptr(eap) + EXARG_NEXTCMD_OFF_O)^ = transmute(rawptr)(check_nextcmd(transmute(^u8)(arg)))
 		}
 	}
 	clear_evalarg(&ea, eap)
@@ -3060,7 +3054,7 @@ ex_return :: proc "c" (eap: rawptr) {
 	if returning {
 		(^rawptr)(uintptr(eap) + EXARG_NEXTCMD_OFF_O)^ = nil
 	} else if (^rawptr)(uintptr(eap) + EXARG_NEXTCMD_OFF_O)^ == nil {
-		(^rawptr)(uintptr(eap) + EXARG_NEXTCMD_OFF_O)^ = transmute(rawptr)(check_nextcmd_r(transmute(^u8)(arg)))
+		(^rawptr)(uintptr(eap) + EXARG_NEXTCMD_OFF_O)^ = transmute(rawptr)(check_nextcmd(transmute(^u8)(arg)))
 	}
 	if (^bool)(uintptr(eap) + EXARG_SKIP_OFF2_O)^ {
 		emsg_skip -= 1
@@ -3074,10 +3068,6 @@ foreign _ {
 	getcmdline_e :: proc "c" (firstc: C.int, count: C.int, indent: C.int, do_concat: bool) -> cstring ---
 	@(link_name = "get_sourced_lnum")
 	get_sourced_lnum_e :: proc "c" (fgetline: LineGetter, cookie: rawptr) -> C.int ---
-	@(link_name = "checkforcmd")
-	checkforcmd_e :: proc "c" (pp: ^cstring, cmd: cstring, len: C.int) -> bool ---
-	@(link_name = "skip_range")
-	skip_range_e :: proc "c" (cmd: cstring, ctx: ^C.int) -> cstring ---
 	@(link_name = "swmsg")
 	swmsg_e :: proc "c" (hl: bool, fmt: cstring, #c_vararg args: ..any) ---
 	@(link_name = "ui_ext_cmdline_block_append")
@@ -3106,7 +3096,7 @@ get_function_body_o :: proc "c" (eap: rawptr, newlines: ^Garray, line_arg_in: cs
 	do_concat := true
 	for {
 		if KeyTyped {
-			msg_scroll = true
+			msg_scroll = 1
 			saved_wait_return = false
 		}
 		need_wait_return_g = false
@@ -3191,7 +3181,7 @@ get_function_body_o :: proc "c" (eap: rawptr, newlines: ^Garray, line_arg_in: cs
 			for ascii_iswhite(([^]u8)(p)[0]) || ([^]u8)(p)[0] == ':' {
 				p = transmute(cstring)(rawptr(uintptr(transmute(rawptr)(p)) + 1))
 			}
-			nest_end := checkforcmd_e(&p, cstring("endfunction"), 4)
+			nest_end := checkforcmd(&p, cstring("endfunction"), 4)
 			nest_cur: C.int = 0
 			if nest_end {
 				nest_cur = nesting
@@ -3224,7 +3214,7 @@ get_function_body_o :: proc "c" (eap: rawptr, newlines: ^Garray, line_arg_in: cs
 			} else if libc.strncmp(p, cstring("if"), 2) == 0 || libc.strncmp(p, cstring("wh"), 2) == 0 || libc.strncmp(p, cstring("for"), 3) == 0 || libc.strncmp(p, cstring("try"), 3) == 0 {
 				indent += 2
 			}
-			if checkforcmd_e(&p, cstring("function"), 2) {
+			if checkforcmd(&p, cstring("function"), 2) {
 				if ([^]u8)(p)[0] == '!' {
 					p = skipwhite(transmute(cstring)(rawptr(uintptr(transmute(rawptr)(p)) + 1)))
 				}
@@ -3241,9 +3231,9 @@ get_function_body_o :: proc "c" (eap: rawptr, newlines: ^Garray, line_arg_in: cs
 				}
 			}
 			tp := p
-			p = skip_range_e(p, nil)
+			p = skip_range(p, nil)
 			c0 := ([^]u8)(p)[0]
-			if (checkforcmd_e(&p, cstring("append"), 1) || checkforcmd_e(&p, cstring("change"), 1) || checkforcmd_e(&p, cstring("insert"), 1)) && (c0 == '!' || c0 == '|' || ascii_iswhite(c0) || c0 == '\n' || c0 == 0) {
+			if (checkforcmd(&p, cstring("append"), 1) || checkforcmd(&p, cstring("change"), 1) || checkforcmd(&p, cstring("insert"), 1)) && (c0 == '!' || c0 == '|' || ascii_iswhite(c0) || c0 == '\n' || c0 == 0) {
 				skip_until = transmute(cstring)(xmemdupz_o2(&DOT1_O[0], 1))
 			} else {
 				p = tp
@@ -3277,9 +3267,9 @@ get_function_body_o :: proc "c" (eap: rawptr, newlines: ^Garray, line_arg_in: cs
 			}
 			if !is_heredoc {
 				arg = p
-				did_let := checkforcmd_e(&arg, cstring("let"), 2)
+				did_let := checkforcmd(&arg, cstring("let"), 2)
 				if !did_let {
-					did_let = checkforcmd_e(&p, cstring("const"), 5)
+					did_let = checkforcmd(&p, cstring("const"), 5)
 					if did_let {
 						arg = p
 					}
@@ -3489,11 +3479,11 @@ list_functions_matching_pat_o :: proc "c" (eap: rawptr) -> cstring {
 // ":function Name" single listing (static in C).
 list_one_function_o :: proc "c" (eap: rawptr, name: cstring, p: cstring) -> rawptr {
 	context = runtime.default_context()
-	if ends_excmd_e(C.int(([^]u8)(skipwhite(p))[0])) == 0 {
+	if ends_excmd(C.int(([^]u8)(skipwhite(p))[0])) == 0 {
 		semsg(cstring(E488_S), p)
 		return nil
 	}
-	(^rawptr)(uintptr(eap) + EXARG_NEXTCMD_OFF_O)^ = transmute(rawptr)(check_nextcmd_r(transmute(^u8)(p)))
+	(^rawptr)(uintptr(eap) + EXARG_NEXTCMD_OFF_O)^ = transmute(rawptr)(check_nextcmd(transmute(^u8)(p)))
 	if (^rawptr)(uintptr(eap) + EXARG_NEXTCMD_OFF_O)^ != nil {
 		([^]u8)(p)[0] = 0
 	}
@@ -3806,16 +3796,16 @@ ex_function :: proc "c" (eap: rawptr) {
 	skip := (^bool)(uintptr(eap) + EXARG_SKIP_OFF2_O)^
 	forceit := (^bool)(uintptr(eap) + 76)^
 	stage: C.int = 0
-	if ends_excmd_e(C.int(([^]u8)(eap_arg)[0])) != 0 {
+	if ends_excmd(C.int(([^]u8)(eap_arg)[0])) != 0 {
 		if !skip {
 			list_functions_o(nil)
 		}
-		(^rawptr)(uintptr(eap) + EXARG_NEXTCMD_OFF_O)^ = transmute(rawptr)(check_nextcmd_r(transmute(^u8)(eap_arg)))
+		(^rawptr)(uintptr(eap) + EXARG_NEXTCMD_OFF_O)^ = transmute(rawptr)(check_nextcmd(transmute(^u8)(eap_arg)))
 		return
 	}
 	if ([^]u8)(eap_arg)[0] == '/' {
 		p := list_functions_matching_pat_o(eap)
-		(^rawptr)(uintptr(eap) + EXARG_NEXTCMD_OFF_O)^ = transmute(rawptr)(check_nextcmd_r(transmute(^u8)(p)))
+		(^rawptr)(uintptr(eap) + EXARG_NEXTCMD_OFF_O)^ = transmute(rawptr)(check_nextcmd(transmute(^u8)(p)))
 		return
 	}
 	p := eap_arg

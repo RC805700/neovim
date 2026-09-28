@@ -50,8 +50,6 @@ foreign _ {
 	msg_check_for_delay_r :: proc "c"(canwait: bool) ---
 	@(link_name = "diff_invalidate")
 	diff_invalidate_r :: proc "c"(buf: rawptr) ---
-	@(link_name = "do_cmdline")
-	do_cmdline_r :: proc "c"(cmdline: cstring, fgetline: rawptr, cookie: rawptr, flags: C.int) -> C.int ---
 	@(link_name = "p_ur")
 	p_ur_g: C.longlong
 	@(link_name = "keep_help_flag")
@@ -676,9 +674,9 @@ do_ecmd :: proc "c"(fnum: C.int, ffname_in: cstring, sfname_in: cstring, eap: ra
 			// 'O' flag in 'cpoptions': overwrite any previous message.
 			if shortmess(SHM_OVERALL_O) && msg_listdo_overwrite_g == 0 &&
 				!exiting && p_verbose == 0 {
-				msg_scroll = false
+				msg_scroll = 0
 			}
-			if !msg_scroll { // wait a bit when overwriting an error msg
+			if msg_scroll == 0 { // wait a bit when overwriting an error msg
 				msg_check_for_delay_r(false)
 			}
 			msg_start()
@@ -696,7 +694,7 @@ do_ecmd :: proc "c"(fnum: C.int, ffname_in: cstring, sfname_in: cstring, eap: ra
 			C.longlong(libc.time(nil))
 
 		if command != nil {
-			do_cmdline_r(cstring(command), nil, nil, DOCMD_VERBOSE_O)
+			do_cmdline(cstring(command), nil, nil, DOCMD_VERBOSE_O)
 		}
 
 		if (^i16)(uintptr(curbuf) + B_KMAP_STATE_OFF)^ & i16(KEYMAP_INIT) != 0 {
@@ -863,13 +861,9 @@ E505_S :: "E505: \"%s\" is read-only (add ! to override)"
 foreign _ {
 	@(link_name = "do_argfile")
 	do_argfile_r :: proc "c"(eap: rawptr, argn: C.int) ---
-	@(link_name = "before_quit_all")
-	before_quit_all_r :: proc "c"(eap: rawptr) -> C.int ---
 	// check_overwrite now defined below (Batch 39) — call directly.
 	@(link_name = "buf_write_all")
 	buf_write_all_r :: proc "c"(buf: rawptr, forceit: bool) -> C.int ---
-	@(link_name = "not_exiting")
-	not_exiting_r :: proc "c"(save_exiting: bool) ---
 	@(link_name = "vim_dialog_yesno")
 	vim_dialog_yesno_r :: proc "c"(typ: C.int, title: cstring, message: cstring, dflt: C.int) -> C.int ---
 	// p_confirm_g/p_write_g already in buffer.odin — reuse.
@@ -943,7 +937,7 @@ do_wqall :: proc "c"(eap: rawptr) {
 
 	cmdidx := (^C.int)(uintptr(eap) + EXARG_CMDIDX_OFF)^
 	if cmdidx == CMD_XALL_O || cmdidx == CMD_WQALL_O {
-		if before_quit_all_r(eap) == FAIL {
+		if before_quit_all(eap) == FAIL {
 			return
 		}
 		exiting = true
@@ -1016,7 +1010,7 @@ do_wqall :: proc "c"(eap: rawptr) {
 		if error == 0 {
 			getout(0) // exit Vim
 		}
-		not_exiting_r(save_exiting)
+		not_exiting(save_exiting)
 	}
 }
 
@@ -1144,8 +1138,6 @@ Sorti_T :: struct {
 #assert(size_of(Sorti_T) == 24)
 
 foreign _ {
-	@(link_name = "check_nextcmd")
-	check_nextcmd_r :: proc "c"(p: ^u8) -> ^u8 ---
 	@(link_name = "skip_regexp_err")
 	skip_regexp_err_r :: proc "c"(startp: ^u8, delim: C.int, magic: C.int) -> ^u8 ---
 	@(link_name = "skiptohex")
@@ -1309,7 +1301,7 @@ ex_sort :: proc "c"(eap: rawptr) {
 		} else if c == '"' { // comment start
 			break
 		} else {
-			nc := check_nextcmd_r(p)
+			nc := check_nextcmd(p)
 			if nc != nil {
 				(^rawptr)(uintptr(eap) + 32)^ = transmute(rawptr)(nc)
 				break
@@ -1596,7 +1588,7 @@ ex_uniq :: proc "c"(eap: rawptr) {
 		} else if c == '"' { // comment start
 			break
 		} else {
-			nc := check_nextcmd_r(p)
+			nc := check_nextcmd(p)
 			if (^rawptr)(uintptr(eap) + 32)^ == nil && nc != nil {
 				(^rawptr)(uintptr(eap) + 32)^ = transmute(rawptr)(nc)
 				break
@@ -2381,7 +2373,7 @@ do_filter_o :: proc "c"(line1: C.int, line2: C.int, eap: rawptr, cmd: ^u8, do_in
 								C.size_t(MSG_BUF_LEN_O), filt_fmt,
 								C.longlong(linecount))
 							if msg_msg(cstring(&msg_buf_g[0]), 0) &&
-								!msg_scroll {
+								msg_scroll == 0 {
 								// Save message for after redraw.
 								set_keep_msg_r(cstring(&msg_buf_g[0]), 0)
 							}
@@ -2462,7 +2454,7 @@ do_bang :: proc "c"(addr_count: C.int, eap: rawptr, forceit: bool, do_in: bool, 
 	}
 
 	if addr_count == 0 { // :!
-		msg_scroll = false // don't scroll here
+		msg_scroll = 0 // don't scroll here
 		autowrite_all()
 		msg_scroll = scroll_save
 	}
@@ -2733,7 +2725,7 @@ ex_append :: proc "c"(eap: rawptr) {
 	}
 
 	for {
-		msg_scroll = true
+		msg_scroll = 1
 		need_wait_return_g = false
 		if (^C.int)(uintptr(curbuf) + B_P_AI_OFF)^ != 0 {
 			if append_indent_f >= 0 {
@@ -3067,9 +3059,9 @@ global_exe_one_o :: proc "c"(cmd: cstring, lnum: C.int) {
 	(^C.int)(uintptr(curwin) + W_CURSOR_OFF + 4)^ = 0
 	if cmd == nil || ([^]u8)(transmute(^u8)(cmd))[0] == 0 ||
 		([^]u8)(transmute(^u8)(cmd))[0] == '\n' {
-		do_cmdline_r(cstring("p"), nil, nil, DOCMD_NOWAIT_O)
+		do_cmdline(cstring("p"), nil, nil, DOCMD_NOWAIT_O)
 	} else {
-		do_cmdline_r(cmd, nil, nil, DOCMD_NOWAIT_O)
+		do_cmdline(cmd, nil, nil, DOCMD_NOWAIT_O)
 	}
 }
 
@@ -4103,7 +4095,7 @@ do_sub_o :: proc "c"(eap: rawptr, timeout: proftime_T, cmdpreview_ns: C.int, cmd
 	// Check for trailing command or garbage.
 	cmd = transmute(^u8)(skipwhite(cstring(cmd)))
 	if ([^]u8)(cmd)[0] != 0 && ([^]u8)(cmd)[0] != '"' {
-		(^rawptr)(uintptr(eap) + 32)^ = transmute(rawptr)(check_nextcmd_r(cmd))
+		(^rawptr)(uintptr(eap) + 32)^ = transmute(rawptr)(check_nextcmd(cmd))
 		if (^rawptr)(uintptr(eap) + 32)^ == nil {
 			ebuf: [512]u8
 			libc.snprintf(&ebuf[0], C.size_t(512), cstring(E488_S),
