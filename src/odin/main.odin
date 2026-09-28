@@ -214,8 +214,7 @@ foreign nvim {
   // init_homedir           — PORTED to Odin (uses startup_set_homedir + os.getwd)
   // startup_set_homedir    — PORTED to Odin (os_env.odin; sets `homedir` global)
   set_init_1 :: proc(clean: bool) ---
-  log_mutex_init :: proc() ---
-  // log_init — PORTED to Odin
+  // log_mutex_init — PORTED to Odin (log.odin)
   // set_lang_var      — PORTED to Odin
   qf_init_stack :: proc() ---
 

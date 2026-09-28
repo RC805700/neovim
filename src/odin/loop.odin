@@ -19,12 +19,9 @@ import "core:c/libc"
 @(export)
 main_loop := Loop{}
 
-// C-side helpers still linked (log.c). proc_teardown is provided by
-// proc.odin (Odin port of event/proc.c).
-foreign _ {
-	@(link_name = "log_uv_handles")
-	log_uv_handles :: proc(loop: rawptr) ---
-}
+// C-side helpers still linked. proc_teardown is provided by
+// proc.odin (Odin port of event/proc.c). log_uv_handles is an Odin
+// export (log.odin) — call directly.
 
 @(export)
 loop_init :: proc "c" (loop: ^Loop, data: rawptr) {

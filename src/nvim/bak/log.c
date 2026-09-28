@@ -43,6 +43,7 @@ static uv_mutex_t mutex;
 # include <execinfo.h>
 #endif
 
+#pragma weak log_mutex_init
 void log_mutex_init(void)
 {
   uv_mutex_init_recursive(&mutex);
@@ -50,11 +51,13 @@ void log_mutex_init(void)
 
 // log_init, log_path_init, log_try_create — PORTED to Odin (src/odin/log.odin)
 
+#pragma weak log_lock
 void log_lock(void)
 {
   uv_mutex_lock(&mutex);
 }
 
+#pragma weak log_unlock
 void log_unlock(void)
 {
   uv_mutex_unlock(&mutex);
@@ -70,6 +73,7 @@ void log_unlock(void)
 /// @param fmt        printf-style format string
 ///
 /// @return true if log was emitted normally, false if failed or recursive
+#pragma weak logmsg
 bool logmsg(int log_level, const char *context, const char *func_name, int line_num, bool eol,
             const char *fmt, ...)
   FUNC_ATTR_PRINTF(6, 7)
@@ -131,6 +135,7 @@ bool logmsg(int log_level, const char *context, const char *func_name, int line_
   return ret;
 }
 
+#pragma weak log_uv_handles
 void log_uv_handles(void *loop)
 {
   uv_loop_t *l = loop;
@@ -149,6 +154,7 @@ void log_uv_handles(void *loop)
 /// Open the log file for appending.
 ///
 /// @return Log file, or stderr on failure
+#pragma weak open_log_file
 FILE *open_log_file(void)
 {
   errno = 0;
@@ -171,6 +177,7 @@ FILE *open_log_file(void)
 }
 
 #ifdef HAVE_EXECINFO_BACKTRACE
+#pragma weak log_callstack_to_file
 void log_callstack_to_file(FILE *log_file, const char *const func_name, const int line_num)
 {
   void *trace[100];
@@ -207,6 +214,7 @@ void log_callstack_to_file(FILE *log_file, const char *const func_name, const in
   }
 }
 
+#pragma weak log_callstack
 void log_callstack(const char *const func_name, const int line_num)
 {
   log_lock();
