@@ -15691,24 +15691,9 @@ f_chansend :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 
 // —— Batch 27ao: funcs.c ctx cluster ——
 foreign _ {
-	@(link_name = "ctx_size")
-	ctx_size_e :: proc "c" () -> C.size_t ---
-	@(link_name = "ctx_get")
-	ctx_get_e :: proc "c" (index: C.size_t) -> rawptr ---
-	@(link_name = "ctx_save")
-	ctx_save_e :: proc "c" (ctx: rawptr, flags: C.int) ---
-	@(link_name = "ctx_restore")
-	ctx_restore_e :: proc "c" (ctx: rawptr, flags: C.int) -> bool ---
-	@(link_name = "ctx_to_dict")
-	ctx_to_dict_e :: proc "c" (ctx: rawptr, arena: rawptr) -> Api_Dict ---
-	@(link_name = "ctx_from_dict")
-	ctx_from_dict_e :: proc "c" (dict: Api_Dict, ctx: rawptr, err: rawptr) -> C.int ---
-	@(link_name = "ctx_free")
-	ctx_free_e :: proc "c" (ctx: rawptr) ---
 	@(link_name = "vim_to_object")
 	vim_to_object_e :: proc "c" (obj: ^Typval_T, arena: rawptr, reuse_strdata: bool) -> Api_Object ---
-	@(link_name = "kCtxAll")
-	kCtxAll_g: C.int
+	// kCtxAll is an Odin export (context.odin) — single copy.
 }
 
 KCTXREGS_O :: 1
@@ -15749,13 +15734,13 @@ f_ctxget :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 		semsg(e_invarg2, cstring("expected nothing or a Number as an argument"))
 		return
 	}
-	ctx := ctx_get_e(index)
+	ctx := ctx_get(index)
 	if ctx == nil {
 		semsg(cstring(E_INVARG_NVAL_S), cstring("index"), cstring("out of bounds"))
 		return
 	}
 	arena := Arena_O{}
-	d := ctx_to_dict_e(ctx, rawptr(&arena))
+	d := ctx_to_dict(ctx, rawptr(&arena))
 	obj := Api_Object{}
 	obj.t = 6
 	(^Api_Dict)(&obj.data[0])^ = d
@@ -15769,7 +15754,7 @@ f_ctxget :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 @(export)
 f_ctxpop :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 	context = runtime.default_context()
-	if !ctx_restore_e(nil, kCtxAll_g) {
+	if !ctx_restore(nil, kCtxAll) {
 		emsg(cstring(E_CTXEMPTY_S))
 	}
 }
@@ -15778,7 +15763,7 @@ f_ctxpop :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 @(export)
 f_ctxpush :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 	context = runtime.default_context()
-	types := kCtxAll_g
+	types := kCtxAll
 	if ([^]Typval_T)(argvars)[0].v_type == VAR_LIST {
 		types = 0
 		l := rawptr(([^]Typval_T)(argvars)[0].vval)
@@ -15807,7 +15792,7 @@ f_ctxpush :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 		semsg(e_invarg2, cstring("expected nothing or a List as an argument"))
 		return
 	}
-	ctx_save_e(nil, types)
+	ctx_save(nil, types)
 }
 
 // "ctxset({context}[, {index}])" function.
@@ -15825,7 +15810,7 @@ f_ctxset :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 		semsg(e_invarg2, cstring("expected nothing or a Number as second argument"))
 		return
 	}
-	ctx := ctx_get_e(index)
+	ctx := ctx_get(index)
 	if ctx == nil {
 		semsg(cstring(E_INVARG_NVAL_S), cstring("index"), cstring("out of bounds"))
 		return
@@ -15836,12 +15821,12 @@ f_ctxset :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 	obj := vim_to_object_e((^Typval_T)(uintptr(argvars)), rawptr(&arena), true)
 	tmp := Context_O{}
 	err := Api_Error{typ = -1, msg = nil}
-	ctx_from_dict_e((^Api_Dict)(&obj.data[0])^, rawptr(&tmp), rawptr(&err))
+	ctx_from_dict((^Api_Dict)(&obj.data[0])^, rawptr(&tmp), rawptr(&err))
 	if err.typ != -1 {
 		semsg(cstring("%s"), transmute(cstring)(err.msg))
-		ctx_free_e(rawptr(&tmp))
+		ctx_free(rawptr(&tmp))
 	} else {
-		ctx_free_e(ctx)
+		ctx_free(ctx)
 		(^Context_O)(ctx)^ = tmp
 	}
 	arena_mem_free(arena_finish(rawptr(&arena)))
@@ -15854,7 +15839,7 @@ f_ctxset :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 f_ctxsize :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 	context = runtime.default_context()
 	rettv.v_type = VAR_NUMBER
-	rettv.vval = transmute(rawptr)(C.longlong(ctx_size_e()))
+	rettv.vval = transmute(rawptr)(C.longlong(ctx_size()))
 }
 
 // —— Batch 27ar: funcs.c screen cluster ——

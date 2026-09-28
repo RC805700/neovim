@@ -27,12 +27,14 @@
 
 #include "context.c.generated.h"
 
+#pragma weak kCtxAll
 int kCtxAll = (kCtxRegs | kCtxJumps | kCtxBufs | kCtxGVars | kCtxSFuncs
                | kCtxFuncs);
 
 static ContextVec ctx_stack = KV_INITIAL_VALUE;
 
 /// Clears and frees the context stack
+#pragma weak ctx_free_all
 void ctx_free_all(void)
 {
   for (size_t i = 0; i < kv_size(ctx_stack); i++) {
@@ -42,6 +44,7 @@ void ctx_free_all(void)
 }
 
 /// Returns the size of the context stack.
+#pragma weak ctx_size
 size_t ctx_size(void)
   FUNC_ATTR_PURE
 {
@@ -50,6 +53,7 @@ size_t ctx_size(void)
 
 /// Returns pointer to Context object with given zero-based index from the top
 /// of context stack or NULL if index is out of bounds.
+#pragma weak ctx_get
 Context *ctx_get(size_t index)
   FUNC_ATTR_PURE
 {
@@ -62,6 +66,7 @@ Context *ctx_get(size_t index)
 /// Free resources used by Context object.
 ///
 /// param[in]  ctx  pointer to Context object to free.
+#pragma weak ctx_free
 void ctx_free(Context *ctx)
   FUNC_ATTR_NONNULL_ALL
 {
@@ -79,6 +84,7 @@ void ctx_free(Context *ctx)
 ///
 /// @param  ctx    Save to this context, or push on context stack if NULL.
 /// @param  flags  Flags, see ContextTypeFlags enum.
+#pragma weak ctx_save
 void ctx_save(Context *ctx, const int flags)
 {
   if (ctx == NULL) {
@@ -118,6 +124,7 @@ void ctx_save(Context *ctx, const int flags)
 /// @param  flags  Flags, see ContextTypeFlags enum.
 ///
 /// @return true on success, false otherwise (i.e.: empty context stack).
+#pragma weak ctx_restore
 bool ctx_restore(Context *ctx, const int flags)
 {
   bool free_ctx = false;
@@ -269,6 +276,7 @@ static inline String array_to_string(Array array, Error *err)
 /// @param[in]  ctx  Context to convert.
 ///
 /// @return Dict representing "ctx".
+#pragma weak ctx_to_dict
 Dict ctx_to_dict(Context *ctx, Arena *arena)
   FUNC_ATTR_NONNULL_ALL
 {
@@ -292,6 +300,7 @@ Dict ctx_to_dict(Context *ctx, Arena *arena)
 /// @param[out]  err   Error object.
 ///
 /// @return types of included context items.
+#pragma weak ctx_from_dict
 int ctx_from_dict(Dict dict, Context *ctx, Error *err)
   FUNC_ATTR_NONNULL_ALL
 {
