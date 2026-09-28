@@ -23,6 +23,7 @@
 static const char e_digit_expected[] = N_("E548: Digit expected");
 
 /// Handling of cursor and mouse pointer shapes in various modes.
+#pragma weak shape_table
 cursorentry_T shape_table[SHAPE_IDX_COUNT] = {
   // Values are set by 'guicursor' and 'mouseshape'.
   // Adjust the SHAPE_IDX_ defines when changing this!
@@ -50,6 +51,7 @@ cursorentry_T shape_table[SHAPE_IDX_COUNT] = {
 /// @param arena initialized arena where memory will be allocated
 ///
 /// @return Array of the form {[ "cursor_shape": ... ], ...}
+#pragma weak mode_style_array
 Array mode_style_array(Arena *arena)
 {
   Array all = arena_array(arena, SHAPE_IDX_COUNT);
@@ -98,6 +100,7 @@ Array mode_style_array(Arena *arena)
 /// @param what SHAPE_CURSOR or SHAPE_MOUSE ('mouseshape')
 ///
 /// @returns error message for an illegal option, NULL otherwise.
+#pragma weak parse_shape_opt
 const char *parse_shape_opt(int what)
 {
   char *p = NULL;
@@ -275,6 +278,7 @@ const char *parse_shape_opt(int what)
 /// visual selection.
 ///
 /// @param exclusive If 'selection' option is "exclusive".
+#pragma weak cursor_is_block_during_visual
 bool cursor_is_block_during_visual(bool exclusive)
   FUNC_ATTR_PURE
 {
@@ -287,6 +291,7 @@ bool cursor_is_block_during_visual(bool exclusive)
 ///
 /// @param mode Fullname of the mode whose id we are looking for
 /// @return -1 in case of failure, else the matching SHAPE_ID* integer
+#pragma weak cursor_mode_str2int
 int cursor_mode_str2int(const char *mode)
 {
   for (int mode_idx = 0; mode_idx < SHAPE_IDX_COUNT; mode_idx++) {
@@ -299,6 +304,7 @@ int cursor_mode_str2int(const char *mode)
 }
 
 /// Check if a syntax id is used as a cursor style.
+#pragma weak cursor_mode_uses_syn_id
 bool cursor_mode_uses_syn_id(int syn_id)
   FUNC_ATTR_PURE
 {
@@ -315,6 +321,7 @@ bool cursor_mode_uses_syn_id(int syn_id)
 }
 
 /// Return the index into shape_table[] for the current mode.
+#pragma weak cursor_get_mode_idx
 int cursor_get_mode_idx(void)
   FUNC_ATTR_PURE
 {

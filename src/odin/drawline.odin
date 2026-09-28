@@ -290,8 +290,7 @@ foreign _ {
 	getvvcol_r :: proc "c"(wp: rawptr, pos: ^Pos_T, start: ^C.int, cursor: ^C.int, end: ^C.int, flags: C.int) ---
 	@(link_name = "gchar_pos")
 	gchar_pos_r :: proc "c"(pos: ^Pos_T) -> C.int ---
-	@(link_name = "cursor_is_block_during_visual")
-	cursor_is_block_during_visual_r :: proc "c"(exclusive: bool) -> bool ---
+	// cursor_is_block_during_visual is an Odin export (cursor_shape.odin).
 	@(link_name = "win_bg_attr")
 	win_bg_attr_r :: proc "c"(wp: rawptr) -> C.int ---
 	@(link_name = "diff_check_with_linestatus")
@@ -507,7 +506,7 @@ win_line :: proc "c"(wp: rawptr, lnum: C.int, startrow: C.int, endrow: C.int, co
 
 			// Invert (highlight) the char under the cursor.
 			if !highlight_match_g && in_curline &&
-				cursor_is_block_during_visual_r(p_sel^ == 'e') {
+				cursor_is_block_during_visual(p_sel^ == 'e') {
 				noinvcur = true
 			}
 
