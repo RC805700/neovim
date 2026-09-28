@@ -15511,8 +15511,6 @@ f_shellescape :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 
 // —— Batch 27ai: funcs.c sha256 + shiftwidth ——
 foreign _ {
-	@(link_name = "sha256_bytes")
-	sha256_bytes_e :: proc "c" (buf: ^u8, buflen: C.size_t, salt: ^u8, saltlen: C.size_t) -> cstring ---
 	@(link_name = "get_sw_value_col")
 	get_sw_value_col_e :: proc "c" (buf: rawptr, col: C.int, left: bool) -> C.int ---
 }
@@ -15531,10 +15529,10 @@ f_sha256 :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 			p = (^u8)((^rawptr)(uintptr(blob) + 16)^)
 			length = C.size_t((^C.int)(uintptr(blob) + 0)^)
 		}
-		rettv.vval = transmute(rawptr)(xstrdup_o(transmute(^u8)(sha256_bytes_e(p, length, nil, 0))))
+		rettv.vval = transmute(rawptr)(xstrdup_o(transmute(^u8)(sha256_bytes(p, length, nil, 0))))
 	} else {
 		p := tv_get_string((^Typval_T)(uintptr(argvars)))
-		rettv.vval = transmute(rawptr)(xstrdup_o(transmute(^u8)(sha256_bytes_e(transmute(^u8)(p), C.size_t(libc.strlen(p)), nil, 0))))
+		rettv.vval = transmute(rawptr)(xstrdup_o(transmute(^u8)(sha256_bytes(transmute(^u8)(p), C.size_t(libc.strlen(p)), nil, 0))))
 	}
 }
 

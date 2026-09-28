@@ -35,6 +35,7 @@
   (b)[(i) + 3] = (uint8_t)((n)); \
 }
 
+#pragma weak sha256_start
 void sha256_start(context_sha256_T *ctx)
 {
   ctx->total[0] = 0;
@@ -177,6 +178,7 @@ static void sha256_process(context_sha256_T *ctx, const uint8_t data[SHA256_BUFF
   ctx->state[7] += H;
 }
 
+#pragma weak sha256_update
 void sha256_update(context_sha256_T *ctx, const uint8_t *input, size_t length)
 {
   if (length == 0) {
@@ -220,6 +222,7 @@ static uint8_t sha256_padding[SHA256_BUFFER_SIZE] = {
   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
 };
 
+#pragma weak sha256_finish
 void sha256_finish(context_sha256_T *ctx, uint8_t digest[SHA256_SUM_SIZE])
 {
   uint32_t high = (ctx->total[0] >> 29) | (ctx->total[1] <<  3);
@@ -256,6 +259,7 @@ void sha256_finish(context_sha256_T *ctx, uint8_t digest[SHA256_SUM_SIZE])
 ///
 /// @returns hex digest of "buf[buf_len]" in a static array.
 ///          if "salt" is not NULL also do "salt[salt_len]".
+#pragma weak sha256_bytes
 const char *sha256_bytes(const uint8_t *restrict buf,  size_t buf_len, const uint8_t *restrict salt,
                          size_t salt_len)
 {
@@ -299,6 +303,7 @@ static char *sha_self_test_vector[] = {
 /// Perform a test on the SHA256 algorithm.
 ///
 /// @returns true if not failures generated.
+#pragma weak sha256_self_test
 bool sha256_self_test(void)
 {
   char output[SHA256_BUFFER_SIZE + 1];  // buf size + NULL
