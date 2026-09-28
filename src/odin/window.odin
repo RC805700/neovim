@@ -1106,7 +1106,7 @@ win_free :: proc "c"(wp: rawptr, tp: rawptr) {
 
 	vars := (^rawptr)(uintptr(wp) + W_VARS_OFF)^
 	vars_clear(transmute(rawptr)(uintptr(vars) + DV_HASHTAB_OFF))
-	hash_init_r(transmute(rawptr)(uintptr(vars) + DV_HASHTAB_OFF))
+	hash_init(transmute(rawptr)(uintptr(vars) + DV_HASHTAB_OFF))
 	unref_var_dict(vars)
 
 	if prevwin_g == wp {
@@ -4812,7 +4812,7 @@ free_tabpage :: proc "c"(tp: rawptr) {
 	}
 	vars := (^rawptr)(uintptr(tp) + TP_VARS_OFF)^
 	vars_clear(transmute(rawptr)(uintptr(vars) + DV_HASHTAB_OFF)) // free t: vars
-	hash_init_r(transmute(rawptr)(uintptr(vars) + DV_HASHTAB_OFF))
+	hash_init(transmute(rawptr)(uintptr(vars) + DV_HASHTAB_OFF))
 	unref_var_dict(vars)
 	if tp == lastused_tabpage_g {
 		lastused_tabpage_g = nil

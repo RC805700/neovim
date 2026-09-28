@@ -600,7 +600,7 @@ count_dict_o :: proc "c" (d: rawptr, needle: ^Typval_T, ic: bool) -> C.longlong 
 	for todo > 0 {
 		key := ([^]rawptr)(hi)[1] // hi_key@hi+8
 		hi += 16
-		if key == nil || key == rawptr(&hash_removed_c) {
+		if key == nil || key == rawptr(&hash_removed) {
 			continue
 		}
 		todo -= 1
@@ -652,12 +652,6 @@ f_count :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 }
 
 // —— Batch 6: eval/list.c filter/map engine ——
-foreign _ {
-	@(link_name = "hash_lock")
-	hash_lock_e :: proc "c" (ht: rawptr) ---
-	@(link_name = "hash_unlock")
-	hash_unlock_e :: proc "c" (ht: rawptr) ---
-}
 
 FILTERMAP_FILTER_O :: 0
 FILTERMAP_MAP_O :: 1
@@ -725,7 +719,7 @@ dict_walk_o :: proc "c" (d: rawptr, visit: proc "c" (di: rawptr) -> bool) {
 	for todo > 0 {
 		key := ([^]rawptr)(hi)[1]
 		hi += 16
-		if key == nil || key == rawptr(&hash_removed_c) {
+		if key == nil || key == rawptr(&hash_removed) {
 			continue
 		}
 		todo -= 1
@@ -815,7 +809,7 @@ filter_map_dict_o :: proc "c" (d: rawptr, filtermap: C.int, func_name: cstring, 
 	if prev_lock == VAR_UNLOCKED {
 		(^C.int)(d)^ = VAR_LOCKED
 	}
-	hash_lock_e(rawptr(uintptr(d) + 16))
+	hash_lock(rawptr(uintptr(d) + 16))
 	filter_map_dict_state = {
 		d = d,
 		d_ret = d_ret,
@@ -827,7 +821,7 @@ filter_map_dict_o :: proc "c" (d: rawptr, filtermap: C.int, func_name: cstring, 
 		failed = false,
 	}
 	dict_walk_o(d, filter_map_dict_visit)
-	hash_unlock_e(rawptr(uintptr(d) + 16))
+	hash_unlock(rawptr(uintptr(d) + 16))
 	(^C.int)(d)^ = prev_lock
 }
 
@@ -4983,7 +4977,7 @@ list_hashtable_vars :: proc "c" (ht: rawptr, prefix: cstring, empty: C.int, firs
 	for todo > 0 && !got_int {
 		key := ([^]rawptr)(hi)[1]
 		hi += 16
-		if key == nil || key == rawptr(&hash_removed_c) {
+		if key == nil || key == rawptr(&hash_removed) {
 			continue
 		}
 		todo -= 1
@@ -5075,10 +5069,6 @@ get_spellword :: proc "c" (list: rawptr, ret_word: ^cstring) -> C.int {
 }
 
 // —— Batch 20d: eval/vars.c dict-lifecycle leaves ——
-foreign _ {
-	@(link_name = "hash_clear")
-	hash_clear_e :: proc "c" (ht: rawptr) ---
-}
 
 DI_FLAGS_ALLOC_O :: 16
 DV_LOCK_OFF :: 0
@@ -5091,7 +5081,7 @@ DV_WATCHERS_OFF :: 336
 init_var_dict :: proc "c" (dict: rawptr, dict_var: rawptr, scope: C.int) {
 	context = runtime.default_context()
 	d := uintptr(dict)
-	hash_init_r(rawptr(d + 16))
+	hash_init(rawptr(d + 16))
 	(^C.int)(d + DV_LOCK_OFF)^ = VAR_UNLOCKED
 	(^C.int)(d + DV_SCOPE_OFF)^ = scope
 	(^C.int)(d + 8)^ = DO_NOT_FREE_CNT_O
@@ -5111,13 +5101,13 @@ init_var_dict :: proc "c" (dict: rawptr, dict_var: rawptr, scope: C.int) {
 @(export)
 vars_clear_ext :: proc "c" (ht: rawptr, free_val: bool) {
 	context = runtime.default_context()
-	hash_lock_e(ht)
+	hash_lock(ht)
 	todo := (^C.size_t)(uintptr(ht) + 8)^
 	hi := uintptr((^rawptr)(uintptr(ht) + 32)^)
 	for todo > 0 {
 		key := ([^]rawptr)(hi)[1]
 		hi += 16
-		if key == nil || key == rawptr(&hash_removed_c) {
+		if key == nil || key == rawptr(&hash_removed) {
 			continue
 		}
 		todo -= 1
@@ -5129,8 +5119,8 @@ vars_clear_ext :: proc "c" (ht: rawptr, free_val: bool) {
 			xfree(rawptr(di))
 		}
 	}
-	hash_clear_e(ht)
-	hash_init_r(ht)
+	hash_clear(ht)
+	hash_init(ht)
 }
 
 // Clean up a list of internal variables.
@@ -5145,7 +5135,7 @@ delete_var_o :: proc "c" (ht: rawptr, hi: rawptr) {
 	context = runtime.default_context()
 	key := ([^]rawptr)(uintptr(hi))[1]
 	di := uintptr(key) - 17
-	hash_remove_r(ht, hi)
+	hash_remove(ht, hi)
 	tv_clear((^Typval_T)(di))
 	xfree(rawptr(di))
 }
@@ -5305,14 +5295,14 @@ unref_var_dict :: proc "c" (dict: rawptr) {
 del_menutrans_vars :: proc "c" () {
 	context = runtime.default_context()
 	ht := 	get_globvar_ht()
-	hash_lock_e(ht)
+	hash_lock(ht)
 	todo := (^C.size_t)(uintptr(ht) + 8)^
 	hi := uintptr((^rawptr)(uintptr(ht) + 32)^)
 	for todo > 0 {
 		key := ([^]rawptr)(hi)[1]
 		cur := hi
 		hi += 16
-		if key == nil || key == rawptr(&hash_removed_c) {
+		if key == nil || key == rawptr(&hash_removed) {
 			continue
 		}
 		todo -= 1
@@ -5320,7 +5310,7 @@ del_menutrans_vars :: proc "c" () {
 			delete_var_o(ht, rawptr(cur))
 		}
 	}
-	hash_unlock_e(ht)
+	hash_unlock(ht)
 }
 
 // —— Batch 21a: eval/typval.c dict getters + list finders ——
@@ -6014,7 +6004,7 @@ tv_item_lock :: proc "c" (tv: ^Typval_T, deep: C.int, lock: bool, check_refcount
 				for todo > 0 {
 					key := ([^]rawptr)(hi)[1]
 					hi += 16
-					if key == nil || key == rawptr(&hash_removed_c) {
+					if key == nil || key == rawptr(&hash_removed) {
 						continue
 					}
 					todo -= 1
@@ -6548,7 +6538,7 @@ tv_dict2list_o :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, what: C.int) {
 	for todo > 0 {
 		key := ([^]rawptr)(hi)[1]
 		hi += 16
-		if key == nil || key == rawptr(&hash_removed_c) {
+		if key == nil || key == rawptr(&hash_removed) {
 			continue
 		}
 		todo -= 1
@@ -7217,17 +7207,17 @@ tv_dict_item_copy :: proc "c" (di: rawptr) -> rawptr {
 tv_dict_item_remove :: proc "c" (dict: rawptr, item: rawptr) {
 	context = runtime.default_context()
 	ht := rawptr(uintptr(dict) + 16)
-	hi := hash_find_r(ht, transmute(cstring)(uintptr(item) + 17))
+	hi := hash_find(ht, transmute(cstring)(uintptr(item) + 17))
 	empty := hi == nil
 	key: rawptr = nil
 	if !empty {
 		key = ([^]rawptr)(uintptr(hi))[1]
-		empty = key == nil || key == rawptr(&hash_removed_c)
+		empty = key == nil || key == rawptr(&hash_removed)
 	}
 	if empty {
 		semsg(cstring(E_INTERN2_S), cstring("tv_dict_item_remove()"))
 	} else {
-		hash_remove_r(ht, hi)
+		hash_remove(ht, hi)
 	}
 	tv_dict_item_free(item)
 }
@@ -7243,7 +7233,7 @@ tv_dict_alloc :: proc "c" () -> rawptr {
 	(^rawptr)(uintptr(d) + 320)^ = gc_first_dict
 	(^rawptr)(uintptr(d) + 328)^ = nil
 	gc_first_dict = d
-	hash_init_r(rawptr(uintptr(d) + 16))
+	hash_init(rawptr(uintptr(d) + 16))
 	(^C.int)(d)^ = VAR_UNLOCKED
 	(^C.int)(uintptr(d) + 4)^ = 0
 	(^C.int)(uintptr(d) + 8)^ = 0
@@ -7292,19 +7282,19 @@ tv_dict_watcher_free_o :: proc "c" (watcher: rawptr) {
 tv_dict_free_contents :: proc "c" (d: rawptr) {
 	context = runtime.default_context()
 	ht := rawptr(uintptr(d) + 16)
-	hash_lock_e(ht)
+	hash_lock(ht)
 	todo := (^C.size_t)(uintptr(ht) + 8)^
 	hi := uintptr((^rawptr)(uintptr(ht) + 32)^)
 	for todo > 0 {
 		key := ([^]rawptr)(hi)[1]
 		cur := hi
 		hi += 16
-		if key == nil || key == rawptr(&hash_removed_c) {
+		if key == nil || key == rawptr(&hash_removed) {
 			continue
 		}
 		todo -= 1
 		di := uintptr(key) - 17
-		hash_remove_r(ht, rawptr(cur))
+		hash_remove(ht, rawptr(cur))
 		tv_dict_item_free(rawptr(di))
 	}
 	wq := uintptr(d) + 336
@@ -7316,9 +7306,9 @@ tv_dict_free_contents :: proc "c" (d: rawptr) {
 		(^rawptr)(uintptr(wn) + 8)^ = wp
 		tv_dict_watcher_free_o(rawptr(w - 32))
 	}
-	hash_clear_e(ht)
+	hash_clear(ht)
 	(^C.int)(uintptr(ht) + 28)^ -= 1
-	hash_init_r(ht)
+	hash_init(ht)
 }
 
 // Free a dictionary, including all items it contains.
@@ -7429,8 +7419,6 @@ tv_list_free_list :: proc "c" (l: rawptr) {
 
 // —— Batch 21k: eval/typval.c dict-add scalar cluster ——
 foreign _ {
-	@(link_name = "hash_add")
-	hash_add_e :: proc "c" (ht: rawptr, key: ^u8) -> C.int ---
 	@(link_name = "get_funccal_local_ht")
 	get_funccal_local_ht_e :: proc "c" () -> rawptr ---
 }
@@ -7454,7 +7442,7 @@ tv_dict_add :: proc "c" (d: rawptr, item: rawptr) -> C.int {
 	if tv_dict_wrong_func_name(d, (^Typval_T)(item), transmute(cstring)(uintptr(item) + 17)) != 0 {
 		return FAIL_E
 	}
-	return hash_add_e(rawptr(uintptr(d) + 16), &([^]u8)(uintptr(item) + 17)[0])
+	return hash_add(rawptr(uintptr(d) + 16), &([^]u8)(uintptr(item) + 17)[0])
 }
 
 // Add a number entry to dictionary.
@@ -7587,21 +7575,21 @@ tv_dict_add_tv :: proc "c" (d: rawptr, key: cstring, key_len: C.size_t, tv: ^Typ
 tv_dict_clear :: proc "c" (d: rawptr) {
 	context = runtime.default_context()
 	ht := rawptr(uintptr(d) + 16)
-	hash_lock_e(ht)
+	hash_lock(ht)
 	todo := (^C.size_t)(uintptr(ht) + 8)^
 	hi := uintptr((^rawptr)(uintptr(ht) + 32)^)
 	for todo > 0 {
 		key := ([^]rawptr)(hi)[1]
 		cur := hi
 		hi += 16
-		if key == nil || key == rawptr(&hash_removed_c) {
+		if key == nil || key == rawptr(&hash_removed) {
 			continue
 		}
 		todo -= 1
 		tv_dict_item_free(rawptr(uintptr(key) - 17))
-		hash_remove_r(ht, rawptr(cur))
+		hash_remove(ht, rawptr(cur))
 	}
-	hash_unlock_e(ht)
+	hash_unlock(ht)
 }
 
 // —— Batch 21u: eval/typval.c list extend ——
@@ -7719,7 +7707,7 @@ tv_dict_extend :: proc "c" (d1: rawptr, d2: rawptr, action: cstring) {
 	arg_len := C.size_t(libc.strlen(cstring(EXTEND_ARG_S)))
 	act := ([^]u8)(action)[0]
 	if act == 'm' {
-		hash_lock_e(rawptr(uintptr(d2) + 16))
+		hash_lock(rawptr(uintptr(d2) + 16))
 	}
 	ht2 := rawptr(uintptr(d2) + 16)
 	todo := (^C.size_t)(uintptr(ht2) + 8)^
@@ -7729,7 +7717,7 @@ tv_dict_extend :: proc "c" (d1: rawptr, d2: rawptr, action: cstring) {
 		key := ([^]rawptr)(hi)[1]
 		cur := hi
 		hi += 16
-		if key == nil || key == rawptr(&hash_removed_c) {
+		if key == nil || key == rawptr(&hash_removed) {
 			continue
 		}
 		todo -= 1
@@ -7741,7 +7729,7 @@ tv_dict_extend :: proc "c" (d1: rawptr, d2: rawptr, action: cstring) {
 			if act == 'm' {
 				new_di := rawptr(di2)
 				if tv_dict_add(d1, new_di) == OK_E {
-					hash_remove_r(ht2, rawptr(cur))
+					hash_remove(ht2, rawptr(cur))
 						tv_dict_watcher_notify(d1, transmute(cstring)(di2 + 17), (^Typval_T)(di2), nil)
 				}
 			} else {
@@ -7777,7 +7765,7 @@ tv_dict_extend :: proc "c" (d1: rawptr, d2: rawptr, action: cstring) {
 		}
 	}
 	if act == 'm' {
-		hash_unlock_e(ht2)
+		hash_unlock(ht2)
 	}
 }
 
@@ -7803,7 +7791,7 @@ tv_dict_equal :: proc "c" (d1: rawptr, d2: rawptr, ic: bool) -> bool {
 	for todo > 0 {
 		key := ([^]rawptr)(hi)[1]
 		hi += 16
-		if key == nil || key == rawptr(&hash_removed_c) {
+		if key == nil || key == rawptr(&hash_removed) {
 			continue
 		}
 		todo -= 1
@@ -7943,7 +7931,7 @@ tv_dict_copy :: proc "c" (conv: rawptr, orig: rawptr, deep: bool, copyID: C.int)
 	for todo > 0 {
 		key := ([^]rawptr)(hi)[1]
 		hi += 16
-		if key == nil || key == rawptr(&hash_removed_c) {
+		if key == nil || key == rawptr(&hash_removed) {
 			continue
 		}
 		todo -= 1
@@ -7995,7 +7983,7 @@ tv_dict_set_keys_readonly :: proc "c" (dict: rawptr) {
 	for todo > 0 {
 		key := ([^]rawptr)(hi)[1]
 		hi += 16
-		if key == nil || key == rawptr(&hash_removed_c) {
+		if key == nil || key == rawptr(&hash_removed) {
 			continue
 		}
 		todo -= 1
@@ -8765,7 +8753,7 @@ tv_dict_to_env :: proc "c" (denv: rawptr) -> ^^u8 {
 	for todo > 0 {
 		key := ([^]rawptr)(hi)[1]
 		hi += 16
-		if key == nil || key == rawptr(&hash_removed_c) {
+		if key == nil || key == rawptr(&hash_removed) {
 			continue
 		}
 		todo -= 1
@@ -9288,13 +9276,13 @@ tv_dict_find :: proc "c" (d: rawptr, key: cstring, length: C.ptrdiff_t) -> rawpt
 	}
 	hi: rawptr
 	if length < 0 {
-		hi = hash_find_r(rawptr(uintptr(d) + 16), key)
+		hi = hash_find(rawptr(uintptr(d) + 16), key)
 	} else {
-		hi = hash_find_len_e(rawptr(uintptr(d) + 16), key, C.size_t(length))
+		hi = hash_find_len(rawptr(uintptr(d) + 16), key, C.size_t(length))
 	}
 	if hi != nil {
 		hi_key := (^rawptr)(uintptr(hi) + 8)^
-		if hi_key == nil || hi_key == transmute(rawptr)(&hash_removed_c) {
+		if hi_key == nil || hi_key == transmute(rawptr)(&hash_removed) {
 			return nil
 		}
 	} else {
@@ -9801,7 +9789,7 @@ evalvars_init :: proc "c" () {
 	init_var_dict(get_globvar_dict(), globvars_var_e(), VAR_DEF_SCOPE_O)
 	init_var_dict(get_vimvar_dict(), vimvars_var_e(), VAR_SCOPE_O)
 	(^C.int)(uintptr(get_vimvar_dict()) + 0)^ = VAR_FIXED_O
-	hash_init_r(compat_hashtab_e())
+	hash_init(compat_hashtab_e())
 	i := 0
 	for i < 108 {
 		tv := vimvar_tv_e(C.int(i))
@@ -9815,10 +9803,10 @@ evalvars_init :: proc "c" () {
 			di_flags^ = DI_FLAGS_FIX_O
 		}
 		if (^C.int)(uintptr(transmute(rawptr)(tv)))^ != VAR_UNKNOWN {
-			hash_add_e(rawptr(uintptr(get_vimvar_dict()) + 16), transmute(^u8)(rawptr(uintptr(transmute(rawptr)(tv)) + 17)))
+			hash_add(rawptr(uintptr(get_vimvar_dict()) + 16), transmute(^u8)(rawptr(uintptr(transmute(rawptr)(tv)) + 17)))
 		}
 		if (fl & VV_COMPAT_O) != 0 {
-			hash_add_e(compat_hashtab_e(), transmute(^u8)(rawptr(uintptr(transmute(rawptr)(tv)) + 17)))
+			hash_add(compat_hashtab_e(), transmute(^u8)(rawptr(uintptr(transmute(rawptr)(tv)) + 17)))
 		}
 		i += 1
 	}
@@ -9937,7 +9925,7 @@ prepare_vimvar :: proc "c" (idx: C.int, save_tv: ^Typval_T) {
 	save_tv^ = tv^
 	tv.vval = nil
 	if tv.v_type == VAR_UNKNOWN {
-		hash_add_e(rawptr(uintptr(get_vimvar_dict()) + 16), transmute(^u8)(rawptr(uintptr(transmute(rawptr)(tv)) + 17)))
+		hash_add(rawptr(uintptr(get_vimvar_dict()) + 16), transmute(^u8)(rawptr(uintptr(transmute(rawptr)(tv)) + 17)))
 	}
 }
 
@@ -9951,17 +9939,17 @@ restore_vimvar :: proc "c" (idx: C.int, save_tv: ^Typval_T) {
 		return
 	}
 	ht := rawptr(uintptr(get_vimvar_dict()) + 16)
-	hi := hash_find_r(ht, transmute(cstring)(rawptr(uintptr(transmute(rawptr)(tv)) + 17)))
+	hi := hash_find(ht, transmute(cstring)(rawptr(uintptr(transmute(rawptr)(tv)) + 17)))
 	if hi != nil {
 		hi_key := (^rawptr)(uintptr(hi) + 8)^
-		if hi_key == nil || hi_key == transmute(rawptr)(&hash_removed_c) {
+		if hi_key == nil || hi_key == transmute(rawptr)(&hash_removed) {
 			hi = nil
 		}
 	}
 	if hi == nil {
 		iemsg_r(cstring("restore_vimvar()"))
 	} else {
-		hash_remove_r(ht, hi)
+		hash_remove(ht, hi)
 	}
 }
 
@@ -9986,7 +9974,7 @@ get_user_var_name :: proc "c" (xp: rawptr, idx: C.int) -> cstring {
 		guvn_gdone += 1
 		for {
 			hi_key := (^rawptr)(uintptr(guvn_hi) + 8)^
-			if hi_key != nil && hi_key != transmute(rawptr)(&hash_removed_c) {
+			if hi_key != nil && hi_key != transmute(rawptr)(&hash_removed) {
 				break
 			}
 			guvn_hi = rawptr(uintptr(guvn_hi) + 16)
@@ -10008,7 +9996,7 @@ get_user_var_name :: proc "c" (xp: rawptr, idx: C.int) -> cstring {
 		guvn_bdone += 1
 		for {
 			hi_key := (^rawptr)(uintptr(guvn_hi) + 8)^
-			if hi_key != nil && hi_key != transmute(rawptr)(&hash_removed_c) {
+			if hi_key != nil && hi_key != transmute(rawptr)(&hash_removed) {
 				break
 			}
 			guvn_hi = rawptr(uintptr(guvn_hi) + 16)
@@ -10025,7 +10013,7 @@ get_user_var_name :: proc "c" (xp: rawptr, idx: C.int) -> cstring {
 		guvn_wdone += 1
 		for {
 			hi_key := (^rawptr)(uintptr(guvn_hi) + 8)^
-			if hi_key != nil && hi_key != transmute(rawptr)(&hash_removed_c) {
+			if hi_key != nil && hi_key != transmute(rawptr)(&hash_removed) {
 				break
 			}
 			guvn_hi = rawptr(uintptr(guvn_hi) + 16)
@@ -10042,7 +10030,7 @@ get_user_var_name :: proc "c" (xp: rawptr, idx: C.int) -> cstring {
 		guvn_tdone += 1
 		for {
 			hi_key := (^rawptr)(uintptr(guvn_hi) + 8)^
-			if hi_key != nil && hi_key != transmute(rawptr)(&hash_removed_c) {
+			if hi_key != nil && hi_key != transmute(rawptr)(&hash_removed) {
 				break
 			}
 			guvn_hi = rawptr(uintptr(guvn_hi) + 16)
@@ -11090,10 +11078,10 @@ do_unlet :: proc "c" (name: cstring, name_len: C.size_t, forceit: bool) -> C.int
 				return FAIL_E
 			}
 		}
-		hi := hash_find_r(ht, varname)
+		hi := hash_find(ht, varname)
 		if hi != nil {
 			hi_key := (^rawptr)(uintptr(hi) + 8)^
-			if hi_key == nil || hi_key == transmute(rawptr)(&hash_removed_c) {
+			if hi_key == nil || hi_key == transmute(rawptr)(&hash_removed) {
 				hi = nil
 			}
 		}
@@ -11102,7 +11090,7 @@ do_unlet :: proc "c" (name: cstring, name_len: C.size_t, forceit: bool) -> C.int
 		}
 		if hi != nil {
 			hk := (^rawptr)(uintptr(hi) + 8)^
-			if hk != nil && hk != transmute(rawptr)(&hash_removed_c) {
+			if hk != nil && hk != transmute(rawptr)(&hash_removed) {
 				di := rawptr(uintptr(hk) - 17)
 				if var_check_fixed((^C.int)(uintptr(di) + 16)^, name, max(C.size_t) - 1) || var_check_ro((^C.int)(uintptr(di) + 16)^, name, max(C.size_t) - 1) || value_check_lock((^C.int)(uintptr(d) + 0)^, name, max(C.size_t) - 1) {
 					return FAIL_E
@@ -11194,7 +11182,7 @@ set_var_const :: proc "c" (name: cstring, name_len: C.size_t, tv: ^Typval_T, cop
 		}
 		di = rawptr(xmalloc(17 + varname_len + 1))
 		libc.memcpy(rawptr(uintptr(di) + 17), transmute(rawptr)(varname), varname_len + 1)
-		if hash_add_e(ht, transmute(^u8)(rawptr(uintptr(di) + 17))) == FAIL_E {
+		if hash_add(ht, transmute(^u8)(rawptr(uintptr(di) + 17))) == FAIL_E {
 			xfree(di)
 			return
 		}
@@ -11428,10 +11416,10 @@ find_var_ht_dict_o :: proc "c" (name: cstring, name_len: C.size_t, varname: ^cst
 			return nil
 		}
 		varname^ = name
-		hi := hash_find_len_e(compat_hashtab_e(), name, name_len)
+		hi := hash_find_len(compat_hashtab_e(), name, name_len)
 		if hi != nil {
 			hi_key := (^rawptr)(uintptr(hi) + 8)^
-			if hi_key != nil && hi_key != transmute(rawptr)(&hash_removed_c) {
+			if hi_key != nil && hi_key != transmute(rawptr)(&hash_removed) {
 				return compat_hashtab_e()
 			}
 		}
@@ -11524,10 +11512,10 @@ find_var_in_ht :: proc "c" (ht: rawptr, htname: C.int, varname: cstring, varname
 		}
 		return nil
 	}
-	hi := hash_find_len_e(ht, varname, varname_len)
+	hi := hash_find_len(ht, varname, varname_len)
 	if hi != nil {
 		hi_key := (^rawptr)(uintptr(hi) + 8)^
-		if hi_key == nil || hi_key == transmute(rawptr)(&hash_removed_c) {
+		if hi_key == nil || hi_key == transmute(rawptr)(&hash_removed) {
 			hi = nil
 		}
 	}
@@ -11536,11 +11524,11 @@ find_var_in_ht :: proc "c" (ht: rawptr, htname: C.int, varname: cstring, varname
 			if !script_autoload_e(varname, varname_len, false) || aborting_r() {
 				return nil
 			}
-			hi = hash_find_len_e(ht, varname, varname_len)
+			hi = hash_find_len(ht, varname, varname_len)
 		}
 		if hi != nil {
 			hi_key := (^rawptr)(uintptr(hi) + 8)^
-			if hi_key == nil || hi_key == transmute(rawptr)(&hash_removed_c) {
+			if hi_key == nil || hi_key == transmute(rawptr)(&hash_removed) {
 				return nil
 			}
 		} else {
@@ -14692,7 +14680,7 @@ max_min_o :: proc "c" (tv: ^Typval_T, rettv: ^Typval_T, domax: bool) {
 		for todo > 0 {
 			key := ([^]rawptr)(hi)[1]
 			hi += 16
-			if key == nil || key == rawptr(&hash_removed_c) {
+			if key == nil || key == rawptr(&hash_removed) {
 				continue
 			}
 			todo -= 1
@@ -20027,7 +20015,7 @@ encode_str_walker_o :: proc "c" (gap: ^Garray, mpstack: ^MPConvStack_O, tv_top: 
 				ga_concat_len(gap, cstring(", "), 2)
 			}
 			hi := (^rawptr)(&cur.data[16])^
-			for (^rawptr)(uintptr(hi) + 8)^ == nil || (^rawptr)(uintptr(hi) + 8)^ == rawptr(&hash_removed_c) {
+			for (^rawptr)(uintptr(hi) + 8)^ == nil || (^rawptr)(uintptr(hi) + 8)^ == rawptr(&hash_removed) {
 				hi = rawptr(uintptr(hi) + 16)
 			}
 			(^rawptr)(&cur.data[16])^ = hi
@@ -20534,7 +20522,7 @@ encode_json_walker_o :: proc "c" (gap: ^Garray, mpstack: ^MPConvStack_O, tv_top:
 				ga_concat_len(gap, cstring(", "), 2)
 			}
 			hi := (^rawptr)(&cur.data[16])^
-			for (^rawptr)(uintptr(hi) + 8)^ == nil || (^rawptr)(uintptr(hi) + 8)^ == rawptr(&hash_removed_c) {
+			for (^rawptr)(uintptr(hi) + 8)^ == nil || (^rawptr)(uintptr(hi) + 8)^ == rawptr(&hash_removed) {
 				hi = rawptr(uintptr(hi) + 16)
 			}
 			(^rawptr)(&cur.data[16])^ = hi
@@ -21021,7 +21009,7 @@ encode_msgpack_walker_o :: proc "c" (packer: ^PackerBuffer_O, mpstack: ^MPConvSt
 				continue
 			}
 			hi := (^rawptr)(&cur.data[16])^
-			for (^rawptr)(uintptr(hi) + 8)^ == nil || (^rawptr)(uintptr(hi) + 8)^ == rawptr(&hash_removed_c) {
+			for (^rawptr)(uintptr(hi) + 8)^ == nil || (^rawptr)(uintptr(hi) + 8)^ == rawptr(&hash_removed) {
 				hi = rawptr(uintptr(hi) + 16)
 			}
 			(^rawptr)(&cur.data[16])^ = hi
@@ -21959,7 +21947,7 @@ typval_parse_exit_o :: proc "c" (w: rawptr, n: rawptr) {
 					for todo > 0 {
 						k := ([^]rawptr)(hi)[1]
 						hi += 16
-						if k == nil || k == rawptr(&hash_removed_c) {
+						if k == nil || k == rawptr(&hash_removed) {
 							continue
 						}
 						todo -= 1
@@ -25365,7 +25353,7 @@ set_ref_in_ht :: proc "c" (ht: rawptr, copyID: C.int, list_stack: rawptr) -> boo
 			for todo > 0 {
 				k := ([^]rawptr)(hi)[1]
 				hi += 16
-				if k == nil || k == rawptr(&hash_removed_c) {
+				if k == nil || k == rawptr(&hash_removed) {
 					continue
 				}
 				todo -= 1
@@ -25657,7 +25645,7 @@ set_var_lval :: proc "c" (lp: rawptr, endp: cstring, rettv: ^Typval_T, copy: boo
 	if (^rawptr)(uintptr(lp) + LL_NEWKEY_OFF_O)^ == nil {
 		lock_v = (^C.int)(uintptr(ll_tv) + 4)^
 	} else {
-		lock_v = (^C.int)(uintptr((^rawptr)(uintptr(ll_tv) + 8)^) + 208)^
+		lock_v = (^C.int)(uintptr((^rawptr)(uintptr(ll_tv) + 8)^))^
 	}
 	if value_check_lock(lock_v, transmute(cstring)((^rawptr)(uintptr(lp) + 0)^), TV_CSTRING_O) {
 		return
@@ -29043,7 +29031,7 @@ get_v_event :: proc "c" (sve: rawptr) -> rawptr {
 	if (^C.size_t)(uintptr(v_event) + 16 + 8)^ > 0 {
 		([^]u8)(sve)[0] = 1
 		libc.memcpy(rawptr(uintptr(sve) + 8), rawptr(uintptr(v_event) + 16), 296)
-		hash_init_r(rawptr(uintptr(v_event) + 16))
+		hash_init(rawptr(uintptr(v_event) + 16))
 	} else {
 		([^]u8)(sve)[0] = 0
 	}
@@ -29058,7 +29046,7 @@ restore_v_event :: proc "c" (v_event: rawptr, sve: rawptr) {
 	if ([^]u8)(sve)[0] != 0 {
 		libc.memcpy(rawptr(uintptr(v_event) + 16), rawptr(uintptr(sve) + 8), 296)
 	} else {
-		hash_init_r(rawptr(uintptr(v_event) + 16))
+		hash_init(rawptr(uintptr(v_event) + 16))
 	}
 }
 

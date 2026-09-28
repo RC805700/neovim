@@ -9,17 +9,7 @@ foreign _ {
 	// ── options/globals ──
 	// p_enc already declared in digraph.odin — reuse directly.
 
-	// ── hashtab.c ──
-	@(link_name = "hash_init")
-	hash_init_r :: proc "c" (ht: rawptr) ---
-	@(link_name = "hash_lookup")
-	hash_lookup_r :: proc "c" (ht: rawptr, key: cstring, len: C.size_t, hash: C.size_t) -> rawptr ---
-	@(link_name = "hash_add_item")
-	hash_add_item_r :: proc "c" (ht: rawptr, hi: rawptr, key: ^u8, hash: C.size_t) ---
-	@(link_name = "hash_clear_all")
-	hash_clear_all_r :: proc "c" (ht: rawptr, off: C.size_t) ---
-	@(link_name = "hash_hash")
-	hash_hash_r :: proc "c" (key: cstring) -> C.size_t ---
+	// ── hashtab.c is Odin (hashtab.odin) — call exports directly.
 
 	// ga_init/ga_clear/ga_clear_strings are Odin exports (garray.odin) — call directly.
 
@@ -1531,22 +1521,22 @@ count_common_word :: proc "c"(lp: ^Slang_T, word: ^u8, len: C.int, count: u8) {
 		p = transmute(cstring)(&buf[0])
 	}
 
-	hash := hash_hash_r(p)
+	hash := hash_hash(p)
 	p_len := libc.strlen(p)
 	ht := &lp.sl_wordcount_buf[0]
-	hi := hash_lookup_r(ht, p, p_len, hash)
+	hi := hash_lookup(ht, p, p_len, hash)
 	// HASHITEM_EMPTY: hi->hi_key == NULL or points to ht->ht_array (tombstone).
 	// hi_key is at offset 8 in hashitem_T (u64 hash then key ptr).
 	hi_key := hi == nil ? nil : (^rawptr)(uintptr(hi) + 8)^
 	// hash_removed is a C global char; HASHITEM_EMPTY checks NULL or that.
-	if hi_key != nil && hi_key == transmute(rawptr)(&hash_removed_c) {
+	if hi_key != nil && hi_key == transmute(rawptr)(&hash_removed) {
 		hi_key = nil
 	}
 	if hi_key == nil {
 		wc := (^Wordcount_T_alloc)(xmalloc_sp(WC_KEY_OFF + p_len + 1))
 		libc.memcpy(&wc.wc_word[0], transmute(^u8)(p), p_len + 1)
 		wc.wc_count = C.ushort(count)
-		hash_add_item_r(ht, hi, &wc.wc_word[0], hash)
+		hash_add_item(ht, hi, &wc.wc_word[0], hash)
 	} else {
 		// HI2WC(hi): (wordcount_T *)(hi_key - WC_KEY_OFF)
 		wc := (^Wordcount_T_alloc)(uintptr(hi_key) - WC_KEY_OFF)
@@ -1568,8 +1558,6 @@ Wordcount_T_alloc :: struct {
 foreign _ {
 	@(link_name = "xmalloc")
 	xmalloc_sp :: proc "c" (size: C.size_t) -> rawptr ---
-	@(link_name = "hash_removed")
-	hash_removed_c: u8
 }
 
 @(export)
@@ -1665,7 +1653,7 @@ slang_alloc :: proc "c"(lang: ^u8) -> ^Slang_T {
 	ga_init(&lp.sl_repsal, size_of(Fromto_T), 10)
 	lp.sl_compmax = MAXWLEN
 	lp.sl_compsylmax = MAXWLEN
-	hash_init_r(&lp.sl_wordcount_buf[0])
+	hash_init(&lp.sl_wordcount_buf[0])
 
 	return lp
 }
@@ -1739,10 +1727,10 @@ slang_clear :: proc "c"(lp: ^Slang_T) {
 
 	ga_clear_strings(&lp.sl_comppat)
 
-	hash_clear_all_r(&lp.sl_wordcount_buf[0], WC_KEY_OFF)
-	hash_init_r(&lp.sl_wordcount_buf[0])
+	hash_clear_all(&lp.sl_wordcount_buf[0], WC_KEY_OFF)
+	hash_init(&lp.sl_wordcount_buf[0])
 
-	hash_clear_all_r(&lp.sl_map_hash_buf[0], 0)
+	hash_clear_all(&lp.sl_map_hash_buf[0], 0)
 
 	// Clear info from .sug file.
 	slang_clear_sug(lp)
@@ -3192,8 +3180,6 @@ init_spell_chartab :: proc "c"() {
 foreign _ {
 	@(link_name = "mb_islower")
 	mb_islower_r2 :: proc "c" (a: C.int) -> bool ---
-	@(link_name = "hash_find")
-	hash_find_r :: proc "c" (ht: rawptr, key: cstring) -> rawptr ---
 }
 
 // iterate all buffers via b_next @120
@@ -3452,9 +3438,9 @@ dump_word_tail :: proc "c"(
 		}
 
 		if (dumpflags & DUMPFLAG_COUNT) != 0 {
-			hi := hash_find_r(&(^Slang_T)(slang).sl_wordcount_buf[0], transmute(cstring)(tw))
+			hi := hash_find(&(^Slang_T)(slang).sl_wordcount_buf[0], transmute(cstring)(tw))
 			hk := hi == nil ? nil : (^rawptr)(uintptr(hi) + 8)^
-			if hk != nil && hk != transmute(rawptr)(&hash_removed_c) {
+			if hk != nil && hk != transmute(rawptr)(&hash_removed) {
 				wc := (^Wordcount_T_alloc)(uintptr(hk) - WC_KEY_OFF)
 				tmpb: [1025]u8
 				libc.snprintf(&tmpb[0], 1025, "%s\t%d", transmute(cstring)(tw), C.int(wc.wc_count))

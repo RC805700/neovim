@@ -987,7 +987,7 @@ get_user_func_name :: proc "c" (xp: rawptr, idx: C.int) -> cstring {
 		gufn_done_o += 1
 		for {
 			key := (^rawptr)(uintptr(gufn_hi_o) + HI_KEY_OFF_O)^
-			if key != nil && key != transmute(rawptr)(&hash_removed_c) {
+			if key != nil && key != transmute(rawptr)(&hash_removed) {
 				break
 			}
 			gufn_hi_o = rawptr(uintptr(gufn_hi_o) + uintptr(HASHITEM_SIZE_O))
@@ -1251,7 +1251,7 @@ call_user_func :: proc "c" (fp: rawptr, argcount: C.int, argvars: ^Typval_T, ret
 		name = rawptr(uintptr(v) + 17)
 		libc.memcpy(name, rawptr(&SELF_KEY_O[0]), 5)
 		([^]u8)(uintptr(v) + 16)[0] = DI_FLAGS_RO_O | DI_FLAGS_FIX_O
-		hash_add_e(rawptr(uintptr(fc) + FC_L_VARS_OFF_O + 16), transmute(^u8)(rawptr(uintptr(v) + 17)))
+		hash_add(rawptr(uintptr(fc) + FC_L_VARS_OFF_O + 16), transmute(^u8)(rawptr(uintptr(v) + 17)))
 		(^Typval_T)(v).v_type = VAR_DICT
 		(^Typval_T)(v).v_lock = VAR_UNLOCKED_O
 		(^Typval_T)(v).vval = transmute(rawptr)(selfdict)
@@ -1278,7 +1278,7 @@ call_user_func :: proc "c" (fp: rawptr, argcount: C.int, argvars: ^Typval_T, ret
 		name = rawptr(uintptr(v) + 17)
 		libc.memcpy(name, rawptr(&ZERO3_KEY_O[0]), 4)
 		([^]u8)(uintptr(v) + 16)[0] = DI_FLAGS_RO_O | DI_FLAGS_FIX_O
-		hash_add_e(rawptr(uintptr(fc) + FC_L_AVARS_OFF_O + 16), transmute(^u8)(rawptr(uintptr(v) + 17)))
+		hash_add(rawptr(uintptr(fc) + FC_L_AVARS_OFF_O + 16), transmute(^u8)(rawptr(uintptr(v) + 17)))
 		(^Typval_T)(v).v_type = VAR_LIST
 		(^Typval_T)(v).v_lock = VAR_FIXED_O
 		(^Typval_T)(v).vval = transmute(rawptr)(rawptr(uintptr(fc) + FC_L_VARLIST_OFF_O))
@@ -1349,9 +1349,9 @@ call_user_func :: proc "c" (fp: rawptr, argcount: C.int, argvars: ^Typval_T, ret
 		}
 		if addlocal {
 			tv_copy((^Typval_T)(v), (^Typval_T)(v))
-			hash_add_e(rawptr(uintptr(fc) + FC_L_VARS_OFF_O + 16), transmute(^u8)(rawptr(uintptr(v) + 17)))
+			hash_add(rawptr(uintptr(fc) + FC_L_VARS_OFF_O + 16), transmute(^u8)(rawptr(uintptr(v) + 17)))
 		} else {
-			hash_add_e(rawptr(uintptr(fc) + FC_L_AVARS_OFF_O + 16), transmute(^u8)(rawptr(uintptr(v) + 17)))
+			hash_add(rawptr(uintptr(fc) + FC_L_AVARS_OFF_O + 16), transmute(^u8)(rawptr(uintptr(v) + 17)))
 		}
 		if ai >= 0 && ai < MAX_FUNC_ARGS_O {
 			li := rawptr(uintptr(fc) + FC_L_LISTITEMS_OFF_O + uintptr(ai) * 32)
@@ -1695,7 +1695,7 @@ add_nr_var_o :: proc "c" (dp: rawptr, v: rawptr, name: cstring, nr: C.longlong) 
 	ln := libc.strlen(name)
 	libc.memcpy(rawptr(uintptr(v) + 17), rawptr(name), ln + 1)
 	([^]u8)(uintptr(v) + 16)[0] = DI_FLAGS_RO_O | DI_FLAGS_FIX_O
-	hash_add_e(rawptr(uintptr(dp) + 16), transmute(^u8)(rawptr(uintptr(v) + 17)))
+	hash_add(rawptr(uintptr(dp) + 16), transmute(^u8)(rawptr(uintptr(v) + 17)))
 	(^Typval_T)(v).v_type = VAR_NUMBER
 	(^Typval_T)(v).v_lock = VAR_UNLOCKED_O
 	(^Typval_T)(v).vval = transmute(rawptr)(nr)
@@ -1811,7 +1811,7 @@ cleanup_function_call_o :: proc "c" (fc: rawptr) {
 		for todo > 0 {
 			key := ([^]rawptr)(hi)[1]
 			hi = ([^]rawptr)(uintptr(hi) + 16)
-			if key == nil || key == transmute(rawptr)(&hash_removed_c) {
+			if key == nil || key == transmute(rawptr)(&hash_removed) {
 				continue
 			}
 			todo -= 1
@@ -2466,7 +2466,7 @@ get_lambda_tv :: proc "c" (arg: ^cstring, rettv: ^Typval_T, evalarg: rawptr) -> 
 			(^C.int)(uintptr(fp) + UF_FLAGS_OFF_O)^ |= FC_NOARGS_O
 		}
 		(^C.int)(uintptr(fp) + UF_REFCOUNT_OFF_O)^ = 1
-		hash_add_e(rawptr(&func_hashtab), transmute(^u8)(rawptr(uintptr(fp) + UF_NAME_OFF_O)))
+		hash_add(rawptr(&func_hashtab), transmute(^u8)(rawptr(uintptr(fp) + UF_NAME_OFF_O)))
 		([^]Garray)(uintptr(fp) + UF_ARGS_OFF_O)[0] = newargs
 		ga_init((^Garray)(uintptr(fp) + UF_DEF_ARGS_OFF_O), 8, 1)
 		(^rawptr)(uintptr(fp) + UF_LINES_OFF_O + 16)^ = newlines.ga_data
@@ -2511,7 +2511,7 @@ register_luafunc :: proc "c" (ref_: C.int) -> cstring {
 	(^C.int)(uintptr(fp) + UF_CALLS_OFF_O)^ = 0
 	libc.memcpy(rawptr(uintptr(fp) + UF_SCRIPT_CTX_OFF_O), rawptr(&current_sctx_buf[0]), 24)
 	(^C.int)(uintptr(fp) + UF_LUAREF_OFF_O)^ = ref_
-	hash_add_e(rawptr(&func_hashtab), transmute(^u8)(rawptr(uintptr(fp) + UF_NAME_OFF_O)))
+	hash_add(rawptr(&func_hashtab), transmute(^u8)(rawptr(uintptr(fp) + UF_NAME_OFF_O)))
 	return transmute(cstring)(rawptr(uintptr(fp) + UF_NAME_OFF_O))
 }
 
@@ -2537,7 +2537,7 @@ func_hashtab: Hashtab_T
 @(export)
 func_init :: proc "c" () {
 	context = runtime.default_context()
-	hash_init_r(&func_hashtab)
+	hash_init(&func_hashtab)
 }
 
 // Return the function hash table.
@@ -2551,10 +2551,10 @@ func_tbl_get :: proc "c" () -> rawptr {
 @(export)
 find_func :: proc "c" (name: cstring) -> rawptr {
 	context = runtime.default_context()
-	hi := hash_find_r(&func_hashtab, name)
+	hi := hash_find(&func_hashtab, name)
 	if hi != nil {
 		hi_key := (^rawptr)(uintptr(hi) + 8)^
-		if hi_key != nil && hi_key != transmute(rawptr)(&hash_removed_c) {
+		if hi_key != nil && hi_key != transmute(rawptr)(&hash_removed) {
 			return rawptr(uintptr(hi_key) - uintptr(UF_NAME_OFF_O))
 		}
 	}
@@ -2562,10 +2562,6 @@ find_func :: proc "c" (name: cstring) -> rawptr {
 }
 
 // —— Batch 24u: scoped lookup + GC marking ——
-foreign _ {
-	@(link_name = "hash_find_len")
-	hash_find_len_e :: proc "c" (ht: rawptr, key: cstring, len: C.size_t) -> rawptr ---
-}
 
 // Search parent scopes (closure chain) for a hashitem.
 @(export)
@@ -2582,10 +2578,10 @@ find_hi_in_scoped_ht :: proc "c" (name: cstring, pht: ^rawptr) -> rawptr {
 	for current_funccal != nil {
 		ht := 	find_var_ht(name, namelen, &varname)
 		if ht != nil && ([^]u8)(varname)[0] != 0 {
-			hi = hash_find_len_e(ht, varname, namelen - C.size_t(uintptr(transmute(rawptr)(varname)) - uintptr(transmute(rawptr)(name))))
+			hi = hash_find_len(ht, varname, namelen - C.size_t(uintptr(transmute(rawptr)(varname)) - uintptr(transmute(rawptr)(name))))
 			if hi != nil {
 				hi_key := (^rawptr)(uintptr(hi) + 8)^
-				if hi_key != nil && hi_key != transmute(rawptr)(&hash_removed_c) {
+				if hi_key != nil && hi_key != transmute(rawptr)(&hash_removed) {
 					pht^ = ht
 					break
 				}
@@ -2699,7 +2695,7 @@ set_ref_in_functions :: proc "c" (copyID: C.int) -> bool {
 	item_size: uintptr = 16
 	for todo > 0 && !got_int {
 		hi_key := (^rawptr)(uintptr(hi) + 8)^
-		if hi_key != nil && hi_key != transmute(rawptr)(&hash_removed_c) {
+		if hi_key != nil && hi_key != transmute(rawptr)(&hash_removed) {
 			todo -= 1
 			fp := rawptr(uintptr(hi_key) - uintptr(UF_NAME_OFF_O))
 			if !func_name_refcount_o(transmute(cstring)(rawptr(uintptr(fp) + UF_NAME_OFF_O))) &&
@@ -3425,7 +3421,7 @@ list_functions_o :: proc "c" (regmatch: rawptr) {
 	msg_ext_set_kind(cstring("list_cmd"))
 	for todo > 0 && !got_int {
 		hi_key := (^rawptr)(uintptr(hi) + 8)^
-		if hi_key != nil && hi_key != transmute(rawptr)(&hash_removed_c) {
+		if hi_key != nil && hi_key != transmute(rawptr)(&hash_removed) {
 			fp := rawptr(uintptr(hi_key) - uintptr(UF_NAME_OFF_O))
 			todo -= 1
 			matched := false
@@ -3710,16 +3706,16 @@ UF_CLEARED_OFF_O :: 12
 // Remove a function from the hashtable (static in C).
 func_remove_o :: proc "c" (fp: rawptr) -> bool {
 	context = runtime.default_context()
-	hi := hash_find_r(rawptr(&func_hashtab), transmute(cstring)(rawptr(uintptr(fp) + UF_NAME_OFF_O)))
+	hi := hash_find(rawptr(&func_hashtab), transmute(cstring)(rawptr(uintptr(fp) + UF_NAME_OFF_O)))
 	if hi != nil {
 		hi_key := (^rawptr)(uintptr(hi) + 8)^
-		if hi_key == nil || hi_key == transmute(rawptr)(&hash_removed_c) {
+		if hi_key == nil || hi_key == transmute(rawptr)(&hash_removed) {
 			return false
 		}
 	} else {
 		return false
 	}
-	hash_remove_r(rawptr(&func_hashtab), hi)
+	hash_remove(rawptr(&func_hashtab), hi)
 	return true
 }
 
@@ -4087,9 +4083,9 @@ ex_function :: proc "c" (eap: rawptr) {
 			flags |= FC_DICT_O
 		}
 		if overwrite {
-			hi := hash_find_r(rawptr(&func_hashtab), name)
+			hi := hash_find(rawptr(&func_hashtab), name)
 			(^rawptr)(uintptr(hi) + 8)^ = rawptr(uintptr(fp) + UF_NAME_OFF_O)
-		} else if hash_add_e(rawptr(&func_hashtab), transmute(^u8)(rawptr(uintptr(fp) + UF_NAME_OFF_O))) == FAIL_E {
+		} else if hash_add(rawptr(&func_hashtab), transmute(^u8)(rawptr(uintptr(fp) + UF_NAME_OFF_O))) == FAIL_E {
 			free_fp = true
 			stage = 1
 			goto_epilogue(stage, &fp, free_fp, &newargs, &default_args, &newlines, &line_to_free, rawptr(&fudi[0]), &name, saved_did_emsg, show_block, eap)

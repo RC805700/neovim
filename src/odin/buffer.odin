@@ -489,8 +489,6 @@ foreign _ {
 	in_assert_fails_g: bool
 	@(link_name = "msg_delay")
 	msg_delay_r :: proc "c" (ms: u64, ignoreinput: bool) ---
-	@(link_name = "hash_remove")
-	hash_remove_r :: proc "c" (ht: rawptr, hi: rawptr) ---
 	@(link_name = "uc_clear")
 	uc_clear_r :: proc "c" (gap: rawptr) ---
 	@(link_name = "extmark_free_all")
@@ -601,13 +599,13 @@ free_buffer_stuff_o :: proc "c"(buf: rawptr, free_flags: C.int) {
 	// implies using clear_tv() on b:changedtick and that sets changedtick
 	// to zero.
 	vars := (^rawptr)(uintptr(buf) + B_VARS_OFF)^
-	changedtick_hi := hash_find_r(transmute(rawptr)(uintptr(vars) + DV_HASHTAB_OFF),
+	changedtick_hi := hash_find(transmute(rawptr)(uintptr(vars) + DV_HASHTAB_OFF),
 		cstring(CHANGEDTICK_S))
 	if changedtick_hi != nil {
-		hash_remove_r(transmute(rawptr)(uintptr(vars) + DV_HASHTAB_OFF), changedtick_hi)
+		hash_remove(transmute(rawptr)(uintptr(vars) + DV_HASHTAB_OFF), changedtick_hi)
 	}
 	vars_clear(transmute(rawptr)(uintptr(vars) + DV_HASHTAB_OFF)) // free all vars
-	hash_init_r(transmute(rawptr)(uintptr(vars) + DV_HASHTAB_OFF))
+	hash_init(transmute(rawptr)(uintptr(vars) + DV_HASHTAB_OFF))
 	if (free_flags & KBFF_INIT_CHANGEDTICK_O) != 0 {
 		buf_init_changedtick_o(buf)
 	}
@@ -775,8 +773,8 @@ buflist_new :: proc "c"(ffname_arg: cstring, sfname_arg: cstring, lnum: C.int, f
 	wi^ = Fmark_T{mark = Pos_T{1, 0, 0}, view = INIT_FMARKV}
 	(^C.int)(uintptr(curwin_info) + WI_MARK_OFF)^ = lnum
 	(^rawptr)(uintptr(curwin_info) + WI_WIN_OFF)^ = curwin
-	hash_init_r(transmute(rawptr)(uintptr(buf) + B_S_KEYWTAB_OFF))
-	hash_init_r(transmute(rawptr)(uintptr(buf) + B_S_KEYWTAB_IC_OFF))
+	hash_init(transmute(rawptr)(uintptr(buf) + B_S_KEYWTAB_OFF))
+	hash_init(transmute(rawptr)(uintptr(buf) + B_S_KEYWTAB_IC_OFF))
 	(^rawptr)(uintptr(buf) + B_FNAME)^ = (^rawptr)(uintptr(buf) + B_SFNAME_OFF)^
 	if !file_id_valid {
 		(^bool)(uintptr(buf) + B_FILE_ID_VALID_OFF)^ = false

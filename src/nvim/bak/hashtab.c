@@ -36,9 +36,11 @@
 
 #include "hashtab.c.generated.h"
 
+#pragma weak hash_removed
 char hash_removed;
 
 /// Initialize an empty hash table.
+#pragma weak hash_init
 void hash_init(hashtab_T *ht)
 {
   // This zeroes all "ht_" entries and all the "hi_key" in "ht_smallarray".
@@ -51,6 +53,7 @@ void hash_init(hashtab_T *ht)
 ///
 /// If "ht" is not freed (after calling this) then you should call hash_init()
 /// right next!
+#pragma weak hash_clear
 void hash_clear(hashtab_T *ht)
 {
   if (ht->ht_array != ht->ht_smallarray) {
@@ -61,6 +64,7 @@ void hash_clear(hashtab_T *ht)
 /// Free the array of a hash table and all contained values.
 ///
 /// @param off the offset from start of value to start of key (@see hashitem_T).
+#pragma weak hash_clear_all
 void hash_clear_all(hashtab_T *ht, unsigned off)
 {
   size_t todo = ht->ht_used;
@@ -82,6 +86,7 @@ void hash_clear_all(hashtab_T *ht, unsigned off)
 ///         used for that key.
 ///         WARNING: Returned pointer becomes invalid as soon as the hash table
 ///                  is changed in any way.
+#pragma weak hash_find
 hashitem_T *hash_find(const hashtab_T *const ht, const char *const key)
 {
   return hash_lookup(ht, key, strlen(key), hash_hash(key));
@@ -99,6 +104,7 @@ hashitem_T *hash_find(const hashtab_T *const ht, const char *const key)
 ///
 ///         @warning Returned pointer becomes invalid as soon as the hash table
 ///                  is changed in any way.
+#pragma weak hash_find_len
 hashitem_T *hash_find_len(const hashtab_T *const ht, const char *const key, const size_t len)
 {
   return hash_lookup(ht, key, len, hash_hash_len(key, len));
@@ -115,6 +121,7 @@ hashitem_T *hash_find_len(const hashtab_T *const ht, const char *const key, cons
 ///         used for that key.
 ///         WARNING: Returned pointer becomes invalid as soon as the hash table
 ///                  is changed in any way.
+#pragma weak hash_lookup
 hashitem_T *hash_lookup(const hashtab_T *const ht, const char *const key, const size_t key_len,
                         const hash_T hash)
 {
@@ -178,6 +185,7 @@ hashitem_T *hash_lookup(const hashtab_T *const ht, const char *const key, const 
 ///
 /// Useful when trying different hash algorithms.
 /// Called when exiting.
+#pragma weak hash_debug_results
 void hash_debug_results(void)
 {
 #ifdef HT_DEBUG
@@ -198,6 +206,7 @@ void hash_debug_results(void)
 ///
 /// @return OK   if success.
 ///         FAIL if key already present
+#pragma weak hash_add
 int hash_add(hashtab_T *ht, char *key)
 {
   hash_T hash = hash_hash(key);
@@ -217,6 +226,7 @@ int hash_add(hashtab_T *ht, char *key)
 /// @param key  Pointer to the key for the new item. The key has to be contained
 ///             in the new item (@see hashitem_T). Must not be NULL.
 /// @param hash The precomputed hash value for the key.
+#pragma weak hash_add_item
 void hash_add_item(hashtab_T *ht, hashitem_T *hi, char *key, hash_T hash)
 {
   ht->ht_used++;
@@ -237,6 +247,7 @@ void hash_add_item(hashtab_T *ht, hashitem_T *hi, char *key, hash_T hash)
 ///
 /// @param hi The hash item to be removed.
 ///           It must have been obtained with hash_lookup().
+#pragma weak hash_remove
 void hash_remove(hashtab_T *ht, hashitem_T *hi)
 {
   ht->ht_used--;
@@ -249,6 +260,7 @@ void hash_remove(hashtab_T *ht, hashitem_T *hi)
 ///
 /// Don't use this when items are to be added!
 /// Must call hash_unlock() later.
+#pragma weak hash_lock
 void hash_lock(hashtab_T *ht)
 {
   ht->ht_locked++;
@@ -258,6 +270,7 @@ void hash_lock(hashtab_T *ht)
 ///
 /// Table will be resized (shrunk) when necessary.
 /// This must balance a call to hash_lock().
+#pragma weak hash_unlock
 void hash_unlock(hashtab_T *ht)
 {
   ht->ht_locked--;
@@ -399,6 +412,7 @@ static void hash_may_resize(hashtab_T *ht, size_t minitems)
 /// run a script that uses hashtables a lot. Vim will then print statistics
 /// when exiting. Try that with the current hash algorithm and yours. The
 /// lower the percentage the better.
+#pragma weak hash_hash
 hash_T hash_hash(const char *key)
 {
   hash_T hash = (uint8_t)(*key);
@@ -426,6 +440,7 @@ hash_T hash_hash(const char *key)
 /// @param[in]  len  Key length.
 ///
 /// @return Key hash.
+#pragma weak hash_hash_len
 hash_T hash_hash_len(const char *key, const size_t len)
   FUNC_ATTR_PURE FUNC_ATTR_WARN_UNUSED_RESULT
 {
@@ -450,6 +465,7 @@ hash_T hash_hash_len(const char *key, const size_t len)
 ///
 /// Used for testing because luajit ffi does not allow getting addresses of
 /// globals.
+#pragma weak _hash_key_removed
 const char *_hash_key_removed(void)
   FUNC_ATTR_PURE FUNC_ATTR_WARN_UNUSED_RESULT
 {
