@@ -33,7 +33,7 @@
 
 #include "charset.c.generated.h"
 
-static bool chartab_initialized = false;
+extern bool chartab_initialized;
 
 // b_chartab[] is an array with 256 bits, each bit representing one of the
 // characters 0-255.
@@ -45,7 +45,7 @@ static bool chartab_initialized = false;
   ((chartab)[(unsigned)(c) >> 6] & (1ull << ((c) & 0x3f)))
 
 // Table used below, see init_chartab() for an explanation
-static uint8_t g_chartab[256];
+extern uint8_t g_chartab[];
 
 // Flags for g_chartab[].
 #define CT_CELL_MASK  0x07  ///< mask: nr of display cells (1, 2 or 4)
@@ -73,6 +73,7 @@ static uint8_t g_chartab[256];
 ///
 /// @return FAIL if 'iskeyword', 'isident', 'isfname' or 'isprint' option has
 /// an error, OK otherwise.
+#pragma weak init_chartab
 int init_chartab(void)
 {
   return buf_init_chartab(curbuf, true);
@@ -84,6 +85,7 @@ int init_chartab(void)
 ///
 /// @return FAIL if 'iskeyword', 'isident', 'isfname' or 'isprint' option has
 /// an error, OK otherwise.
+#pragma weak buf_init_chartab
 int buf_init_chartab(buf_T *buf, bool global)
 {
   if (global) {
@@ -148,6 +150,7 @@ int buf_init_chartab(buf_T *buf, bool global)
 /// Checks the format for the option settings 'iskeyword', 'isident', 'isfname'
 /// or 'isprint'.
 /// Returns FAIL if has an error, OK otherwise.
+#pragma weak check_isopt
 int check_isopt(char *var)
 {
   return parse_isopt(var, NULL, true);
@@ -270,6 +273,7 @@ static int parse_isopt(const char *var, buf_T *buf, bool only_check)
 ///
 /// @param buf
 /// @param bufsize
+#pragma weak trans_characters
 void trans_characters(char *buf, int bufsize)
 {
   char *trs;                   // translated character
@@ -308,6 +312,7 @@ void trans_characters(char *buf, int bufsize)
 ///
 /// @return number of bytes needed to hold a translation of `s`, NUL byte not
 ///         included.
+#pragma weak transstr_len
 size_t transstr_len(const char *const s, bool untab)
   FUNC_ATTR_WARN_UNUSED_RESULT FUNC_ATTR_PURE
 {
@@ -348,6 +353,7 @@ size_t transstr_len(const char *const s, bool untab)
 /// @param[in]  untab  remove tab characters
 ///
 /// @return length of the resulting string, without the NUL byte.
+#pragma weak transstr_buf
 size_t transstr_buf(const char *const s, const ssize_t slen, char *const buf, const size_t buflen,
                     bool untab)
   FUNC_ATTR_NONNULL_ALL
@@ -403,6 +409,7 @@ size_t transstr_buf(const char *const s, const ssize_t slen, char *const buf, co
 /// @param[in]  s  String to replace characters from.
 ///
 /// @return [allocated] translated string
+#pragma weak transstr
 char *transstr(const char *const s, bool untab)
   FUNC_ATTR_NONNULL_RET
 {
@@ -414,6 +421,7 @@ char *transstr(const char *const s, bool untab)
   return buf;
 }
 
+#pragma weak kv_transstr
 size_t kv_transstr(StringBuilder *str, const char *const s, bool untab)
   FUNC_ATTR_NONNULL_ARG(1)
 {
@@ -435,6 +443,7 @@ size_t kv_transstr(StringBuilder *str, const char *const s, bool untab)
 ///
 /// When "buf" is NULL, return an allocated string.
 /// Otherwise, put the result in buf, limited by buflen, and return buf.
+#pragma weak str_foldcase
 char *str_foldcase(char *str, int orglen, char *buf, int buflen)
   FUNC_ATTR_NONNULL_RET
 {
@@ -524,7 +533,7 @@ char *str_foldcase(char *str, int orglen, char *buf, int buflen)
 // Does NOT work for multi-byte characters, c must be <= 255.
 // Also doesn't work for the first byte of a multi-byte, "c" must be a
 // character!
-static uint8_t transchar_charbuf[11];
+extern uint8_t transchar_charbuf[];
 
 /// Translate a character into a printable one, leaving printable ASCII intact
 ///
@@ -533,11 +542,13 @@ static uint8_t transchar_charbuf[11];
 /// @param[in]  c  Character to translate.
 ///
 /// @return translated character into a static buffer.
+#pragma weak transchar
 char *transchar(int c)
 {
   return transchar_buf(curbuf, c);
 }
 
+#pragma weak transchar_buf
 char *transchar_buf(const buf_T *buf, int c)
 {
   int i = 0;
@@ -569,6 +580,7 @@ char *transchar_buf(const buf_T *buf, int c)
 /// @param[in]  c  Byte to translate.
 ///
 /// @return pointer to translated character in transchar_charbuf.
+#pragma weak transchar_byte
 char *transchar_byte(const int c)
   FUNC_ATTR_WARN_UNUSED_RESULT
 {
@@ -582,6 +594,7 @@ char *transchar_byte(const int c)
 /// @param[in]  c  Byte to translate.
 ///
 /// @return pointer to translated character in transchar_charbuf.
+#pragma weak transchar_byte_buf
 char *transchar_byte_buf(const buf_T *buf, const int c)
   FUNC_ATTR_WARN_UNUSED_RESULT
 {
@@ -601,6 +614,7 @@ char *transchar_byte_buf(const buf_T *buf, const int c)
 ///                       at least 5 bytes (conversion result + NUL).
 /// @param[in]  c  Character to convert. NUL is assumed to be NL according to
 ///                `:h NL-used-for-NUL`.
+#pragma weak transchar_nonprint
 void transchar_nonprint(const buf_T *buf, char *charbuf, int c)
 {
   if (c == NL) {
@@ -631,6 +645,7 @@ void transchar_nonprint(const buf_T *buf, char *charbuf, int c)
 /// @param[in]  c  Character to convert.
 ///
 /// @return Number of bytes stored in buffer, excluding trailing NUL byte.
+#pragma weak transchar_hex
 size_t transchar_hex(char *const buf, const int c)
   FUNC_ATTR_NONNULL_ALL
 {
@@ -654,6 +669,7 @@ size_t transchar_hex(char *const buf, const int c)
 
 /// Mirror text "str" for right-left displaying.
 /// Only works for single-byte characters (e.g., numbers).
+#pragma weak rl_mirror_ascii
 void rl_mirror_ascii(char *str, char *end)
 {
   for (char *p1 = str, *p2 = (end ? end : str + strlen(str)) - 1; p1 < p2; p1++, p2--) {
@@ -691,6 +707,7 @@ static inline unsigned nr2hex(unsigned n)
 /// @param b
 ///
 /// @return Number of display cells.
+#pragma weak byte2cells
 int byte2cells(int b)
   FUNC_ATTR_PURE
 {
@@ -708,6 +725,7 @@ int byte2cells(int b)
 /// @param c
 ///
 /// @return Number of display cells.
+#pragma weak char2cells
 int char2cells(int c)
 {
   if (IS_SPECIAL(c)) {
@@ -727,6 +745,7 @@ int char2cells(int c)
 /// @param p
 ///
 /// @return number of display cells.
+#pragma weak ptr2cells
 int ptr2cells(const char *p_in)
 {
   uint8_t *p = (uint8_t *)p_in;
@@ -747,6 +766,7 @@ int ptr2cells(const char *p_in)
 /// @param s
 ///
 /// @return number of character cells.
+#pragma weak vim_strsize
 int vim_strsize(const char *s)
 {
   return vim_strnsize(s, MAXCOL);
@@ -761,6 +781,7 @@ int vim_strsize(const char *s)
 /// @param len
 ///
 /// @return Number of character cells.
+#pragma weak vim_strnsize
 int vim_strnsize(const char *s, int len)
 {
   assert(s != NULL);
@@ -778,6 +799,7 @@ int vim_strnsize(const char *s, int len)
 /// Letters and characters from the 'isident' option.
 ///
 /// @param  c  character to check
+#pragma weak vim_isIDc
 bool vim_isIDc(int c)
   FUNC_ATTR_PURE FUNC_ATTR_WARN_UNUSED_RESULT
 {
@@ -789,6 +811,7 @@ bool vim_isIDc(int c)
 /// For multi-byte characters mb_get_class() is used (builtin rules).
 ///
 /// @param  c  character to check
+#pragma weak vim_iswordc
 bool vim_iswordc(const int c)
   FUNC_ATTR_PURE FUNC_ATTR_WARN_UNUSED_RESULT
 {
@@ -801,6 +824,7 @@ bool vim_iswordc(const int c)
 ///
 /// @param[in]  c  Character to check.
 /// @param[in]  chartab  Buffer chartab.
+#pragma weak vim_iswordc_tab
 bool vim_iswordc_tab(const int c, const uint64_t *const chartab)
   FUNC_ATTR_PURE FUNC_ATTR_WARN_UNUSED_RESULT FUNC_ATTR_NONNULL_ALL
 {
@@ -815,6 +839,7 @@ bool vim_iswordc_tab(const int c, const uint64_t *const chartab)
 ///
 /// @param  c    character to check
 /// @param  buf  buffer whose keywords to use
+#pragma weak vim_iswordc_buf
 bool vim_iswordc_buf(const int c, buf_T *const buf)
   FUNC_ATTR_PURE FUNC_ATTR_WARN_UNUSED_RESULT FUNC_ATTR_NONNULL_ARG(2)
 {
@@ -826,6 +851,7 @@ bool vim_iswordc_buf(const int c, buf_T *const buf)
 /// @param  p  pointer to the multi-byte character
 ///
 /// @return true if "p" points to a keyword character.
+#pragma weak vim_iswordp
 bool vim_iswordp(const char *const p)
   FUNC_ATTR_PURE FUNC_ATTR_WARN_UNUSED_RESULT FUNC_ATTR_NONNULL_ALL
 {
@@ -839,6 +865,7 @@ bool vim_iswordp(const char *const p)
 /// @param  buf  buffer whose keywords to use
 ///
 /// @return true if "p" points to a keyword character.
+#pragma weak vim_iswordp_buf
 bool vim_iswordp_buf(const char *const p, buf_T *const buf)
   FUNC_ATTR_PURE FUNC_ATTR_WARN_UNUSED_RESULT FUNC_ATTR_NONNULL_ALL
 {
@@ -856,6 +883,7 @@ bool vim_iswordp_buf(const char *const p, buf_T *const buf)
 /// To be used for commands like "gf".
 ///
 /// @param  c  character to check
+#pragma weak vim_isfilec
 bool vim_isfilec(int c)
   FUNC_ATTR_PURE FUNC_ATTR_WARN_UNUSED_RESULT
 {
@@ -864,6 +892,7 @@ bool vim_isfilec(int c)
 
 /// Check if "c" is a valid file-name character, including characters left
 /// out of 'isfname' to make "gf" work, such as ',', ' ', '@', ':', etc.
+#pragma weak vim_is_fname_char
 bool vim_is_fname_char(int c)
   FUNC_ATTR_PURE FUNC_ATTR_WARN_UNUSED_RESULT
 {
@@ -876,6 +905,7 @@ bool vim_is_fname_char(int c)
 /// returns false.
 ///
 /// @param  c  character to check
+#pragma weak vim_isfilec_or_wc
 bool vim_isfilec_or_wc(int c)
   FUNC_ATTR_PURE FUNC_ATTR_WARN_UNUSED_RESULT
 {
@@ -888,6 +918,7 @@ bool vim_isfilec_or_wc(int c)
 /// Check that "c" is a printable character.
 ///
 /// @param  c  character to check
+#pragma weak vim_isprintc
 bool vim_isprintc(int c)
   FUNC_ATTR_PURE FUNC_ATTR_WARN_UNUSED_RESULT
 {
@@ -902,6 +933,7 @@ bool vim_isprintc(int c)
 /// @param[in]  p  String to skip in.
 ///
 /// @return Pointer to character after the skipped whitespace.
+#pragma weak skipwhite
 char *skipwhite(const char *p)
   FUNC_ATTR_PURE FUNC_ATTR_WARN_UNUSED_RESULT FUNC_ATTR_NONNULL_ALL
   FUNC_ATTR_NONNULL_RET
@@ -920,6 +952,7 @@ char *skipwhite(const char *p)
 ///
 /// @return Pointer to character after the skipped whitespace, or the `len`-th
 ///         character in the string.
+#pragma weak skipwhite_len
 char *skipwhite_len(const char *p, size_t len)
   FUNC_ATTR_PURE FUNC_ATTR_WARN_UNUSED_RESULT FUNC_ATTR_NONNULL_ALL
   FUNC_ATTR_NONNULL_RET
@@ -932,11 +965,13 @@ char *skipwhite_len(const char *p, size_t len)
 
 // getwhitecols: return the number of whitespace
 // columns (bytes) at the start of a given line
+#pragma weak getwhitecols_curline
 intptr_t getwhitecols_curline(void)
 {
   return getwhitecols(get_cursor_line_ptr());
 }
 
+#pragma weak getwhitecols
 intptr_t getwhitecols(const char *p)
   FUNC_ATTR_PURE
 {
@@ -948,6 +983,7 @@ intptr_t getwhitecols(const char *p)
 /// @param[in]  q  String to skip digits in.
 ///
 /// @return Pointer to the character after the skipped digits.
+#pragma weak skipdigits
 char *skipdigits(const char *q)
   FUNC_ATTR_PURE FUNC_ATTR_WARN_UNUSED_RESULT FUNC_ATTR_NONNULL_ALL
   FUNC_ATTR_NONNULL_RET
@@ -965,6 +1001,7 @@ char *skipdigits(const char *q)
 /// @param q pointer to string
 ///
 /// @return Pointer to the character after the skipped digits.
+#pragma weak skipbin
 const char *skipbin(const char *q)
   FUNC_ATTR_PURE
   FUNC_ATTR_NONNULL_ALL
@@ -984,6 +1021,7 @@ const char *skipbin(const char *q)
 ///
 /// @return Pointer to the character after the skipped digits and hex
 ///         characters.
+#pragma weak skiphex
 char *skiphex(char *q)
   FUNC_ATTR_PURE
 {
@@ -1000,6 +1038,7 @@ char *skiphex(char *q)
 /// @param q
 ///
 /// @return Pointer to the digit or (NUL after the string).
+#pragma weak skiptodigit
 char *skiptodigit(char *q)
   FUNC_ATTR_PURE
 {
@@ -1016,6 +1055,7 @@ char *skiptodigit(char *q)
 /// @param q pointer to string
 ///
 /// @return Pointer to the binary character or (NUL after the string).
+#pragma weak skiptobin
 const char *skiptobin(const char *q)
   FUNC_ATTR_PURE
   FUNC_ATTR_NONNULL_ALL
@@ -1034,6 +1074,7 @@ const char *skiptobin(const char *q)
 /// @param q
 ///
 /// @return Pointer to the hex character or (NUL after the string).
+#pragma weak skiptohex
 char *skiptohex(char *q)
   FUNC_ATTR_PURE
 {
@@ -1050,6 +1091,7 @@ char *skiptohex(char *q)
 /// @param[in]  p  Text to skip over.
 ///
 /// @return Pointer to the next whitespace or NUL character.
+#pragma weak skiptowhite
 char *skiptowhite(const char *p)
   FUNC_ATTR_NONNULL_ALL FUNC_ATTR_PURE
 {
@@ -1064,6 +1106,7 @@ char *skiptowhite(const char *p)
 /// @param p
 ///
 /// @return Pointer to the next whitespace character.
+#pragma weak skiptowhite_esc
 char *skiptowhite_esc(const char *p)
   FUNC_ATTR_NONNULL_ALL FUNC_ATTR_PURE
 {
@@ -1081,6 +1124,7 @@ char *skiptowhite_esc(const char *p)
 /// @param[in]  p  Text to skip over.
 ///
 /// @return Pointer to the next '\n' or NUL character.
+#pragma weak skip_to_newline
 char *skip_to_newline(const char *const p)
   FUNC_ATTR_PURE FUNC_ATTR_WARN_UNUSED_RESULT FUNC_ATTR_NONNULL_ALL
   FUNC_ATTR_NONNULL_RET
@@ -1095,6 +1139,7 @@ char *skip_to_newline(const char *const p)
 /// @param[out]  nr  Number read from the string.
 ///
 /// @return true on success, false on error/overflow
+#pragma weak try_getdigits
 bool try_getdigits(char **pp, intmax_t *nr)
 {
   errno = 0;
@@ -1113,6 +1158,7 @@ bool try_getdigits(char **pp, intmax_t *nr)
 /// @param def       Default value, if parsing fails or overflow occurs.
 ///
 /// @return Number read from the string, or `def` on parse failure or overflow.
+#pragma weak getdigits
 intmax_t getdigits(char **pp, bool strict, intmax_t def)
 {
   intmax_t number;
@@ -1126,6 +1172,7 @@ intmax_t getdigits(char **pp, bool strict, intmax_t def)
 /// Gets an int number from a string.
 ///
 /// @see getdigits
+#pragma weak getdigits_int
 int getdigits_int(char **pp, bool strict, int def)
 {
   intmax_t number = getdigits(pp, strict, def);
@@ -1142,6 +1189,7 @@ int getdigits_int(char **pp, bool strict, int def)
 /// Gets a long number from a string.
 ///
 /// @see getdigits
+#pragma weak getdigits_long
 long getdigits_long(char **pp, bool strict, long def)
 {
   intmax_t number = getdigits(pp, strict, def);
@@ -1158,6 +1206,7 @@ long getdigits_long(char **pp, bool strict, long def)
 /// Gets a int32_t number from a string.
 ///
 /// @see getdigits
+#pragma weak getdigits_int32
 int32_t getdigits_int32(char **pp, bool strict, int32_t def)
 {
   intmax_t number = getdigits(pp, strict, def);
@@ -1174,6 +1223,7 @@ int32_t getdigits_int32(char **pp, bool strict, int32_t def)
 /// Check that "lbuf" is empty or only contains blanks.
 ///
 /// @param  lbuf  line buffer to check
+#pragma weak vim_isblankline
 bool vim_isblankline(char *lbuf)
   FUNC_ATTR_PURE
 {
@@ -1216,6 +1266,7 @@ bool vim_isblankline(char *lbuf)
 ///               alphanumeric chars: *len is set to 0 and nothing else is
 ///               returned.
 /// @param overflow When not NULL, set to true for overflow.
+#pragma weak vim_str2nr
 void vim_str2nr(const char *const start, int *const prep, int *const len, const int what,
                 varnumber_T *const nptr, uvarnumber_T *const unptr, const int maxlen,
                 const bool strict, bool *const overflow)
@@ -1411,6 +1462,7 @@ vim_str2nr_proceed:
 /// @param c
 ///
 /// @return The value of the hex character.
+#pragma weak hex2nr
 int hex2nr(int c)
   FUNC_ATTR_CONST
 {
@@ -1427,6 +1479,7 @@ int hex2nr(int c)
 /// Convert two hex characters to a byte.
 ///
 /// @return  -1 if one of the characters is not hex.
+#pragma weak hexhex2nr
 int hexhex2nr(const char *p)
   FUNC_ATTR_PURE
 {
@@ -1449,6 +1502,7 @@ int hexhex2nr(const char *p)
 /// characters.
 ///
 /// @param  str  file path string to check
+#pragma weak rem_backslash
 bool rem_backslash(const char *str)
   FUNC_ATTR_PURE FUNC_ATTR_WARN_UNUSED_RESULT FUNC_ATTR_NONNULL_ALL
 {
@@ -1469,6 +1523,7 @@ bool rem_backslash(const char *str)
 /// Halve the number of backslashes in a file name argument.
 ///
 /// @param p
+#pragma weak backslash_halve
 void backslash_halve(char *p)
 {
   for (; *p && !rem_backslash(p); p++) {}
@@ -1493,6 +1548,7 @@ start:
 /// @param p
 ///
 /// @return String with the number of backslashes halved.
+#pragma weak backslash_halve_save
 char *backslash_halve_save(const char *p)
   FUNC_ATTR_NONNULL_ALL FUNC_ATTR_NONNULL_RET
 {

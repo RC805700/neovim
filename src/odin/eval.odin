@@ -5875,7 +5875,7 @@ tv_get_number_chk :: proc "c" (tv: ^Typval_T, ret_error: ^bool) -> C.longlong {
 		n: C.longlong = 0
 		s := (rawptr)(tv.vval)
 		if s != nil {
-			vim_str2nr_r(transmute(cstring)(s), nil, nil, STR2NR_ALL_O, &n, nil, 0, false, nil)
+			vim_str2nr(transmute(cstring)(s), nil, nil, STR2NR_ALL_O, &n, nil, 0, false, nil)
 		}
 		return n
 	} else if tv.v_type == VAR_BOOL {
@@ -16615,7 +16615,7 @@ getregionpos_o :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, p1: ^Pos_T, p2
 		pp := transmute(cstring)(rawptr(uintptr(rawptr(type)) + 1))
 		if ([^]u8)(pp)[0] != 0 {
 			ppu := transmute(^u8)(pp)
-			block_width = getdigits_int_r(&ppu, false, 0)
+			block_width = getdigits_int(&ppu, false, 0)
 			pp = transmute(cstring)(ppu)
 			if block_width <= 0 || ([^]u8)(pp)[0] != 0 {
 				semsg(cstring(E_INVARG_NVAL_S), cstring("type"), type)
@@ -19048,7 +19048,7 @@ get_yank_type_o :: proc "c" (pp: ^cstring, yank_type: ^C.int, block_len: ^C.int)
 		yank_type^ = kMTBlockWise
 		if ascii_isdigit_o(stropt[1]) {
 			stropt = ([^]u8)(uintptr(stropt) + 1)
-			block_len^ = getdigits_int_r(transmute(^^u8)(&stropt), false, 0) - 1
+			block_len^ = getdigits_int(transmute(^^u8)(&stropt), false, 0) - 1
 			stropt = ([^]u8)(uintptr(stropt) - 1)
 		}
 	} else {
@@ -21492,7 +21492,7 @@ parse_json_number_o :: proc "c" (buf: cstring, buf_len: C.size_t, pp: ^cstring, 
 		} else {
 			nr: C.longlong = 0
 			num_len: C.int = 0
-			vim_str2nr_r(transmute(cstring)(s), nil, &num_len, 0, &nr, nil, C.size_t(p - s), true, nil)
+			vim_str2nr(transmute(cstring)(s), nil, &num_len, 0, &nr, nil, C.size_t(p - s), true, nil)
 			if C.int(exp_num_len) != num_len {
 				semsg(cstring("E685: internal error: while converting number \"%.*s\" to integer vim_str2nr consumed %i bytes in place of %zu"), C.int(exp_num_len), transmute(cstring)(s), num_len, exp_num_len)
 			}
@@ -22935,8 +22935,6 @@ eval_func_o :: proc "c" (arg: ^cstring, evalarg: rawptr, name: cstring, name_len
 
 // —— Batch 28p: eval.c eval_number (dormant plain, C-static) ——
 foreign _ {
-	@(link_name = "hex2nr")
-	hex2nr_e :: proc "c" (c: C.int) -> C.int ---
 	@(link_name = "trans_special")
 	trans_special_e :: proc "c" (srcp: ^rawptr, src_len: C.size_t, dst: rawptr, flags: C.int, escape_ks: bool, did_simplify: rawptr) -> C.uint ---
 	@(link_name = "mb_copy_char")
@@ -22957,11 +22955,11 @@ E973_S :: "E973: Blob literal should have an even number of hex characters"
 // Number/blob-literal parser (eval.c static, activates with eval7).
 eval_number_o :: proc "c" (arg: ^cstring, rettv: ^Typval_T, evaluate: bool, want_string: bool) -> C.int {
 	context = runtime.default_context()
-	p := skipdigits_r(transmute(cstring)(rawptr(uintptr(rawptr(arg^)) + 1)))
+	p := skipdigits(transmute(cstring)(rawptr(uintptr(rawptr(arg^)) + 1)))
 	get_float := false
 	if !want_string && ([^]u8)(p)[0] == '.' && ascii_isdigit_o(([^]u8)(p)[1]) {
 		get_float = true
-		p = skipdigits_r(transmute(cstring)(rawptr(uintptr(rawptr(p)) + 2)))
+		p = skipdigits(transmute(cstring)(rawptr(uintptr(rawptr(p)) + 2)))
 		if ([^]u8)(p)[0] == 'e' || ([^]u8)(p)[0] == 'E' {
 			p = transmute(cstring)(uintptr(rawptr(p)) + 1)
 			if ([^]u8)(p)[0] == '-' || ([^]u8)(p)[0] == '+' {
@@ -22970,7 +22968,7 @@ eval_number_o :: proc "c" (arg: ^cstring, rettv: ^Typval_T, evaluate: bool, want
 			if !ascii_isdigit_o(([^]u8)(p)[0]) {
 				get_float = false
 			} else {
-				p = skipdigits_r(transmute(cstring)(rawptr(uintptr(rawptr(p)) + 1)))
+				p = skipdigits(transmute(cstring)(rawptr(uintptr(rawptr(p)) + 1)))
 			}
 		}
 		if (([^]u8)(p)[0] >= 'A' && ([^]u8)(p)[0] <= 'Z') || (([^]u8)(p)[0] >= 'a' && ([^]u8)(p)[0] <= 'z') || ([^]u8)(p)[0] == '.' {
@@ -23000,7 +22998,7 @@ eval_number_o :: proc "c" (arg: ^cstring, rettv: ^Typval_T, evaluate: bool, want
 				return FAIL_E
 			}
 			if blob != nil {
-				ga_append((^Garray)(blob), u8((hex2nr_e(C.int(([^]u8)(bp)[0])) << 4) + hex2nr_e(C.int(([^]u8)(bp + 1)[0]))))
+				ga_append((^Garray)(blob), u8((hex2nr(C.int(([^]u8)(bp)[0])) << 4) + hex2nr(C.int(([^]u8)(bp + 1)[0]))))
 			}
 			if ([^]u8)(bp + 2)[0] == '.' && ascii_isxdigit_o(([^]u8)(bp + 3)[0]) {
 				bp += 1
@@ -23014,7 +23012,7 @@ eval_number_o :: proc "c" (arg: ^cstring, rettv: ^Typval_T, evaluate: bool, want
 	} else {
 		length: C.int = 0
 		n: C.longlong = 0
-		vim_str2nr_r(arg^, nil, &length, 0x0f, &n, nil, 0, true, nil)
+		vim_str2nr(arg^, nil, &length, 0x0f, &n, nil, 0, true, nil)
 		if length == 0 {
 			if evaluate {
 				semsg(cstring(E15_S), arg^)
@@ -23122,7 +23120,7 @@ eval_string_o :: proc "c" (arg: ^cstring, rettv: ^Typval_T, evaluate: bool, inte
 					n -= 1
 					for n >= 0 && ascii_isxdigit_o(([^]u8)(p + 1)[0]) {
 						p += 1
-						nr = (nr << 4) + C.int(hex2nr_e(C.int(([^]u8)(p)[0])))
+						nr = (nr << 4) + C.int(hex2nr(C.int(([^]u8)(p)[0])))
 						n -= 1
 					}
 					p += 1
@@ -24297,7 +24295,7 @@ may_call_simple_func :: proc "c" (arg: cstring, rettv: ^Typval_T) -> C.int {
 		} else {
 			p := arg
 			if libc.strncmp(arg, cstring("<SNR>"), 5) == 0 {
-				p = skipdigits_r(transmute(cstring)(uintptr(rawptr(arg)) + 5))
+				p = skipdigits(transmute(cstring)(uintptr(rawptr(arg)) + 5))
 			}
 			if to_name_end_o(p, true) == transmute(cstring)(parens) {
 				r = call_simple_func(arg, C.size_t(uintptr(rawptr(parens)) - uintptr(rawptr(arg))), rettv)
@@ -24819,7 +24817,7 @@ eval_isdictc :: proc "c" (c: C.int) -> bool {
 get_env_len :: proc "c" (arg: ^cstring) -> C.int {
 	context = runtime.default_context()
 	p := arg^
-	for _vim_isIDc(C.int(([^]u8)(p)[0])) {
+	for vim_isIDc(C.int(([^]u8)(p)[0])) {
 		p = transmute(cstring)(uintptr(rawptr(p)) + 1)
 	}
 	if p == arg^ {

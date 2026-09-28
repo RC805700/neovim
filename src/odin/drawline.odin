@@ -1525,9 +1525,9 @@ win_line :: proc "c"(wp: rawptr, lnum: C.int, startrow: C.int, endrow: C.int, co
 				if (mb_l == 1 && c0 >= 0x80) || (mb_l >= 1 && mb_c == 0) ||
 					(mb_l > 1 && !vim_isprintc(mb_c)) {
 					// Illegal UTF-8 / non-printable: <xx> or fullwidth ?.
-					transchar_hex_r((^u8)(&wlv.extra[0]), mb_c)
+					transchar_hex((^u8)(&wlv.extra[0]), mb_c)
 					if (^C.int)(uintptr(wp) + W_P_RL_OFF)^ != 0 { // reverse
-						rl_mirror_ascii_r((^u8)(&wlv.extra[0]), nil)
+						rl_mirror_ascii((^u8)(&wlv.extra[0]), nil)
 					}
 
 					wlv.p_extra = (^u8)(&wlv.extra[0])
@@ -1915,13 +1915,13 @@ win_line :: proc "c"(wp: rawptr, lnum: C.int, startrow: C.int, endrow: C.int, co
 					wlv.n_attr = 1
 					mb_c = schar_get_first_codepoint(mb_schar)
 				} else if mb_schar != 0 {
-					wlv.p_extra = transchar_buf_r((^rawptr)(uintptr(wp) + W_BUFFER_OFF)^, mb_c)
+					wlv.p_extra = transchar_buf((^rawptr)(uintptr(wp) + W_BUFFER_OFF)^, mb_c)
 					if wlv.n_extra == 0 {
-						wlv.n_extra = byte2cells_r(mb_c) - 1
+						wlv.n_extra = byte2cells(mb_c) - 1
 					}
 					if (dy_flags_g & K_OPT_DY_UHEX_O) != 0 &&
 						(^C.int)(uintptr(wp) + W_P_RL_OFF)^ != 0 {
-						rl_mirror_ascii_r(wlv.p_extra, nil) // reverse "<12>"
+						rl_mirror_ascii(wlv.p_extra, nil) // reverse "<12>"
 					}
 					wlv.sc_extra = 0 // NUL
 					wlv.sc_final = 0 // NUL
@@ -1934,7 +1934,7 @@ win_line :: proc "c"(wp: rawptr, lnum: C.int, startrow: C.int, endrow: C.int, co
 						([^]u8)(p)[wlv.n_extra] = 0 // NUL
 						wlv.p_extra = p
 					} else {
-						wlv.n_extra = byte2cells_r(mb_c) - 1
+						wlv.n_extra = byte2cells(mb_c) - 1
 						mb_c = C.int(([^]u8)(wlv.p_extra)[0])
 						wlv.p_extra = (^u8)(uintptr(wlv.p_extra) + 1)
 					}
@@ -2623,8 +2623,6 @@ foreign _ {
 	diff_check_fill_r :: proc "c"(wp: rawptr, lnum: C.int) -> C.int ---
 	@(link_name = "build_statuscol_str")
 	build_statuscol_str_r :: proc "c"(wp: rawptr, lnum: C.int, relnum: C.int, virtnum: C.int, buf: ^u8, stcp: ^Statuscol_O) -> C.int ---
-	@(link_name = "transstr_buf")
-	transstr_buf_r :: proc "c"(s: ^u8, slen: C.ssize_t, buf: ^u8, buflen: C.size_t, untab: bool) -> C.size_t ---
 }
 
 // draw_statuscol cache statics (drawline.c:713-716).
@@ -2727,7 +2725,7 @@ draw_statuscol_o :: proc "c"(wp: rawptr, wlv: ^WinLineVars, col_rows: C.int, stc
 		sp := &stcp.hlrec[spi]
 		textlen := C.ssize_t(uintptr(sp.start) - uintptr(p))
 		// Make all characters printable.
-		translen := transstr_buf_r(p, textlen, &transbuf[0], MAXPATHL_O, true)
+		translen := transstr_buf(p, textlen, &transbuf[0], MAXPATHL_O, true)
 		draw_col_buf_o(wp, wlv, &transbuf[0], C.size_t(translen), cur_attr, fold_vcol, false)
 		attr := sp.item == STL_SIGNCOL_O ? scl_attr : sp.item == STL_FOLDCOL_O ? 0 : num_attr
 		cur_attr = hl_combine_attr_r(attr,
@@ -2740,7 +2738,7 @@ draw_statuscol_o :: proc "c"(wp: rawptr, wlv: ^WinLineVars, col_rows: C.int, stc
 		p = sp.start
 		spi += 1
 	}
-	translen := transstr_buf_r(p, C.ssize_t(uintptr(&buf[0]) + uintptr(slen) - uintptr(p)),
+	translen := transstr_buf(p, C.ssize_t(uintptr(&buf[0]) + uintptr(slen) - uintptr(p)),
 		&transbuf[0], MAXPATHL_O, true)
 	draw_col_buf_o(wp, wlv, &transbuf[0], C.size_t(translen), cur_attr, fold_vcol, false)
 	draw_col_fill_o(wlv, 32, stcp.width - width, cur_attr)
@@ -3504,8 +3502,6 @@ SCL_NUM_O :: -2
 CPO_NUMCOL_O :: 'n'
 
 foreign _ {
-	@(link_name = "transchar_hex")
-	transchar_hex_r :: proc "c"(buf: ^u8, c: C.int) -> C.size_t ---
 }
 
 foreign _ {
@@ -3528,10 +3524,6 @@ foreign _ {
 }
 
 foreign _ {
-	@(link_name = "transchar_buf")
-	transchar_buf_r :: proc "c"(buf: rawptr, c: C.int) -> ^u8 ---
-	@(link_name = "byte2cells")
-	byte2cells_r :: proc "c"(b: C.int) -> C.int ---
 	@(link_name = "dy_flags")
 	dy_flags_g: C.uint
 }
@@ -3621,10 +3613,6 @@ foreign _ {
 	decor_redraw_signs_r :: proc "c"(wp: rawptr, buf: rawptr, row: C.int, sattrs: rawptr, line_id: ^C.int, cul_id: ^C.int, num_id: ^C.int) ---
 	@(link_name = "get_cursor_rel_lnum")
 	get_cursor_rel_lnum_r :: proc "c"(wp: rawptr, lnum: C.int) -> C.int ---
-	@(link_name = "rl_mirror_ascii")
-	rl_mirror_ascii_r :: proc "c"(s: ^u8, e: ^u8) ---
-	@(link_name = "skiptowhite")
-	skiptowhite_r :: proc "c"(p: cstring) -> cstring ---
 }
 
 // Put one UTF-8 char into a line buffer (plain, C-static).
@@ -3839,8 +3827,8 @@ draw_lnum_col_o :: proc "c"(wp: rawptr, wlv: ^WinLineVars) {
 				}
 				if (^C.int)(uintptr(wp) + W_P_RL_OFF)^ != 0 { // reverse numbers
 					num := skipwhite(cstring(&buf[0]))
-					rl_mirror_ascii_r(transmute(^u8)(num),
-						transmute(^u8)(skiptowhite_r(num)))
+					rl_mirror_ascii(transmute(^u8)(num),
+						transmute(^u8)(skiptowhite(num)))
 				}
 				draw_col_buf_o(wp, wlv, &buf[0], C.size_t(width), attr, nil, false)
 			} else {

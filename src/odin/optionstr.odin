@@ -117,7 +117,7 @@ illegal_char :: proc "c"(errbuf: ^u8, errbuflen: C.size_t, c: C.int) -> ^u8 {
 		return transmute(^u8)(cstring(""))
 	}
 	libc.snprintf(errbuf, errbuflen, "E539: Illegal character <%s>",
-		transmute(cstring)(transchar_o(c)))
+		transmute(cstring)(transchar(c)))
 	return errbuf
 }
 
@@ -126,7 +126,7 @@ illegal_char_after_chr :: proc "c"(errbuf: ^u8, errbuflen: C.size_t, c: C.int) -
 		return transmute(^u8)(cstring(""))
 	}
 	libc.snprintf(errbuf, errbuflen,
-		"E535: Illegal character after <%s>", transmute(cstring)(transchar_o(c)))
+		"E535: Illegal character after <%s>", transmute(cstring)(transchar(c)))
 	return errbuf
 }
 
@@ -763,7 +763,7 @@ did_set_display :: proc "c"(args: ^optset_T) -> cstring {
 	if errmsg != nil {
 		return errmsg
 	}
-	init_chartab_r()
+	init_chartab()
 	msg_grid_validate_r()
 	return nil
 }
@@ -1314,7 +1314,7 @@ statuscolumn: bool) -> cstring {
 			s = (^u8)(uintptr(s) + 1)
 		}
 		sl := s
-		wid := getdigits_int_r(&sl, true, 0)
+		wid := getdigits_int(&sl, true, 0)
 		s = sl
 		ok := false
 		if wid != 0 && b_at(s, 0) == '(' {
@@ -1434,8 +1434,6 @@ W_P_SCL_OFF :: 1160
 W_MINSCWIDTH_OFF :: 684
 
 foreign _ {
-	@(link_name = "check_isopt")
-	check_isopt_r :: proc "c" (var: ^u8) -> C.int ---
 	@(link_name = "p_vfile")
 	p_vfile_g: ^u8
 	@(link_name = "verbose_stop")
@@ -1445,7 +1443,7 @@ foreign _ {
 	@(link_name = "messagesopt_changed")
 	messagesopt_changed_r :: proc "c" () -> C.int ---
 }
-// check_colorcolumn_r/buf_init_chartab_r/set_iminsert_global/set_imsearch_global/
+// check_colorcolumn_r/buf_init_chartab/set_iminsert_global/set_imsearch_global/
 // keymap_init/valid_filetype_o/secure/W_NRWIDTH_OFF reused from sibling files.
 
 @(export)
@@ -1480,7 +1478,7 @@ did_set_isopt :: proc "c"(args: ^optset_T) -> cstring {
 	// 'isident', 'iskeyword', 'isprint' or 'isfname' option: refill g_chartab[]
 	// If the new option is invalid, use old value.
 	// 'lisp' option: refill g_chartab[] for '-' char
-	if !buf_init_chartab_r(buf, true) {
+	if !buf_init_chartab(buf, true) {
 		args.os_restore_chartab = true // need to restore it below
 		return cstring("E474: Invalid argument") // error in value
 	}
@@ -1491,7 +1489,7 @@ did_set_isopt :: proc "c"(args: ^optset_T) -> cstring {
 did_set_iskeyword :: proc "c"(args: ^optset_T) -> cstring {
 	varp := (^^u8)(args.os_varp)
 	if transmute(rawptr)(varp) == transmute(rawptr)(&p_isk_g) { // only check for global-value
-		if check_isopt_r(varp^) == FAIL_S {
+		if check_isopt(varp^) == FAIL_S {
 			return cstring("E474: Invalid argument")
 		}
 	} else { // fallthrough for local-value
@@ -1702,7 +1700,7 @@ did_set_mousescroll :: proc "c"(args: ^optset_T) -> cstring {
 		}
 
 		sp := (^u8)(uintptr(string) + 4)
-		direction^ = C.longlong(getdigits_int_r(&sp, false, -1))
+		direction^ = C.longlong(getdigits_int(&sp, false, -1))
 		string = sp
 
 		// Num options are generally kept within the signed int range.
@@ -1787,8 +1785,6 @@ foreign _ {
 	p_shada_g: ^u8
 	@(link_name = "get_shada_parameter")
 	get_shada_parameter_r :: proc "c" (typ: C.int) -> C.int ---
-	@(link_name = "transchar_byte")
-	transchar_byte_r :: proc "c" (c: C.int) -> ^u8 ---
 }
 // foldmethodIsExpr/foldmethodIsMarker/foldmethodIsIndent/foldUpdateAll from
 // fold.odin; libc.snprintf used instead of variadic vim_snprintf (boxing).
@@ -2112,7 +2108,7 @@ did_set_shada :: proc "c"(args: ^optset_T) -> cstring {
 			if !is_digit_o(b_at((^u8)(uintptr(s) - 1), 0)) {
 				if errbuf != nil {
 					libc.snprintf(errbuf, errbuflen, E526_S,
-						rawptr(transchar_byte_r(C.int(b_at((^u8)(uintptr(s) - 1), 0)))))
+						rawptr(transchar_byte(C.int(b_at((^u8)(uintptr(s) - 1), 0)))))
 					return transmute(cstring)(errbuf)
 				} else {
 					return cstring("")
@@ -2960,8 +2956,6 @@ foreign _ {
 	schar_from_str_r :: proc "c" (str: cstring) -> u32 ---
 	@(link_name = "schar_from_char")
 	schar_from_char_r :: proc "c" (c: C.int) -> u32 ---
-	@(link_name = "hexhex2nr")
-	hexhex2nr_r :: proc "c" (p: cstring) -> C.int ---
 	@(link_name = "utfc_ptr2schar")
 	utfc_ptr2schar_r :: proc "c" (p: cstring, firstc: ^C.int) -> u32 ---
 }
@@ -2987,7 +2981,7 @@ get_encoded_char_adv_o :: proc "c"(pp: ^^u8) -> u32 {
 		for nbytes > 0 {
 			nbytes -= 1
 			pp^ = (^u8)(uintptr(pp^) + 2)
-			n := hexhex2nr_r(transmute(cstring)(pp^))
+			n := hexhex2nr(transmute(cstring)(pp^))
 			if n < 0 {
 				return 0
 			}

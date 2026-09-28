@@ -52,8 +52,7 @@ foreign _ {
 	// set_helplang_default — PORTED to Odin (option.odin)
 
 	// maketitle now defined in buffer.odin — call directly.
-	@(link_name = "skiptowhite")
-	skiptowhite :: proc(p: cstring) -> cstring ---
+	// skiptowhite is an Odin export (charset.odin) — call directly.
 
 	@(link_name = "path_tail")
 	path_tail :: proc(fname: cstring) -> cstring ---
@@ -106,29 +105,7 @@ ASCII_ISALPHA :: proc(c: u8) -> bool {
 	return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')
 }
 
-@(private)
-ascii_isdigit :: proc "c" (c: u8) -> bool {
-	return c >= '0' && c <= '9'
-}
-
-@(private)
-ascii_iswhite :: proc "c" (c: u8) -> bool {
-	// C ascii_iswhite (ascii_defs.h:84): space/tab ONLY. Do NOT widen:
-	// skipwhite must stop at \n (ex_function line_arg detection depends
-	// on it; Batch 24ac proved the wide version hangs defines).
-	return c == ' ' || c == '\t'
-}
-
-@(private)
-skipwhite :: proc "c" (p: cstring) -> cstring {
-	cur := p
-	b := ([^]u8)(_uptr(cur))
-	for b[0] != 0 && ascii_iswhite(b[0]) {
-		cur = transmute(cstring)(_uptr(cur) + 1)
-		b = ([^]u8)(_uptr(cur))
-	}
-	return cur
-}
+// ascii_isdigit/ascii_iswhite/skipwhite MOVED to charset.odin (Batch C1).
 
 @(private)
 os_strtok :: proc(str: cstring, delim: cstring, saveptr: ^cstring) -> cstring {

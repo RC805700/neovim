@@ -22,14 +22,6 @@ foreign _ {
 	open_spellbuf_r :: proc "c" () -> rawptr ---
 
 	// ── charset/mbyte ──
-	@(link_name = "skipdigits")
-	skipdigits_r :: proc "c" (p: cstring) -> cstring ---
-	@(link_name = "skiphex")
-	skiphex_r :: proc "c" (p: cstring) -> cstring ---
-	@(link_name = "skipbin")
-	skipbin_r :: proc "c" (p: cstring) -> cstring ---
-	@(link_name = "getwhitecols")
-	getwhitecols_r :: proc "c" (p: cstring) -> C.int ---
 	@(link_name = "mb_charlen_len")
 	mb_charlen_len_r :: proc "c" (s: cstring, len: C.size_t) -> C.int ---
 	@(link_name = "utf_class")
@@ -435,11 +427,11 @@ spell_check :: proc "c"(wp: rawptr, ptr: ^u8, attrp: ^C.int, capcol: ^C.int, doc
 	// A number is always OK. Also skip hex/binary; still check "3GPP".
 	if b_at(ptr, 0) >= '0' && b_at(ptr, 0) <= '9' {
 		if b_at(ptr, 0) == '0' && (b_at(ptr, 1) == 'b' || b_at(ptr, 1) == 'B') {
-			mi.mi_end = transmute(^u8)(skipbin_r(transmute(cstring)(^u8)(uintptr(ptr) + 2)))
+			mi.mi_end = transmute(^u8)(skipbin(transmute(cstring)(^u8)(uintptr(ptr) + 2)))
 		} else if b_at(ptr, 0) == '0' && (b_at(ptr, 1) == 'x' || b_at(ptr, 1) == 'X') {
-			mi.mi_end = transmute(^u8)(skiphex_r(transmute(cstring)(^u8)(uintptr(ptr) + 2)))
+			mi.mi_end = transmute(^u8)(skiphex(transmute(cstring)(^u8)(uintptr(ptr) + 2)))
 		} else {
-			mi.mi_end = transmute(^u8)(skipdigits_r(transmute(cstring)(ptr)))
+			mi.mi_end = transmute(^u8)(skipdigits(transmute(cstring)(ptr)))
 		}
 		nrlen = C.size_t(uintptr(mi.mi_end) - uintptr(ptr))
 	}
@@ -2300,7 +2292,7 @@ valid_spellfile :: proc "c"(val: cstring) -> bool {
 		}
 		s := (^u8)(&spf_name[0])
 		for b_at(s, 0) != 0 {
-			if !vim_is_fname_char_r(b_at(s, 0)) {
+			if !vim_is_fname_char(C.int(b_at(s, 0))) {
 				return false
 			}
 			s = (^u8)(uintptr(s) + 1)
@@ -2393,9 +2385,9 @@ spell_move_to :: proc "c"(wp: rawptr, dir: C.int, behaviour: C.int, curline: boo
 		}
 
 		if capcol == 0 {
-			capcol = getwhitecols_r(transmute(cstring)(line))
+			capcol = getwhitecols(transmute(cstring)(line))
 		} else if curline && wp == curwin {
-			col := getwhitecols_r(transmute(cstring)(line))
+			col := getwhitecols(transmute(cstring)(line))
 			if check_need_cap(curwin, lnum, col) {
 				capcol = col
 			}
@@ -2560,7 +2552,7 @@ check_need_cap :: proc "c"(wp: rawptr, lnum: C.int, col: C.int) -> bool {
 	line: ^u8 = col != 0 ? ml_get_buf(buf_of_win(wp), lnum) : nil
 	line_copy: ^u8 = nil
 	endcol := C.int(0)
-	if col == 0 || getwhitecols_r(transmute(cstring)(line)) >= col {
+	if col == 0 || getwhitecols(transmute(cstring)(line)) >= col {
 		if lnum == 1 {
 			need_cap = true
 		} else {
@@ -3326,8 +3318,6 @@ DUMPFLAG_ONECAP :: 8
 DUMPFLAG_ALLCAP :: 16
 
 foreign _ {
-	@(link_name = "vim_is_fname_char")
-	vim_is_fname_char_r :: proc "c" (c: u8) -> bool ---
 }
 
 // :spellinfo

@@ -122,9 +122,6 @@ foreign _ {
 	@(link_name = "add_to_showcmd")
 	add_to_showcmd :: proc "c" (c: C.int) ---
 
-	@(link_name = "char2cells")
-	char2cells :: proc "c" (c: C.int) -> C.int ---
-
 	@(link_name = "utf_char2bytes")
 	utf_char2bytes :: proc "c" (c: C.int, buf: ^u8) -> C.int ---
 
@@ -133,9 +130,6 @@ foreign _ {
 
 	@(link_name = "mb_cptr2char_adv")
 	mb_cptr2char_adv :: proc "c" (pp: ^^u8) -> C.int ---
-
-	@(link_name = "getdigits_int")
-	getdigits_int :: proc "c" (pp: ^^u8, strict: bool, def: C.int) -> C.int ---
 
 	@(link_name = "source_runtime")
 	source_runtime :: proc "c" (name: ^u8, flags: C.int) -> C.int ---

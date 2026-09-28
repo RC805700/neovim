@@ -1176,7 +1176,7 @@ modifier_len :: proc "c" (cmd: cstring) -> C.int {
 	context = runtime.default_context()
 	p := cmd
 	if ascii_isdigit_o(([^]u8)(cmd)[0]) {
-		p = skipwhite(skipdigits_r(transmute(cstring)(uintptr(rawptr(cmd)) + 1)))
+		p = skipwhite(skipdigits(transmute(cstring)(uintptr(rawptr(cmd)) + 1)))
 	}
 	for i := 0; i < 24; i += 1 {
 		j: C.int = 0
@@ -2208,8 +2208,6 @@ verify_command :: proc "c" (cmd: cstring) {
 
 // —— Batch 12: ex_docmd.c address engine (exports + weak) ——
 foreign _ {
-	@(link_name = "getdigits_int32")
-	getdigits_int32_e :: proc "c" (pp: ^^u8, strict: bool, def: C.int) -> C.int ---
 	@(link_name = "skip_regexp")
 	skip_regexp_e :: proc "c" (startp: ^u8, delim: C.int, magic: C.int) -> ^u8 ---
 	@(link_name = "qf_get_size")
@@ -2403,7 +2401,7 @@ get_address :: proc "c" (eap: rawptr, ptr: ^cstring, addr_type: C.int, skip: boo
 				}
 			}
 		} else if ascii_isdigit_o(c0) {
-			lnum = C.int(getdigits_e(&cmd, false, 0))
+			lnum = C.int(getdigits(&cmd, false, 0))
 		}
 		if cmd != nil {
 			for {
@@ -2443,7 +2441,7 @@ get_address :: proc "c" (eap: rawptr, ptr: ^cstring, addr_type: C.int, skip: boo
 					n = 1
 				} else {
 					cs2 := transmute(^u8)(cmd)
-					n = getdigits_int32_e(&cs2, false, MAXLNUM)
+					n = getdigits_int32(&cs2, false, MAXLNUM)
 					cmd = transmute(cstring)(cs2)
 					if n == MAXLNUM {
 						errormsg^ = cstring(E1247_S)
@@ -4560,7 +4558,7 @@ execute_cmd0_o :: proc "c" (retv: ^C.int, eap: rawptr, errormsg: ^cstring, previ
 			p: cstring
 			arg := ([^]cstring)(uintptr(eap) + EXARG_ARG_OFF)[0]
 			if cmdidx == CMD_BDELETE_O || cmdidx == CMD_BWIPEOUT_O || cmdidx == CMD_BUNLOAD_O {
-				p = skiptowhite_esc_r(arg)
+				p = skiptowhite_esc(arg)
 			} else {
 				p = transmute(cstring)(uintptr(rawptr(arg)) + uintptr(libc.strlen(arg)))
 				for uintptr(rawptr(p)) > uintptr(rawptr(arg)) && (([^]u8)(uintptr(rawptr(p)) - 1)[0] == ' ' || ([^]u8)(uintptr(rawptr(p)) - 1)[0] == '\t') {
@@ -4701,14 +4699,14 @@ parse_count_o :: proc "c" (eap: rawptr, errormsg: ^cstring, validate: bool) -> C
 	if (argt & EX_COUNT_O) != 0 && ascii_isdigit_o(([^]u8)(arg)[0]) {
 		take := true
 		if (argt & EX_BUFNAME_O) != 0 {
-			sk := skipdigits_r(transmute(cstring)(uintptr(rawptr(arg)) + 1))
+			sk := skipdigits(transmute(cstring)(uintptr(rawptr(arg)) + 1))
 			if ([^]u8)(sk)[0] != 0 && ([^]u8)(sk)[0] != ' ' && ([^]u8)(sk)[0] != '\t' {
 				take = false
 			}
 		}
 		if take {
 			cs := transmute(^u8)(arg)
-			n := getdigits_int32_e(&cs, false, MAXLNUM)
+			n := getdigits_int32(&cs, false, MAXLNUM)
 			arg = transmute(cstring)(cs)
 			([^]cstring)(uintptr(eap) + EXARG_ARG_OFF)[0] = skipwhite(arg)
 			args := (^rawptr)(uintptr(eap) + EXARG_ARGS_OFF)^
@@ -6734,7 +6732,7 @@ get_tabpage_arg_o :: proc "c" (eap: rawptr) -> C.int {
 			p = transmute(cstring)(uintptr(rawptr(p)) + 1)
 		}
 		p_save := p
-		tab_number = C.int(getdigits_e(&p, false, C.long(tab_number)))
+		tab_number = C.int(getdigits(&p, false, C.long(tab_number)))
 		if relative == 0 {
 			if libc.strcmp(p, cstring("$")) == 0 {
 				tab_number = current_tab_nr_o(nil)
@@ -6822,7 +6820,7 @@ ex_tabnext :: proc "c" (eap: rawptr) {
 		if arg != nil && ([^]u8)(arg)[0] != 0 {
 			p := arg
 			p_save := p
-			tab_number := C.int(getdigits_e(&p, false, 0))
+			tab_number := C.int(getdigits(&p, false, 0))
 			if p == p_save || ([^]u8)(p_save)[0] == '-' || ([^]u8)(p_save)[0] == '+' || ([^]u8)(p)[0] != 0 || tab_number == 0 {
 				([^]cstring)(uintptr(eap) + EXARG_ERRMSG_OFF)[0] = ex_errmsg(cstring(E475_S), arg)
 				return
@@ -7028,7 +7026,7 @@ ex_later :: proc "c" (eap: rawptr) {
 	if ([^]u8)(p)[0] == 0 {
 		count = 1
 	} else if ascii_isdigit_o(([^]u8)(p)[0]) {
-		count = C.int(getdigits_e(&p, false, 0))
+		count = C.int(getdigits(&p, false, 0))
 		cc := ([^]u8)(p)[0]
 		if cc == 's' {
 			p = transmute(cstring)(uintptr(rawptr(p)) + 1)
@@ -7234,7 +7232,7 @@ ex_findpat :: proc "c" (eap: rawptr) {
 	arg := ([^]cstring)(uintptr(eap) + EXARG_ARG_OFF)[0]
 	if ascii_isdigit_o(([^]u8)(arg)[0]) {
 		s := arg
-		n = C.int(getdigits_e(&s, false, 0))
+		n = C.int(getdigits(&s, false, 0))
 		arg = skipwhite(s)
 		([^]cstring)(uintptr(eap) + EXARG_ARG_OFF)[0] = arg
 	}
@@ -8296,11 +8294,11 @@ ex_winsize :: proc "c" (eap: rawptr) {
 		return
 	}
 	s := arg
-	w := C.int(getdigits_e(&s, false, 10))
+	w := C.int(getdigits(&s, false, 10))
 	arg = skipwhite(s)
 	p := arg
 	s = arg
-	h := C.int(getdigits_e(&s, false, 10))
+	h := C.int(getdigits(&s, false, 10))
 	arg = s
 	if ([^]u8)(p)[0] != 0 && ([^]u8)(arg)[0] == 0 {
 		screen_resize(w, h)

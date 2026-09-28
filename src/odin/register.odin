@@ -284,8 +284,7 @@ foreign _ {
 	emsg_invreg_r :: proc "c" (name: C.int) ---
 	@(link_name = "msgmore")
 	msgmore_r :: proc "c" (n: C.int) ---
-	@(link_name = "transchar")
-	transchar_r :: proc "c" (c: C.int) -> ^u8 ---
+	// transchar is an Odin export (charset.odin) — call directly.
 	@(link_name = "adjust_cursor_eol")
 	adjust_cursor_eol_r :: proc "c" () ---
 	@(link_name = "decl")
@@ -373,8 +372,6 @@ foreign _ {
 	// last_search_pat / set_last_search_pat now defined in search.odin — reuse directly.
 	// buflist_findpat now defined in buffer.odin — call directly.
 	// buflist_name_nr now defined in buffer.odin — call directly.
-	@(link_name = "getdigits_int")
-	getdigits_int_r :: proc "c" (pp: ^^u8, strict: bool, def: C.int) -> C.int ---
 	@(link_name = "utf_ptr2cells_len")
 	utf_ptr2cells_len_r :: proc "c" (p: cstring, size: C.int) -> C.int ---
 	@(link_name = "utf_ptr2len_len")
@@ -1931,7 +1928,7 @@ do_put :: proc "c" (regname: C.int, reg_arg: ^Yankreg_T, dir_arg: C.int, count_a
 
 			if y_size == 0 || y_array == nil {
 				semsg_fmt(cstring("E353: Nothing in register %s"),
-					regname == 0 ? transmute(rawptr)(cstring("\"")) : transmute(rawptr)(transchar_r(regname)))
+					regname == 0 ? transmute(rawptr)(cstring("\"")) : transmute(rawptr)(transchar(regname)))
 				done = true
 			}
 		}
@@ -3113,7 +3110,7 @@ prepare_yankreg_from_object :: proc "c" (reg: ^Yankreg_T, regtype: Str16, lines:
 		}
 		p := (^u8)(uintptr(regtype.data) + 1)
 		p_ptr := &p
-		reg.y_width = getdigits_int_r(p_ptr, false, 1) - 1
+		reg.y_width = getdigits_int(p_ptr, false, 1) - 1
 		if regtype.size > C.size_t(uintptr(p) - uintptr(regtype.data)) {
 			return false
 		}

@@ -860,13 +860,13 @@ showmode :: proc "c"() -> C.int {
 					length = (Rows - msg_row) * Columns - 3
 				}
 				if edit_submode_extra_g != nil {
-					length -= vim_strsize_r(transmute(cstring)(edit_submode_extra_g))
+					length -= vim_strsize(transmute(cstring)(edit_submode_extra_g))
 				}
 				if length > 0 {
 					if edit_submode_pre_g != nil {
-						length -= vim_strsize_r(transmute(cstring)(edit_submode_pre_g))
+						length -= vim_strsize(transmute(cstring)(edit_submode_pre_g))
 					}
-					if length - vim_strsize_r(transmute(cstring)(edit_submode_g)) > 0 {
+					if length - vim_strsize(transmute(cstring)(edit_submode_g)) > 0 {
 						if edit_submode_pre_g != nil {
 							msg_puts_hl_r(transmute(cstring)(edit_submode_pre_g), hl_id, false)
 						}

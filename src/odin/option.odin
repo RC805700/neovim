@@ -711,8 +711,6 @@ validate_num_option :: proc "c"(opt_idx: C.int, newval: ^C.longlong, errbuf: ^u8
 }
 
 foreign _ {
-	@(link_name = "buf_init_chartab")
-	buf_init_chartab_r :: proc "c" (buf: rawptr, send_error: bool) -> bool ---
 	@(link_name = "set_option_sctx")
 	set_option_sctx_r :: proc "c" (opt_idx: C.int, opt_flags: C.int, sctx: sctx_T) ---
 	@(link_name = "nvim_odin_apply_optionset_autocmd")
@@ -932,7 +930,7 @@ did_set_option_o :: proc "c"(
 	if errmsg != nil {
 		set_option_varp_o(opt_idx, varp, old_value, true)
 		if restore_chartab {
-			buf_init_chartab_r(curbuf, true)
+			buf_init_chartab(curbuf, true)
 		}
 		return errmsg
 	}
@@ -1434,16 +1432,11 @@ foreign _ {
 	p_path_g: ^u8
 	@(link_name = "p_sps")
 	p_sps_g: ^u8
-	@(link_name = "vim_str2nr")
-	vim_str2nr_r :: proc "c" (start: cstring, prep: ^cstring, len: ^C.int, what: C.int, nptr: ^C.longlong, sptr: ^u64, maxlen: C.size_t, strict: bool, overflow: ^bool) ---
-	@(link_name = "skiptowhite_esc")
-	skiptowhite_esc_r :: proc "c" (p: cstring) -> cstring ---
+	// vim_str2nr is an Odin export (charset.odin) — call directly.
 	@(link_name = "msg_advance")
 	msg_advance_r :: proc "c" (col: C.int) ---
 	@(link_name = "message_filtered")
 	message_filtered_r :: proc "c" (msg: cstring) -> bool ---
-	@(link_name = "init_chartab")
-	init_chartab_r :: proc "c" () -> C.int ---
 	@(link_name = "spell_check_msm")
 	spell_check_msm_r :: proc "c" () -> C.int ---
 	@(link_name = "spell_check_sps")
@@ -1460,8 +1453,7 @@ foreign _ {
 	tabstop_set_o :: proc "c" (val: ^u8, ret_list: ^^u8) -> bool ---
 	@(link_name = "get_special_key_name")
 	get_special_key_name_r :: proc "c" (c: C.int, modifiers: C.int) -> ^u8 ---
-	@(link_name = "transchar")
-	transchar_o :: proc "c" (c: C.int) -> ^u8 ---
+	// transchar is an Odin export (charset.odin) — call directly.
 	@(link_name = "find_special_key_in_table")
 	find_special_key_in_table_r :: proc "c" (c: C.int) -> C.int ---
 	// home_replace is an Odin proc in os_env.odin — reuse directly.
@@ -2077,7 +2069,7 @@ get_option_newval_o :: proc "c"(
 			}
 		} else if c0 == '-' || ascii_isdigit_sp(c0) {
 			i := C.int(0)
-			vim_str2nr_r(transmute(cstring)(arg), nil, &i, STR2NR_ALL_S, &newval_num, nil, 0, true, nil)
+			vim_str2nr(transmute(cstring)(arg), nil, &i, STR2NR_ALL_S, &newval_num, nil, 0, true, nil)
 			if i == 0 || (b_at(arg, i) != 0 && !ascii_iswhite_sp(b_at(arg, i))) {
 				errmsg^ = cstring("E521: Number required after =")
 				return newval
@@ -2168,7 +2160,7 @@ option_value2string_o :: proc "c"(opt: ^vimoption_T, opt_flags: C.int) {
 				transmute(cstring)(get_special_key_name_r(C.int(wc), 0)))
 		} else if wc != 0 {
 			libc.strcpy(&name_buff[0],
-				transmute(cstring)(transchar_o(C.int(wc))))
+				transmute(cstring)(transchar(C.int(wc))))
 		} else {
 			libc.snprintf(&name_buff[0], 4096, "%lld", ov_number_from_varp(varp))
 		}
@@ -2371,7 +2363,7 @@ showoptions_o :: proc "c"(all: bool, opt_flags: C.int) {
 				} else {
 					option_value2string_o(opt, opt_flags)
 					l = C.int(libc.strlen(transmute(cstring)(opt.fullname))) +
-					vim_strsize_r(transmute(cstring)(&name_buff[0])) + 1
+					vim_strsize(transmute(cstring)(&name_buff[0])) + 1
 				}
 				if (l <= INC - GAP && run == 1) || (l > INC - GAP && run == 2) {
 					(^rawptr)(uintptr(items) + uintptr(item_count) * size_of(rawptr))^ = opt
@@ -2409,8 +2401,6 @@ showoptions_o :: proc "c"(all: bool, opt_flags: C.int) {
 }
 
 foreign _ {
-	@(link_name = "vim_strsize")
-	vim_strsize_r :: proc "c" (s: cstring) -> C.int ---
 }
 
 Columns_opt :: proc "c"() -> C.int {
@@ -2609,7 +2599,7 @@ set_options_default_o :: proc "c"(opt_flags: C.int) {
 }
 
 didset_options_o :: proc "c"() {
-	init_chartab_r()
+	init_chartab()
 	didset_string_options()
 	spell_check_msm_r()
 	spell_check_sps_r()
@@ -2673,7 +2663,7 @@ do_set :: proc "c"(arg_in: ^u8, opt_flags: C.int) -> C.int {
 				do_one_set_option_o(opt_flags, &arg, &did_show, &errbuf[0], 1025, &errmsg)
 
 				for i := C.int(0); i < 2; i += 1 {
-					a := skiptowhite_esc_r(transmute(cstring)(arg))
+					a := skiptowhite_esc(transmute(cstring)(arg))
 					arg = transmute(^u8)(a)
 					arg = transmute(^u8)(skipwhite(transmute(cstring)(arg)))
 					if b_at(arg, 0) != '=' {
@@ -4687,7 +4677,7 @@ get_option_newval :: proc "c"(opt_idx: C.int, opt_flags: C.int, prefix: C.int, a
 				}
 			} else if a0 == '-' || is_ascii_digit(a0) {
 				i: C.int = 0
-				vim_str2nr_r(transmute(cstring)(argp^), nil, &i, STR2NR_ALL_S, &newval_num, nil, 0, true, nil)
+				vim_str2nr(transmute(cstring)(argp^), nil, &i, STR2NR_ALL_S, &newval_num, nil, 0, true, nil)
 				if i == 0 || (b_at(argp^, i) != 0 && !is_ascii_white(b_at(argp^, i))) {
 					errmsg^ = E_NUMBER_REQUIRED
 					return newval
@@ -4700,7 +4690,7 @@ get_option_newval :: proc "c"(opt_idx: C.int, opt_flags: C.int, prefix: C.int, a
 			a0 := b_at(argp^, 0)
 			if a0 == '-' || is_ascii_digit(a0) {
 				i: C.int = 0
-				vim_str2nr_r(transmute(cstring)(argp^), nil, &i, STR2NR_ALL_S, &newval_num, nil, 0, true, nil)
+				vim_str2nr(transmute(cstring)(argp^), nil, &i, STR2NR_ALL_S, &newval_num, nil, 0, true, nil)
 				if i == 0 || (b_at(argp^, i) != 0 && !is_ascii_white(b_at(argp^, i))) {
 					errmsg^ = E_NUMBER_REQUIRED
 					return newval
@@ -5542,7 +5532,7 @@ buf_copy_options :: proc "c"(buf: rawptr, flags: C.int) {
 
 	check_buf_options(buf)
 	if did_isk {
-		buf_init_chartab_r(buf, false)
+		buf_init_chartab(buf, false)
 	}
 }
 

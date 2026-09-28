@@ -22,9 +22,6 @@ AI_NUMERICSERV :: c.int(0x0400)
 UINT16_MAX :: i64(65535)
 
 foreign _ {
-	@(link_name = "try_getdigits")
-	_try_getdigits :: proc(pp: ^^u8, nr: ^i64) -> bool ---
-
 	@(link_name = "ntohs")
 	_ntohs :: proc(n: u16) -> u16 ---
 }
@@ -80,7 +77,7 @@ socket_watcher_init :: proc "c" (loop: ^Loop, watcher: ^SocketWatcher, endpoint:
 		iport: i64
 
 		tmp := port
-		ok := _try_getdigits(&tmp, &iport)
+		ok := try_getdigits(&tmp, &iport)
 		if !ok || iport < 0 || iport > UINT16_MAX {
 			return UV_EINVAL
 		}

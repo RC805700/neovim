@@ -185,8 +185,6 @@ foreign _ {
 	clear_virttext_r :: proc "c" (text: ^Kvec_VT) ---
 	@(link_name = "skip_comment")
 	skip_comment_r :: proc "c" (line: ^u8, process: bool, include_space: bool, is_comment: ^bool) -> ^u8 ---
-	@(link_name = "transstr")
-	transstr_r :: proc "c" (s: cstring, untab: bool) -> ^u8 ---
 	// linewhite now defined in search.odin — reuse directly.
 	@(link_name = "ml_replace_buf")
 	ml_replace_buf_r :: proc "c" (buf: rawptr, lnum: C.int, line: ^u8, copy: bool, noalloc: bool) -> C.int ---
@@ -1667,7 +1665,7 @@ get_foldtext :: proc "c" (wp: rawptr, lnum: C.int, lnume: C.int, foldinfo: Foldi
 				p = (^u8)(uintptr(p) + 1)
 			}
 			if p^ != 0 {
-				p = transstr_r(transmute(cstring)(text), true)
+				p = transstr(transmute(cstring)(text), true)
 				xfree(text)
 				text = p
 			}

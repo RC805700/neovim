@@ -294,8 +294,7 @@ foreign _ {
 	ml_get_buf_len :: proc "c" (buf: rawptr, lnum: C.int) -> C.int ---
 
 	utf_ptr2char :: proc "c" (p_in: cstring) -> C.int ---
-	ptr2cells :: proc "c" (p_in: cstring) -> C.int ---
-	vim_isprintc :: proc "c" (c: C.int) -> bool ---
+	// ptr2cells/vim_isprintc are Odin exports (charset.odin) — call directly.
 
 	message_filtered :: proc "c" (msg: cstring) -> bool ---
 	msg_puts_title :: proc "c" (s: cstring) ---

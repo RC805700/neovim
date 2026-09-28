@@ -523,10 +523,6 @@ trans_function_name :: proc "c" (pp: ^cstring, skip: bool, flags: C.int, fdp: ra
 }
 
 // —— Batch 24f: function_exists + save_function_name ——
-foreign _ {
-	@(link_name = "getdigits")
-	getdigits_e :: proc "c" (pp: ^cstring, strict: bool, def: C.long) -> C.long ---
-}
 
 // True when a function with the given name exists.
 @(export)
@@ -558,7 +554,7 @@ save_function_name :: proc "c" (name: ^cstring, skip: bool, flags: C.int, fudi: 
 	saved: cstring
 	if libc.strncmp(p, cstring("<lambda>"), 8) == 0 {
 		p = transmute(cstring)(rawptr(uintptr(rawptr(p)) + uintptr(8)))
-		getdigits_e(&p, false, 0)
+		getdigits(&p, false, 0)
 		saved = transmute(cstring)(xmemdupz_o2(transmute(^u8)(rawptr(name^)), C.size_t(uintptr(rawptr(p)) - uintptr(rawptr(name^)))))
 		if fudi != nil {
 			libc.memset(fudi, 0, 24)
@@ -1386,7 +1382,7 @@ call_user_func :: proc "c" (fp: rawptr, argcount: C.int, argvars: ^Typval_T, ret
 					if tofree != nil {
 						s := transmute(cstring)(tofree)
 						buf: [MSG_BUF_LEN_O]u8
-						if vim_strsize_r(s) > MSG_BUF_CLEN_O {
+						if vim_strsize(s) > MSG_BUF_CLEN_O {
 							trunc_string_e(s, &buf[0], MSG_BUF_CLEN_O, MSG_BUF_LEN_O)
 							s = transmute(cstring)(&buf[0])
 						}
@@ -1475,7 +1471,7 @@ call_user_func :: proc "c" (fp: rawptr, argcount: C.int, argvars: ^Typval_T, ret
 			if s != nil {
 				ss := transmute(cstring)(s)
 				buf2: [MSG_BUF_LEN_O]u8
-				if vim_strsize_r(ss) > MSG_BUF_CLEN_O {
+				if vim_strsize(ss) > MSG_BUF_CLEN_O {
 					trunc_string_e(ss, &buf2[0], MSG_BUF_CLEN_O, MSG_BUF_LEN_O)
 					ss = transmute(cstring)(&buf2[0])
 				}

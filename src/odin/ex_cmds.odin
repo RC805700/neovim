@@ -1140,12 +1140,6 @@ Sorti_T :: struct {
 foreign _ {
 	@(link_name = "skip_regexp_err")
 	skip_regexp_err_r :: proc "c"(startp: ^u8, delim: C.int, magic: C.int) -> ^u8 ---
-	@(link_name = "skiptohex")
-	skiptohex_r :: proc "c"(q: ^u8) -> ^u8 ---
-	@(link_name = "skiptobin")
-	skiptobin_r :: proc "c"(q: ^u8) -> ^u8 ---
-	@(link_name = "skiptodigit")
-	skiptodigit_r :: proc "c"(q: ^u8) -> ^u8 ---
 	@(link_name = "strcoll")
 	strcoll_r :: proc "c"(s1: cstring, s2: cstring) -> C.int ---
 	// p_ic already in search.odin — reuse.
@@ -1388,11 +1382,11 @@ ex_sort :: proc "c"(eap: rawptr) {
 				pp := (^u8)(uintptr(s) + uintptr(start_col))
 				if sort_nr_f {
 					if (sort_what & STR2NR_HEX_O) != 0 {
-						s = skiptohex_r(pp)
+						s = skiptohex(pp)
 					} else if (sort_what & STR2NR_BIN_O) != 0 {
-						s = skiptobin_r(pp)
+						s = skiptobin(pp)
 					} else {
-						s = skiptodigit_r(pp)
+						s = skiptodigit(pp)
 					}
 					if uintptr(s) > uintptr(pp) &&
 						([^]u8)((^u8)(uintptr(s) - 1))[0] == '-' {
@@ -1404,7 +1398,7 @@ ex_sort :: proc "c"(eap: rawptr) {
 						(^C.longlong)(&nr.u[0])^ = 0
 					} else {
 						(^bool)(&nr.u[8])^ = true
-						vim_str2nr_r(cstring(s), nil, nil, sort_what,
+						vim_str2nr(cstring(s), nil, nil, sort_what,
 							(^C.longlong)(&nr.u[0]), nil, 0, false, nil)
 					}
 				} else {
@@ -3380,8 +3374,6 @@ ex_align :: proc "c"(eap: rawptr) {
 foreign _ {
 	@(link_name = "utf_ptr2len")
 	utf_ptr2len_o :: proc "c"(p: cstring) -> C.int ---
-	@(link_name = "transchar_nonprint")
-	transchar_nonprint_r :: proc "c"(buf: rawptr, charbuf: ^u8, c: C.int) ---
 }
 
 // ":ascii" and "ga": show char value, hex, octal, digraph.
@@ -3414,7 +3406,7 @@ do_ascii :: proc "c"(eap: rawptr) {
 		buf1: [20]u8
 		if vim_isprintc(c) && (c < ' ' || c > '~') {
 			buf3: [7]u8
-			transchar_nonprint_r(curbuf, &buf3[0], c)
+			transchar_nonprint(curbuf, &buf3[0], c)
 			libc.snprintf(&buf1[0], C.size_t(20), cstring("  <%s>"),
 				cstring(&buf3[0]))
 		} else {
@@ -3427,12 +3419,12 @@ do_ascii :: proc "c"(eap: rawptr) {
 		if dig != nil {
 			libc.snprintf(&IObuff[0], C.size_t(IOSIZE_O),
 				cstring("<%s>%s%s  %d,  Hex %02x,  Oct %03o, Digr %s"),
-				cstring(transchar_o(c)), cstring(&buf1[0]), cstring(&buf2[0]),
+				cstring(transchar(c)), cstring(&buf1[0]), cstring(&buf2[0]),
 				cval, cval, cval, cstring(dig))
 		} else {
 			libc.snprintf(&IObuff[0], C.size_t(IOSIZE_O),
 				cstring("<%s>%s%s  %d,  Hex %02x,  Octal %03o"),
-				cstring(transchar_o(c)), cstring(&buf1[0]), cstring(&buf2[0]),
+				cstring(transchar(c)), cstring(&buf1[0]), cstring(&buf2[0]),
 				cval, cval, cval)
 		}
 
@@ -4069,7 +4061,7 @@ do_sub_o :: proc "c"(eap: rawptr, timeout: proftime_T, cmdpreview_ns: C.int, cmd
 	cmd = transmute(^u8)(skipwhite(cstring(cmd)))
 	if ascii_isdigit_o(([^]u8)(cmd)[0]) {
 		count_arg := cmd
-		i = getdigits_int_r(&cmd, false, 0x7fffffff)
+		i = getdigits_int(&cmd, false, 0x7fffffff)
 		if i <= 0 && (^bool)(uintptr(eap) + EXARG_SKIP_OFF)^ == false &&
 			subflags_f.do_error {
 			emsg(cstring(E939_S))
@@ -5463,7 +5455,7 @@ prepare_tagpreview :: proc "c"(undo_sync: bool) -> bool {
 @(export)
 skip_vimgrep_pat :: proc "c"(p_in: ^u8, s: ^^u8, flags: ^C.int) -> ^u8 {
 	p := p_in
-	if _vim_isIDc(C.int(([^]u8)(p)[0])) {
+	if vim_isIDc(C.int(([^]u8)(p)[0])) {
 		// ":vimgrep pattern fname"
 		if s != nil {
 			s^ = p

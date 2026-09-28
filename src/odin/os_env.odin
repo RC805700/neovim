@@ -159,19 +159,14 @@ foreign _ {
 	@(link_name = "uv_os_homedir")
 	_uv_os_homedir :: proc(buf: cstring, size: ^c.size_t) -> c.int ---
 
-	// path / charset helpers
-	@(link_name = "vim_isIDc")
-	_vim_isIDc :: proc(c: c.int) -> bool ---
+	// path / charset helpers (vim_isIDc/vim_isfilec are Odin exports in charset.odin)
 	@(link_name = "vim_ispathsep")
 	_vim_ispathsep :: proc(c: c.int) -> bool ---
-	@(link_name = "vim_isfilec")
-	_vim_isfilec :: proc(c: c.int) -> bool ---
 	@(link_name = "vim_strchr")
 	_vim_strchr :: proc(s: cstring, c: c.int) -> cstring ---
 	@(link_name = "vim_strsave_escaped")
 	_vim_strsave_escaped :: proc(s: cstring, esc: cstring) -> cstring ---
-	@(link_name = "skipwhite")
-	_skipwhite :: proc(p: cstring) -> cstring ---
+	// skipwhite is an Odin export (charset.odin) — call directly.
 	@(link_name = "after_pathsep")
 	_after_pathsep :: proc(b: cstring, p: cstring) -> c.int ---
 	@(link_name = "path_tail")
@@ -389,7 +384,7 @@ expand_env_esc :: proc "c" (srcp: cstring, dst: cstring, dstlenp: c.int, esc_cha
 		prefix_len = c.int(libc.strlen(prefix))
 	}
 
-	s := _uptr(_skipwhite(srcp))
+	s := _uptr(skipwhite(srcp))
 	d := _uptr(dst)
 	dl := dstlenp
 	dl -= 1
@@ -425,7 +420,7 @@ expand_env_esc :: proc "c" (srcp: cstring, dst: cstring, dstlenp: c.int, esc_cha
 				var = d
 				cl := dl - 1
 
-				if ([^]u8)(tail)[0] == '{' && !_vim_isIDc(c.int('{')) {
+				if ([^]u8)(tail)[0] == '{' && !vim_isIDc(c.int('{')) {
 					tail += 1
 					for cl > 0 && ([^]u8)(tail)[0] != 0 && ([^]u8)(tail)[0] != '}' {
 						([^]u8)(var)[0] = ([^]u8)(tail)[0]
@@ -434,7 +429,7 @@ expand_env_esc :: proc "c" (srcp: cstring, dst: cstring, dstlenp: c.int, esc_cha
 						cl -= 1
 					}
 				} else {
-					for cl > 0 && ([^]u8)(tail)[0] != 0 && _vim_isIDc(c.int(([^]u8)(tail)[0])) {
+					for cl > 0 && ([^]u8)(tail)[0] != 0 && vim_isIDc(c.int(([^]u8)(tail)[0])) {
 						([^]u8)(var)[0] = ([^]u8)(tail)[0]
 						var += 1
 						tail += 1
@@ -459,7 +454,7 @@ expand_env_esc :: proc "c" (srcp: cstring, dst: cstring, dstlenp: c.int, esc_cha
 				tail = s
 				var = d
 				cl := dl - 1
-				for cl > 0 && ([^]u8)(tail)[0] != 0 && _vim_isfilec(c.int(([^]u8)(tail)[0])) && !_vim_ispathsep(c.int(([^]u8)(tail)[0])) {
+				for cl > 0 && ([^]u8)(tail)[0] != 0 && vim_isfilec(c.int(([^]u8)(tail)[0])) && !_vim_ispathsep(c.int(([^]u8)(tail)[0])) {
 					([^]u8)(var)[0] = ([^]u8)(tail)[0]
 					var += 1
 					tail += 1
@@ -574,7 +569,7 @@ home_replace :: proc "c" (buf: rawptr, src: cstring, dst: cstring, dstlen: c.siz
 	dl := dstlen
 	s := _uptr(src)
 	if !one {
-		s = _uptr(_skipwhite(src))
+		s = _uptr(skipwhite(src))
 	}
 	dst_p := _uptr(dst)
 	for ([^]u8)(s)[0] != 0 && dl > 0 {

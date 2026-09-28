@@ -46,8 +46,6 @@ foreign _ {
   //_xfree :: proc(ptr: rawptr) ---
   @(link_name = "path_fnamencmp")
   _path_fnamencmp :: proc(a, b: cstring, n: c.int) -> c.int ---
-  @(link_name = "str_foldcase")
-  _str_foldcase :: proc(str: cstring, orglen: c.int, buf: cstring, buflen: c.int) -> cstring ---
   @(link_name = "mb_stricmp")
   _mb_stricmp :: proc(s1, s2: cstring) -> c.int ---
 }
@@ -361,11 +359,11 @@ hash_path_t :: #force_inline proc "contextless" (p: cstring) -> u32 {
       pp = pp + 2
     }
     buf: [4096]u8
-    folded := _str_foldcase(pp, c.int(libc.strlen(pp)), cstring(&buf[0]), c.int(len(buf)))
+    folded := str_foldcase(pp, c.int(libc.strlen(pp)), cstring(&buf[0]), c.int(len(buf)))
     return hash_cstr_t(folded)
   } else when ODIN_OS == .Darwin {
     buf: [4096]u8
-    folded := _str_foldcase(p, c.int(libc.strlen(p)), cstring(&buf[0]), c.int(len(buf)))
+    folded := str_foldcase(p, c.int(libc.strlen(p)), cstring(&buf[0]), c.int(len(buf)))
     return hash_cstr_t(folded)
   } else {
     return hash_cstr_t(p)

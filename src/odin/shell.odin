@@ -164,8 +164,7 @@ foreign _ {
 	path_has_wildcard :: proc "c" (p: cstring) -> bool ---
 	@(link_name = "invocation_path_tail")
 	invocation_path_tail :: proc "c" (invocation: cstring, len: ^c.size_t) -> cstring ---
-	@(link_name = "backslash_halve")
-	backslash_halve :: proc "c" (p: ^u8) ---
+	// backslash_halve is an Odin export (charset.odin) — call directly.
 	@(link_name = "add_pathsep")
 	add_pathsep :: proc "c" (p: ^u8) -> bool ---
 	@(link_name = "vim_strsave_escaped_ext")

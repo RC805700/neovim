@@ -2347,7 +2347,7 @@ open_buffer :: proc "c"(read_stdin: bool, eap: rawptr, flags_arg: C.int) -> C.in
 	}
 	// if first time loading this buffer, init b_chartab[]
 	if ((^C.int)(uintptr(curbuf) + B_FLAGS_OFF)^ & BF_NEVERLOADED_O) != 0 {
-		buf_init_chartab_r(curbuf, false)
+		buf_init_chartab(curbuf, false)
 		parse_cino_r(curbuf)
 	}
 	// Set/reset the Changed flag first, autocmds may change the buffer.
@@ -2409,8 +2409,6 @@ E517_S :: "E517: No buffers were wiped out"
 IOSIZE_O :: 1025
 
 foreign _ {
-	@(link_name = "skipwhite")
-	skipwhite_r :: proc "c" (p: cstring) -> cstring ---
 }
 
 // Delete or unload buffers by number/range/pattern. Returns errmsg or NULL.
@@ -2453,12 +2451,12 @@ do_bufdel :: proc "c"(command: C.int, arg_in: cstring, addr_count: C.int, start_
 					break
 				}
 			} else { // addr_count == 1
-				arg = skipwhite_r(arg)
+				arg = skipwhite(arg)
 				if b_at(transmute(^u8)(arg), 0) == 0 {
 					break
 				}
 				if !ascii_isdigit_o(b_at(transmute(^u8)(arg), 0)) {
-					p := skiptowhite_esc_r(arg)
+					p := skiptowhite_esc(arg)
 					bnr = buflist_findpat(arg, p, command == DOBUF_WIPE_O, false, false)
 					if bnr < 0 { // failed
 						break
@@ -2466,7 +2464,7 @@ do_bufdel :: proc "c"(command: C.int, arg_in: cstring, addr_count: C.int, start_
 					arg = p
 				} else {
 					p := transmute(^u8)(arg)
-					bnr = getdigits_int_r(&p, false, 0)
+					bnr = getdigits_int(&p, false, 0)
 					arg = transmute(cstring)(p)
 				}
 			}
@@ -3670,7 +3668,7 @@ buflist_list :: proc "c"(eap: rawptr) {
 				}
 
 				// Put "line 999" in column 40 or after the file name.
-				i := 40 - vim_strsize_r(cstring(&IObuff[0]))
+				i := 40 - vim_strsize(cstring(&IObuff[0]))
 				for {
 					([^]u8)(&IObuff[0])[len] = ' '
 					len += 1
@@ -4342,7 +4340,7 @@ chk_modeline_o :: proc "c"(lnum: C.int, flags: C.int) -> C.int {
 					e = (^u8)(uintptr(s) + 3)
 				}
 				vers: i64 = 0
-				if !_try_getdigits(&e, &vers) {
+				if !try_getdigits(&e, &vers) {
 					prev = C.int(([^]u8)(s)[0])
 					s = (^u8)(uintptr(s) + 1)
 					continue

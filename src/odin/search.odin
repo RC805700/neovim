@@ -1179,14 +1179,8 @@ foreign _ {
 	find_word_start :: proc "c" (p: ^u8) -> ^u8 ---
 	@(link_name = "find_word_end")
 	find_word_end :: proc "c" (p: ^u8) -> ^u8 ---
-	@(link_name = "vim_iswordc")
-	vim_iswordc_r :: proc "c" (c: C.int) -> bool ---
-	@(link_name = "vim_iswordp")
-	vim_iswordp_r :: proc "c" (p: ^u8) -> bool ---
 	@(link_name = "get_leader_len")
 	get_leader_len :: proc "c" (line: ^u8, flags: ^C.int, backward: bool, incomment: bool) -> C.int ---
-	@(link_name = "vim_isfilec")
-	vim_isfilec_2 :: proc "c" (c: C.int) -> bool ---
 
 	@(link_name = "vim_fgets")
 	vim_fgets :: proc "c" (buf: ^u8, size: C.int, fp: rawptr) -> C.int ---
@@ -3175,10 +3169,10 @@ find_pattern_in_path :: proc "c"(
 								qi = C.int(uintptr(incl_regmatch.endp[0]) - uintptr(incl_regmatch.startp[0]))
 							} else {
 								qp = incl_regmatch.endp[0]
-								for b_at(qp, 0) != 0 && !vim_isfilec_2(C.int(b_at(qp, 0))) {
+								for b_at(qp, 0) != 0 && !vim_isfilec(C.int(b_at(qp, 0))) {
 									qp = (^u8)(uintptr(qp) + 1)
 								}
-								for vim_isfilec_2(C.int(b_at(qp, qi))) {
+								for vim_isfilec(C.int(b_at(qp, qi))) {
 									qi += 1
 								}
 							}
@@ -3264,7 +3258,7 @@ find_pattern_in_path :: proc "c"(
 					define_matched = false
 					if def_regmatch.regprog != nil && vim_regexec_r(&def_regmatch, line, 0) != 0 {
 						p = def_regmatch.endp[0]
-						for b_at(p, 0) != 0 && !vim_iswordc_r(C.int(b_at(p, 0))) {
+						for b_at(p, 0) != 0 && !vim_iswordc(C.int(b_at(p, 0))) {
 							p = (^u8)(uintptr(p) + 1)
 						}
 						define_matched = true
@@ -3277,7 +3271,7 @@ find_pattern_in_path :: proc "c"(
 							matched = (p_ic != 0 ?
 								mb_strnicmp_r(transmute(cstring)(startp), transmute(cstring)(ptr), len) :
 								C.int(libc.strncmp(transmute(cstring)(startp), transmute(cstring)(ptr), len))) == 0
-							if matched && define_matched && whole && vim_iswordc_r(C.int(b_at(startp, C.int(len)))) {
+							if matched && define_matched && whole && vim_iswordc(C.int(b_at(startp, C.int(len)))) {
 								matched = false
 							}
 						} else if regmatch.regprog != nil &&
@@ -3328,7 +3322,7 @@ find_pattern_in_path :: proc "c"(
 						exm: { // exit_matched goto emulation
 							if compl_status_adding() && libc.strlen(transmute(cstring)(p)) >= C.size_t(ins_compl_len_r()) {
 								p = (^u8)(uintptr(p) + uintptr(ins_compl_len_r()))
-								if vim_iswordp_r(p) {
+								if vim_iswordp(p) {
 									break exm // goto exit_matched
 								}
 								p = find_word_start(p)
