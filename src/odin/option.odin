@@ -3937,10 +3937,7 @@ foreign _ {
 	vim_regexec_o2 :: proc "c" (rmp: rawptr, line: ^u8, col: C.int) -> C.int ---
 	@(link_name = "cmdline_fuzzy_complete")
 	cmdline_fuzzy_complete_c :: proc "c" (fuzzystr: ^u8) -> bool ---
-	@(link_name = "fuzzy_match_str")
-	fuzzy_match_str_c :: proc "c" (str: ^u8, pat: ^u8) -> C.int ---
-	@(link_name = "fuzzymatches_to_strmatches")
-	fuzzymatches_to_strmatches_c :: proc "c" (fuzmatch: rawptr, matches: rawptr, numMatches: C.int, ignorecase: bool) ---
+	// fuzzy_match_str/fuzzymatches_to_strmatches are Odin exports (fuzzy.odin).
 }
 
 XP_BS_NONE_S :: 0
@@ -4235,7 +4232,7 @@ match_str_c :: #force_inline proc "c"(str: ^u8, regmatch: rawptr, matches: rawpt
 			return true
 		}
 	} else {
-		score := fuzzy_match_str_c(str, fuzzystr)
+		score := fuzzy_match_str(str, fuzzystr)
 		if score != C.int(-2147483648) { // FUZZY_SCORE_NONE == INT_MIN
 			if !test_only {
 				fm := (^Fuzmatch_Str)(uintptr(fuzmatch) + uintptr(idx) * 24)
@@ -4328,7 +4325,7 @@ ExpandSettings :: proc "c"(xp: rawptr, regmatch: rawptr, fuzzystr: ^u8, numMatch
 	}
 
 	if fuzzy {
-		fuzzymatches_to_strmatches_c(fuzmatch, transmute(rawptr)(matches), count, false)
+		fuzzymatches_to_strmatches(fuzmatch, transmute(rawptr)(matches), count, false)
 	}
 
 	return 1 // OK

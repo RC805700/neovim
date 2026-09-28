@@ -72,6 +72,7 @@ typedef struct match_struct match_struct;
 ///
 /// @return true if "pat_arg" matches "str". Also returns the match score in
 /// "outScore" and the matching character positions in "matches".
+#pragma weak fuzzy_match
 bool fuzzy_match(char *const str, const char *const pat_arg, const bool matchseq,
                  int *const outScore, uint32_t *const matches, const int maxMatches)
   FUNC_ATTR_NONNULL_ALL
@@ -417,12 +418,14 @@ static void do_fuzzymatch(const typval_T *const argvars, typval_T *const rettv,
 }
 
 /// "matchfuzzy()" function
+#pragma weak f_matchfuzzy
 void f_matchfuzzy(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 {
   do_fuzzymatch(argvars, rettv, false);
 }
 
 /// "matchfuzzypos()" function
+#pragma weak f_matchfuzzypos
 void f_matchfuzzypos(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 {
   do_fuzzymatch(argvars, rettv, true);
@@ -487,6 +490,7 @@ static void fuzzy_match_func_sort(fuzmatch_str_T *const fm, const int sz)
 
 /// Fuzzy match "pat" in "str".
 /// @returns 0 if there is no match. Otherwise, returns the match score.
+#pragma weak fuzzy_match_str
 int fuzzy_match_str(char *const str, const char *const pat)
   FUNC_ATTR_WARN_UNUSED_RESULT
 {
@@ -503,6 +507,7 @@ int fuzzy_match_str(char *const str, const char *const pat)
 
 /// Fuzzy match the position of string "pat" in string "str".
 /// @returns a dynamic array of matching positions. If there is no match, returns NULL.
+#pragma weak fuzzy_match_str_with_pos
 garray_T *fuzzy_match_str_with_pos(char *const str, const char *const pat)
 {
   if (str == NULL || pat == NULL) {
@@ -542,6 +547,7 @@ garray_T *fuzzy_match_str_with_pos(char *const str, const char *const pat)
 /// - `*score` contains the match score.
 ///
 /// If no match is found, `*ptr` is updated to the end of the line.
+#pragma weak fuzzy_match_str_in_line
 bool fuzzy_match_str_in_line(char **ptr, char *pat, int *len, pos_T *current_pos, int *score)
 {
   char *str = *ptr;
@@ -602,6 +608,7 @@ bool fuzzy_match_str_in_line(char **ptr, char *pat, int *len, pos_T *current_pos
 /// and direction of search.
 ///
 /// Return true if a match is found, otherwise false.
+#pragma weak search_for_fuzzy_match
 bool search_for_fuzzy_match(buf_T *buf, pos_T *pos, char *pattern, int dir, pos_T *start_pos,
                             int *len, char **ptr, int *score)
 {
@@ -694,6 +701,7 @@ bool search_for_fuzzy_match(buf_T *buf, pos_T *pos, char *pattern, int dir, pos_
 }
 
 /// Free an array of fuzzy string matches "fuzmatch[count]".
+#pragma weak fuzmatch_str_free
 void fuzmatch_str_free(fuzmatch_str_T *const fuzmatch, int count)
 {
   if (fuzmatch == NULL) {
@@ -707,6 +715,7 @@ void fuzmatch_str_free(fuzmatch_str_T *const fuzmatch, int count)
 
 /// Copy a list of fuzzy matches into a string list after sorting the matches by
 /// the fuzzy score. Frees the memory allocated for "fuzmatch".
+#pragma weak fuzzymatches_to_strmatches
 void fuzzymatches_to_strmatches(fuzmatch_str_T *const fuzmatch, char ***const matches,
                                 const int count, const bool funcsort)
   FUNC_ATTR_NONNULL_ARG(2)

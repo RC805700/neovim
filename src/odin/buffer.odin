@@ -3415,14 +3415,14 @@ ExpandBufnames :: proc "c"(pat: ^u8, num_file: ^C.int, file: ^^^u8, options: C.i
 			} else {
 				p = nil
 				// First try the short file name.
-				score = fuzzy_match_str_c(
+				score = fuzzy_match_str(
 					(^u8)((^rawptr)(uintptr(buf) + B_SFNAME_OFF)^), pat)
 				if score != FUZZY_SCORE_NONE_O {
 					p = (^u8)((^rawptr)(uintptr(buf) + B_SFNAME_OFF)^)
 				}
 				if p == nil {
 					// Then the full path file name.
-					score = fuzzy_match_str_c(
+					score = fuzzy_match_str(
 						(^u8)((^rawptr)(uintptr(buf) + B_FFNAME)^), pat)
 					if score != FUZZY_SCORE_NONE_O {
 						p = (^u8)((^rawptr)(uintptr(buf) + B_FFNAME)^)
@@ -3513,7 +3513,7 @@ ExpandBufnames :: proc "c"(pat: ^u8, num_file: ^C.int, file: ^^^u8, options: C.i
 			xfree(matches)
 		}
 	} else {
-		fuzzymatches_to_strmatches_c(fuzmatch, transmute(rawptr)(file), count,
+		fuzzymatches_to_strmatches(fuzmatch, transmute(rawptr)(file), count,
 			false)
 	}
 
