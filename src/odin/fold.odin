@@ -12,7 +12,7 @@
 //
 // Reuses package-wide: Pos_T/Garray/TriState(main,input), mark.odin FFI
 // (ml_get*, utfc_ptr2len, setpcmark), register.odin helpers (u_save, extmark_splice_cols_r,
-// changed_lines_r, buf_updates_send_changes_r), os_lang skipwhite, main.odin VV_*.
+// changed_lines_r, buf_updates_send_changes), os_lang skipwhite, main.odin VV_*.
 
 package main
 
@@ -775,7 +775,7 @@ deleteFold :: proc "c" (wp: rawptr, start: C.int, end: C.int, recursive: C.int, 
 		changed_lines_r(buf, first_lnum, 0, last_lnum, 0, false)
 
 		num_changed := i64(last_lnum - first_lnum)
-		buf_updates_send_changes_r(buf, first_lnum, num_changed, num_changed)
+		buf_updates_send_changes(buf, first_lnum, num_changed, num_changed)
 	}
 }
 
@@ -1465,7 +1465,7 @@ foldCreateMarkers :: proc "c" (wp: rawptr, start: Pos_T, end: Pos_T) {
 	changed_lines_r(buf, start.lnum, 0, end.lnum, 0, false)
 
 	num_changed := i64(1 + end.lnum - start.lnum)
-	buf_updates_send_changes_r(buf, start.lnum, num_changed, num_changed)
+	buf_updates_send_changes(buf, start.lnum, num_changed, num_changed)
 }
 
 e_modifiable_u: cstring = "E21: Cannot make changes, 'modifiable' is off"

@@ -869,7 +869,7 @@ buf_freeall :: proc "c"(buf: rawptr, flags: C.int) -> bool {
 	if (^rawptr)(uintptr(buf) + B_TERMINAL_OFF)^ != nil {
 		buf_close_terminal(buf)
 	}
-	buf_updates_unload_r(buf, false)
+	buf_updates_unload(buf, false)
 	if (^rawptr)(uintptr(buf) + B_ML_MFP_OFF)^ != nil &&
 		apply_autocmds(EVENT_BUFUNLOAD_O, (^cstring)(uintptr(buf) + B_FNAME)^,
 			(^cstring)(uintptr(buf) + B_FNAME)^, false, buf) &&

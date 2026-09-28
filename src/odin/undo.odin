@@ -209,10 +209,7 @@ foreign _ {
 	changed_r :: proc "c" (buf: rawptr) ---
 	@(link_name = "unchanged")
 	unchanged_r :: proc "c" (buf: rawptr, ff: bool, always_inc_changedtick: bool) ---
-	@(link_name = "buf_updates_unload")
-	buf_updates_unload_r :: proc "c" (buf: rawptr, can_reload: bool) ---
-	@(link_name = "buf_updates_changedtick")
-	buf_updates_changedtick_r :: proc "c" (buf: rawptr) ---
+	// buf_updates_unload/changedtick are Odin exports (buffer_updates.odin).
 	// foldOpenCursor now defined in fold.odin — reuse directly.
 	@(link_name = "messaging")
 	messaging_r :: proc "c" () -> bool ---
@@ -2232,7 +2229,7 @@ u_undoredo :: proc "c" (undo: bool, do_buf_event: bool) {
 		}
 	}
 	if (curhead.uh_flags & UH_RELOAD) != 0 {
-		buf_updates_unload_r(curbuf, true)
+		buf_updates_unload(curbuf, true)
 	}
 
 	// Set the cursor to the desired position.
@@ -2251,7 +2248,7 @@ u_undoredo :: proc "c" (undo: bool, do_buf_event: bool) {
 	}
 
 	if do_buf_event {
-		buf_updates_changedtick_r(curbuf)
+		buf_updates_changedtick(curbuf)
 	}
 
 	// restore marks from before undo/redo

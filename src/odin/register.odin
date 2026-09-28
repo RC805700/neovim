@@ -329,8 +329,7 @@ foreign _ {
 	changed_cline_bef_curs_r :: proc "c" (wp: rawptr) ---
 	@(link_name = "invalidate_botline_win")
 	invalidate_botline_win_r :: proc "c" (wp: rawptr) ---
-	@(link_name = "buf_updates_send_changes")
-	buf_updates_send_changes_r :: proc "c" (buf: rawptr, firstline: C.int, num_added: i64, num_removed: i64) ---
+	// buf_updates_send_changes is an Odin export (buffer_updates.odin).
 	@(link_name = "extmark_splice")
 	extmark_splice_r :: proc "c" (buf: rawptr, start_row: C.int, start_col: C.int, old_row: C.int, old_col: C.int, old_byte: i64, new_row: C.int, new_col: C.int, new_byte: i64, undo: C.int) ---
 	@(link_name = "extmark_splice_cols")
@@ -1907,7 +1906,7 @@ do_put :: proc "c" (regname: C.int, reg_arg: ^Yankreg_T, dir_arg: C.int, count_a
 					nr_lines += 1
 					dir = FORWARD_DIR
 
-					buf_updates_send_changes_r(curbuf, cursor_pos().lnum, 1, 1)
+					buf_updates_send_changes(curbuf, cursor_pos().lnum, 1, 1)
 				}
 			}
 			if (flags & PUT_LINE_FORWARD) != 0 && !done {

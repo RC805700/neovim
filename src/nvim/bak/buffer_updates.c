@@ -26,6 +26,7 @@
 // Register a channel. Return True if the channel was added, or already added.
 // Return False if the channel couldn't be added because the buffer is
 // unloaded.
+#pragma weak buf_updates_register
 bool buf_updates_register(buf_T *buf, uint64_t channel_id, BufUpdateCallbacks cb, bool send_buffer)
 {
   // must fail if the buffer isn't loaded
@@ -88,12 +89,14 @@ bool buf_updates_register(buf_T *buf, uint64_t channel_id, BufUpdateCallbacks cb
   return true;
 }
 
+#pragma weak buf_updates_active
 bool buf_updates_active(buf_T *buf)
   FUNC_ATTR_PURE
 {
   return kv_size(buf->update_channels) || kv_size(buf->update_callbacks);
 }
 
+#pragma weak buf_updates_send_end
 void buf_updates_send_end(buf_T *buf, uint64_t channelid)
 {
   MAXSIZE_TEMP_ARRAY(args, 1);
@@ -101,6 +104,7 @@ void buf_updates_send_end(buf_T *buf, uint64_t channelid)
   rpc_send_event(channelid, "nvim_buf_detach_event", args);
 }
 
+#pragma weak buf_updates_unregister
 void buf_updates_unregister(buf_T *buf, uint64_t channelid)
 {
   size_t size = kv_size(buf->update_channels);
@@ -138,6 +142,7 @@ void buf_updates_unregister(buf_T *buf, uint64_t channelid)
   }
 }
 
+#pragma weak buf_free_callbacks
 void buf_free_callbacks(buf_T *buf)
 {
   kv_destroy(buf->update_channels);
@@ -147,6 +152,7 @@ void buf_free_callbacks(buf_T *buf)
   kv_destroy(buf->update_callbacks);
 }
 
+#pragma weak buf_updates_unload
 void buf_updates_unload(buf_T *buf, bool can_reload)
 {
   size_t size = kv_size(buf->update_channels);
@@ -195,6 +201,7 @@ void buf_updates_unload(buf_T *buf, bool can_reload)
   }
 }
 
+#pragma weak buf_updates_send_changes
 void buf_updates_send_changes(buf_T *buf, linenr_T firstline, int64_t num_added,
                               int64_t num_removed)
 {
@@ -309,6 +316,7 @@ void buf_updates_send_changes(buf_T *buf, linenr_T firstline, int64_t num_added,
   kv_size(buf->update_callbacks) = j;
 }
 
+#pragma weak buf_updates_send_splice
 void buf_updates_send_splice(buf_T *buf, int start_row, colnr_T start_col, bcount_t start_byte,
                              int old_row, colnr_T old_col, bcount_t old_byte, int new_row,
                              colnr_T new_col, bcount_t new_byte)
@@ -358,6 +366,7 @@ void buf_updates_send_splice(buf_T *buf, int start_row, colnr_T start_col, bcoun
   }
   kv_size(buf->update_callbacks) = j;
 }
+#pragma weak buf_updates_changedtick
 void buf_updates_changedtick(buf_T *buf)
 {
   // notify each of the active channels
@@ -395,6 +404,7 @@ void buf_updates_changedtick(buf_T *buf)
   kv_size(buf->update_callbacks) = j;
 }
 
+#pragma weak buf_updates_changedtick_single
 void buf_updates_changedtick_single(buf_T *buf, uint64_t channel_id)
 {
   MAXSIZE_TEMP_ARRAY(args, 2);
@@ -409,6 +419,7 @@ void buf_updates_changedtick_single(buf_T *buf, uint64_t channel_id)
   rpc_send_event(channel_id, "nvim_buf_changedtick_event", args);
 }
 
+#pragma weak buffer_update_callbacks_free
 void buffer_update_callbacks_free(BufUpdateCallbacks cb)
 {
   api_free_luaref(cb.on_lines);

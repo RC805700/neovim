@@ -1900,7 +1900,7 @@ do_move :: proc "c"(line1: C.int, line2: C.int, dest: C.int) -> C.int {
 	disable_fold_update -= 1
 
 	// New-lines update event.
-	buf_updates_send_changes_r(curbuf, dest + 1, i64(num_lines), 0)
+	buf_updates_send_changes(curbuf, dest + 1, i64(num_lines), 0)
 
 	// Now delete the original text.
 	if u_save(line1 + extra - 1, line2 + extra + 1) == FAIL {
@@ -1941,7 +1941,7 @@ do_move :: proc "c"(line1: C.int, line2: C.int, dest: C.int) -> C.int {
 	}
 
 	// Deleted-lines event.
-	buf_updates_send_changes_r(curbuf, line1 + extra, 0,
+	buf_updates_send_changes(curbuf, line1 + extra, 0,
 		i64(num_lines))
 
 	return OK
@@ -4870,7 +4870,7 @@ sub_engine_o :: proc "c"(eap: rawptr, timeout: proftime_T, cmdpreview_ns: C.int,
 
 		num_added := C.longlong(last_line - first_line)
 		num_removed := num_added - C.longlong(i)
-		buf_updates_send_changes_r(curbuf, first_line, i64(num_added), i64(num_removed))
+		buf_updates_send_changes(curbuf, first_line, i64(num_added), i64(num_removed))
 	}
 
 	xfree(transmute(rawptr)(sub_firstline.data)) // allocated line copy
