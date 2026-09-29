@@ -39,33 +39,39 @@ static int hisnum[HIST_COUNT] = { 0, 0, 0, 0, 0 };
 static int hislen = 0;  ///< actual length of history tables
 
 /// Return the length of the history tables
+#pragma weak get_hislen
 int get_hislen(void)
 {
   return hislen;
 }
 
 /// Return a pointer to a specified history table
+#pragma weak get_histentry
 histentry_T *get_histentry(int hist_type)
 {
   return history[hist_type];
 }
 
+#pragma weak set_histentry
 void set_histentry(int hist_type, histentry_T *entry)
 {
   history[hist_type] = entry;
 }
 
+#pragma weak get_hisidx
 int *get_hisidx(int hist_type)
 {
   return &hisidx[hist_type];
 }
 
+#pragma weak get_hisnum
 int *get_hisnum(int hist_type)
 {
   return &hisnum[hist_type];
 }
 
 /// Translate a history character to the associated type number
+#pragma weak hist_char2type
 HistoryType hist_char2type(const int c)
   FUNC_ATTR_CONST FUNC_ATTR_WARN_UNUSED_RESULT
 {
@@ -103,6 +109,7 @@ static char *(history_names[]) = {
 
 /// Function given to ExpandGeneric() to obtain the possible first
 /// arguments of the ":history command.
+#pragma weak get_history_arg
 char *get_history_arg(expand_T *xp, int idx)
 {
   const char *short_names = ":=@>?/";
@@ -125,6 +132,7 @@ char *get_history_arg(expand_T *xp, int idx)
 
 /// Initialize command line history.
 /// Also used to re-allocate history tables when size changes.
+#pragma weak init_history
 void init_history(void)
 {
   assert(p_hi >= 0 && p_hi <= INT_MAX);
@@ -296,6 +304,7 @@ static int last_maptick = -1;           // last seen maptick
 /// @param histype  may be one of the HIST_ values.
 /// @param in_map   consider maptick when inside a mapping
 /// @param sep      separator character used (search hist)
+#pragma weak add_to_history
 void add_to_history(int histype, const char *new_entry, size_t new_entrylen, bool in_map, int sep)
 {
   histentry_T *hisptr;
@@ -408,6 +417,7 @@ static int calc_hist_idx(int histype, int num)
 ///
 /// @return OK if there was something to clean and histype was one of HIST_
 ///         values, FAIL otherwise.
+#pragma weak clr_history
 int clr_history(const int histype)
 {
   if (hislen != 0 && histype >= 0 && histype < HIST_COUNT) {
@@ -506,6 +516,7 @@ static int del_history_idx(int histype, int idx)
 }
 
 /// "histadd()" function
+#pragma weak f_histadd
 void f_histadd(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 {
   rettv->vval.v_number = false;
@@ -530,6 +541,7 @@ void f_histadd(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 }
 
 /// "histdel()" function
+#pragma weak f_histdel
 void f_histdel(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 {
   int n;
@@ -553,6 +565,7 @@ void f_histdel(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 }
 
 /// "histget()" function
+#pragma weak f_histget
 void f_histget(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 {
   const char *const str = tv_get_string_chk(&argvars[0]);  // NULL on type error
@@ -578,6 +591,7 @@ void f_histget(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 }
 
 /// "histnr()" function
+#pragma weak f_histnr
 void f_histnr(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 {
   const char *const histname = tv_get_string_chk(&argvars[0]);
@@ -592,6 +606,7 @@ void f_histnr(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 }
 
 /// :history command - print a history
+#pragma weak ex_history
 void ex_history(exarg_T *eap)
 {
   int histype1 = HIST_CMD;
@@ -698,6 +713,7 @@ void ex_history(exarg_T *eap)
 ///
 /// @return Pointer used in next iteration or NULL to indicate that iteration
 ///         was finished.
+#pragma weak hist_iter
 const void *hist_iter(const void *const iter, const uint8_t history_type, const bool zero,
                       histentry_T *const hist)
   FUNC_ATTR_WARN_UNUSED_RESULT FUNC_ATTR_NONNULL_ARG(4)
@@ -750,6 +766,7 @@ const void *hist_iter(const void *const iter, const uint8_t history_type, const 
 ///                            history should be saved.
 ///
 /// @return Pointer to the array or NULL.
+#pragma weak hist_get_array
 histentry_T *hist_get_array(const uint8_t history_type, int **const new_hisidx,
                             int **const new_hisnum)
   FUNC_ATTR_WARN_UNUSED_RESULT FUNC_ATTR_NONNULL_ALL

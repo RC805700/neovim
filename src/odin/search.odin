@@ -53,8 +53,7 @@ foreign _ {
 	vim_regexec_r :: proc "c" (rmp: ^Regmatch_T, line: ^u8, col: C.int) -> C.int ---
 	@(link_name = "vim_regfree")
 	vim_regfree :: proc "c" (prog: rawptr) ---
-	@(link_name = "add_to_history")
-	add_to_history_r :: proc "c" (histype: C.int, str: cstring, len: C.size_t, in_map: bool, sep: C.int) ---
+	// add_to_history — PORTED to Odin (cmdhist.odin) — call directly.
 	@(link_name = "reverse_text")
 	reverse_text_r :: proc "c" (s: cstring) -> ^u8 ---
 	// buf_get_changedtick is a C static inline — see buf_changedtick_inline below.
@@ -390,7 +389,7 @@ search_regcomp :: proc "c"(
 		magic = spats[i].magic ? 1 : 0
 		no_smartcase = spats[i].no_scs
 	} else if options & SEARCH_HIS != 0 {
-		add_to_history_r(HIST_SEARCH, transmute(cstring)(pat), patlen, true, 0)
+		add_to_history(HIST_SEARCH, transmute(cstring)(pat), patlen, true, 0)
 	}
 
 	if used_pat != nil {

@@ -3689,7 +3689,7 @@ sub_joining_lines_o :: proc "c"(eap: rawptr, pat: ^NvimString, sub: cstring, cmd
 					C.int(magic_isset()))
 			}
 			// Put pattern in history.
-			add_to_history_r(HIST_SEARCH, pat.data, pat.size, true, 0)
+			add_to_history(HIST_SEARCH, pat.data, pat.size, true, 0)
 		}
 
 		return true
