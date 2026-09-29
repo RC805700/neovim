@@ -188,10 +188,6 @@ foreign _ {
 	// linewhite now defined in search.odin — reuse directly.
 	@(link_name = "ml_replace_buf")
 	ml_replace_buf_r :: proc "c" (buf: rawptr, lnum: C.int, line: ^u8, copy: bool, noalloc: bool) -> C.int ---
-	@(link_name = "put_line")
-	put_line_r :: proc "c" (fd: ^libc.FILE, s: cstring) -> C.int ---
-	@(link_name = "put_eol")
-	put_eol_r :: proc "c" (fd: ^libc.FILE) -> C.int ---
 	// xmemcpyz reused from os_env.odin's _xmemcpyz
 	// line_breakcheck reused from input.odin's line_breakcheck
 	@(link_name = "mb_adjust_cursor")
@@ -2626,9 +2622,9 @@ foldlevelSyntax :: proc "c" (flp: ^Fline_T) {
 @(export)
 put_folds :: proc "c" (fd: ^libc.FILE, wp: rawptr) -> C.int {
 	if foldmethodIsManual(wp) {
-		if put_line_r(fd, cstring("silent! normal! zE")) == FAIL_R ||
+		if put_line(fd, cstring("silent! normal! zE")) == FAIL_R ||
 			put_folds_recurse(fd, w_ga(wp, W_FOLDS), 0) == FAIL_R ||
-			put_line_r(fd, cstring("let &fdl = &fdl")) == FAIL_R {
+			put_line(fd, cstring("let &fdl = &fdl")) == FAIL_R {
 			return FAIL_R
 		}
 	}
@@ -2648,7 +2644,7 @@ put_folds_recurse :: proc "c" (fd: ^libc.FILE, gap: ^Garray, off: C.int) -> C.in
 		}
 		if libc.fprintf(fd, cstring("sil! %ld,%ldfold"),
 			C.long(fp.fd_top + off), C.long(fp.fd_top + off + fp.fd_len - 1)) < 0 ||
-			put_eol_r(fd) == FAIL_R {
+			put_eol(fd) == FAIL_R {
 			return FAIL_R
 		}
 	}
@@ -2661,8 +2657,8 @@ put_foldopen_recurse :: proc "c" (fd: ^libc.FILE, wp: rawptr, gap: ^Garray, off:
 		if fp.fd_flags != FD_LEVEL {
 			if !GA_EMPTY_F(&fp.fd_nested) {
 				if libc.fprintf(fd, cstring("%ld"), C.long(fp.fd_top + off)) < 0 ||
-					put_eol_r(fd) == FAIL_R ||
-					put_line_r(fd, cstring("sil! normal! zo")) == FAIL_R {
+					put_eol(fd) == FAIL_R ||
+					put_line(fd, cstring("sil! normal! zo")) == FAIL_R {
 					return FAIL_R
 				}
 				if put_foldopen_recurse(fd, wp, &fp.fd_nested, off + fp.fd_top) == FAIL_R {
@@ -2690,10 +2686,10 @@ put_foldopen_recurse :: proc "c" (fd: ^libc.FILE, wp: rawptr, gap: ^Garray, off:
 
 put_fold_open_close :: proc "c" (fd: ^libc.FILE, fp: ^Fold_T, off: C.int) -> C.int {
 	if libc.fprintf(fd, cstring("%ld"), C.long(fp.fd_top + off)) < 0 ||
-		put_eol_r(fd) == FAIL_R ||
+		put_eol(fd) == FAIL_R ||
 		libc.fprintf(fd, cstring("sil! normal! z%c"),
 			fp.fd_flags == FD_CLOSED ? C.int('c') : C.int('o')) < 0 ||
-		put_eol_r(fd) == FAIL_R {
+		put_eol(fd) == FAIL_R {
 		return FAIL_R
 	}
 

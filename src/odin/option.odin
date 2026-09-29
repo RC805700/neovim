@@ -2806,8 +2806,12 @@ put_set_o :: proc "c"(fd: ^libc.FILE, cmd: cstring, opt_idx: C.int, varp: rawptr
 	case kOptValTypeBoolean:
 		vb := ov_boolean(&value)^
 		value_bool := vb != 0 // TRISTATE_TO_BOOL(v,false): true if v!=0? actually kTrue=1→true; kFalse=0→false
-		if libc.fprintf(transmute(^libc.FILE)(fd), "%s %s%s\n", cmd,
-			value_bool ? "" : "no", name) < 0 {
+		neg := cstring("no")
+		if value_bool {
+			neg = cstring("")
+		}
+		if libc.fprintf(transmute(^libc.FILE)(fd), "%s %s%s", cmd,
+			neg, name) < 0 {
 			return 0
 		}
 	case kOptValTypeNumber:
@@ -2836,7 +2840,7 @@ put_set_o :: proc "c"(fd: ^libc.FILE, cmd: cstring, opt_idx: C.int, varp: rawptr
 				if size >= 4096 && (flags & kOptFlagComma) != 0 &&
 				_vim_strchr(transmute(cstring)(value_str), ',') != nil {
 					part = (^u8)(xmalloc_sp(size))
-					if put_eol_r(transmute(^libc.FILE)(fd)) == 0 {
+					if put_eol(transmute(^libc.FILE)(fd)) == 0 {
 						xfree(buf); xfree(part); return 0
 					}
 					p := buf
@@ -2849,7 +2853,7 @@ put_set_o :: proc "c"(fd: ^libc.FILE, cmd: cstring, opt_idx: C.int, varp: rawptr
 						part_len_bytes := C.size_t(uintptr(p2) - uintptr(p))
 						libc.memcpy(part, p, min(part_len_bytes, size))
 						b_set(part, C.int(part_len), 0)
-						if put_escstr_r(transmute(^libc.FILE)(fd), transmute(cstring)(part), 2) == 0 || put_eol_r(transmute(^libc.FILE)(fd)) == 0 {
+						if put_escstr_r(transmute(^libc.FILE)(fd), transmute(cstring)(part), 2) == 0 || put_eol(transmute(^libc.FILE)(fd)) == 0 {
 							xfree(buf); xfree(part); return 0
 						}
 						p = p2
@@ -2871,7 +2875,7 @@ put_set_o :: proc "c"(fd: ^libc.FILE, cmd: cstring, opt_idx: C.int, varp: rawptr
 	case:
 		libc.abort()
 	}
-	return put_eol_r(transmute(^libc.FILE)(fd))
+	return put_eol(transmute(^libc.FILE)(fd))
 }
 
 @(export)
@@ -2931,7 +2935,7 @@ makeset :: proc "c"(fd: ^libc.FILE, opt_flags: C.int, local_only: bool) -> C.int
 				}
 
 				for ; round <= 2; round += 1 {
-					if round == 2 { varp = varp_local }
+					if round == 2 && varp_local != nil { varp = varp_local }
 					cmd: cstring = "set"
 					if round == 1 || (opt_flags & OPT_GLOBAL_S) != 0 {
 						cmd = "setlocal"
@@ -2958,7 +2962,7 @@ makeset :: proc "c"(fd: ^libc.FILE, opt_flags: C.int, local_only: bool) -> C.int
 						return 0
 					}
 					if do_endif {
-						if put_line_r(transmute(^libc.FILE)(fd), "endif") == 0 {
+						if put_line(transmute(^libc.FILE)(fd), "endif") == 0 {
 							return 0
 						}
 					}
@@ -3363,9 +3367,10 @@ wo_copy_str :: proc "c"(to: rawptr, from: rawptr, off: uintptr, dup: bool) {
 @(export)
 copy_winopt :: proc "c"(from: rawptr, to: rawptr) {
 	// int/bool scalars (wo_* 32-bit int/bool/flag fields):
-	scalar_offs := [26]uintptr{
+	scalar_offs := [28]uintptr{
 		0, 140, 144, 148, 160, 208, 308, 312, 136, 4, 296, 304, 232,
 		336, 340, 236, 240, 244, 16, 300, 400, 408, 412, 416, 420, 424,
+		48, 52, // wo_fen, wo_fen_save (were missing: split windows lost 'foldenable')
 	}
 	for off in scalar_offs {
 		(^C.int)(uintptr(to) + off)^ = (^C.int)(uintptr(from) + off)^

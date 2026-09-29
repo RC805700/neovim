@@ -926,6 +926,7 @@ static int makeopens(FILE *fd, char *dirnow)
 }
 
 /// ":loadview [nr]"
+#pragma weak ex_loadview
 void ex_loadview(exarg_T *eap)
 {
   char *fname = get_view_file(*eap->arg);
@@ -944,6 +945,7 @@ void ex_loadview(exarg_T *eap)
 /// Legacy 'sessionoptions'/'viewoptions' flags are always enabled:
 ///   - kOptSsopFlagUnix: line-endings are LF
 ///   - kOptSsopFlagSlash: filenames are written with "/" slash
+#pragma weak ex_mkrc
 void ex_mkrc(exarg_T *eap)
 {
   bool view_session = false;  // :mkview, :mksession
@@ -1153,6 +1155,7 @@ static char *get_view_file(char c)
 }
 
 /// TODO(justinmk): remove this, not needed after 5ba3cecb68cd.
+#pragma weak put_eol
 int put_eol(FILE *fd)
 {
   if (putc('\n', fd) < 0) {
@@ -1162,6 +1165,7 @@ int put_eol(FILE *fd)
 }
 
 /// TODO(justinmk): remove this, not needed after 5ba3cecb68cd.
+#pragma weak put_line
 int put_line(FILE *fd, char *s)
 {
   if (fprintf(fd, "%s\n", s) < 0) {
