@@ -144,8 +144,7 @@ foreign _ {
 	@(link_name = "nvim_odin_insecure_flag")
 	insecure_flag_c :: proc "c" (wp: rawptr, opt_idx: C.int, opt_flags: C.int) -> ^C.uint32_t ---
 
-	@(link_name = "find_special_key")
-	find_special_key_r :: proc "c" (srcp: ^^u8, src_len: C.size_t, modp: ^C.int, flags: C.int, has_lt: ^bool) -> C.int ---
+	// find_special_key — PORTED (keycodes.odin).
 	@(link_name = "need_maketitle")
 	need_maketitle_opt: bool
 	@(link_name = "redraw_tabline")
@@ -199,7 +198,7 @@ find_key_len_odin :: proc "c"(arg_in: ^u8, len: C.size_t, has_lt: bool) -> C.int
 		arg = (^u8)(uintptr(arg) - 1) // put arg at the '<'
 		modifiers := C.int(0)
 		// FSK_KEYCODE|FSK_KEEP_X_KEY|FSK_SIMPLIFY = 1|2|8
-		key = find_special_key_r(&arg, len + 1, &modifiers, 0x01 | 0x02 | 0x08, nil)
+		key = find_special_key(&arg, len + 1, &modifiers, 0x01 | 0x02 | 0x08, nil)
 		if modifiers != 0 { // can't handle modifiers here
 			key = 0
 		}
@@ -1451,11 +1450,9 @@ foreign _ {
 	check_opt_wim_r :: proc "c" () -> C.int ---
 	@(link_name = "tabstop_set")
 	tabstop_set_o :: proc "c" (val: ^u8, ret_list: ^^u8) -> bool ---
-	@(link_name = "get_special_key_name")
-	get_special_key_name_r :: proc "c" (c: C.int, modifiers: C.int) -> ^u8 ---
+	// get_special_key_name — PORTED (keycodes.odin).
 	// transchar is an Odin export (charset.odin) — call directly.
-	@(link_name = "find_special_key_in_table")
-	find_special_key_in_table_r :: proc "c" (c: C.int) -> C.int ---
+	// find_special_key_in_table — PORTED (keycodes.odin).
 	// home_replace is an Odin proc in os_env.odin — reuse directly.
 	@(link_name = "option_expand")
 	option_expand_o :: proc "c" (opt_idx: C.int, val: cstring) -> ^u8 ---
@@ -2157,7 +2154,7 @@ option_value2string_o :: proc "c"(opt: ^vimoption_T, opt_flags: C.int) {
 		wc: C.longlong = 0
 		if wc_use_keyname_o(varp, &wc) {
 			libc.strcpy(&name_buff[0],
-				transmute(cstring)(get_special_key_name_r(C.int(wc), 0)))
+				get_special_key_name(C.int(wc), 0))
 		} else if wc != 0 {
 			libc.strcpy(&name_buff[0],
 				transmute(cstring)(transchar(C.int(wc))))
@@ -2187,7 +2184,7 @@ wc_use_keyname_o :: proc "c"(varp: rawptr, wcp: ^C.longlong) -> bool {
 	p_wcm_addr := transmute(rawptr)(&p_wcm_g)
 	if varp == p_wc_addr || varp == p_wcm_addr {
 		wcp^ = (^C.longlong)(varp)^
-		if IS_SPECIAL_S(wcp^) || find_special_key_in_table_r(C.int(wcp^)) >= 0 {
+		if IS_SPECIAL_S(wcp^) || find_special_key_in_table(C.int(wcp^)) >= 0 {
 			return true
 		}
 	}
@@ -2819,8 +2816,8 @@ put_set_o :: proc "c"(fd: ^libc.FILE, cmd: cstring, opt_idx: C.int, varp: rawptr
 		}
 		value_num := ov_number(&value)^
 		if wc_use_keyname_o(varp, &value_num) {
-			keyname := get_special_key_name_r(C.int(value_num), 0)
-			fputs_o(transmute(cstring)(keyname), transmute(^libc.FILE)(fd))
+			keyname := get_special_key_name(C.int(value_num), 0)
+			fputs_o(keyname, transmute(^libc.FILE)(fd))
 		} else {
 			libc.fprintf(transmute(^libc.FILE)(fd), "%lld", value_num)
 		}
@@ -3912,8 +3909,7 @@ set_option_value_for :: proc "c"(name: ^u8, opt_idx: C.int, value: OptVal, opt_f
 // ── cmdline completion family ────────────────────────────────────────────────
 
 foreign _ {
-	@(link_name = "get_special_key_code")
-	get_special_key_code_c :: proc "c" (name: cstring) -> C.int ---
+	// get_special_key_code — PORTED (keycodes.odin).
 	@(link_name = "escape_chars")
 	escape_chars_g: ^u8
 	@(link_name = "p_syn")
@@ -4043,7 +4039,7 @@ set_context_in_set_cmd :: proc "c"(xp: rawptr, arg_in: ^u8, opt_flags: C.int) {
 				return
 			}
 		}
-		key := get_special_key_code_c(transmute(cstring)((^u8)(uintptr(arg) + 1)))
+		key := get_special_key_code(transmute(cstring)((^u8)(uintptr(arg) + 1)))
 		if key == 0 {
 			(^C.int)(uintptr(xp) + XPP_CONTEXT)^ = EXPAND_NOTHING_S
 			return

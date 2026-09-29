@@ -173,6 +173,7 @@ static struct mousetable {
 /// Return the modifier mask bit (#MOD_MASK_*) corresponding to mod name
 ///
 /// E.g. 'S' for shift, 'C' for ctrl.
+#pragma weak name_to_mod_mask
 int name_to_mod_mask(int c)
   FUNC_ATTR_CONST FUNC_ATTR_WARN_UNUSED_RESULT
 {
@@ -192,6 +193,7 @@ int name_to_mod_mask(int c)
 ///                            modifiers.
 ///
 /// @return Simplified key code.
+#pragma weak simplify_key
 int simplify_key(const int key, int *modifiers)
   FUNC_ATTR_WARN_UNUSED_RESULT FUNC_ATTR_NONNULL_ALL
 {
@@ -219,6 +221,7 @@ int simplify_key(const int key, int *modifiers)
 }
 
 /// Change <xKey> to <Key>
+#pragma weak handle_x_keys
 int handle_x_keys(const int key)
   FUNC_ATTR_CONST FUNC_ATTR_WARN_UNUSED_RESULT
 {
@@ -260,6 +263,7 @@ int handle_x_keys(const int key)
 }
 
 /// @return  a string which contains the name of the given key when the given modifiers are down.
+#pragma weak get_special_key_name
 char *get_special_key_name(int c, int modifiers)
 {
   static char string[MAX_KEY_NAME_LEN + 1];
@@ -361,6 +365,7 @@ char *get_special_key_name(int c, int modifiers)
 /// @param[out]  did_simplify  found <C-H>, etc.
 ///
 /// @return Number of characters added to dst, zero for no match.
+#pragma weak trans_special
 unsigned trans_special(const char **const srcp, const size_t src_len, char *const dst,
                        const int flags, const bool escape_ks, bool *const did_simplify)
   FUNC_ATTR_NONNULL_ARG(1, 3) FUNC_ATTR_WARN_UNUSED_RESULT
@@ -379,6 +384,7 @@ unsigned trans_special(const char **const srcp, const size_t src_len, char *cons
 /// When "escape_ks" is true escape K_SPECIAL bytes in the character.
 /// The sequence is not NUL terminated.
 /// This is how characters in a string are encoded.
+#pragma weak special_to_buf
 unsigned special_to_buf(int key, int modifiers, bool escape_ks, char *dst)
 {
   unsigned dlen = 0;
@@ -414,6 +420,7 @@ unsigned special_to_buf(int key, int modifiers, bool escape_ks, char *dst)
 /// @param[out]  did_simplify  FSK_SIMPLIFY and found <C-H>, etc.
 ///
 /// @return Key and modifiers or 0 if there is no match.
+#pragma weak find_special_key
 int find_special_key(const char **const srcp, const size_t src_len, int *const modp,
                      const int flags, bool *const did_simplify)
   FUNC_ATTR_WARN_UNUSED_RESULT FUNC_ATTR_NONNULL_ARG(1, 3)
@@ -586,6 +593,7 @@ static int extract_modifiers(int key, int *modp, const bool simplify, bool *cons
 
 /// Try to find key "c" in the special key table.
 /// @return  the index when found, -1 when not found.
+#pragma weak find_special_key_in_table
 int find_special_key_in_table(int c)
 {
   for (int i = 0; i < (int)ARRAY_SIZE(key_names_table); i++) {
@@ -605,6 +613,7 @@ int find_special_key_in_table(int c)
 ///                   a termcap name.
 ///
 /// @return Key code or 0 if not found.
+#pragma weak get_special_key_code
 int get_special_key_code(const char *name)
   FUNC_ATTR_NONNULL_ALL FUNC_ATTR_PURE FUNC_ATTR_WARN_UNUSED_RESULT
 {
@@ -623,6 +632,7 @@ int get_special_key_code(const char *name)
 
 /// Look up the given mouse code to return the relevant information in the other arguments.
 /// @return  which button is down or was released.
+#pragma weak get_mouse_button
 int get_mouse_button(int code, bool *is_click, bool *is_drag)
 {
   for (int i = 0; mouse_table[i].pseudo_code; i++) {
@@ -665,6 +675,7 @@ int get_mouse_button(int code, bool *is_click, bool *is_drag)
 /// @param[in]  cpo_val  The value of 'cpoptions' to use. Only CPO_BSLASH matters.
 ///
 /// @return  The same as what `*bufp` is set to.
+#pragma weak replace_termcodes
 char *replace_termcodes(const char *const from, const size_t from_len, char **const bufp,
                         const scid_T sid_arg, const int flags, bool *const did_simplify,
                         const char *const cpo_val)
@@ -802,6 +813,7 @@ char *replace_termcodes(const char *const from, const size_t from_len, char **co
 /// @param[out]  s  Buffer to add to. Must have at least MB_MAXBYTES + 1 bytes.
 ///
 /// @return Pointer to after the added bytes.
+#pragma weak add_char2buf
 char *add_char2buf(int c, char *s)
   FUNC_ATTR_NONNULL_ALL FUNC_ATTR_WARN_UNUSED_RESULT
 {
@@ -823,6 +835,7 @@ char *add_char2buf(int c, char *s)
 
 /// Copy "p" to allocated memory, escaping K_SPECIAL so that the result
 /// can be put in the typeahead buffer.
+#pragma weak vim_strsave_escape_ks
 char *vim_strsave_escape_ks(char *p)
 {
   // Need a buffer to hold up to three times as much.  Four in case of an
@@ -851,6 +864,7 @@ char *vim_strsave_escape_ks(char *p)
 /// Remove escaping from K_SPECIAL characters.  Reverse of
 /// vim_strsave_escape_ks().  Works in-place.
 /// Returns the number of bytes in the unescaped string.
+#pragma weak vim_unescape_ks
 size_t vim_unescape_ks(char *p)
 {
   uint8_t *s = (uint8_t *)p;

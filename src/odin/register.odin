@@ -249,10 +249,7 @@ foreign _ {
 	mb_string2cells_len :: proc "c" (s: cstring, len: C.size_t) -> C.size_t ---
 	@(link_name = "mb_string2cells")
 	mb_string2cells_s :: proc "c" (s: cstring) -> C.size_t ---
-	@(link_name = "vim_strsave_escape_ks")
-	vim_strsave_escape_ks_r :: proc "c" (p: ^u8) -> ^u8 ---
-	@(link_name = "vim_unescape_ks")
-	vim_unescape_ks_r :: proc "c" (p: ^u8) -> C.size_t ---
+	// vim_strsave_escape_ks/vim_unescape_ks — PORTED (keycodes.odin).
 	@(link_name = "vim_strsave_escaped_ext")
 	vim_strsave_escaped_ext_r :: proc "c" (string: cstring, esc_chars: cstring, cc: u8, bsl: bool) -> ^u8 ---
 
@@ -789,7 +786,7 @@ do_record :: proc "c" (c: C.int) -> C.int {
 		p := get_recorded_r()
 		if p != nil {
 			// Remove escaping for K_SPECIAL in multi-byte chars.
-			vim_unescape_ks_r(p)
+			vim_unescape_ks(p)
 			tv_dict_add_str(dict, cstring("regcontents"), 11, transmute(cstring)(p))
 		}
 
@@ -833,7 +830,7 @@ put_in_typebuf :: proc "c"(s: ^u8, esc: bool, colon: bool, silent: bool) -> C.in
 	if retval == OK_R {
 		p: ^u8
 		if esc {
-			p = vim_strsave_escape_ks_r(s)
+			p = vim_strsave_escape_ks(s)
 		} else {
 			p = s
 		}
@@ -1004,7 +1001,7 @@ do_execreg :: proc "c" (regname_arg: C.int, colon: C.int, addcr: C.int, silent: 
 					free_str = true
 				}
 			}
-			escaped := vim_strsave_escape_ks_r(str)
+			escaped := vim_strsave_escape_ks(str)
 			if free_str {
 				xfree(str)
 			}

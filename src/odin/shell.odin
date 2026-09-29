@@ -172,7 +172,7 @@ foreign _ {
 	@(link_name = "vim_strnsave_unquoted")
 	vim_strnsave_unquoted :: proc "c" (string: ^u8, length: c.size_t) -> cstring ---
 	@(link_name = "vim_snprintf")
-	vim_snprintf :: proc "c" (str: ^u8, str_m: c.size_t, fmt: cstring, args: ..any) -> c.int ---
+	vim_snprintf :: proc "c" (str: ^u8, str_m: c.size_t, fmt: cstring, #c_vararg args: ..any) -> c.int ---
 
 	// misc
 	@(link_name = "vim_tempname")

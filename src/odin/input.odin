@@ -137,8 +137,7 @@ foreign _ {
 	@(link_name = "ch_before_blocking_events")
 	ch_before_blocking_events: ^MultiQueue
 
-	@(link_name = "trans_special")
-	trans_special :: proc(srcp: ^rawptr, src_len: c.size_t, dst: rawptr, flags: c.int, escape_ks: bool, did_simplify: rawptr) -> c.uint ---
+	// trans_special — PORTED (keycodes.odin).
 	@(link_name = "trigger_cursorhold")
 	trigger_cursorhold :: proc() -> bool ---
 	@(link_name = "before_blocking")
@@ -446,7 +445,7 @@ input_enqueue :: proc "c" (chan_id: u64, keys: String) -> c.size_t {
 
 	for input_space() >= 19 && ptr < end {
 		buf: [19]u8 = {}
-		p := rawptr(ptr)
+		p := transmute(^u8)(ptr)
 		new_size := trans_special(&p, c.size_t(end - ptr), &buf[0], FSK_KEYCODE, true, nil)
 		ptr = uintptr(p)
 

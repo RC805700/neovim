@@ -372,18 +372,21 @@ static int assert_beeps(typval_T *argvars, bool no_beep)
 }
 
 /// "assert_beeps(cmd [, error])" function
+#pragma weak f_assert_beeps
 void f_assert_beeps(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 {
   rettv->vval.v_number = assert_beeps(argvars, false);
 }
 
 /// "assert_nobeep(cmd [, error])" function
+#pragma weak f_assert_nobeep
 void f_assert_nobeep(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 {
   rettv->vval.v_number = assert_beeps(argvars, true);
 }
 
 /// "assert_equal(expected, actual[, msg])" function
+#pragma weak f_assert_equal
 void f_assert_equal(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 {
   rettv->vval.v_number = assert_equal_common(argvars, ASSERT_EQUAL);
@@ -483,18 +486,21 @@ static int assert_equalfile(typval_T *argvars)
 }
 
 /// "assert_equalfile(fname-one, fname-two[, msg])" function
+#pragma weak f_assert_equalfile
 void f_assert_equalfile(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 {
   rettv->vval.v_number = assert_equalfile(argvars);
 }
 
 /// "assert_notequal(expected, actual[, msg])" function
+#pragma weak f_assert_notequal
 void f_assert_notequal(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 {
   rettv->vval.v_number = assert_equal_common(argvars, ASSERT_NOTEQUAL);
 }
 
 /// "assert_exception(string[, msg])" function
+#pragma weak f_assert_exception
 void f_assert_exception(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 {
   garray_T ga;
@@ -518,6 +524,7 @@ void f_assert_exception(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 }
 
 /// "assert_fails(cmd [, error [, msg]])" function
+#pragma weak f_assert_fails
 void f_assert_fails(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 {
   garray_T ga;
@@ -666,6 +673,7 @@ theend:
 }
 
 // "assert_false(actual[, msg])" function
+#pragma weak f_assert_false
 void f_assert_false(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 {
   rettv->vval.v_number = assert_bool(argvars, false);
@@ -718,6 +726,7 @@ static int assert_inrange(typval_T *argvars)
 }
 
 /// "assert_inrange(lower, upper[, msg])" function
+#pragma weak f_assert_inrange
 void f_assert_inrange(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 {
   if (tv_check_for_float_or_nr_arg(argvars, 0) == FAIL
@@ -731,18 +740,21 @@ void f_assert_inrange(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 }
 
 /// "assert_match(pattern, actual[, msg])" function
+#pragma weak f_assert_match
 void f_assert_match(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 {
   rettv->vval.v_number = assert_match_common(argvars, ASSERT_MATCH);
 }
 
 /// "assert_notmatch(pattern, actual[, msg])" function
+#pragma weak f_assert_notmatch
 void f_assert_notmatch(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 {
   rettv->vval.v_number = assert_match_common(argvars, ASSERT_NOTMATCH);
 }
 
 /// "assert_report(msg)" function
+#pragma weak f_assert_report
 void f_assert_report(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 {
   garray_T ga;
@@ -755,12 +767,14 @@ void f_assert_report(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 }
 
 /// "assert_true(actual[, msg])" function
+#pragma weak f_assert_true
 void f_assert_true(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 {
   rettv->vval.v_number = assert_bool(argvars, true);
 }
 
 /// "test_garbagecollect_now()" function
+#pragma weak f_test_garbagecollect_now
 void f_test_garbagecollect_now(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 {
   // This is dangerous, any Lists and Dicts used internally may be freed
@@ -773,6 +787,7 @@ void f_test_garbagecollect_now(typval_T *argvars, typval_T *rettv, EvalFuncData 
 }
 
 /// "test_write_list_log()" function
+#pragma weak f_test_write_list_log
 void f_test_write_list_log(typval_T *const argvars, typval_T *const rettv, EvalFuncData fptr)
 {
   const char *const fname = tv_get_string_chk(&argvars[0]);

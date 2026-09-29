@@ -13558,7 +13558,7 @@ f_keytrans :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 	if tv_check_for_string_arg(argvars, 0) == FAIL_E || rawptr(([^]Typval_T)(argvars)[0].vval) == nil {
 		return
 	}
-	escaped := vim_strsave_escape_ks_r(transmute(^u8)(([^]Typval_T)(argvars)[0].vval))
+	escaped := vim_strsave_escape_ks(transmute(^u8)(([^]Typval_T)(argvars)[0].vval))
 	rettv.vval = transmute(rawptr)(str2special_save_e(transmute(cstring)(escaped), true, TriState.kTrue))
 	xfree(rawptr(escaped))
 }
@@ -22905,8 +22905,7 @@ eval_func_o :: proc "c" (arg: ^cstring, evalarg: rawptr, name: cstring, name_len
 
 // —— Batch 28p: eval.c eval_number (dormant plain, C-static) ——
 foreign _ {
-	@(link_name = "trans_special")
-	trans_special_e :: proc "c" (srcp: ^rawptr, src_len: C.size_t, dst: rawptr, flags: C.int, escape_ks: bool, did_simplify: rawptr) -> C.uint ---
+	// trans_special — PORTED (keycodes.odin).
 	@(link_name = "mb_copy_char")
 	mb_copy_char_e :: proc "c" (fp: ^cstring, tp: ^cstring) ---
 }
@@ -23023,7 +23022,7 @@ eval_string_o :: proc "c" (arg: ^cstring, rettv: ^Typval_T, evaluate: bool, inte
 					flags += FSK_SIMPLIFY_O
 				}
 				pc := transmute(cstring)(p)
-				if find_special_key_r(transmute(^^u8)(&pc), C.size_t(arg_end - uintptr(rawptr(pc))), &modifiers, flags, nil) != 0 {
+				if find_special_key(transmute(^^u8)(&pc), C.size_t(arg_end - uintptr(rawptr(pc))), &modifiers, flags, nil) != 0 {
 					p = uintptr(rawptr(pc)) - 1
 				} else {
 					p = uintptr(rawptr(pc))
@@ -23116,8 +23115,8 @@ eval_string_o :: proc "c" (arg: ^cstring, rettv: ^Typval_T, evaluate: bool, inte
 					flags += FSK_SIMPLIFY_O
 				}
 				pc := transmute(cstring)(p)
-				pcr := rawptr(pc)
-				added := trans_special_e(&pcr, C.size_t(arg_end - uintptr(rawptr(pc))), rawptr(transmute(^u8)(e)), flags, false, nil)
+				pcr := transmute(^u8)(pc)
+				added := trans_special(&pcr, C.size_t(arg_end - uintptr(rawptr(pc))), transmute(^u8)(e), flags, false, nil)
 				pc = transmute(cstring)(pcr)
 				p = uintptr(rawptr(pc))
 				if added != 0 {
