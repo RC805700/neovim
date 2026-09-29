@@ -186,10 +186,7 @@ foreign _ {
 	verbose_enter :: proc "c" () ---
 	@(link_name = "verbose_leave")
 	verbose_leave :: proc "c" () ---
-	@(link_name = "prof_child_enter")
-	prof_child_enter :: proc "c" (tm: ^proftime_T) ---
-	@(link_name = "prof_child_exit")
-	prof_child_exit :: proc "c" (tm: ^proftime_T) ---
+	// prof_child_enter/exit — PORTED (profile.odin).
 	@(link_name = "uv_strerror")
 	os_strerror :: proc "c" (err: c.int) -> cstring ---
 

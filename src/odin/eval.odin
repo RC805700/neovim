@@ -15422,18 +15422,13 @@ f_reg_recorded :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) 
 
 // —— Batch 27ah: funcs.c reltime trio + shellescape ——
 foreign _ {
-	@(link_name = "profile_sub")
-	profile_sub_e :: proc "c" (tm1: u64, tm2: u64) -> u64 ---
-	@(link_name = "profile_msg")
-	profile_msg_e :: proc "c" (tm: u64) -> cstring ---
-	@(link_name = "profile_signed")
-	profile_signed_e :: proc "c" (tm: u64) -> i64 ---
+	// profile_sub/msg/signed — PORTED (profile.odin).
 	@(link_name = "vim_strsave_shellescape")
 	vim_strsave_shellescape_e :: proc "c" (str: cstring, do_special: bool, do_newline: bool) -> ^u8 ---
 }
 
 // List-to-proftime conversion (C-static in funcs.c).
-list2proftime_o :: proc "c" (arg: ^Typval_T, tm: ^u64) -> C.int {
+list2proftime_o :: proc "c" (arg: ^Typval_T, tm: ^proftime_T) -> C.int {
 	context = runtime.default_context()
 	if arg.v_type != VAR_LIST || tv_list_len_o(rawptr(arg.vval)) != 2 {
 		return FAIL_E
@@ -15444,7 +15439,7 @@ list2proftime_o :: proc "c" (arg: ^Typval_T, tm: ^u64) -> C.int {
 	if error {
 		return FAIL_E
 	}
-	tm^ = u64((i64(i32(n1)) << 32) | i64(u32(n2)))
+	tm^ = proftime_T((i64(i32(n1)) << 32) | i64(u32(n2)))
 	return OK_E
 }
 
@@ -15452,20 +15447,20 @@ list2proftime_o :: proc "c" (arg: ^Typval_T, tm: ^u64) -> C.int {
 @(export)
 f_reltime :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 	context = runtime.default_context()
-	res: u64 = 0
-	start: u64 = 0
+	res: proftime_T = 0
+	start: proftime_T = 0
 	if ([^]Typval_T)(argvars)[0].v_type == VAR_UNKNOWN {
-		res = profile_start_e()
+		res = profile_start()
 	} else if ([^]Typval_T)(argvars)[1].v_type == VAR_UNKNOWN {
 		if list2proftime_o((^Typval_T)(uintptr(argvars)), &res) == FAIL_E {
 			return
 		}
-		res = profile_end_e(res)
+		res = profile_end(res)
 	} else {
 		if list2proftime_o((^Typval_T)(uintptr(argvars)), &start) == FAIL_E || list2proftime_o((^Typval_T)(uintptr(argvars) + 16), &res) == FAIL_E {
 			return
 		}
-		res = profile_sub_e(res, start)
+		res = profile_sub(res, start)
 	}
 	tv_list_alloc_ret(transmute(^Typval)(rettv), 2)
 	tv_list_append_number(rawptr(rettv.vval), C.longlong(i32(u64(res) >> 32)))
@@ -15476,11 +15471,11 @@ f_reltime :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 @(export)
 f_reltimestr :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 	context = runtime.default_context()
-	tm: u64 = 0
+	tm: proftime_T = 0
 	rettv.v_type = VAR_STRING
 	rettv.vval = transmute(rawptr)(cstring(nil))
 	if list2proftime_o((^Typval_T)(uintptr(argvars)), &tm) == OK_E {
-		rettv.vval = transmute(rawptr)(xstrdup_o(transmute(^u8)(profile_msg_e(tm))))
+		rettv.vval = transmute(rawptr)(xstrdup_o(transmute(^u8)(profile_msg(tm))))
 	}
 }
 
@@ -15488,11 +15483,11 @@ f_reltimestr :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 @(export)
 f_reltimefloat :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 	context = runtime.default_context()
-	tm: u64 = 0
+	tm: proftime_T = 0
 	rettv.v_type = VAR_FLOAT
 	rettv.vval = transmute(rawptr)(f64(0))
 	if list2proftime_o((^Typval_T)(uintptr(argvars)), &tm) == OK_E {
-		rettv.vval = transmute(rawptr)(f64(profile_signed_e(tm)) / 1000000000.0)
+		rettv.vval = transmute(rawptr)(f64(profile_signed(tm)) / 1000000000.0)
 	}
 }
 
@@ -16918,10 +16913,7 @@ f_searchpairpos :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr)
 }
 
 // —— Batch 27bo: funcs.c search engine ——
-foreign _ {
-	@(link_name = "profile_setlimit")
-	profile_setlimit_e :: proc "c" (msec: i64) -> u64 ---
-}
+// (profile_setlimit — PORTED (profile.odin); block removed.)
 
 SP_NOMOVE_O :: 0x01
 SP_REPEAT_O :: 0x02
@@ -17007,7 +16999,7 @@ search_cmn_o :: proc "c" (argvars: ^Typval_T, match_pos: ^Pos_T, flagsp: ^C.int)
 		done = true
 	}
 	flags: C.int = 0
-	tm: u64 = 0
+	tm: proftime_T = 0
 	sia := searchit_arg_T{}
 	pos := Pos_T{}
 	save_cursor := Pos_T{}
@@ -17038,7 +17030,7 @@ search_cmn_o :: proc "c" (argvars: ^Typval_T, match_pos: ^Pos_T, flagsp: ^C.int)
 		}
 	}
 	if !done {
-		tm = profile_setlimit_e(time_limit)
+		tm = profile_setlimit(C.longlong(time_limit))
 		if ((flags & (SP_REPEAT_O | SP_RETCOUNT_O)) != 0) || (((flags & SP_NOMOVE_O) != 0) && ((flags & SP_SETPCMARK_O) != 0)) {
 			semsg(e_invarg2, tv_get_string((^Typval_T)(uintptr(argvars) + 16)))
 			done = true
@@ -28171,7 +28163,7 @@ do_searchpair :: proc "c" (spat: cstring, mpat: cstring, epat: cstring, dir: C.i
 	options: C.int = SEARCH_KEEP_O
 	save_cpo := p_cpo
 	p_cpo = empty_string_opt()
-	tm := profile_setlimit_e(time_limit)
+	tm := profile_setlimit(C.longlong(time_limit))
 	spatlen := libc.strlen(spat)
 	epatlen := libc.strlen(epat)
 	pat2size := C.size_t(spatlen + epatlen + 17)

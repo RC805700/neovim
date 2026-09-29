@@ -259,10 +259,7 @@ foreign nvim {
   startup_nv_cmds_ptr :: proc() -> rawptr ---
   startup_nv_cmd_idx_ptr :: proc() -> rawptr ---
  
-  // Startup timing (--startuptime)
-  time_init :: proc(fname: cstring, proc_name: cstring) ---
-  time_start :: proc(message: cstring) ---
-  time_msg :: proc(message: cstring, start: rawptr) ---
+  // Startup timing (--startuptime) — PORTED (profile.odin).
 }
 
 // ── Foreign libc / libuv functions ──

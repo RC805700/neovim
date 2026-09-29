@@ -50,6 +50,7 @@ static char *startuptime_buf = NULL;  // --startuptime buffer
 /// Gets the current time.
 ///
 /// @return the current time
+#pragma weak profile_start
 proftime_T profile_start(void) FUNC_ATTR_WARN_UNUSED_RESULT
 {
   return os_hrtime();
@@ -58,6 +59,7 @@ proftime_T profile_start(void) FUNC_ATTR_WARN_UNUSED_RESULT
 /// Computes the time elapsed.
 ///
 /// @return Elapsed time from `tm` until now.
+#pragma weak profile_end
 proftime_T profile_end(proftime_T tm) FUNC_ATTR_WARN_UNUSED_RESULT
 {
   return profile_sub(os_hrtime(), tm);
@@ -69,6 +71,7 @@ proftime_T profile_end(proftime_T tm) FUNC_ATTR_WARN_UNUSED_RESULT
 ///
 /// @param tm Time
 /// @return Static string representing `tm` in the form "seconds.microseconds".
+#pragma weak profile_msg
 const char *profile_msg(proftime_T tm) FUNC_ATTR_WARN_UNUSED_RESULT
 {
   static char buf[50];
@@ -83,6 +86,7 @@ const char *profile_msg(proftime_T tm) FUNC_ATTR_WARN_UNUSED_RESULT
 ///             (2^63 / 10^6) - 1 = 9.223372e+12.
 /// @return if msec > 0, returns the time msec past now. Otherwise returns
 ///         the zero time.
+#pragma weak profile_setlimit
 proftime_T profile_setlimit(int64_t msec) FUNC_ATTR_WARN_UNUSED_RESULT
 {
   if (msec <= 0) {
@@ -98,6 +102,7 @@ proftime_T profile_setlimit(int64_t msec) FUNC_ATTR_WARN_UNUSED_RESULT
 ///
 /// @return true if the current time is past `tm`, false if not or if the
 ///         timer was not set.
+#pragma weak profile_passed_limit
 bool profile_passed_limit(proftime_T tm) FUNC_ATTR_WARN_UNUSED_RESULT
 {
   if (tm == 0) {
@@ -111,6 +116,7 @@ bool profile_passed_limit(proftime_T tm) FUNC_ATTR_WARN_UNUSED_RESULT
 /// Gets the zero time.
 ///
 /// @return the zero time
+#pragma weak profile_zero
 proftime_T profile_zero(void) FUNC_ATTR_CONST
 {
   return 0;
@@ -119,6 +125,7 @@ proftime_T profile_zero(void) FUNC_ATTR_CONST
 /// Divides time `tm` by `count`.
 ///
 /// @return 0 if count <= 0, otherwise tm / count
+#pragma weak profile_divide
 proftime_T profile_divide(proftime_T tm, int count) FUNC_ATTR_CONST
 {
   if (count <= 0) {
@@ -131,6 +138,7 @@ proftime_T profile_divide(proftime_T tm, int count) FUNC_ATTR_CONST
 /// Adds time `tm2` to `tm1`.
 ///
 /// @return `tm1` + `tm2`
+#pragma weak profile_add
 proftime_T profile_add(proftime_T tm1, proftime_T tm2) FUNC_ATTR_CONST
 {
   return tm1 + tm2;
@@ -144,6 +152,7 @@ proftime_T profile_add(proftime_T tm1, proftime_T tm2) FUNC_ATTR_CONST
 /// @see profile_signed
 ///
 /// @return `tm1` - `tm2`
+#pragma weak profile_sub
 proftime_T profile_sub(proftime_T tm1, proftime_T tm2) FUNC_ATTR_CONST
 {
   return tm1 - tm2;
@@ -153,6 +162,7 @@ proftime_T profile_sub(proftime_T tm1, proftime_T tm2) FUNC_ATTR_CONST
 ///
 /// @return if `total` <= `children`, then self, otherwise `self` + `total` -
 ///         `children`
+#pragma weak profile_self
 proftime_T profile_self(proftime_T self, proftime_T total, proftime_T children)
   FUNC_ATTR_CONST
 {
@@ -175,6 +185,7 @@ static proftime_T profile_get_wait(void) FUNC_ATTR_PURE
 }
 
 /// Sets the current waittime.
+#pragma weak profile_set_wait
 void profile_set_wait(proftime_T wait)
 {
   prof_wait_time = wait;
@@ -183,6 +194,7 @@ void profile_set_wait(proftime_T wait)
 /// Subtracts the passed waittime since `tm`.
 ///
 /// @return `tma` - (waittime - `tm`)
+#pragma weak profile_sub_wait
 proftime_T profile_sub_wait(proftime_T tm, proftime_T tma) FUNC_ATTR_PURE
 {
   proftime_T tm3 = profile_sub(profile_get_wait(), tm);
@@ -200,6 +212,7 @@ static bool profile_equal(proftime_T tm1, proftime_T tm2) FUNC_ATTR_CONST
 /// Converts time duration `tm` (`profile_sub` result) to a signed integer.
 ///
 /// @return signed representation of the given time value
+#pragma weak profile_signed
 int64_t profile_signed(proftime_T tm)
   FUNC_ATTR_CONST
 {
@@ -216,6 +229,7 @@ int64_t profile_signed(proftime_T tm)
 /// @return <0: `tm2` < `tm1`
 ///          0: `tm2` == `tm1`
 ///         >0: `tm2` > `tm1`
+#pragma weak profile_cmp
 int profile_cmp(proftime_T tm1, proftime_T tm2) FUNC_ATTR_CONST
 {
   if (tm1 == tm2) {
@@ -227,6 +241,7 @@ int profile_cmp(proftime_T tm1, proftime_T tm2) FUNC_ATTR_CONST
 static char *profile_fname = NULL;
 
 /// Reset all profiling information.
+#pragma weak profile_reset
 void profile_reset(void)
 {
   // Reset sourced files.
@@ -285,6 +300,7 @@ void profile_reset(void)
 }
 
 /// ":profile cmd args"
+#pragma weak ex_profile
 void ex_profile(exarg_T *eap)
 {
   static proftime_T pause_time;
@@ -344,6 +360,7 @@ static char *pexpand_cmds[] = {
 
 /// Function given to ExpandGeneric() to obtain the profile command
 /// specific expansion.
+#pragma weak get_profile_name
 char *get_profile_name(expand_T *xp, int idx)
   FUNC_ATTR_PURE
 {
@@ -356,6 +373,7 @@ char *get_profile_name(expand_T *xp, int idx)
 }
 
 /// Handle command line completion for :profile command.
+#pragma weak set_context_in_profile_cmd
 void set_context_in_profile_cmd(expand_T *xp, const char *arg)
 {
   // Default: expand subcommands.
@@ -385,12 +403,14 @@ void set_context_in_profile_cmd(expand_T *xp, const char *arg)
 static proftime_T wait_time;
 
 /// Called when starting to wait for the user to type a character.
+#pragma weak prof_input_start
 void prof_input_start(void)
 {
   wait_time = profile_start();
 }
 
 /// Called when finished waiting for the user to type a character.
+#pragma weak prof_input_end
 void prof_input_end(void)
 {
   wait_time = profile_end(wait_time);
@@ -399,6 +419,7 @@ void prof_input_end(void)
 
 /// @return  true when a function defined in the current script should be
 ///          profiled.
+#pragma weak prof_def_func
 bool prof_def_func(void)
   FUNC_ATTR_PURE
 {
@@ -466,6 +487,7 @@ static int prof_self_cmp(const void *s1, const void *s2)
 }
 
 /// Start profiling function "fp".
+#pragma weak func_do_profile
 void func_do_profile(ufunc_T *fp)
 {
   int len = fp->uf_lines.ga_len;
@@ -502,6 +524,7 @@ void func_do_profile(ufunc_T *fp)
 /// Should always be called in pair with prof_child_exit().
 ///
 /// @param tm  place to store waittime
+#pragma weak prof_child_enter
 void prof_child_enter(proftime_T *tm)
 {
   funccall_T *fc = get_current_funccal();
@@ -517,6 +540,7 @@ void prof_child_enter(proftime_T *tm)
 /// Should always be called after prof_child_enter().
 ///
 /// @param tm  where waittime was stored
+#pragma weak prof_child_exit
 void prof_child_exit(proftime_T *tm)
 {
   funccall_T *fc = get_current_funccal();
@@ -537,6 +561,7 @@ void prof_child_exit(proftime_T *tm)
 /// "sourcing_lnum" must be correct!
 /// When skipping lines it may not actually be executed, but we won't find out
 /// until later and we need to store the time now.
+#pragma weak func_line_start
 void func_line_start(void *cookie)
 {
   funccall_T *fcp = (funccall_T *)cookie;
@@ -556,6 +581,7 @@ void func_line_start(void *cookie)
 }
 
 /// Called when actually executing a function line.
+#pragma weak func_line_exec
 void func_line_exec(void *cookie)
 {
   funccall_T *fcp = (funccall_T *)cookie;
@@ -567,6 +593,7 @@ void func_line_exec(void *cookie)
 }
 
 /// Called when done with a function line.
+#pragma weak func_line_end
 void func_line_end(void *cookie)
 {
   funccall_T *fcp = (funccall_T *)cookie;
@@ -657,6 +684,7 @@ static void func_dump_profile(FILE *fd)
 }
 
 /// Start profiling a script.
+#pragma weak profile_init
 void profile_init(scriptitem_T *si)
 {
   si->sn_pr_count = 0;
@@ -672,6 +700,7 @@ void profile_init(scriptitem_T *si)
 /// Save time when starting to invoke another script or function.
 ///
 /// @param tm  place to store wait time
+#pragma weak script_prof_save
 void script_prof_save(proftime_T *tm)
 {
   if (current_sctx.sc_sid > 0 && current_sctx.sc_sid <= script_items.ga_len) {
@@ -684,6 +713,7 @@ void script_prof_save(proftime_T *tm)
 }
 
 /// Count time spent in children after invoking another script or function.
+#pragma weak script_prof_restore
 void script_prof_restore(const proftime_T *tm)
 {
   if (!SCRIPT_ID_VALID(current_sctx.sc_sid)) {
@@ -766,6 +796,7 @@ static void script_dump_profile(FILE *fd)
 }
 
 /// Dump the profiling info.
+#pragma weak profile_dump
 void profile_dump(void)
 {
   if (profile_fname == NULL) {
@@ -786,6 +817,7 @@ void profile_dump(void)
 /// "sourcing_lnum" must be correct!
 /// When skipping lines it may not actually be executed, but we won't find out
 /// until later and we need to store the time now.
+#pragma weak script_line_start
 void script_line_start(void)
 {
   if (current_sctx.sc_sid <= 0 || current_sctx.sc_sid > script_items.ga_len) {
@@ -814,6 +846,7 @@ void script_line_start(void)
 }
 
 /// Called when actually executing a function line.
+#pragma weak script_line_exec
 void script_line_exec(void)
 {
   if (current_sctx.sc_sid <= 0 || current_sctx.sc_sid > script_items.ga_len) {
@@ -826,6 +859,7 @@ void script_line_exec(void)
 }
 
 /// Called when done with a function line.
+#pragma weak script_line_end
 void script_line_end(void)
 {
   if (current_sctx.sc_sid <= 0 || current_sctx.sc_sid > script_items.ga_len) {
@@ -858,6 +892,7 @@ static proftime_T g_prev_time;
 ///
 /// @param[out] rel to the time elapsed so far
 /// @param[out] start the current time
+#pragma weak time_push
 void time_push(proftime_T *rel, proftime_T *start)
 {
   proftime_T now = profile_start();
@@ -875,6 +910,7 @@ void time_push(proftime_T *rel, proftime_T *start)
 /// Subtracts `tp` from the static global `g_prev_time`.
 ///
 /// @param tp the time to subtract
+#pragma weak time_pop
 void time_pop(proftime_T tp)
 {
   g_prev_time -= tp;
@@ -895,6 +931,7 @@ static void time_diff(proftime_T then, proftime_T now)
 /// time_{push,pop,msg,...}).
 ///
 /// @param message the message that will be displayed
+#pragma weak time_start
 void time_start(const char *message)
 {
   if (time_fd == NULL) {
@@ -917,6 +954,7 @@ void time_start(const char *message)
 ///
 /// @param mesg the message to display next to the timing information
 /// @param start only for do_source: start time
+#pragma weak time_msg
 void time_msg(const char *mesg, const proftime_T *start)
 {
   if (time_fd == NULL) {
@@ -946,6 +984,7 @@ void time_msg(const char *mesg, const proftime_T *start)
 ///
 /// @param fname startuptime report file path
 /// @param proc_name name of the current Nvim process to write in the report.
+#pragma weak time_init
 void time_init(const char *fname, const char *proc_name)
 {
   const size_t bufsize = 8192;  // Big enough for the entire --startuptime report.
@@ -970,6 +1009,7 @@ void time_init(const char *fname, const char *proc_name)
 }
 
 /// Flushes the startuptimes to disk for the current process
+#pragma weak time_finish
 void time_finish(void)
 {
   if (time_fd == NULL) {

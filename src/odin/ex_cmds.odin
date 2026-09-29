@@ -3785,8 +3785,7 @@ foreign _ {
 	@(link_name = "p_icm")
 	p_icm_g: ^u8
 	// syn_check_group already in option.odin as syn_check_group_c — reuse.
-	@(link_name = "profile_zero")
-	profile_zero_r :: proc "c"() -> proftime_T ---
+	// profile_zero — PORTED (profile.odin).
 	@(link_name = "p_rdt")
 	p_rdt_g: C.longlong
 	@(link_name = "bufhl_add_hl_pos_offset")
@@ -4854,7 +4853,7 @@ sub_engine_o :: proc "c"(eap: rawptr, timeout: proftime_T, cmdpreview_ns: C.int,
 
 		line_breakcheck()
 
-		if profile_passed_limit_r(timeout) {
+		if profile_passed_limit(timeout) {
 			got_quit = true
 		}
 		lnum += 1
@@ -4939,7 +4938,7 @@ sub_engine_o :: proc "c"(eap: rawptr, timeout: proftime_T, cmdpreview_ns: C.int,
 
 	// Show 'inccommand' preview if there are matched lines.
 	if cmdpreview_ns > 0 && !aborting_r() {
-		if got_quit || profile_passed_limit_r(timeout) { // too slow: disable
+		if got_quit || profile_passed_limit(timeout) { // too slow: disable
 			set_option_direct(kOptInccommand_E,
 				str_optval(transmute(^u8)(cstring("")), C.size_t(0)), 0,
 				SID_NONE_O)
@@ -5306,7 +5305,7 @@ do_write :: proc "c"(eap: rawptr) -> C.int {
 // ":substitute" command.
 @(export)
 ex_substitute :: proc "c"(eap: rawptr) {
-	do_sub_o(eap, profile_zero_r(), 0, 0)
+	do_sub_o(eap, profile_zero(), 0, 0)
 }
 
 // ":substitute" preview callback (inccommand).
@@ -5316,7 +5315,7 @@ ex_substitute_preview :: proc "c"(eap: rawptr, cmdpreview_ns: C.int, cmdpreview_
 	arg := (^u8)((^rawptr)(uintptr(eap))^) // eap->arg
 	if ([^]u8)(arg)[0] != 0 && !ascii_isalpha_o(([^]u8)(arg)[0]) && !ascii_isdigit_o(([^]u8)(arg)[0]) {
 		save_arg := arg
-		retv := do_sub_o(eap, profile_setlimit_r(p_rdt_g), cmdpreview_ns, cmdpreview_bufnr)
+		retv := do_sub_o(eap, profile_setlimit(p_rdt_g), cmdpreview_ns, cmdpreview_bufnr)
 		(^rawptr)(uintptr(eap))^ = transmute(rawptr)(save_arg)
 		return retv
 	}

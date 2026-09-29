@@ -3082,12 +3082,7 @@ restore_current_state :: proc "c" (sst: rawptr) {
 }
 
 // —— Batch 23c: ex_docmd.c skip/profile helpers (plains, C-statics) ——
-foreign _ {
-	@(link_name = "func_line_exec")
-	func_line_exec_e :: proc "c" (cookie: rawptr) ---
-	@(link_name = "script_line_exec")
-	script_line_exec_e :: proc "c" () ---
-}
+// (func_line_exec/script_line_exec — PORTED (profile.odin); block removed.)
 
 CMD_WHILE_O :: 529
 CMD_ENDWHILE_O :: 147
@@ -3227,9 +3222,9 @@ profile_cmd_o :: proc "c" (eap: rawptr, cstack: rawptr, fgetline: LineGetter, co
 		}
 		if !sk {
 			if getline_equal(fgetline, cookie, transmute(LineGetter)(get_func_line)) {
-				func_line_exec_e(getline_cookie(fgetline, cookie))
+				func_line_exec(getline_cookie(fgetline, cookie))
 			} else if getline_equal(fgetline, cookie, getsourceline) {
-				script_line_exec_e()
+				script_line_exec()
 			}
 		}
 	}
@@ -3405,10 +3400,7 @@ foreign _ {
 	source_level_e :: proc "c" (cookie: rawptr) -> C.int ---
 	@(link_name = "has_loop_cmd")
 	has_loop_cmd_e :: proc "c" (p: cstring) -> bool ---
-	@(link_name = "script_line_end")
-	script_line_end_e :: proc "c" () ---
-	@(link_name = "script_line_start")
-	script_line_start_e :: proc "c" () ---
+	// (script_line_end/start — PORTED (profile.odin).)
 	@(link_name = "do_debug")
 	do_debug_e :: proc "c" (cmd: cstring) ---
 	@(link_name = "rewind_conditionals")
@@ -3639,14 +3631,14 @@ do_cmdline :: proc "c" (cmdline: cstring, fgetline: LineGetter, cookie: rawptr, 
 			cmdline_copy = nil
 			if getline_is_func {
 				if do_profiling == PROF_YES {
-					func_line_end_e(real_cookie)
+					func_line_end(real_cookie)
 				}
 				if func_has_ended(real_cookie) != 0 {
 					retval = FAIL_E
 					break
 				}
 			} else if do_profiling == PROF_YES && getline_equal(fgetline, cookie, getsourceline) {
-				script_line_end_e()
+				script_line_end()
 			}
 			if source_finished_e(fgetline, cookie) {
 				retval = FAIL_E
@@ -3665,9 +3657,9 @@ do_cmdline :: proc "c" (cmdline: cstring, fgetline: LineGetter, cookie: rawptr, 
 			}
 			if do_profiling == PROF_YES {
 				if getline_is_func {
-					func_line_start_e(real_cookie)
+					func_line_start(real_cookie)
 				} else if getline_equal(fgetline, cookie, getsourceline) {
-					script_line_start_e()
+					script_line_start()
 				}
 			}
 		}

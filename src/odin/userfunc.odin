@@ -1146,24 +1146,7 @@ foreign _ {
 	trunc_string_e :: proc "c" (s: cstring, buf: ^u8, room: C.int, buflen: C.int) ---
 	@(link_name = "has_profiling")
 	has_profiling_e :: proc "c" (file: bool, fname: cstring, fp: rawptr) -> bool ---
-	@(link_name = "func_do_profile")
-	func_do_profile_e :: proc "c" (fp: rawptr) ---
-	@(link_name = "profile_start")
-	profile_start_e :: proc "c" () -> u64 ---
-	@(link_name = "profile_zero")
-	profile_zero_e :: proc "c" () -> u64 ---
-	@(link_name = "profile_end")
-	profile_end_e :: proc "c" (tm: u64) -> u64 ---
-	@(link_name = "profile_sub_wait")
-	profile_sub_wait_e :: proc "c" (tm: u64, tma: u64) -> u64 ---
-	@(link_name = "profile_add")
-	profile_add_e :: proc "c" (tm1: u64, tm2: u64) -> u64 ---
-	@(link_name = "profile_self")
-	profile_self_e :: proc "c" (self: u64, total: u64, children: u64) -> u64 ---
-	@(link_name = "script_prof_save")
-	script_prof_save_e :: proc "c" (tm: ^u64) ---
-	@(link_name = "script_prof_restore")
-	script_prof_restore_e :: proc "c" (tm: ^u64) ---
+	// func_do_profile/profile_start/zero/end/sub_wait/add/self/script_prof_save/restore — PORTED (profile.odin).
 	@(link_name = "estack_push_ufunc")
 	estack_push_ufunc_e :: proc "c" (fp: rawptr, lnum: C.int) ---
 	@(link_name = "saveRedobuff")
@@ -1212,8 +1195,8 @@ call_user_func :: proc "c" (fp: rawptr, argcount: C.int, argvars: ^Typval_T, ret
 	namelen: C.size_t = 0
 	tv_to_free: [MAX_FUNC_ARGS_O + 1]rawptr
 	tv_to_free_len: C.int = 0
-	wait_start: u64 = 0
-	call_start: u64 = 0
+	wait_start: proftime_T = 0
+	call_start: proftime_T = 0
 	started_profiling := false
 	did_save_redo := false
 	save_redo: [112]u8
@@ -1401,7 +1384,7 @@ call_user_func :: proc "c" (fp: rawptr, argcount: C.int, argvars: ^Typval_T, ret
 	func_not_yet_profiling_but_should := do_profiling_yes && !(^bool)(uintptr(fp) + UF_PROFILING_OFF_O)^ && has_profiling_e(false, transmute(cstring)(rawptr(uintptr(fp) + UF_NAME_OFF_O)), nil)
 	if func_not_yet_profiling_but_should {
 		started_profiling = true
-		func_do_profile_e(fp)
+		func_do_profile(fp)
 	}
 	caller_fp: rawptr = nil
 	caller_profiling := false
@@ -1412,11 +1395,11 @@ call_user_func :: proc "c" (fp: rawptr, argcount: C.int, argvars: ^Typval_T, ret
 	func_or_caller_profiling := do_profiling_yes && ((^bool)(uintptr(fp) + UF_PROFILING_OFF_O)^ || caller_profiling)
 	if func_or_caller_profiling {
 		(^C.int)(uintptr(fp) + UF_TM_COUNT_OFF_O)^ += 1
-		call_start = profile_start_e()
-		(^u64)(uintptr(fp) + UF_TM_CHILDREN_OFF_O)^ = profile_zero_e()
+		call_start = profile_start()
+		(^proftime_T)(uintptr(fp) + UF_TM_CHILDREN_OFF_O)^ = profile_zero()
 	}
 	if do_profiling_yes {
-		script_prof_save_e(&wait_start)
+		script_prof_save(&wait_start)
 	}
 	saved_sctx: [24]u8
 	libc.memcpy(rawptr(&saved_sctx[0]), rawptr(&current_sctx_buf[0]), 24)
@@ -1443,13 +1426,13 @@ call_user_func :: proc "c" (fp: rawptr, argcount: C.int, argvars: ^Typval_T, ret
 		rettv.vval = transmute(rawptr)(C.longlong(-1))
 	}
 	if func_or_caller_profiling {
-		call_start = profile_end_e(call_start)
-		call_start = profile_sub_wait_e(wait_start, call_start)
-		(^u64)(uintptr(fp) + UF_TM_TOTAL_OFF_O)^ = profile_add_e((^u64)(uintptr(fp) + UF_TM_TOTAL_OFF_O)^, call_start)
-		(^u64)(uintptr(fp) + UF_TM_SELF_OFF_O)^ = profile_self_e((^u64)(uintptr(fp) + UF_TM_SELF_OFF_O)^, call_start, (^u64)(uintptr(fp) + UF_TM_CHILDREN_OFF_O)^)
+		call_start = profile_end(call_start)
+		call_start = profile_sub_wait(wait_start, call_start)
+		(^proftime_T)(uintptr(fp) + UF_TM_TOTAL_OFF_O)^ = profile_add((^proftime_T)(uintptr(fp) + UF_TM_TOTAL_OFF_O)^, call_start)
+		(^proftime_T)(uintptr(fp) + UF_TM_SELF_OFF_O)^ = profile_self((^proftime_T)(uintptr(fp) + UF_TM_SELF_OFF_O)^, call_start, (^proftime_T)(uintptr(fp) + UF_TM_CHILDREN_OFF_O)^)
 		if caller_profiling {
-			(^u64)(uintptr(caller_fp) + UF_TM_CHILDREN_OFF_O)^ = profile_add_e((^u64)(uintptr(caller_fp) + UF_TM_CHILDREN_OFF_O)^, call_start)
-			(^u64)(uintptr(caller_fp) + UF_TML_CHILDREN_OFF_O)^ = profile_add_e((^u64)(uintptr(caller_fp) + UF_TML_CHILDREN_OFF_O)^, call_start)
+			(^proftime_T)(uintptr(caller_fp) + UF_TM_CHILDREN_OFF_O)^ = profile_add((^proftime_T)(uintptr(caller_fp) + UF_TM_CHILDREN_OFF_O)^, call_start)
+			(^proftime_T)(uintptr(caller_fp) + UF_TML_CHILDREN_OFF_O)^ = profile_add((^proftime_T)(uintptr(caller_fp) + UF_TML_CHILDREN_OFF_O)^, call_start)
 		}
 		if started_profiling {
 			(^bool)(uintptr(fp) + UF_PROFILING_OFF_O)^ = false
@@ -1487,7 +1470,7 @@ call_user_func :: proc "c" (fp: rawptr, argcount: C.int, argvars: ^Typval_T, ret
 	estack_pop_r()
 	libc.memcpy(rawptr(&current_sctx_buf[0]), rawptr(&saved_sctx[0]), 24)
 	if do_profiling_yes {
-		script_prof_restore_e(&wait_start)
+		script_prof_restore(&wait_start)
 	}
 	if using_sandbox {
 		sandbox -= 1
@@ -1528,10 +1511,7 @@ foreign _ {
 	dbg_find_breakpoint_e :: proc "c" (file: bool, fname: cstring, after: C.int) -> C.int ---
 	@(link_name = "aborted_in_try")
 	aborted_in_try_e :: proc "c" () -> bool ---
-	@(link_name = "func_line_start")
-	func_line_start_e :: proc "c" (cookie: rawptr) ---
-	@(link_name = "func_line_end")
-	func_line_end_e :: proc "c" (cookie: rawptr) ---
+	// func_line_start/end — PORTED (profile.odin).
 	@(link_name = "dbg_breakpoint")
 	dbg_breakpoint_e :: proc "c" (name: cstring, lnum: C.int) ---
 	@(link_name = "exception_state_save")
@@ -1568,7 +1548,7 @@ get_func_line :: proc "c" (c: C.int, cookie: rawptr, indent: C.int, do_concat: b
 		(^C.int)(uintptr(fcp) + FC_DBG_TICK_OFF_O)^ = debug_tick_g
 	}
 	if do_profiling == PROF_YES {
-		func_line_end_e(cookie)
+		func_line_end(cookie)
 	}
 	ln := (^C.int)(uintptr(fcp) + FC_LINENR_OFF_O)^
 	gl := (^C.int)(uintptr(fp) + UF_LINES_OFF_O)^
@@ -1584,7 +1564,7 @@ get_func_line :: proc "c" (c: C.int, cookie: rawptr, indent: C.int, do_concat: b
 			(^C.int)(uintptr(fcp) + FC_LINENR_OFF_O)^ = ln + 1
 			set_sourcing_lnum_o(ln + 1)
 			if do_profiling == PROF_YES {
-				func_line_start_e(cookie)
+				func_line_start(cookie)
 			}
 		}
 	}
@@ -2474,7 +2454,7 @@ get_lambda_tv :: proc "c" (arg: ^cstring, rettv: ^Typval_T, evalarg: rawptr) -> 
 			(^rawptr)(uintptr(fp) + UF_SCOPED_OFF_O)^ = nil
 		}
 		if do_profiling == PROF_YES {
-			func_do_profile_e(fp)
+			func_do_profile(fp)
 		}
 		if sandbox != 0 {
 			(^C.int)(uintptr(fp) + UF_FLAGS_OFF_O)^ |= FC_SANDBOX_O
@@ -3750,8 +3730,7 @@ func_clear_free_o :: proc "c" (fp: rawptr, force: bool) {
 foreign _ {
 	@(link_name = "autoload_name")
 	autoload_name_e :: proc "c" (name: cstring, name_len: C.size_t) -> cstring ---
-	@(link_name = "prof_def_func")
-	prof_def_func_e :: proc "c" () -> bool ---
+	// prof_def_func — PORTED (profile.odin).
 }
 
 E124_S :: "E124: Missing '(': %s"
@@ -4097,8 +4076,8 @@ ex_function :: proc "c" (eap: rawptr) {
 	} else {
 		(^rawptr)(uintptr(fp) + UF_SCOPED_OFF_O)^ = nil
 	}
-	if prof_def_func_e() {
-		func_do_profile_e(fp)
+	if prof_def_func() {
+		func_do_profile(fp)
 	}
 	(^bool)(uintptr(fp) + UF_VARARGS_OFF_O)^ = varargs
 	if sandbox != 0 {

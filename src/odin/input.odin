@@ -154,10 +154,7 @@ foreign _ {
 	ins_compl_autocomplete_elapsed :: proc() -> i64 ---
 	@(link_name = "ins_compl_active")
 	ins_compl_active :: proc() -> bool ---
-	@(link_name = "prof_input_start")
-	prof_input_start :: proc() ---
-	@(link_name = "prof_input_end")
-	prof_input_end :: proc() ---
+	// (prof_input_start/end — PORTED (profile.odin).)
 	@(link_name = "typebuf")
 	typebuf: typebuf_T
 }

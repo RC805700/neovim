@@ -116,10 +116,7 @@ foreign _ {
 	@(link_name = "getvcol")
 	getvcol_s :: proc "c" (wp: rawptr, p: ^Pos_T, start: ^C.int, cursor: ^C.int, end: ^C.int, flags: C.int) ---
 
-	@(link_name = "profile_setlimit")
-	profile_setlimit_r :: proc "c" (msec: C.longlong) -> proftime_T ---
-	@(link_name = "profile_passed_limit")
-	profile_passed_limit_r :: proc "c" (tm: proftime_T) -> bool ---
+	// profile_setlimit/passed_limit — PORTED (profile.odin).
 
 	@(link_name = "xstrnsave")
 	xstrnsave_c :: proc "c" (s: cstring, len: C.size_t) -> ^u8 ---
@@ -918,7 +915,7 @@ searchit :: proc "c"(
 				if stop_lnum != 0 && (dir == .FORWARD ? lnum > stop_lnum : lnum < stop_lnum) {
 					break
 				}
-				if tm != nil && profile_passed_limit_r(tm^) {
+				if tm != nil && profile_passed_limit(tm^) {
 					break
 				}
 
@@ -1022,7 +1019,7 @@ searchit :: proc "c"(
 							}
 							nmatched = vim_regexec_multi_r(&regmatch, win, buf, lnum + matchpos.lnum, matchcol, tm, timed_out)
 							if b_at(ptr, matchcol) == 0 || nmatched == 0 {
-								if tm != nil && profile_passed_limit_r(tm^) {
+								if tm != nil && profile_passed_limit(tm^) {
 									match_ok = false
 								}
 								break
@@ -1706,14 +1703,14 @@ update_search_stat :: proc "c"(
 		endpos := Pos_T{}
 		p_ws_g = 0
 		if timeout > 0 {
-			start = profile_setlimit_r(C.longlong(timeout))
+			start = profile_setlimit(C.longlong(timeout))
 		}
 		for !got_int {
 			if searchit(curwin, curbuf, &us_lastpos, &endpos, .FORWARD, nil, 0, 1, SEARCH_KEEP, RE_LAST, nil) == 0 {
 				break
 			}
 			done_search = true
-			if timeout > 0 && profile_passed_limit_r(start) {
+			if timeout > 0 && profile_passed_limit(start) {
 				us_incomplete = 1
 				break
 			}

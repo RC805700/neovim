@@ -77,7 +77,7 @@ start_search_hl :: proc "c"() {
 	last_pat_prog(transmute(^Regmmatch_T)(&screen_search_hl_u8))
 	// Time limit from 'redrawtime'.
 	(^proftime_T)(uintptr(transmute(rawptr)(&screen_search_hl_u8)) + 224)^ =
-		profile_setlimit_r(p_rdt_g)
+		profile_setlimit(p_rdt_g)
 }
 
 // Clean up for 'hlsearch' highlighting.
@@ -1973,7 +1973,7 @@ win_update :: proc "c"(wp: rawptr) {
 	save_got_int := got_int
 	got_int = false
 	// Time limit from 'redrawtime'.
-	syntax_tm := profile_setlimit_r(p_rdt_g)
+	syntax_tm := profile_setlimit(p_rdt_g)
 	syn_set_timeout_r(transmute(rawptr)(&syntax_tm))
 
 	win_extmark_arr_g.n = 0
