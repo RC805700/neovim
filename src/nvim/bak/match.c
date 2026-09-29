@@ -263,6 +263,7 @@ static int match_delete(win_T *wp, int id, bool perr)
 }
 
 /// Delete all matches in the match list of window 'wp'.
+#pragma weak clear_matches
 void clear_matches(win_T *wp)
 {
   while (wp->w_match_head != NULL) {
@@ -289,6 +290,7 @@ static matchitem_T *get_match(win_T *wp, int id)
 }
 
 /// Init for calling prepare_search_hl().
+#pragma weak init_search_hl
 void init_search_hl(win_T *wp, match_T *search_hl)
   FUNC_ATTR_NONNULL_ALL
 {
@@ -483,6 +485,7 @@ static void next_search_hl(win_T *win, match_T *search_hl, match_T *shl, linenr_
 }
 
 /// Advance to the match in window "wp" line "lnum" or past it.
+#pragma weak prepare_search_hl
 void prepare_search_hl(win_T *wp, match_T *search_hl, linenr_T lnum)
   FUNC_ATTR_NONNULL_ALL
 {
@@ -560,6 +563,7 @@ static void check_cur_search_hl(win_T *wp, match_T *shl)
 ///
 /// @return  true if there is such highlighting and set "search_attr" to the
 ///          current highlight attribute.
+#pragma weak prepare_search_hl_line
 bool prepare_search_hl_line(win_T *wp, linenr_T lnum, colnr_T mincol, char **line,
                             match_T *search_hl, int *search_attr, bool *search_attr_from_match)
 {
@@ -641,6 +645,7 @@ bool prepare_search_hl_line(win_T *wp, linenr_T lnum, colnr_T mincol, char **lin
 /// "on_last_col" is set to true with non-zero search_attr and the next column
 /// is endcol.
 /// Return the updated search_attr.
+#pragma weak update_search_hl
 int update_search_hl(win_T *wp, linenr_T lnum, colnr_T col, char **line, match_T *search_hl,
                      int *has_match_conc, int *match_conc, bool lcs_eol_todo, bool *on_last_col,
                      bool *search_attr_from_match)
@@ -772,6 +777,7 @@ int update_search_hl(win_T *wp, linenr_T lnum, colnr_T col, char **line, match_T
   return search_attr;
 }
 
+#pragma weak get_prevcol_hl_flag
 bool get_prevcol_hl_flag(win_T *wp, match_T *search_hl, colnr_T curcol)
 {
   colnr_T prevcol = curcol;
@@ -804,6 +810,7 @@ bool get_prevcol_hl_flag(win_T *wp, match_T *search_hl, colnr_T curcol)
 
 /// Get highlighting for the char after the text in "char_attr" from 'hlsearch'
 /// or match highlighting.
+#pragma weak get_search_match_hl
 void get_search_match_hl(win_T *wp, match_T *search_hl, colnr_T col, int *char_attr)
 {
   matchitem_T *cur = wp->w_match_head;  // points to the match list
@@ -856,6 +863,7 @@ static int matchadd_dict_arg(typval_T *tv, const char **conceal_char, win_T **wi
 }
 
 /// "clearmatches()" function
+#pragma weak f_clearmatches
 void f_clearmatches(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 {
   win_T *win = get_optional_window(argvars, 0);
@@ -866,6 +874,7 @@ void f_clearmatches(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 }
 
 /// "getmatches()" function
+#pragma weak f_getmatches
 void f_getmatches(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 {
   win_T *win = get_optional_window(argvars, 0);
@@ -918,6 +927,7 @@ void f_getmatches(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 }
 
 /// "setmatches()" function
+#pragma weak f_setmatches
 void f_setmatches(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 {
   dict_T *d;
@@ -1021,6 +1031,7 @@ void f_setmatches(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 }
 
 /// "matchadd()" function
+#pragma weak f_matchadd
 void f_matchadd(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 {
   char grpbuf[NUMBUFLEN];
@@ -1063,6 +1074,7 @@ void f_matchadd(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 }
 
 /// "matchaddpo()" function
+#pragma weak f_matchaddpos
 void f_matchaddpos(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 {
   rettv->vval.v_number = -1;
@@ -1114,6 +1126,7 @@ void f_matchaddpos(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 }
 
 /// "matcharg()" function
+#pragma weak f_matcharg
 void f_matcharg(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 {
   const int id = (int)tv_get_number(&argvars[0]);
@@ -1136,6 +1149,7 @@ void f_matcharg(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 }
 
 /// "matchdelete()" function
+#pragma weak f_matchdelete
 void f_matchdelete(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 {
   win_T *win = get_optional_window(argvars, 1);
@@ -1150,6 +1164,7 @@ void f_matchdelete(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 /// ":[N]match {group} {pattern}"
 /// Sets nextcmd to the start of the next command, if any.  Also called when
 /// skipping commands to find the next command.
+#pragma weak ex_match
 void ex_match(exarg_T *eap)
 {
   char *g = NULL;

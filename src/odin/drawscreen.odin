@@ -1811,8 +1811,6 @@ foreign _ {
 	terminal_suspended_r :: proc "c"(term: rawptr) -> bool ---
 	@(link_name = "decor_range_add_virt")
 	decor_range_add_virt_r :: proc "c"(state: rawptr, sr: C.int, sc: C.int, er: C.int, ec: C.int, vt: rawptr, owned: bool) ---
-	@(link_name = "init_search_hl")
-	init_search_hl_r :: proc "c"(wp: rawptr, hl: rawptr) ---
 	@(link_name = "syn_set_timeout")
 	syn_set_timeout_r :: proc "c"(tm: rawptr) ---
 	@(link_name = "win_lines_concealed")
@@ -1823,8 +1821,6 @@ foreign _ {
 	buf_signcols_count_range_r :: proc "c"(buf: rawptr, row1: C.int, row2: C.int, add: C.int, clear: C.int) ---
 	@(link_name = "ui_call_win_extmark")
 	ui_call_win_extmark_r :: proc "c"(grid: C.longlong, win: C.int, ns_id: C.longlong, mark_id: C.longlong, row: C.longlong, col: C.longlong) ---
-	@(link_name = "prepare_search_hl")
-	prepare_search_hl_r :: proc "c"(wp: rawptr, hl: rawptr, lnum: C.int) ---
 	@(link_name = "syntax_end_parsing")
 	syntax_end_parsing_r :: proc "c"(wp: rawptr, lnum: C.int) ---
 	@(link_name = "syntax_check_changed")
@@ -2011,7 +2007,7 @@ win_update :: proc "c"(wp: rawptr) {
 	validate_virtcol_r(wp)
 	type_ = (^C.int)(uintptr(wp) + W_REDR_TYPE_OFF)^
 
-	init_search_hl_r(wp, transmute(rawptr)(&screen_search_hl_u8))
+	init_search_hl(wp, transmute(rawptr)(&screen_search_hl_u8))
 
 	// Clamp skipcol to a valid tab stop.
 	if (^C.int)(uintptr(wp) + W_SKIPCOL_OFF)^ > 0 &&
@@ -2769,7 +2765,7 @@ win_update :: proc "c"(wp: rawptr) {
 				// Line won't fit: draw nothing, "@  " lines below.
 				row = (^C.int)(uintptr(wp) + W_VIEW_HEIGHT_OFF)^ + 1
 			} else {
-				prepare_search_hl_r(wp, transmute(rawptr)(&screen_search_hl_u8), lnum)
+				prepare_search_hl(wp, transmute(rawptr)(&screen_search_hl_u8), lnum)
 				// Tell syntax of skipped lines.
 				if syntax_last_parsed != 0 && syntax_last_parsed + 1 < lnum &&
 					syntax_present_r(wp) {

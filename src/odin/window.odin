@@ -1057,8 +1057,6 @@ foreign _ {
 	tagstack_clear_entry_r :: proc "c" (item: rawptr) ---
 	@(link_name = "stl_clear_click_defs")
 	stl_clear_click_defs_r :: proc "c" (click_defs: rawptr, click_defs_size: C.size_t) ---
-	@(link_name = "clear_matches")
-	clear_matches_r :: proc "c" (wp: rawptr) ---
 	@(link_name = "qf_free_all")
 	qf_free_all_r :: proc "c" (wp: rawptr) ---
 	@(link_name = "au_pending_free_win")
@@ -1203,7 +1201,7 @@ win_free :: proc "c"(wp: rawptr, tp: rawptr) {
 	clear_virttext_r((^Kvec_VT)(uintptr(wp) + W_CONFIG_OFF + WC_TITLE_CHUNKS_OFF))
 	clear_virttext_r((^Kvec_VT)(uintptr(wp) + W_CONFIG_OFF + WC_FOOTER_CHUNKS_OFF))
 
-	clear_matches_r(wp)
+	clear_matches(wp)
 
 	free_jumplist(wp)
 

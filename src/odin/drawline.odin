@@ -44,8 +44,6 @@ foreign _ {
 	// decor_redraw_line_r: spell.odin (identical sig).
 	@(link_name = "decor_has_more_decorations")
 	decor_has_more_decorations_r :: proc "c"(state: rawptr, lnum: C.int) -> bool ---
-	@(link_name = "prepare_search_hl_line")
-	prepare_search_hl_line_r :: proc "c"(wp: rawptr, lnum: C.int, mincol: C.int, line: ^^u8, search_hl: rawptr, search_attr: ^C.int, search_attr_from_match: ^bool) -> bool ---
 	@(link_name = "screen_search_hl")
 	screen_search_hl_u8: u8 // address-of only (match_T passed opaquely)
 	@(link_name = "ins_compl_win_active")
@@ -260,8 +258,6 @@ DiffChange_O :: struct {
 #assert(size_of(DiffChange_O) == 128)
 
 foreign _ {
-	@(link_name = "update_search_hl")
-	update_search_hl_r :: proc "c"(wp: rawptr, lnum: C.int, col: C.int, line: ^^u8, search_hl: rawptr, has_match_conc: ^C.int, match_conc: ^C.int, lcs_eol_todo: bool, on_last_col: ^bool, search_attr_from_match: ^bool) -> C.int ---
 	@(link_name = "ins_compl_col_range_attr")
 	ins_compl_col_range_attr_r :: proc "c"(lnum: C.int, col: C.int) -> C.int ---
 }
@@ -991,7 +987,7 @@ win_line :: proc "c"(wp: rawptr, lnum: C.int, startrow: C.int, endrow: C.int, co
 
 	if col_rows == 0 && draw_text && !has_foldtext {
 		v := C.int(uintptr(ptr) - uintptr(line))
-		if prepare_search_hl_line_r(wp, lnum, v, &line,
+		if prepare_search_hl_line(wp, lnum, v, &line,
 			transmute(rawptr)(&screen_search_hl_u8), &search_attr,
 			&search_attr_from_match) {
 			area_highlighting = true
@@ -1274,7 +1270,7 @@ win_line :: proc "c"(wp: rawptr, lnum: C.int, startrow: C.int, endrow: C.int, co
 			if !has_foldtext && wlv.n_extra == 0 {
 				// 'hlsearch'/match start-end (re-check after each end).
 				v := C.int(uintptr(ptr) - uintptr(line))
-				search_attr = update_search_hl_r(wp, lnum, v, &line,
+				search_attr = update_search_hl(wp, lnum, v, &line,
 					transmute(rawptr)(&screen_search_hl_u8),
 					&has_match_conc, &match_conc, lcs_eol_todo,
 					&on_last_col, &search_attr_from_match)
@@ -2093,7 +2089,7 @@ win_line :: proc "c"(wp: rawptr, lnum: C.int, startrow: C.int, endrow: C.int, co
 			// At/past end of the text line.
 			if mb_schar == 0 && eol_hl_off == 0 {
 				// Whether prevcol starts search_hl or a match.
-				prevcol_hl_flag := get_prevcol_hl_flag_r(wp,
+				prevcol_hl_flag := get_prevcol_hl_flag(wp,
 					transmute(rawptr)(&screen_search_hl_u8),
 					C.int(uintptr(ptr) - uintptr(line)) - 1)
 
@@ -2120,7 +2116,7 @@ win_line :: proc "c"(wp: rawptr, lnum: C.int, startrow: C.int, endrow: C.int, co
 					}
 					if area_attr == 0 && !has_fold {
 						// Highest-priority 'search_hl'/match attributes.
-						get_search_match_hl_r(wp,
+						get_search_match_hl(wp,
 							transmute(rawptr)(&screen_search_hl_u8),
 							C.int(uintptr(ptr) - uintptr(line)), &wlv.char_attr)
 					}
@@ -3535,12 +3531,6 @@ foreign _ {
 // W_P_COLE_OFF reuses window.odin (=1144).
 HL_CONCEAL_O :: 131072
 LCS_CONCEAL_OFF :: 72 // lcs.conceal
-foreign _ {
-	@(link_name = "get_prevcol_hl_flag")
-	get_prevcol_hl_flag_r :: proc "c"(wp: rawptr, search_hl: rawptr, curcol: C.int) -> bool ---
-	@(link_name = "get_search_match_hl")
-	get_search_match_hl_r :: proc "c"(wp: rawptr, search_hl: rawptr, col: C.int, char_attr: ^C.int) ---
-}
 
 // W_WCOL/W_WROW_OFF reuse window.odin (=604/=600).
 W_WCOL_CONCEAL_OFF :: 608 // w_wcol_conceal_off
