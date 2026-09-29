@@ -197,8 +197,6 @@ foreign _ {
 	text_locked_r :: proc "c" () -> bool ---
 	@(link_name = "text_locked_msg")
 	text_locked_msg_r :: proc "c" () ---
-	@(link_name = "virtual_active")
-	virtual_active_r :: proc "c" (wp: rawptr) -> bool ---
 	@(link_name = "coladvance")
 	coladvance_r :: proc "c" (wp: rawptr, wcol: C.int) -> C.int ---
 	@(link_name = "check_cursor_lnum")
@@ -535,7 +533,7 @@ u_savecommon :: proc "c" (buf: rawptr, top: C.int, bot: C.int, newbot: C.int, re
 		uhp.uh_entry = nil
 		uhp.uh_getbot_entry = nil
 		uhp.uh_cursor = win_cursor_r(curwin)^ // save cursor pos. for undo
-		if virtual_active_r(curwin) && win_cursor_r(curwin).coladd > 0 {
+		if virtual_active(curwin) && win_cursor_r(curwin).coladd > 0 {
 			uhp.uh_cursor_vcol = getviscol_r()
 		} else {
 			uhp.uh_cursor_vcol = -1
@@ -2278,7 +2276,7 @@ u_undoredo :: proc "c" (undo: bool, do_buf_event: bool) {
 	if win_cursor_r(curwin).lnum <= ml_line_count_b(curbuf) {
 		if curhead.uh_cursor.lnum == win_cursor_r(curwin).lnum {
 			win_cursor_r(curwin).col = curhead.uh_cursor.col
-			if virtual_active_r(curwin) && curhead.uh_cursor_vcol >= 0 {
+			if virtual_active(curwin) && curhead.uh_cursor_vcol >= 0 {
 				coladvance_r(curwin, curhead.uh_cursor_vcol)
 			} else {
 				win_cursor_r(curwin).coladd = 0

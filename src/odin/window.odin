@@ -1856,9 +1856,8 @@ foreign _ {
  	@(link_name = "msg_clr_eos_force")
 	msg_clr_eos_force_r :: proc "c" () ---
  	@(link_name = "changed_line_abv_curs")
-	changed_line_abv_curs_r :: proc "c" () ---
- 	@(link_name = "get_real_state")
- 	get_real_state_r :: proc "c" () -> C.int ---
+ 	changed_line_abv_curs_r :: proc "c" () ---
+ 	// get_real_state is an Odin export (state.odin) — call directly.
  	// do_autochdir now defined in buffer.odin — call directly.
  	@(link_name = "aborting")
 	aborting_r :: proc "c" () -> bool ---
@@ -2049,7 +2048,7 @@ win_enter_ext_o :: proc "c"(wp: rawptr, flags: C.int) {
 	curbuf = (^rawptr)(uintptr(wp) + W_BUFFER_OFF)^
 
 	check_cursor_r(curwin)
-	if !virtual_active_r(curwin) {
+	if !virtual_active(curwin) {
 		(^C.int)(uintptr(curwin) + W_CURSOR_OFF + 8)^ = 0 // w_cursor.coladd
 	}
 	if b_at(p_spk_g, 0) == 'c' {
@@ -2057,7 +2056,7 @@ win_enter_ext_o :: proc "c"(wp: rawptr, flags: C.int) {
 	} else {
 		// Make sure the cursor position is valid, either by moving the cursor
 		// or by scrolling the text.
-		win_fix_cursor_o(get_real_state_r() & (MODE_NORMAL_O | MODE_CMDLINE_O | MODE_TERMINAL_O) != 0)
+		win_fix_cursor_o(get_real_state() & (MODE_NORMAL_O | MODE_CMDLINE_O | MODE_TERMINAL_O) != 0)
 	}
 
 	win_fix_current_dir()
@@ -5455,7 +5454,7 @@ win_fix_scroll :: proc "c"(resize: bool) {
 	}
 	skip_update_topline_g = false
 	// Ensure cursor is valid when not in normal mode or when resized.
-	if (get_real_state_r() & (MODE_NORMAL_O | MODE_CMDLINE_O | MODE_TERMINAL_O)) == 0 {
+	if (get_real_state() & (MODE_NORMAL_O | MODE_CMDLINE_O | MODE_TERMINAL_O)) == 0 {
 		win_fix_cursor_o(false)
 	} else if resize {
 		win_fix_cursor_o(true)

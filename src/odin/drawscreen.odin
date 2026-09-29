@@ -135,7 +135,7 @@ conceal_cursor_line :: proc "c"(wp: rawptr) -> bool {
 	if (([^]u8)((^rawptr)(uintptr(wp) + W_P_COCU_OFF)^))[0] == 0 { // NUL
 		return false
 	}
-	if get_real_state_r() & MODE_VISUAL_O != 0 {
+	if get_real_state() & MODE_VISUAL_O != 0 {
 		c = 'v'
 	} else if State & MODE_INSERT != 0 {
 		c = 'i'
@@ -699,7 +699,7 @@ foreign _ {
 // Show cursor info in ruler and other places; marks status/cmdline for redraw.
 @(export)
 show_cursor_info_later :: proc "c"(force: bool) {
-	state := get_real_state_r()
+	state := get_real_state()
 	empty_line: C.int = 0
 	if State & MODE_INSERT == 0 &&
 		b_at(ml_get_buf((^rawptr)(uintptr(curwin) + W_BUFFER_OFF)^,

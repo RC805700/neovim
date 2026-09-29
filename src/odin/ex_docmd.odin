@@ -5688,10 +5688,7 @@ ex_mark :: proc "c" (eap: rawptr) {
 }
 
 // —— Batch 24: ex_docmd.c exmode + mkdir (exports + weak) ——
-foreign _ {
-	@(link_name = "may_trigger_modechanged")
-	may_trigger_modechanged_e :: proc "c" () ---
-}
+// (may_trigger_modechanged is an Odin export in state.odin.)
 
 E501_S :: "E501: At end-of-file"
 
@@ -5701,7 +5698,7 @@ do_exmode :: proc "c" () {
 	context = runtime.default_context()
 	exmode_active = true
 	State = MODE_NORMAL_O
-	may_trigger_modechanged_e()
+	may_trigger_modechanged()
 	if global_busy != 0 {
 		return
 	}

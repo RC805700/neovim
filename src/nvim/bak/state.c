@@ -31,6 +31,7 @@
 
 #include "state.c.generated.h"
 
+#pragma weak state_enter
 void state_enter(VimState *s)
   FUNC_ATTR_NONNULL_ALL
 {
@@ -110,6 +111,7 @@ getkey:
 ///
 /// This should be used to handle K_EVENT in states accepting input
 /// otherwise bursts of events can block break checking indefinitely.
+#pragma weak state_handle_k_event
 void state_handle_k_event(void)
 {
   while (true) {
@@ -134,6 +136,7 @@ void state_handle_k_event(void)
 }
 
 /// Return true if in the current mode we need to use virtual.
+#pragma weak virtual_active
 bool virtual_active(win_T *wp)
 {
   // In Terminal mode the cursor can be positioned anywhere by the application
@@ -160,6 +163,7 @@ bool virtual_active(win_T *wp)
 /// MODE_VISUAL, MODE_SELECT and MODE_OP_PENDING State are never set, they are
 /// equal to MODE_NORMAL State with a condition.  This function returns the real
 /// State.
+#pragma weak get_real_state
 int get_real_state(void)
 {
   if (State & MODE_NORMAL) {
@@ -179,6 +183,7 @@ int get_real_state(void)
 /// terminated.
 /// The first character represents the major mode, the following ones the minor
 /// ones.
+#pragma weak get_mode
 void get_mode(char *buf)
   FUNC_ATTR_NONNULL_ALL
 {
@@ -250,6 +255,7 @@ void get_mode(char *buf)
 }
 
 /// Fires a ModeChanged autocmd if appropriate.
+#pragma weak may_trigger_modechanged
 void may_trigger_modechanged(void)
 {
   // Skip this when got_int is set, the autocommand will not be executed.
@@ -297,6 +303,7 @@ static bool is_safe_now(void)
 
 /// Trigger SafeState if currently in a safe state, that is "safe" is true and
 /// there is no typeahead.
+#pragma weak may_trigger_safestate
 void may_trigger_safestate(bool safe)
 {
   bool is_safe = safe && is_safe_now();
@@ -315,6 +322,7 @@ void may_trigger_safestate(bool safe)
 /// Something changed which causes the state possibly to be unsafe, e.g. a
 /// character was typed.  It will remain unsafe until the next call to
 /// may_trigger_safestate().
+#pragma weak state_no_longer_safe
 void state_no_longer_safe(const char *reason)
 {
   if (was_safe && reason != NULL) {
@@ -323,6 +331,7 @@ void state_no_longer_safe(const char *reason)
   was_safe = false;
 }
 
+#pragma weak get_was_safe_state
 bool get_was_safe_state(void)
 {
   return was_safe;

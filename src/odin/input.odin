@@ -145,8 +145,7 @@ foreign _ {
 	before_blocking :: proc() ---
 	@(link_name = "typebuf_changed")
 	typebuf_changed :: proc(tb_change_cnt: c.int) -> bool ---
-	@(link_name = "get_real_state")
-	get_real_state :: proc() -> c.int ---
+	// get_real_state is an Odin export (state.odin) — call directly.
 	@(link_name = "getout")
 	getout :: proc(exitval: c.int) ---
 	@(link_name = "ins_compl_autocomplete_pending")

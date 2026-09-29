@@ -180,7 +180,7 @@ foreign _ {
 	charsize_regular_r :: proc "c"(csarg: ^CharsizeArg_O, cur: ^u8, vcol: C.int, cur_char: C.int32_t) -> CharSize_O ---
 	@(link_name = "charsize_fast")
 	charsize_fast_r :: proc "c"(csarg: ^CharsizeArg_O, cur: ^u8, vcol: C.int, cur_char: C.int32_t) -> CharSize_O ---
-	// virtual_active_r: undo.odin (identical sig).
+	// virtual_active: undo.odin (identical sig).
 }
 
 // mbyte.h:72 static inline.
@@ -893,7 +893,7 @@ win_line :: proc "c"(wp: rawptr, lnum: C.int, startrow: C.int, endrow: C.int, co
 		// End of line before displayed part ('cuc'/'colorcolumn'/
 		// 'virtualedit'/Visual/fold may need it).
 		if wlv.vcol < start_vcol && ((^C.int)(uintptr(wp) + W_P_CUC_OFF)^ != 0 ||
-			wlv.color_cols != nil || virtual_active_r(wp) ||
+			wlv.color_cols != nil || virtual_active(wp) ||
 			(VIsual_active && (^rawptr)(uintptr(wp) + W_BUFFER_OFF)^ == (^rawptr)(uintptr(cur) + W_BUFFER_OFF)^) ||
 			has_fold) {
 			wlv.vcol = start_vcol
@@ -1896,7 +1896,7 @@ win_line :: proc "c"(wp: rawptr, lnum: C.int, startrow: C.int, endrow: C.int, co
 					if wlv.diff_hlf == 0 && wlv.line_attr == 0 &&
 						wlv.line_attr_lowprio == 0 {
 						// Virtualedit visual selections may pass EOL.
-						if !(area_highlighting && virtual_active_r(wp) &&
+						if !(area_highlighting && virtual_active(wp) &&
 							wlv.tocol != MAXCOL && wlv.vcol < wlv.tocol) {
 							wlv.p_extra = transmute(^u8)(cstring(""))
 						}
@@ -1943,7 +1943,7 @@ win_line :: proc "c"(wp: rawptr, lnum: C.int, startrow: C.int, endrow: C.int, co
 					mb_schar = u32(mb_c) // schar_from_ascii
 				} else if VIsual_active &&
 					(VIsual_mode == Ctrl_V || VIsual_mode == 'v') &&
-					virtual_active_r(wp) && wlv.tocol != MAXCOL &&
+					virtual_active(wp) && wlv.tocol != MAXCOL &&
 					wlv.vcol < wlv.tocol && wlv.col < view_width {
 					mb_c = ' '
 					mb_schar = schar_from_char(mb_c)

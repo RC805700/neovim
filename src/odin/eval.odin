@@ -12795,7 +12795,7 @@ get_col_o :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, charcol: bool) {
 			}
 		} else {
 			col = fp_col + 1
-			if virtual_active_r(wp) && uintptr(fp) == uintptr(wp) + W_CURSOR_OFF {
+			if virtual_active(wp) && uintptr(fp) == uintptr(wp) + W_CURSOR_OFF {
 				w_lnum := (^C.int)(uintptr(wp) + W_CURSOR_OFF)^
 				w_col := (^C.int)(uintptr(wp) + W_CURSOR_OFF + 4)^
 				w_coladd := (^C.int)(uintptr(wp) + W_CURSOR_OFF + 8)^
@@ -14561,8 +14561,6 @@ f_call :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 
 // —— Batch 27aa: funcs.c mode/pumvisible/nonblank ——
 foreign _ {
-	@(link_name = "get_mode")
-	get_mode_e :: proc "c" (buf: ^u8) ---
 	@(link_name = "pum_visible")
 	pum_visible_e :: proc "c" () -> bool ---
 }
@@ -14588,7 +14586,7 @@ non_zero_arg_o :: proc "c" (argvars: ^Typval_T) -> bool {
 f_mode :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 	context = runtime.default_context()
 	buf: [4]u8
-	get_mode_e(&buf[0])
+	get_mode(&buf[0])
 	if !non_zero_arg_o(argvars) {
 		buf[1] = 0
 	}
@@ -14725,8 +14723,6 @@ foreign _ {
 	using_script_e :: proc "c" () -> C.int ---
 	@(link_name = "op_pending")
 	op_pending_e :: proc "c" () -> bool ---
-	@(link_name = "get_was_safe_state")
-	get_was_safe_state_e :: proc "c" () -> bool ---
 }
 
 // Conditionally append a state char (C-static in funcs.c).
@@ -14759,7 +14755,7 @@ f_state :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 	if ins_compl_active() {
 		may_add_state_char_o(&ga, include, 'a')
 	}
-	if !get_was_safe_state_e() {
+	if !get_was_safe_state() {
 		may_add_state_char_o(&ga, include, 'S')
 	}
 	i: C.int = 0
@@ -16641,7 +16637,7 @@ getregionpos_o :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, p1: ^Pos_T, p2
 	}
 	curbuf = findbuf
 	(^rawptr)(uintptr(curwin) + W_BUFFER_OFF)^ = curbuf
-	if virtual_active_r(curwin) {
+	if virtual_active(curwin) {
 		virtual_op_g = TriState.kTrue
 	} else {
 		virtual_op_g = TriState.kFalse
