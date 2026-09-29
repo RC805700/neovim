@@ -3232,10 +3232,7 @@ profile_cmd_o :: proc "c" (eap: rawptr, cstack: rawptr, fgetline: LineGetter, co
 
 // —— Batch 23b: ex_docmd.c execute engine (export + plains) ——
 foreign _ {
-	@(link_name = "start_batch_changes")
-	start_batch_changes_e :: proc "c" () ---
-	@(link_name = "end_batch_changes")
-	end_batch_changes_e :: proc "c" () ---
+	// start/end_batch_changes — PORTED (clipboard.odin).
 	@(link_name = "get_text_locked_msg")
 	get_text_locked_msg_e :: proc "c" () -> cstring ---
 }
@@ -3264,7 +3261,7 @@ do_cmdline_start_o :: proc "c" () -> C.int {
 		return FAIL_E
 	}
 	cmdline_call_depth += 1
-	start_batch_changes_e()
+	start_batch_changes()
 	return OK_E
 }
 
@@ -3275,7 +3272,7 @@ do_cmdline_end_o :: proc "c" () {
 	if cmdline_call_depth < 0 {
 		libc.abort()
 	}
-	end_batch_changes_e()
+	end_batch_changes()
 }
 
 // Parsed-command executor (ex_docmd.c public).

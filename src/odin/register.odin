@@ -237,12 +237,7 @@ foreign _ {
 foreign _ {
 	@(link_name = "getcmdline")
 	getcmdline :: proc "c" (firstc: C.int, count: C.int, indent: C.int, do_concat: bool) -> ^u8 ---
-	@(link_name = "adjust_clipboard_name")
-	adjust_clipboard_name :: proc "c" (name: ^C.int, quiet: bool, writing: bool) -> rawptr ---
-	@(link_name = "get_clipboard")
-	get_clipboard :: proc "c" (name: C.int, target: ^^Yankreg_T, quiet: bool) -> bool ---
-	@(link_name = "set_clipboard")
-	set_clipboard :: proc "c" (name: C.int, reg: ^Yankreg_T) ---
+	// adjust_clipboard_name/get_clipboard/set_clipboard — PORTED (clipboard.odin).
 	@(link_name = "copy_string")
 	copy_string :: proc "c" (str: Str16, arena: rawptr) -> Str16 ---
 	@(link_name = "cstr_to_string")

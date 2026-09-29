@@ -28,6 +28,7 @@ static bool clipboard_didwarn = false;
 ///
 /// @returns the yankreg that should be written into, or `NULL`
 /// if the register isn't a clipboard or provider isn't available.
+#pragma weak adjust_clipboard_name
 yankreg_T *adjust_clipboard_name(int *name, bool quiet, bool writing)
 {
 #define MSG_NO_CLIP "clipboard: No provider. " \
@@ -82,6 +83,7 @@ end:
   return target;
 }
 
+#pragma weak get_clipboard
 bool get_clipboard(int name, yankreg_T **target, bool quiet)
 {
   // show message on error
@@ -200,6 +202,7 @@ err:
   return false;
 }
 
+#pragma weak set_clipboard
 void set_clipboard(int name, yankreg_T *reg)
 {
   if (!adjust_clipboard_name(&name, false, true)) {
@@ -238,6 +241,7 @@ void set_clipboard(int name, yankreg_T *reg)
 }
 
 /// Avoid slow things (clipboard) during batch operations (while/for-loops).
+#pragma weak start_batch_changes
 void start_batch_changes(void)
 {
   if (++batch_change_count > 1) {
@@ -247,6 +251,7 @@ void start_batch_changes(void)
 }
 
 /// Counterpart to start_batch_changes().
+#pragma weak end_batch_changes
 void end_batch_changes(void)
 {
   if (--batch_change_count > 0) {
