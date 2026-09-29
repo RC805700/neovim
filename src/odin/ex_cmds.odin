@@ -32,8 +32,7 @@ EVENT_BUFFILEPRE_O :: 5
 EVENT_BUFFILEPOST_O :: 4
 
 foreign _ {
-	@(link_name = "check_changed")
-	check_changed_r :: proc "c"(buf: rawptr, flags: C.int) -> bool ---
+	// check_changed now defined in ex_cmds2.odin — call directly.
 	@(link_name = "reset_VIsual")
 	reset_VIsual_r :: proc "c"() ---
 	@(link_name = "set_file_options")
@@ -43,8 +42,7 @@ foreign _ {
 	// prepare_help_buffer — PORTED (help.odin).
 	@(link_name = "should_abort")
 	should_abort_r :: proc "c"(retcode: C.int) -> bool ---
-	@(link_name = "plines_m_win_fill")
-	plines_m_win_fill_r :: proc "c"(wp: rawptr, first: C.int, last: C.int) -> C.int ---
+	// plines_m_win_fill now defined in plines.odin — call directly.
 	@(link_name = "msg_check_for_delay")
 	msg_check_for_delay_r :: proc "c"(canwait: bool) ---
 	@(link_name = "diff_invalidate")
@@ -209,7 +207,7 @@ do_ecmd :: proc "c"(fnum: C.int, ffname_in: cstring, sfname_in: cstring, eap: ra
 		if eap != nil {
 			ccgd |= CCGD_EXCMD_O
 		}
-		if abandon_ok && check_changed_r(curbuf, ccgd) {
+		if abandon_ok && check_changed(curbuf, ccgd) {
 			if fnum == 0 && other_file && ffname != nil {
 				setaltfname(ffname, sfname,
 					newlnum < 0 ? 0 : newlnum)
@@ -433,7 +431,7 @@ do_ecmd :: proc "c"(fnum: C.int, ffname_in: cstring, sfname_in: cstring, eap: ra
 			}
 		} else { // !other_file
 			if (flags & (ECMD_ADDBUF_O | ECMD_ALTBUF_O)) != 0 ||
-				check_fname_r() == FAIL {
+				check_fname() == FAIL {
 				done = true
 			} else {
 				oldbuf = (flags & ECMD_OLDBUF_O) != 0
@@ -709,7 +707,7 @@ do_ecmd :: proc "c"(fnum: C.int, ffname_in: cstring, sfname_in: cstring, eap: ra
 			}
 			update_topline_r(curwin)
 			(^C.int)(uintptr(curwin) + W_SCBIND_POS_OFF)^ =
-				plines_m_win_fill_r(curwin, 1,
+				plines_m_win_fill(curwin, 1,
 					(^C.int)(uintptr(curwin) + W_TOPLINE_OFF)^)
 			(^C.longlong)(so_ptr)^ = n
 			redraw_curbuf_later(UPD_NOT_VALID)
@@ -859,8 +857,7 @@ E505_S :: "E505: \"%s\" is read-only (add ! to override)"
 
 foreign _ {
 	// check_overwrite now defined below (Batch 39) — call directly.
-	@(link_name = "buf_write_all")
-	buf_write_all_r :: proc "c"(buf: rawptr, forceit: bool) -> C.int ---
+	// buf_write_all now defined in ex_cmds2.odin — call directly.
 	@(link_name = "vim_dialog_yesno")
 	vim_dialog_yesno_r :: proc "c"(typ: C.int, title: cstring, message: cstring, dflt: C.int) -> C.int ---
 	// p_confirm_g/p_write_g already in buffer.odin — reuse.
@@ -989,7 +986,7 @@ do_wqall :: proc "c"(eap: rawptr) {
 						}
 					}
 					if w_ok &&
-						buf_write_all_r(buf,
+						buf_write_all(buf,
 							(^C.int)(uintptr(eap) + EXARG_FORCEIT_OFF)^ != 0) == FAIL {
 						error += 1
 					}
@@ -1080,9 +1077,9 @@ getfile :: proc "c"(fnum: C.int, ffname_arg: cstring, sfname_arg: cstring, setpm
 	if other && !forceit &&
 		(^C.int)(uintptr(curbuf) + B_NWINDOWS_OFF)^ == 1 &&
 		!buf_hide(curbuf) && curbufIsChanged() &&
-		autowrite_r(curbuf, forceit) == FAIL {
+		autowrite(curbuf, forceit) == FAIL {
 		if p_confirm_g != 0 && p_write_g != 0 {
-			dialog_changed_r(curbuf, false)
+			dialog_changed(curbuf, false)
 		}
 		if curbufIsChanged() {
 			no_wait_return -= 1
@@ -1506,7 +1503,7 @@ ex_sort :: proc "c"(eap: rawptr) {
 			}
 
 			if change_occurred || deleted != 0 {
-				extmark_splice_r(curbuf, line1 - 1, 0, C.int(count), 0,
+				extmark_splice(curbuf, line1 - 1, 0, C.int(count), 0,
 					i64(old_count), lnum - line2, 0, i64(new_count),
 					kExtmarkUndo)
 				changed_lines_r(curbuf, line1, 0, line2 + 1, -deleted, true)
@@ -1781,8 +1778,7 @@ foreign _ {
 	ml_find_line_or_offset_r :: proc "c"(buf: rawptr, lnum: C.int, offp: rawptr, no_ff: bool) -> C.longlong ---
 	@(link_name = "appended_lines_mark")
 	appended_lines_mark_r :: proc "c"(lnum: C.int, count: C.int) ---
-	@(link_name = "extmark_move_region")
-	extmark_move_region_r :: proc "c"(buf: rawptr, start_row: C.int, start_col: C.int, start_byte: C.longlong, extent_row: C.int, extent_col: C.int, extent_byte: C.longlong, new_row: C.int, new_col: C.int, new_byte: C.longlong, undo: C.int) ---
+	// extmark_move_region now defined in extmark.odin — call directly.
 	@(link_name = "ml_delete_flags")
 	ml_delete_flags_r :: proc "c"(lnum: C.int, flags: C.int) -> C.int ---
 	// disable_fold_update (fold.odin), p_report (register.odin) — reuse.
@@ -1914,7 +1910,7 @@ do_move :: proc "c"(line1: C.int, line2: C.int, dest: C.int) -> C.int {
 			C.longlong(num_lines))
 	}
 
-	extmark_move_region_r(curbuf, line1 - 1, 0, start_byte,
+	extmark_move_region(curbuf, line1 - 1, 0, start_byte,
 		line2 - line1 + 1, 0, extent_byte,
 		dest + line_off, 0, dest_byte + byte_off,
 		kExtmarkUndo)
@@ -2020,8 +2016,7 @@ foreign _ {
 	p_stmp_g: C.int
 	@(link_name = "msg_buf")
 	msg_buf_g: [480]u8
-	@(link_name = "ui_cursor_goto")
-	ui_cursor_goto_r :: proc "c"(row: C.int, col: C.int) ---
+	// ui_cursor_goto now defined in ui.odin — call directly.
 	@(link_name = "did_check_timestamps")
 	did_check_timestamps_g: bool
 	@(link_name = "need_check_timestamps")
@@ -2253,7 +2248,7 @@ do_filter_o :: proc "c"(line1: C.int, line2: C.int, eap: rawptr, cmd: ^u8, do_in
 		// Shell command in allocated memory.
 		cmd_buf := make_filter_cmd(cstring(cmd), cstring(itmp), cstring(otmp),
 			do_in)
-		ui_cursor_goto_r(Rows - 1, 0)
+		ui_cursor_goto(Rows - 1, 0)
 
 		if do_out {
 			if u_save(line2, line2 + 1) == FAIL {
@@ -2550,7 +2545,7 @@ do_bang :: proc "c"(addr_count: C.int, eap: rawptr, forceit: bool, do_in: bool, 
 			msg_putchar('!')
 			msg_outtrans(cstring(newcmd), 0, false)
 			msg_clr_eos_r()
-			ui_cursor_goto_r(msg_row, msg_col)
+			ui_cursor_goto(msg_row, msg_col)
 
 			do_shell(newcmd, 0)
 		} else { // :range!
@@ -2592,7 +2587,7 @@ do_shell :: proc "c"(cmd: ^u8, flags: C.int) {
 	}
 
 	// Required when '\n' issued a terminal "delete line 1".
-	ui_cursor_goto_r(msg_row, msg_col)
+	ui_cursor_goto(msg_row, msg_col)
 	call_shell(cmd, flags, nil)
 	if msg_silent == 0 {
 		msg_didout_g = true
@@ -2813,7 +2808,7 @@ ex_append :: proc "c"(eap: rawptr) {
 		}
 	}
 	State = MODE_NORMAL_O
-	ui_cursor_shape_r()
+	ui_cursor_shape()
 
 	if (^C.int)(uintptr(eap) + EXARG_FORCEIT_OFF)^ != 0 {
 		ai := (^C.int)(uintptr(curbuf) + B_P_AI_OFF)^
@@ -3240,8 +3235,7 @@ B_P_WM_OFF :: 10728 // buf_T.b_p_wm (OptInt, cc-probed)
 W_P_RL_OFF :: 1024 // win_T.w_p_rl (int, cc-probed)
 
 foreign _ {
-	@(link_name = "linetabsize_col")
-	linetabsize_col_r :: proc "c"(startvcol: C.int, s: ^u8) -> C.int ---
+	// linetabsize_col now defined in plines.odin — call directly.
 }
 
 // Line length excluding trailing white space (C static, plain).
@@ -3262,7 +3256,7 @@ linelen_o :: proc "c"(has_tab: ^C.int) -> C.int {
 	}
 	savec := ([^]u8)(last)[0]
 	([^]u8)(last)[0] = 0
-	len := linetabsize_col_r(0, line) // line length
+	len := linetabsize_col(0, line) // line length
 	if has_tab != nil { // embedded TAB check
 		has_tab^ = vim_strchr(first, C.int('\t')) != nil ? 1 : 0
 	}
@@ -4752,7 +4746,7 @@ sub_engine_o :: proc "c"(eap: rawptr, timeout: proftime_T, cmdpreview_ns: C.int,
 						// extmark_splice for each match on this line.
 						for match_idx: C.int = 0; match_idx < lm_len; match_idx += 1 {
 							m := lm_items[match_idx]
-							extmark_splice_r(curbuf, m.lnum_before - 1, m.start_col,
+							extmark_splice(curbuf, m.lnum_before - 1, m.start_col,
 								m.end_lnum - m.start_lnum, m.matchcols,
 								i64(m.matchbytes),
 								m.lnum_after - m.lnum_before,
@@ -5167,7 +5161,7 @@ do_write :: proc "c"(eap: rawptr) -> C.int {
 	// The current file needs readonly/permission checks and a name;
 	// "nofile"/"nowrite" buffers cannot be written implicitly either.
 	if !done && !other &&
-		(bt_dontwrite_msg(curbuf) || check_fname_r() == FAIL ||
+		(bt_dontwrite_msg(curbuf) || check_fname() == FAIL ||
 			check_writable_o(cstring((^u8)((^rawptr)(uintptr(curbuf) + B_FFNAME)^))) == FAIL ||
 			check_readonly_o(
 				(^C.int)(uintptr(eap) + EXARG_FORCEIT_OFF), curbuf)) {

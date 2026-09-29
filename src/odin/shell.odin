@@ -145,19 +145,13 @@ foreign _ {
 	@(link_name = "smsg")
 	smsg :: proc "c" (hl_id: c.int, s: cstring, #c_vararg args: ..any) ---
 	@(link_name = "semsg")
-	semsg :: proc "c" (fmt: cstring, #c_vararg args: ..any) ---
+	semsg :: proc "c" (fmt: cstring, #c_vararg args: ..any) -> bool ---
 	@(link_name = "wait_return")
 	wait_return :: proc "c" (redraw: c.int) ---
 
 	// ui
-	@(link_name = "ui_flush")
-	ui_flush :: proc "c" () ---
-	@(link_name = "ui_busy_start")
-	ui_busy_start :: proc "c" () ---
-	@(link_name = "ui_busy_stop")
-	ui_busy_stop :: proc "c" () ---
-	@(link_name = "ui_has")
-	ui_has :: proc "c" (ext: c.int) -> bool ---
+	// ui_flush/ui_has now defined in ui.odin — call directly.
+	// ui_busy_start/stop now defined in ui.odin — call directly.
 
 	// path / charset / strings
 	@(link_name = "path_has_wildcard")

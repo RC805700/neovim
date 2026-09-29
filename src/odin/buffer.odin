@@ -490,8 +490,7 @@ foreign _ {
 	msg_delay_r :: proc "c" (ms: u64, ignoreinput: bool) ---
 	@(link_name = "uc_clear")
 	uc_clear_r :: proc "c" (gap: rawptr) ---
-	@(link_name = "extmark_free_all")
-	extmark_free_all_r :: proc "c" (buf: rawptr) ---
+	// extmark_free_all now defined in extmark.odin — call directly.
 	@(link_name = "map_clear_mode")
 	map_clear_mode_r :: proc "c" (buf: rawptr, mode: C.int, local: bool, abbr: bool) ---
 	@(link_name = "buf_free_callbacks")
@@ -609,7 +608,7 @@ free_buffer_stuff_o :: proc "c"(buf: rawptr, free_flags: C.int) {
 		buf_init_changedtick_o(buf)
 	}
 	uc_clear_r(transmute(rawptr)(uintptr(buf) + B_UCMDS_OFF)) // local user cmds
-	extmark_free_all_r(buf) // delete any extmarks
+	extmark_free_all(buf) // delete any extmarks
 	map_clear_mode_r(buf, MAP_ALL_MODES_O, true, false) // local mappings
 	map_clear_mode_r(buf, MAP_ALL_MODES_O, true, true) // local abbrevs
 	sf := (^rawptr)(uintptr(buf) + B_START_FENC_OFF)^
@@ -1292,18 +1291,14 @@ E89KILL_S :: "E89: %s will be killed (add ! to override)"
 E1546_S :: "E1546: Cannot switch to a closing buffer"
 
 foreign _ {
-	@(link_name = "dialog_changed")
-	dialog_changed_r :: proc "c" (buf: rawptr, checkall: bool) ---
-	@(link_name = "dialog_close_terminal")
-	dialog_close_terminal_r :: proc "c" (buf: rawptr) -> bool ---
+	// dialog_changed/dialog_close_terminal now defined in ex_cmds2.odin.
 	@(link_name = "p_confirm")
 	p_confirm_g: C.int
 	@(link_name = "p_write")
 	p_write_g: C.int
 	@(link_name = "terminal_running")
 	terminal_running_r :: proc "c" (term: rawptr) -> bool ---
-	@(link_name = "can_abandon")
-	can_abandon_r :: proc "c" (buf: rawptr, forceit: bool) -> bool ---
+	// can_abandon now defined in ex_cmds2.odin — call directly.
 	@(link_name = "au_new_curbuf")
 	au_new_curbuf_g: Bufref_T
 }
@@ -1419,7 +1414,7 @@ do_buffer_ext :: proc "c"(action: C.int, start: C.int, dir: C.int, count_in: C.i
 		}
 		if (flags & DOBUF_FORCEIT_O) == 0 && bufIsChanged(buf) {
 			if (p_confirm_g != 0 || (cmdmod_cmod_flags & CMOD_CONFIRM_O) != 0) && p_write_g != 0 {
-				dialog_changed_r(buf, false)
+				dialog_changed(buf, false)
 				if !bufref_valid(&bref) {
 					// Autocommand deleted buffer, oops! It's not changed now.
 					return FAIL
@@ -1438,7 +1433,7 @@ do_buffer_ext :: proc "c"(action: C.int, start: C.int, dir: C.int, count_in: C.i
 			(^rawptr)(uintptr(buf) + B_TERMINAL_OFF)^ != nil &&
 			terminal_running_r((^rawptr)(uintptr(buf) + B_TERMINAL_OFF)^) {
 			if p_confirm_g != 0 || (cmdmod_cmod_flags & CMOD_CONFIRM_O) != 0 {
-				if !dialog_close_terminal_r(buf) {
+				if !dialog_close_terminal(buf) {
 					return FAIL
 				}
 			} else {
@@ -1652,11 +1647,11 @@ do_buffer_ext :: proc "c"(action: C.int, start: C.int, dir: C.int, count_in: C.i
 		return OK
 	}
 	// Check if the current buffer may be abandoned.
-	if action == DOBUF_GOTO_O && !can_abandon_r(curbuf, (flags & DOBUF_FORCEIT_O) != 0) {
+	if action == DOBUF_GOTO_O && !can_abandon(curbuf, (flags & DOBUF_FORCEIT_O) != 0) {
 		if (p_confirm_g != 0 || (cmdmod_cmod_flags & CMOD_CONFIRM_O) != 0) && p_write_g != 0 {
 			bref2: Bufref_T
 			set_bufref(&bref2, buf)
-			dialog_changed_r(curbuf, false)
+			dialog_changed(curbuf, false)
 			if !bufref_valid(&bref2) {
 				// Autocommand deleted buffer, oops!
 				return FAIL
@@ -2728,7 +2723,7 @@ buf_clear_file :: proc "c"(buf: rawptr) {
 @(export)
 buf_clear :: proc "c"() {
 	line_count := (^C.int)(uintptr(curbuf) + B_ML_LINE_COUNT_OFF)^
-	extmark_free_all_r(curbuf) // delete any extmarks
+	extmark_free_all(curbuf) // delete any extmarks
 	for (^C.int)(uintptr(curbuf) + B_ML_FLAGS_OFF)^ & ML_EMPTY_O == 0 {
 		ml_delete_r(1)
 	}
@@ -3880,8 +3875,7 @@ foreign _ {
 	autocmd_no_enter_g: C.int
 	@(link_name = "autocmd_no_leave")
 	autocmd_no_leave_g: C.int
-	@(link_name = "autowrite")
-	autowrite_r :: proc "c"(buf: rawptr, forceit: bool) -> C.int ---
+	// autowrite now defined in ex_cmds2.odin — call directly.
 	@(link_name = "vgetc")
 	vgetc_r :: proc "c"() -> C.int ---
 }
@@ -4082,7 +4076,7 @@ ex_buffer_all :: proc "c"(eap: rawptr) {
 	for open_wins > count {
 		wbuf := (^rawptr)(uintptr(wp) + W_BUFFER_OFF)^
 		r := (buf_hide(wbuf) || !bufIsChanged(wbuf) ||
-			autowrite_r(wbuf, false) == OK) && !is_aucmd_win_r(wp)
+			autowrite(wbuf, false) == OK) && !is_aucmd_win_r(wp)
 		if !win_valid(wp) {
 			// BufWrite autocommands made the window invalid: start over.
 			wp = lastwin_g
@@ -4125,10 +4119,7 @@ foreign _ {
 	p_iconstring_g: ^u8
 	@(link_name = "build_stl_str_hl")
 	build_stl_str_hl_r :: proc "c"(wp: rawptr, out: ^u8, outlen: C.size_t, fmt: cstring, opt_idx: C.int, opt_scope: C.int, fillchar: C.int, maxwidth: C.int, hltab: rawptr, hltab_len: rawptr, tabtab: rawptr, stcp: rawptr) -> C.int ---
-	@(link_name = "ui_call_set_icon")
-	ui_call_set_icon_r :: proc "c"(icon: NvimString) ---
-	@(link_name = "ui_call_set_title")
-	ui_call_set_title_r :: proc "c"(title: NvimString) ---
+	// ui_call_set_icon/set_title now defined in ui.odin — call directly.
 	@(link_name = "utf_cp_bounds")
 	utf_cp_bounds_r :: proc "c"(base: ^u8, p: ^u8) -> CharBoundsOff ---
 	@(link_name = "p_mls")
@@ -4260,8 +4251,10 @@ value_change_o :: proc "c"(str: ^u8, last: ^^u8) -> bool {
 // Set current window title/icon on the UI.
 @(export)
 resettitle :: proc "c"() {
-	ui_call_set_icon_r(nvim_str_o(lasticon_f))
-	ui_call_set_title_r(nvim_str_o(lasttitle_f))
+	ni := nvim_str_o(lasticon_f)
+	ui_call_set_icon(Api_String{transmute(^u8)(ni.data), C.size_t(ni.size)})
+	nt := nvim_str_o(lasttitle_f)
+	ui_call_set_title(Api_String{transmute(^u8)(nt.data), C.size_t(nt.size)})
 }
 
 // ascii_isspace (ascii_defs.h:165, static inline): \t\n\v\f\r + space.
@@ -4468,8 +4461,7 @@ foreign _ {
 	fix_fname_r :: proc "c"(fname: cstring) -> ^u8 ---
 	@(link_name = "vim_chdirfile")
 	vim_chdirfile_r :: proc "c"(fname: cstring, cause: C.int) -> C.int ---
-	@(link_name = "win_get_fill")
-	win_get_fill_r :: proc "c"(wp: rawptr, lnum: C.int) -> C.int ---
+	// win_get_fill now defined in plines.odin — call directly.
 }
 
 // Close the terminal link of buffer "buf".
@@ -4631,7 +4623,7 @@ get_rel_pos :: proc "c"(wp: rawptr, buf: ^u8, buflen: C.int) -> C.int {
 	}
 
 	above := (^C.int)(uintptr(wp) + W_TOPLINE_OFF)^ - 1
-	above += win_get_fill_r(wp, (^C.int)(uintptr(wp) + W_TOPLINE_OFF)^) -
+	above += win_get_fill(wp, (^C.int)(uintptr(wp) + W_TOPLINE_OFF)^) -
 		(^C.int)(uintptr(wp) + W_TOPFILL_OFF)^
 	if (^C.int)(uintptr(wp) + W_TOPLINE_OFF)^ == 1 &&
 		(^C.int)(uintptr(wp) + W_TOPFILL_OFF)^ >= 1 {

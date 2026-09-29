@@ -234,8 +234,7 @@ _do_fstat :: proc(fd: c.int) -> (UVStat, bool) {
 
 // C functions from Neovim
 foreign _ {
-	@(link_name = "ui_call_chdir")
-	ui_call_chdir :: proc "c" (path: NvimString) ---
+	// ui_call_chdir now defined in ui.odin — call directly.
 
 	@(link_name = "save_abs_path")
 	save_abs_path :: proc "c" (name: cstring) -> cstring ---
@@ -397,7 +396,7 @@ os_chdir :: proc "c" (path: cstring) -> c.int {
 	if posix.chdir(path) == .FAIL {
 		return uv_translate_sys_error(c.int(posix.errno()))
 	}
-	ui_call_chdir(NvimString{path, c.size_t(len(string(path)))})
+	ui_call_chdir(Api_String{transmute(^u8)(path), c.size_t(len(string(path)))})
 	return 0
 }
 

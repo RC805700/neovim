@@ -172,12 +172,7 @@ foreign _ {
 	utf_ptr2CharInfo_impl_r :: proc "c"(p: ^u8, len: C.size_t) -> C.int32_t ---
 	@(link_name = "utfc_next_impl")
 	utfc_next_impl_r :: proc "c"(cur: StrCharInfo_O) -> StrCharInfo_O ---
-	@(link_name = "init_charsize_arg")
-	init_charsize_arg_r :: proc "c"(csarg: ^CharsizeArg_O, wp: rawptr, lnum: C.int, line: ^u8) -> bool ---
-	@(link_name = "charsize_regular")
-	charsize_regular_r :: proc "c"(csarg: ^CharsizeArg_O, cur: ^u8, vcol: C.int, cur_char: C.int32_t) -> CharSize_O ---
-	@(link_name = "charsize_fast")
-	charsize_fast_r :: proc "c"(csarg: ^CharsizeArg_O, cur: ^u8, vcol: C.int, cur_char: C.int32_t) -> CharSize_O ---
+	// init_charsize_arg/charsize_regular/charsize_fast now defined in plines.odin — call directly.
 	// virtual_active: undo.odin (identical sig).
 }
 
@@ -215,9 +210,9 @@ utfc_next_o :: proc "c" (cur: StrCharInfo_O) -> StrCharInfo_O {
 // plines.h:51 static inline dispatcher.
 win_charsize_o :: proc "c"(cstype: bool, vcol: C.int, ptr: ^u8, chr: C.int32_t, csarg: ^CharsizeArg_O) -> CharSize_O {
 	if cstype == K_CHARSIZE_FAST_O {
-		return charsize_fast_r(csarg, ptr, vcol, chr)
+		return charsize_fast(csarg, ptr, vcol, chr)
 	}
-	return charsize_regular_r(csarg, ptr, vcol, chr)
+	return charsize_regular(csarg, ptr, vcol, chr)
 }
 
 // ── Batch 12a: win_line engine chunk 1 (setup) ─────────────────────────────────
@@ -843,7 +838,7 @@ win_line :: proc "c"(wp: rawptr, lnum: C.int, startrow: C.int, endrow: C.int, co
 		prev_ptr := ptr
 		cs := CharSize_O{}
 		csarg := CharsizeArg_O{}
-		cstype := init_charsize_arg_r(&csarg, wp, lnum, line)
+		cstype := init_charsize_arg(&csarg, wp, lnum, line)
 		csarg.max_head_vcol = start_vcol
 		vcol := wlv.vcol
 		ci := utf_ptr2StrCharInfo_o(ptr)
@@ -1716,7 +1711,7 @@ win_line :: proc "c"(wp: rawptr, lnum: C.int, startrow: C.int, endrow: C.int, co
 
 				csarg := CharsizeArg_O{}
 				// lnum == 0: no virtual text counted here.
-				cstype := init_charsize_arg_r(&csarg, wp, 0, line)
+				cstype := init_charsize_arg(&csarg, wp, 0, line)
 				// TODO(zeertzjq): consider using CharSize.tail here.
 				wlv.n_extra = win_charsize_o(cstype, wlv.vcol, p,
 					utf_ptr2CharInfo_o(p).value, &csarg).width - 1
@@ -2299,7 +2294,7 @@ win_line :: proc "c"(wp: rawptr, lnum: C.int, startrow: C.int, endrow: C.int, co
 						win_normal_cterm_bg = C.int(norm_ae.cterm_bg_color)
 					}
 					char_is_normal_bg := false
-					if ui_rgb_attached_r() {
+					if ui_rgb_attached() {
 						char_is_normal_bg = char_ae.rgb_bg_color == win_normal_bg
 					} else {
 						char_is_normal_bg = C.int(char_ae.cterm_bg_color) == win_normal_cterm_bg
@@ -3547,8 +3542,7 @@ foreign _ {
 	normal_bg_g: C.int
 	@(link_name = "cterm_normal_bg_color")
 	cterm_normal_bg_color_g: C.int
-	@(link_name = "ui_rgb_attached")
-	ui_rgb_attached_r :: proc "c"() -> bool ---
+	// ui_rgb_attached now defined in ui.odin — call directly.
 }
 
 HLF_CUC_O :: 55

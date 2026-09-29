@@ -123,7 +123,7 @@ setcursor_mayforce :: proc "c"(wp: rawptr, force: bool) {
 
 		grid := grid_adjust((^GridView)(uintptr(wp) + W_GRID_OFF), &row, &col)
 		if grid != nil {
-			ui_grid_cursor_goto_r(grid.handle, row, col)
+			ui_grid_cursor_goto(grid.handle, row, col)
 		}
 	}
 }
@@ -823,7 +823,7 @@ showmode :: proc "c"() -> C.int {
 			restart_edit != 0 ||
 			VIsual_active)
 
-	can_show_mode := (p_ch != 0 || ui_has_r(K_UIMESSAGES_O))
+	can_show_mode := (p_ch != 0 || ui_has(K_UIMESSAGES_O))
 	if (do_mode || reg_recording != 0) && can_show_mode {
 		if skip_showmode() {
 			return 0 // show mode later
@@ -854,7 +854,7 @@ showmode :: proc "c"() -> C.int {
 			// CTRL-X in Insert mode.
 			if edit_submode_g != nil && !shortmess(SHM_COMPLETIONMENU_O) {
 				// Long messages: avoid wrap in a narrow window.
-				if ui_has_r(K_UIMESSAGES_O) {
+				if ui_has(K_UIMESSAGES_O) {
 					length = max(C.int)
 				} else {
 					length = (Rows - msg_row) * Columns - 3
@@ -1028,7 +1028,7 @@ foreign _ {
 
 // Unlike one_key prompts, the prompt message part is not stored (C static).
 cmdline_number_prompt_o :: proc "c"() -> bool {
-	return !ui_has_r(K_UIMESSAGES_O) && (State & MODE_CMDLINE_O) != 0 &&
+	return !ui_has(K_UIMESSAGES_O) && (State & MODE_CMDLINE_O) != 0 &&
 		(^rawptr)(uintptr(get_cmdline_info_r()) + CCLINE_MOUSE_USED_OFF)^ != nil
 }
 
@@ -1055,7 +1055,7 @@ screen_resize :: proc "c"(width_in: C.int, height_in: C.int) {
 	Rows = height_in
 	Columns = width_in
 	check_screensize()
-	if !ui_has_r(K_UIMESSAGES_O) {
+	if !ui_has(K_UIMESSAGES_O) {
 		// Clamp 'cmdheight'.
 		max_p_ch := Rows - min_rows(curtab) + 1
 		if p_ch > 0 && p_ch > C.long(max_p_ch) {
@@ -1081,7 +1081,7 @@ screen_resize :: proc "c"(width_in: C.int, height_in: C.int) {
 	p_lines_g = C.longlong(Rows)
 	p_columns_g = C.longlong(Columns)
 
-	ui_call_grid_resize_r(1, C.longlong(width), C.longlong(height))
+	ui_call_grid_resize(1, i64(width), i64(height))
 
 	retry_count: C.int = 0
 	resizing_autocmd_f = true
@@ -1165,7 +1165,7 @@ screen_resize :: proc "c"(width_in: C.int, height_in: C.int) {
 				}
 			}
 		}
-		ui_flush_s()
+		ui_flush()
 	}
 	resizing_screen_g = false
 }
@@ -1214,8 +1214,7 @@ foreign _ {
 	need_highlight_changed_g: bool
 	@(link_name = "cmdline_screen_cleared")
 	cmdline_screen_cleared_r :: proc "c"() ---
-	@(link_name = "ui_call_msg_clear")
-	ui_call_msg_clear_r :: proc "c"() ---
+	// ui_call_msg_clear now defined in ui.odin — call directly.
 	@(link_name = "decor_providers_start")
 	decor_providers_start_r :: proc "c"() ---
 	@(link_name = "decor_providers_invoke_buf")
@@ -1513,7 +1512,7 @@ update_screen :: proc "c"() -> C.int {
 		was_invalidated := false
 
 		// UPD_CLEAR already handled.
-		if type_ == UPD_NOT_VALID && !ui_has_r(K_UIMULTIGRID_O) && msg_scrolled != 0 {
+		if type_ == UPD_NOT_VALID && !ui_has(K_UIMULTIGRID_O) && msg_scrolled != 0 {
 			was_invalidated = ui_comp_set_screen_valid_r(false)
 			for i := valid; i < Rows - C.int(p_ch); i += 1 {
 				grid_clear_line(dg, dg.line_offset[uintptr(i)], Columns, false)
@@ -1570,8 +1569,8 @@ update_screen :: proc "c"() -> C.int {
 	if type_ == UPD_CLEAR_O { // clear screen first
 		screenclear() // resets clear_cmdline; sets UPD_NOT_VALID per window
 		cmdline_screen_cleared_r() // clear external cmdline state
-		if ui_has_r(K_UIMESSAGES_O) {
-			ui_call_msg_clear_r()
+		if ui_has(K_UIMESSAGES_O) {
+			ui_call_msg_clear()
 		}
 		type_ = UPD_NOT_VALID
 		// must_redraw may be set indirectly; avoid another redraw later.
@@ -1582,7 +1581,7 @@ update_screen :: proc "c"() -> C.int {
 	}
 
 	// Clear space on default_grid for the message area.
-	if type_ == UPD_NOT_VALID && clear_cmdline_g && !ui_has_r(K_UIMESSAGES_O) {
+	if type_ == UPD_NOT_VALID && clear_cmdline_g && !ui_has(K_UIMESSAGES_O) {
 		grid_clear((^GridView)(&default_gridview_u8), Rows - C.int(p_ch), Rows, 0, Columns, 0)
 	}
 
@@ -1761,7 +1760,7 @@ update_screen :: proc "c"() -> C.int {
 	decor_providers_invoke_end_r()
 
 	// Cmdline cleared/not drawn/mode last drawn (not always ext cmdline).
-	if !ui_has_r(K_UICMDLINE_O) {
+	if !ui_has(K_UICMDLINE_O) {
 		cmdline_was_last_drawn_g = false
 	}
 
@@ -1819,20 +1818,16 @@ foreign _ {
 	search_hl_has_cursor_lnum_g: C.int
 	@(link_name = "buf_signcols_count_range")
 	buf_signcols_count_range_r :: proc "c"(buf: rawptr, row1: C.int, row2: C.int, add: C.int, clear: C.int) ---
-	@(link_name = "ui_call_win_extmark")
-	ui_call_win_extmark_r :: proc "c"(grid: C.longlong, win: C.int, ns_id: C.longlong, mark_id: C.longlong, row: C.longlong, col: C.longlong) ---
+	// ui_call_win_extmark now defined in ui.odin — call directly.
 	@(link_name = "syntax_end_parsing")
 	syntax_end_parsing_r :: proc "c"(wp: rawptr, lnum: C.int) ---
 	@(link_name = "syntax_check_changed")
 	syntax_check_changed_r :: proc "c"(lnum: C.int) -> bool ---
-	@(link_name = "plines_m_win")
-	plines_m_win_r :: proc "c"(wp: rawptr, first: C.int, last: C.int, max: C.int) -> C.int ---
-	@(link_name = "win_may_fill")
-	win_may_fill_r :: proc "c"(wp: rawptr) -> bool ---
+	// plines_m_win now defined in plines.odin — call directly.
+	// win_may_fill now defined in plines.odin — call directly.
 	@(link_name = "plines_correct_topline")
 	plines_correct_topline_r :: proc "c"(wp: rawptr, lnum: C.int, nextp: ^C.int, limit_winheight: bool, foldedp: ^bool) -> C.int ---
-	@(link_name = "getvcols")
-	getvcols_r :: proc "c"(wp: rawptr, pos1: ^Pos_T, pos2: ^Pos_T, left: ^C.int, right: ^C.int, flags: C.int) ---
+	// getvcols now defined in plines.odin — call directly.
 }
 
 // Suspended-terminal "[Process suspended]" statics (drawscreen.c:1495-1499).
@@ -2210,11 +2205,11 @@ win_update :: proc "c"(wp: rawptr) {
 				j = lines0[0].wl_lnum - (^C.int)(uintptr(wp) + W_TOPLINE_OFF)^
 			}
 			if j < (^C.int)(uintptr(wp) + W_VIEW_HEIGHT_OFF)^ - 2 { // not too far
-				i := plines_m_win_r(wp, (^C.int)(uintptr(wp) + W_TOPLINE_OFF)^,
+				i := plines_m_win(wp, (^C.int)(uintptr(wp) + W_TOPLINE_OFF)^,
 					lines0[0].wl_lnum - 1, (^C.int)(uintptr(wp) + W_VIEW_HEIGHT_OFF)^)
 				// Extra lines for previously invisible filler.
 				if lines0[0].wl_lnum != (^C.int)(uintptr(wp) + W_TOPLINE_OFF)^ {
-					i += win_get_fill_r(wp, lines0[0].wl_lnum) -
+					i += win_get_fill(wp, lines0[0].wl_lnum) -
 						(^C.int)(uintptr(wp) + W_OLD_TOPFILL_OFF)^
 				}
 				if i != 0 && i < (^C.int)(uintptr(wp) + W_VIEW_HEIGHT_OFF)^ - 2 {
@@ -2275,7 +2270,7 @@ win_update :: proc "c"(wp: rawptr) {
 				if lines[0].wl_lnum == (^C.int)(uintptr(wp) + W_TOPLINE_OFF)^ {
 					row2 += (^C.int)(uintptr(wp) + W_OLD_TOPFILL_OFF)^
 				} else {
-					row2 += win_get_fill_r(wp, (^C.int)(uintptr(wp) + W_TOPLINE_OFF)^)
+					row2 += win_get_fill(wp, (^C.int)(uintptr(wp) + W_TOPLINE_OFF)^)
 				}
 				// ... but not new filler lines.
 				row2 -= (^C.int)(uintptr(wp) + W_TOPFILL)^
@@ -2311,7 +2306,7 @@ win_update :: proc "c"(wp: rawptr) {
 					}
 
 					// Fix first entry for top filler when not updated below.
-					if win_may_fill_r(wp) && bot_start > 0 {
+					if win_may_fill(wp) && bot_start > 0 {
 						lines[0].wl_size = u16(plines_correct_topline_r(wp,
 							(^C.int)(uintptr(wp) + W_TOPLINE_OFF)^, nil, true, nil))
 					}
@@ -2388,7 +2383,7 @@ win_update :: proc "c"(wp: rawptr) {
 			if VIsual_mode == Ctrl_V {
 				fromc: C.int
 				toc: C.int
-				getvcols_r(wp, &VIsual_g,
+				getvcols(wp, &VIsual_g,
 					(^Pos_T)(uintptr(curwin) + W_CURSOR_OFF), &fromc, &toc, GETVCOL_END_EXCL_LBR_O)
 				toc += 1
 				// To end of line unless 'virtualedit' has "block".
@@ -2593,7 +2588,7 @@ win_update :: proc "c"(wp: rawptr) {
 
 			// Concealed line without filler: skip it.
 			concealed := decor_conceal_line_r(wp, lnum - 1, false)
-			if concealed && win_get_fill_r(wp, lnum) == 0 {
+			if concealed && win_get_fill(wp, lnum) == 0 {
 				if lnum == mod_top && lnum < mod_bot {
 					if foldinfo.fi_lines != 0 {
 						mod_top += foldinfo.fi_lines
@@ -2761,7 +2756,7 @@ win_update :: proc "c"(wp: rawptr) {
 				(dy_flags_g & (K_OPT_DY_LASTLINE_O | K_OPT_DY_TRUNCATE_O)) == 0 &&
 				srow + C.int(lines[uintptr(idx)].wl_size) >
 					(^C.int)(uintptr(wp) + W_VIEW_HEIGHT_OFF)^ &&
-				win_get_fill_r(wp, lnum) == 0 {
+				win_get_fill(wp, lnum) == 0 {
 				// Line won't fit: draw nothing, "@  " lines below.
 				row = (^C.int)(uintptr(wp) + W_VIEW_HEIGHT_OFF)^ + 1
 			} else {
@@ -2828,7 +2823,7 @@ win_update :: proc "c"(wp: rawptr) {
 			if row > (^C.int)(uintptr(wp) + W_VIEW_HEIGHT_OFF)^ { // past grid
 				// Size of the too-long line may be needed later.
 				if dollar_vcol == -1 || !is_curline {
-					lines[uintptr(idx)].wl_size = u16(plines_win_r(wp, lnum, true))
+					lines[uintptr(idx)].wl_size = u16(plines_win(wp, lnum, true))
 				}
 				idx += 1
 				break
@@ -2923,7 +2918,7 @@ win_update :: proc "c"(wp: rawptr) {
 		if lnum == (^C.int)(uintptr(wp) + W_TOPLINE_OFF)^ {
 			// Single line that does not fit (editable, don't overwrite).
 			(^C.int)(uintptr(wp) + W_BOTLINE_OFF)^ = lnum + 1
-		} else if win_get_fill_r(wp, lnum) >=
+		} else if win_get_fill(wp, lnum) >=
 			(^C.int)(uintptr(wp) + W_VIEW_HEIGHT_OFF)^ - srow {
 			// Window ends in filler lines.
 			(^C.int)(uintptr(wp) + W_BOTLINE_OFF)^ = lnum
@@ -2965,7 +2960,7 @@ win_update :: proc "c"(wp: rawptr) {
 	} else {
 		if eof { // end of the file
 			(^C.int)(uintptr(wp) + W_BOTLINE_OFF)^ = line_count + 1
-			j := win_get_fill_r(wp, (^C.int)(uintptr(wp) + W_BOTLINE_OFF)^)
+			j := win_get_fill(wp, (^C.int)(uintptr(wp) + W_BOTLINE_OFF)^)
 			if j > 0 && !(^bool)(uintptr(wp) + W_BOTFILL_OFF)^ &&
 				row < (^C.int)(uintptr(wp) + W_VIEW_HEIGHT_OFF)^ {
 				// Filler text below last line (win_line handles
@@ -3027,9 +3022,9 @@ win_update :: proc "c"(wp: rawptr) {
 	we_grid := (^ScreenGrid)(uintptr(wp) + W_GRID_ALLOC_OFF)
 	for we_i: C.size_t = 0; we_i < we_n; we_i += 1 {
 		m := win_extmark_arr_g.items[uintptr(we_i)]
-		ui_call_win_extmark_r(C.longlong(we_grid.handle),
-			(^C.int)(uintptr(wp) + W_HANDLE_OFF)^, C.longlong(m.ns_id),
-			C.longlong(m.mark_id), C.longlong(m.win_row), C.longlong(m.win_col))
+		ui_call_win_extmark(i64(we_grid.handle),
+			i64((^C.int)(uintptr(wp) + W_HANDLE_OFF)^), i64(m.ns_id),
+			i64(m.mark_id), i64(m.win_row), i64(m.win_col))
 	}
 
 	if dollar_vcol == -1 || wp != curwin {
@@ -3091,8 +3086,7 @@ foreign _ {
 	tab_page_click_defs_size_g: C.size_t
 	@(link_name = "stl_alloc_click_defs")
 	stl_alloc_click_defs_r :: proc "c"(cdp: rawptr, width: C.int, size: ^C.size_t) -> rawptr ---
-	@(link_name = "ui_call_grid_clear")
-	ui_call_grid_clear_r :: proc "c"(grid: C.longlong) ---
+	// ui_call_grid_clear now defined in ui.odin — call directly.
 	@(link_name = "ui_comp_set_screen_valid")
 	ui_comp_set_screen_valid_r :: proc "c"(valid: bool) -> bool ---
 	@(link_name = "cmdline_was_last_drawn")
@@ -3157,7 +3151,7 @@ screenclear :: proc "c"() {
 		grid_clear_line(dg, dg.line_offset[uintptr(i)], dg.cols, true)
 	}
 
-	ui_call_grid_clear_r(1) // clear the display
+	ui_call_grid_clear(1) // clear the display
 	ui_comp_set_screen_valid_r(true)
 
 	ns_hl_fast_g = -1

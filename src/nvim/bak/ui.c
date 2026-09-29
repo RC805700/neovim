@@ -118,6 +118,7 @@ static void ui_log(const char *funname)
 
 #include "ui_events_call.generated.h"
 
+#pragma weak ui_init
 void ui_init(void)
 {
   default_grid.handle = 1;
@@ -139,6 +140,7 @@ void ui_free_all_mem(void)
 #endif
 
 /// Returns true if any `rgb=true` UI is attached.
+#pragma weak ui_rgb_attached
 bool ui_rgb_attached(void)
 {
   if (p_tgc) {
@@ -157,6 +159,7 @@ bool ui_rgb_attached(void)
 }
 
 /// Returns true if a GUI is attached.
+#pragma weak ui_gui_attached
 bool ui_gui_attached(void)
 {
   for (size_t i = 0; i < ui_count; i++) {
@@ -169,6 +172,7 @@ bool ui_gui_attached(void)
 }
 
 /// Returns true if any UI requested `override=true`.
+#pragma weak ui_override
 bool ui_override(void)
 {
   for (size_t i = 0; i < ui_count; i++) {
@@ -180,11 +184,13 @@ bool ui_override(void)
 }
 
 /// Gets the number of UIs connected to this server.
+#pragma weak ui_active
 size_t ui_active(void)
 {
   return ui_count;
 }
 
+#pragma weak ui_refresh
 void ui_refresh(void)
 {
   if (ui_client_channel_id) {
@@ -251,6 +257,7 @@ void ui_refresh(void)
   pending_has_mouse = -1;
 }
 
+#pragma weak ui_pum_get_height
 int ui_pum_get_height(void)
 {
   int pum_height = 0;
@@ -264,6 +271,7 @@ int ui_pum_get_height(void)
   return pum_height;
 }
 
+#pragma weak ui_pum_get_pos
 bool ui_pum_get_pos(double *pwidth, double *pheight, double *prow, double *pcol)
 {
   for (size_t i = 0; i < ui_count; i++) {
@@ -284,11 +292,13 @@ static void ui_refresh_event(void **argv)
   ui_refresh();
 }
 
+#pragma weak ui_schedule_refresh
 void ui_schedule_refresh(void)
 {
   multiqueue_put(resize_events, ui_refresh_event, NULL);
 }
 
+#pragma weak ui_default_colors_set
 void ui_default_colors_set(void)
 {
   // Throttle setting of default colors at startup, so it only happens once
@@ -308,6 +318,7 @@ static void ui_may_set_default_colors(void)
   }
 }
 
+#pragma weak ui_busy_start
 void ui_busy_start(void)
 {
   if (!(busy++)) {
@@ -315,6 +326,7 @@ void ui_busy_start(void)
   }
 }
 
+#pragma weak ui_busy_stop
 void ui_busy_stop(void)
 {
   if (!(--busy)) {
@@ -325,6 +337,7 @@ void ui_busy_stop(void)
 /// Emit a bell or visualbell as a warning
 ///
 /// val is one of the OptBoFlags values, e.g., kOptBoFlagOperator
+#pragma weak vim_beep
 void vim_beep(unsigned val)
 {
   called_vim_beep = true;
@@ -364,6 +377,7 @@ void vim_beep(unsigned val)
 
 /// Trigger UIEnter for all attached UIs.
 /// Used on startup after VimEnter.
+#pragma weak do_autocmd_uienter_all
 void do_autocmd_uienter_all(void)
 {
   for (size_t i = 0; i < ui_count; i++) {
@@ -371,11 +385,13 @@ void do_autocmd_uienter_all(void)
   }
 }
 
+#pragma weak ui_can_attach_more
 bool ui_can_attach_more(void)
 {
   return ui_count < MAX_UI_COUNT;
 }
 
+#pragma weak ui_attach_impl
 void ui_attach_impl(RemoteUI *ui, uint64_t chanid)
 {
   if (ui_count >= MAX_UI_COUNT) {
@@ -412,6 +428,7 @@ void ui_attach_impl(RemoteUI *ui, uint64_t chanid)
   do_autocmd_uienter(chanid, true);
 }
 
+#pragma weak ui_detach_impl
 void ui_detach_impl(RemoteUI *ui, uint64_t chanid)
 {
   if (ui_count > MAX_UI_COUNT) {
@@ -451,6 +468,7 @@ void ui_detach_impl(RemoteUI *ui, uint64_t chanid)
   do_autocmd_uienter(chanid, false);
 }
 
+#pragma weak ui_set_ext_option
 void ui_set_ext_option(RemoteUI *ui, UIExtension ext, bool active)
 {
   if (ext < kUIGlobalCount) {
@@ -465,6 +483,7 @@ void ui_set_ext_option(RemoteUI *ui, UIExtension ext, bool active)
   }
 }
 
+#pragma weak ui_line
 void ui_line(ScreenGrid *grid, int row, bool invalid_row, int startcol, int endcol, int clearcol,
              int clearattr, bool wrap)
 {
@@ -495,11 +514,13 @@ void ui_line(ScreenGrid *grid, int row, bool invalid_row, int startcol, int endc
   }
 }
 
+#pragma weak ui_cursor_goto
 void ui_cursor_goto(int new_row, int new_col)
 {
   ui_grid_cursor_goto(DEFAULT_GRID_HANDLE, new_row, new_col);
 }
 
+#pragma weak ui_grid_cursor_goto
 void ui_grid_cursor_goto(handle_T grid_handle, int new_row, int new_col)
 {
   if (new_row == cursor_row
@@ -515,6 +536,7 @@ void ui_grid_cursor_goto(handle_T grid_handle, int new_row, int new_col)
 }
 
 /// moving the cursor grid will implicitly move the cursor
+#pragma weak ui_check_cursor_grid
 void ui_check_cursor_grid(handle_T grid_handle)
 {
   if (cursor_grid_handle == grid_handle) {
@@ -522,21 +544,25 @@ void ui_check_cursor_grid(handle_T grid_handle)
   }
 }
 
+#pragma weak ui_mode_info_set
 void ui_mode_info_set(void)
 {
   pending_mode_info_update = true;
 }
 
+#pragma weak ui_current_row
 int ui_current_row(void)
 {
   return cursor_row;
 }
 
+#pragma weak ui_current_col
 int ui_current_col(void)
 {
   return cursor_col;
 }
 
+#pragma weak ui_flush
 void ui_flush(void)
 {
   assert(!ui_client_channel_id);
@@ -609,6 +635,7 @@ void ui_flush(void)
 ///
 /// TODO(bfredl): precompute the State -> active mapping when 'mouse' changes,
 /// then this can be checked directly in ui_flush()
+#pragma weak ui_check_mouse
 void ui_check_mouse(void)
 {
   has_mouse = false;
@@ -642,6 +669,7 @@ void ui_check_mouse(void)
 // - 'a' is in 'mouse' and "mode" is in MOUSE_A, or
 // - the current buffer is a help file and 'h' is in 'mouse' and we are in a
 //   normal editing mode (not at hit-return message).
+#pragma weak ui_mouse_has
 bool ui_mouse_has(int mode)
 {
   for (char *p = p_mouse; *p; p++) {
@@ -673,6 +701,7 @@ bool ui_mouse_has(int mode)
 /// Check if current mode has changed.
 ///
 /// May update the shape of the cursor.
+#pragma weak ui_cursor_shape_no_check_conceal
 void ui_cursor_shape_no_check_conceal(void)
 {
   if (!full_screen) {
@@ -690,6 +719,7 @@ void ui_cursor_shape_no_check_conceal(void)
 ///
 /// May update the shape of the cursor.
 /// With concealing on, may conceal or unconceal the cursor line.
+#pragma weak ui_cursor_shape
 void ui_cursor_shape(void)
 {
   ui_cursor_shape_no_check_conceal();
@@ -716,11 +746,13 @@ static bool ui_cursor_is_behind_floatwin(void)
 }
 
 /// Returns true if the given UI extension is enabled.
+#pragma weak ui_has
 bool ui_has(UIExtension ext)
 {
   return ui_ext[ext];
 }
 
+#pragma weak ui_array
 Array ui_array(Arena *arena)
 {
   Array all_uis = arena_array(arena, ui_count);
@@ -754,6 +786,7 @@ Array ui_array(Arena *arena)
   return all_uis;
 }
 
+#pragma weak ui_grid_resize
 void ui_grid_resize(handle_T grid_handle, int width, int height, Error *err)
 {
   if (grid_handle == DEFAULT_GRID_HANDLE) {
@@ -787,6 +820,7 @@ static void ui_attach_error(uint32_t ns_id, const char *name, const char *msg)
   msg_schedule_semsg_multiline("Error in \"%s\" UI event handler (ns=%s):\n%s", name, ns, msg);
 }
 
+#pragma weak ui_call_event
 void ui_call_event(char *name, Array args)
 {
   // Don't impose textlock restrictions upon UI event handlers.
@@ -844,6 +878,7 @@ static void free_ui_event_callback(UIEventCallback *event_cb)
   xfree(event_cb);
 }
 
+#pragma weak ui_add_cb
 void ui_add_cb(uint32_t ns_id, LuaRef cb, bool *ext_widgets)
 {
   UIEventCallback *event_cb = xcalloc(1, sizeof(UIEventCallback));
@@ -863,6 +898,7 @@ void ui_add_cb(uint32_t ns_id, LuaRef cb, bool *ext_widgets)
   ui_refresh();
 }
 
+#pragma weak ui_remove_cb
 void ui_remove_cb(uint32_t ns_id, bool checkerr)
 {
   UIEventCallback *item = pmap_get(uint32_t)(&ui_event_cbs, ns_id);

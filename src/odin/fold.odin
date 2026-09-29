@@ -11,7 +11,7 @@
 //   buf_T: b_p_cms@10232
 //
 // Reuses package-wide: Pos_T/Garray/TriState(main,input), mark.odin FFI
-// (ml_get*, utfc_ptr2len, setpcmark), register.odin helpers (u_save, extmark_splice_cols_r,
+// (ml_get*, utfc_ptr2len, setpcmark), register.odin helpers (u_save, extmark_splice_cols,
 // changed_lines_r, buf_updates_send_changes), os_lang skipwhite, main.odin VV_*.
 
 package main
@@ -165,8 +165,7 @@ foreign _ {
 	diff_lnum_win_r :: proc "c" (lnum: C.int, wp: rawptr) -> C.int ---
 	@(link_name = "diff_infold")
 	diff_infold_r :: proc "c" (wp: rawptr, lnum: C.int) -> bool ---
-	@(link_name = "plines_win_nofold")
-	plines_win_nofold_r :: proc "c" (wp: rawptr, lnum: C.int) -> C.int ---
+	// plines_win_nofold now defined in plines.odin — call directly.
 	@(link_name = "get_indent_buf")
 	get_indent_buf_r :: proc "c" (buf: rawptr, lnum: C.int) -> C.int ---
 	@(link_name = "get_sw_value")
@@ -1429,7 +1428,7 @@ checkSmall :: proc "c" (wp: rawptr, fp: ^Fold_T, lnum_off: C.int) {
 	} else {
 		count: C.int = 0
 		for n: C.int = 0; n < fp.fd_len; n += 1 {
-			count += plines_win_nofold_r(wp, fp.fd_top + lnum_off + n)
+			count += plines_win_nofold(wp, fp.fd_top + lnum_off + n)
 			if i64(count) > w_i64(wp, W_P_FML) {
 				fp.fd_small = .kFalse
 				return
@@ -1497,7 +1496,7 @@ foldAddMarker :: proc "c" (buf: rawptr, pos: Pos_T, marker: ^u8, markerlen: C.si
 	}
 	ml_replace_buf_r(buf, lnum, newline, false, false)
 	if added != 0 {
-		extmark_splice_cols_r(buf, lnum - 1, C.int(line_len), 0, C.int(added), kExtmarkUndo)
+		extmark_splice_cols(buf, lnum - 1, C.int(line_len), 0, C.int(added), kExtmarkUndo)
 	}
 }
 
@@ -1551,7 +1550,7 @@ foldDelMarker :: proc "c" (buf: rawptr, lnum: C.int, marker: ^u8, markerlen: C.s
 			libc.memcpy((^u8)(uintptr(newline) + (uintptr(p) - uintptr(line))), transmute(rawptr)((^u8)(uintptr(p)+uintptr(length))),
 				libc.strlen(transmute(cstring)((^u8)(uintptr(p)+uintptr(length)))) + 1)
 			ml_replace_buf_r(buf, lnum, newline, false, false)
-			extmark_splice_cols_r(buf, lnum - 1, C.int(uintptr(p) - uintptr(line)),
+			extmark_splice_cols(buf, lnum - 1, C.int(uintptr(p) - uintptr(line)),
 				C.int(length), 0, kExtmarkUndo)
 		}
 		break

@@ -546,8 +546,7 @@ W_CONFIG_BORDER_OFF :: 10624 // w_config.border (WinConfig+64, bool)
 WLINE_SIZE_O :: 16
 
 foreign _ {
-	@(link_name = "ui_call_grid_resize")
-	ui_call_grid_resize_r :: proc "c"(grid: C.longlong, width: C.longlong, height: C.longlong) ---
+	// ui_call_grid_resize now defined in ui.odin — call directly.
 	@(link_name = "resizing_screen")
 	resizing_screen_g: bool
 }
@@ -613,9 +612,9 @@ win_grid_alloc :: proc "c"(wp: rawptr) {
 
 	// Send grid resize event when resized, on screen_resize, or multigrid.
 	if (resizing_screen_g || was_resized) && want_allocation {
-		ui_call_grid_resize_r(C.longlong(grid_allocated.handle),
-			C.longlong(grid_allocated.cols), C.longlong(grid_allocated.rows))
-		ui_check_cursor_grid_r(grid_allocated.handle)
+		ui_call_grid_resize(i64(grid_allocated.handle),
+			i64(grid_allocated.cols), i64(grid_allocated.rows))
+		ui_check_cursor_grid(grid_allocated.handle)
 	}
 }
 
@@ -636,8 +635,7 @@ get_win_by_grid_handle :: proc "c"(handle: C.int) -> rawptr {
 // ── Batch 2e: scroll cluster (assign_handle/ins/del_lines/linecopy) ─────────
 
 foreign _ {
-	@(link_name = "ui_call_grid_scroll")
-	ui_call_grid_scroll_r :: proc "c"(grid_handle: C.int, top: C.int, bot: C.int, left: C.int, right: C.int, rows: C.int, cols: C.int) ---
+	// ui_call_grid_scroll now defined in ui.odin — call directly.
 }
 
 // Last assigned grid handle (was C static in grid_assign_handle).
@@ -705,7 +703,7 @@ grid_ins_lines :: proc "c"(grid: ^ScreenGrid, row: C.int, line_count: C.int, end
 	}
 
 	if !grid.throttled {
-		ui_call_grid_scroll_r(grid.handle, row, end, col, col + width, -line_count, 0)
+		ui_call_grid_scroll(i64(grid.handle), i64(row), i64(end), i64(col), i64(col + width), i64(-line_count), 0)
 	}
 }
 
@@ -748,7 +746,7 @@ grid_del_lines :: proc "c"(grid: ^ScreenGrid, row: C.int, line_count: C.int, end
 	}
 
 	if !grid.throttled {
-		ui_call_grid_scroll_r(grid.handle, row, end, col, col + width, line_count, 0)
+		ui_call_grid_scroll(i64(grid.handle), i64(row), i64(end), i64(col), i64(col + width), i64(line_count), 0)
 	}
 }
 
@@ -761,8 +759,7 @@ grid_del_lines :: proc "c"(grid: ^ScreenGrid, row: C.int, line_count: C.int, end
 foreign _ {
 	@(link_name = "hl_combine_attr")
 	hl_combine_attr_r :: proc "c"(char_attr: C.int, prim_attr: C.int) -> C.int ---
-	@(link_name = "ui_line")
-	ui_line_r :: proc "c"(grid: ^ScreenGrid, row: C.int, invalid_row: bool, startcol: C.int, endcol: C.int, clearcol: C.int, clearattr: C.int, wrap: bool) ---
+	// ui_line now defined in ui.odin — call directly.
 	// default_grid: reuse window.odin's default_grid_u8 (address-of only).
 }
 
@@ -989,7 +986,7 @@ grid_put_linebuf :: proc "c"(grid: ^ScreenGrid, row: C.int, coloff: C.int, col: 
 			// Cannot draw now or too small for a separate clear event.
 			start_dirty = clear_dirty_start
 		} else {
-			ui_line_r(grid, row, invalid_row, coloff + clear_dirty_start,
+			ui_line(grid, row, invalid_row, coloff + clear_dirty_start,
 				coloff + clear_dirty_start, coloff + clear_end, ca,
 				(flags & SLF_WRAP_O) != 0)
 		}
@@ -1007,7 +1004,7 @@ grid_put_linebuf :: proc "c"(grid: ^ScreenGrid, row: C.int, coloff: C.int, col: 
 
 	if clear_end > start_dirty {
 		if !grid.throttled {
-			ui_line_r(grid, row, invalid_row, coloff + start_dirty,
+			ui_line(grid, row, invalid_row, coloff + start_dirty,
 				coloff + end_dirty, coloff + clear_end, ca,
 				(flags & SLF_WRAP_O) != 0)
 		} else if grid.dirty_col != nil {
@@ -1040,8 +1037,7 @@ foreign _ {
 	utfc_ptr2len_len_r :: proc "c"(p: cstring, size: C.int) -> C.int ---
 	@(link_name = "utfc_ptrlen2schar")
 	utfc_ptrlen2schar_r :: proc "c"(p: cstring, len: C.int, firstc: ^C.int) -> u32 ---
-	@(link_name = "ui_grid_cursor_goto")
-	ui_grid_cursor_goto_r :: proc "c"(grid_handle: C.int, new_row: C.int, new_col: C.int) ---
+	// ui_grid_cursor_goto now defined in ui.odin — call directly.
 }
 
 // C static: shared scratch width of all grids (written by grid_alloc,
@@ -1271,7 +1267,7 @@ grid_line_clear_end :: proc "c"(start_col: C.int, end_col: C.int, bg_attr: C.int
 // Move the cursor to a position in the currently rendered line.
 @(export)
 grid_line_cursor_goto :: proc "c"(col: C.int) {
-	ui_grid_cursor_goto_r(grid_line_grid_f.handle, grid_line_row_f, col)
+	ui_grid_cursor_goto(grid_line_grid_f.handle, grid_line_row_f, col)
 }
 
 @(export)

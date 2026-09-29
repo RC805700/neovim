@@ -104,12 +104,7 @@ foreign _ {
 	msg_home_replace_r :: proc "c" (fname: ^u8) ---
 	@(link_name = "msg_outtrans")
 	msg_outtrans_s :: proc "c" (str: cstring, hl_id: C.int, hist: bool) -> C.int ---
-	@(link_name = "ui_flush")
-	ui_flush_s :: proc "c" () ---
-	@(link_name = "ui_cursor_shape")
-	ui_cursor_shape_r :: proc "c" () ---
-	@(link_name = "vim_beep")
-	vim_beep_r :: proc "c" (val: C.int) ---
+	// ui_flush/ui_cursor_shape/vim_beep now defined in ui.odin — call directly.
 	// getvcol — PORTED (cursor.odin).
 
 	// profile_setlimit/passed_limit — PORTED (profile.odin).
@@ -1941,7 +1936,7 @@ do_search :: proc "c"(
 
 			msgbufsize: C.size_t
 			if !shortmess(SHM_SEARCHCOUNT) || cmd_silent {
-				if ui_has_s(kUIMessages_S) {
+				if ui_has(kUIMessages_S) {
 					msgbufsize = 0
 				} else if msg_scrolled != 0 && !cmd_silent {
 					msgbufsize = C.size_t((Rows - msg_row) * Columns - 1)
@@ -2002,7 +1997,7 @@ do_search :: proc "c"(
 				msg_check_r()
 
 				gotocmdline_r(false)
-				ui_flush_s()
+				ui_flush()
 				ui_busy_stop()
 				msg_nowait = true
 			}
@@ -2147,8 +2142,7 @@ do_search :: proc "c"(
 }
 
 foreign _ {
-	@(link_name = "ui_has")
-	ui_has_s :: proc "c" (cap: C.int) -> bool ---
+	// ui_has now defined in ui.odin — call directly.
 }
 
 kUIMessages_S :: 4 // ui_defs.h kUICmdline=0..kUIMessages=4
@@ -2782,7 +2776,7 @@ showmatch :: proc "c"(c: C.int) {
 
 	lpos := findmatch(nil, 0)
 	if lpos == nil {
-		vim_beep_r(kOptBoFlagShowmatch_S)
+		vim_beep(C.uint(kOptBoFlagShowmatch_S))
 		return
 	}
 
@@ -2813,7 +2807,7 @@ showmatch :: proc "c"(c: C.int) {
 
 	save_state := State
 	State = MODE_SHOWMATCH_VAL
-	ui_cursor_shape_r()
+	ui_cursor_shape()
 	win_cursor_r(curwin)^ = mpos
 	// *so = 0; *siso = 0 — via offsets; save first
 	save_so := w_p_so_r(curwin)
@@ -2823,7 +2817,7 @@ showmatch :: proc "c"(c: C.int) {
 	show_cursor_info_later(false)
 	_ = update_screen()
 	setcursor()
-	ui_flush_s()
+	ui_flush()
 	dollar_vcol = save_dollar_vcol
 
 	if _vim_strchr(transmute(cstring)(p_cpo), CPO_SHOWMATCH) != nil {
@@ -2835,7 +2829,7 @@ showmatch :: proc "c"(c: C.int) {
 	w_p_so_set(curwin, save_so)
 	w_p_siso_set(curwin, save_siso)
 	State = save_state
-	ui_cursor_shape_r()
+	ui_cursor_shape()
 }
 
 w_virtcol_add :: proc "c"(wp: rawptr, n: C.int) {

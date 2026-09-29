@@ -54,46 +54,55 @@
 static const char e_compiler_not_supported_str[]
   = N_("E666: Compiler not supported: %s");
 
+#pragma weak ex_ruby
 void ex_ruby(exarg_T *eap)
 {
   script_host_execute("ruby", eap);
 }
 
+#pragma weak ex_rubyfile
 void ex_rubyfile(exarg_T *eap)
 {
   script_host_execute_file("ruby", eap);
 }
 
+#pragma weak ex_rubydo
 void ex_rubydo(exarg_T *eap)
 {
   script_host_do_range("ruby", eap);
 }
 
+#pragma weak ex_python3
 void ex_python3(exarg_T *eap)
 {
   script_host_execute("python3", eap);
 }
 
+#pragma weak ex_py3file
 void ex_py3file(exarg_T *eap)
 {
   script_host_execute_file("python3", eap);
 }
 
+#pragma weak ex_pydo3
 void ex_pydo3(exarg_T *eap)
 {
   script_host_do_range("python3", eap);
 }
 
+#pragma weak ex_perl
 void ex_perl(exarg_T *eap)
 {
   script_host_execute("perl", eap);
 }
 
+#pragma weak ex_perlfile
 void ex_perlfile(exarg_T *eap)
 {
   script_host_execute_file("perl", eap);
 }
 
+#pragma weak ex_perldo
 void ex_perldo(exarg_T *eap)
 {
   script_host_do_range("perl", eap);
@@ -103,6 +112,7 @@ void ex_perldo(exarg_T *eap)
 /// Careful: autocommands may make "buf" invalid!
 ///
 /// @return FAIL for failure, OK otherwise
+#pragma weak autowrite
 int autowrite(buf_T *buf, bool forceit)
 {
   bufref_T bufref;
@@ -125,6 +135,7 @@ int autowrite(buf_T *buf, bool forceit)
 }
 
 /// Flush all buffers, except the ones that are readonly or are never written.
+#pragma weak autowrite_all
 void autowrite_all(void)
 {
   if (!(p_aw || p_awa) || !p_write) {
@@ -146,6 +157,7 @@ void autowrite_all(void)
 
 /// @return  true if buffer was changed and cannot be abandoned.
 /// For flags use the CCGD_ values.
+#pragma weak check_changed
 bool check_changed(buf_T *buf, int flags)
 {
   bool forceit = (flags & CCGD_FORCEIT);
@@ -192,6 +204,7 @@ bool check_changed(buf_T *buf, int flags)
 ///
 /// @param buf
 /// @param checkall may abandon all changed buffers
+#pragma weak dialog_changed
 void dialog_changed(buf_T *buf, bool checkall)
 {
   char buff[DIALOG_MSG_SIZE];
@@ -264,6 +277,7 @@ void dialog_changed(buf_T *buf, bool checkall)
 ///
 /// @param buf The terminal buffer.
 /// @return bool Whether to close the buffer or not.
+#pragma weak dialog_close_terminal
 bool dialog_close_terminal(buf_T *buf)
 {
   char buff[DIALOG_MSG_SIZE];
@@ -278,6 +292,7 @@ bool dialog_close_terminal(buf_T *buf)
 
 /// @return true if the buffer "buf" can be abandoned, either by making it
 /// hidden, autowriting it or unloading it.
+#pragma weak can_abandon
 bool can_abandon(buf_T *buf, bool forceit)
 {
   return buf_hide(buf)
@@ -308,6 +323,7 @@ static void add_bufnum(int *bufnrs, int *bufnump, int nr)
 /// @param[in] unload specifies whether to unload, instead of hide, the buffer.
 ///
 /// @returns          true if any buffer is changed and cannot be abandoned
+#pragma weak check_changed_any
 bool check_changed_any(bool hidden, bool unload)
 {
   bool ret = false;
@@ -430,6 +446,7 @@ theend:
 
 /// @return  FAIL if there is no file name, OK if there is one.
 ///          Give error message for FAIL.
+#pragma weak check_fname
 int check_fname(void)
 {
   if (curbuf->b_ffname == NULL) {
@@ -442,6 +459,7 @@ int check_fname(void)
 /// Flush the contents of a buffer, unless it has no file name.
 ///
 /// @return  FAIL for failure, OK otherwise
+#pragma weak buf_write_all
 int buf_write_all(buf_T *buf, bool forceit)
 {
   buf_T *old_curbuf = curbuf;
@@ -457,6 +475,7 @@ int buf_write_all(buf_T *buf, bool forceit)
 }
 
 /// ":argdo", ":windo", ":bufdo", ":tabdo", ":cdo", ":ldo", ":cfdo" and ":lfdo"
+#pragma weak ex_listdo
 void ex_listdo(exarg_T *eap)
 {
   // ":windo" and ":tabdo" only visit existing windows/tabpages, they don't
@@ -721,6 +740,7 @@ void ex_listdo(exarg_T *eap)
 }
 
 /// ":compiler[!] {name}"
+#pragma weak ex_compiler
 void ex_compiler(exarg_T *eap)
 {
   char *old_cur_comp = NULL;
@@ -780,6 +800,7 @@ void ex_compiler(exarg_T *eap)
 }
 
 /// ":checktime [buffer]"
+#pragma weak ex_checktime
 void ex_checktime(exarg_T *eap)
 {
   int save_no_check_timestamps = no_check_timestamps;
@@ -842,6 +863,7 @@ static void script_host_do_range(char *name, exarg_T *eap)
 
 /// ":drop"
 /// Opens the first argument in a window, and the argument list is redefined.
+#pragma weak ex_drop
 void ex_drop(exarg_T *eap)
 {
   bool split = false;

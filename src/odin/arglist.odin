@@ -628,7 +628,7 @@ do_argfile :: proc "c" (eap_raw: rawptr, argn: C.int) {
 			ccgd |= CCGD_FORCEIT_O
 		}
 		ccgd |= CCGD_EXCMD_O
-		if (!buf_hide(curbuf) || !other) && check_changed_r(curbuf, ccgd) {
+		if (!buf_hide(curbuf) || !other) && check_changed(curbuf, ccgd) {
 			return
 		}
 	}
@@ -661,7 +661,7 @@ ex_next :: proc "c" (eap_raw: rawptr) {
 		ccgd |= CCGD_FORCEIT_O
 	}
 	ccgd |= CCGD_EXCMD_O
-	if buf_hide(curbuf) || (^C.int)(uintptr(eap_raw) + EXARG_CMDIDX_OFF)^ == CMD_snext_O || !check_changed_r(curbuf, ccgd) {
+	if buf_hide(curbuf) || (^C.int)(uintptr(eap_raw) + EXARG_CMDIDX_OFF)^ == CMD_snext_O || !check_changed(curbuf, ccgd) {
 		arg := (^cstring)(uintptr(eap_raw) + EXARG_ARG_OFF)^
 		i: C.int
 		if ([^]u8)(rawptr(arg))[0] != 0 {
@@ -929,7 +929,7 @@ arg_all_close_unused_windows_o :: proc "c" (aall: ^Arg_All_State_T) {
 					if !buf_hide(buf) && (^C.int)(uintptr(buf) + B_NWINDOWS_OFF)^ <= 1 && bufIsChanged(buf) {
 						bufref: Bufref_T
 						set_bufref(&bufref, buf)
-						autowrite_r(buf, false)
+						autowrite(buf, false)
 						if !win_valid(wp) || !bufref_valid(&bufref) {
 							wpnext = lastwin_g
 							if !win_is_floating_o(wpnext) {

@@ -52,6 +52,7 @@ static bool did_add_space = false;  ///< auto_format() added an extra space
 
 /// Return true if format option 'x' is in effect.
 /// Take care of no formatting when 'paste' is set.
+#pragma weak has_format_option
 bool has_format_option(int x)
   FUNC_ATTR_PURE FUNC_ATTR_WARN_UNUSED_RESULT
 {
@@ -67,6 +68,7 @@ bool has_format_option(int x)
 /// will be the comment leader length sent to open_line().
 ///
 /// @param c  character to be inserted (can be NUL)
+#pragma weak internal_format
 void internal_format(int textwidth, int second_indent, int flags, bool format_only, int c)
 {
   int cc;
@@ -613,6 +615,7 @@ static bool paragraph_start(linenr_T lnum)
 ///
 /// @param trailblank  when true also format with trailing blank
 /// @param prev_line   may start in previous line
+#pragma weak auto_format
 void auto_format(bool trailblank, bool prev_line)
 {
   if (!has_format_option(FO_AUTO)) {
@@ -722,6 +725,7 @@ void auto_format(bool trailblank, bool prev_line)
 /// position.
 ///
 /// @param end_insert  true when ending Insert mode
+#pragma weak check_auto_format
 void check_auto_format(bool end_insert)
 {
   if (!did_add_space) {
@@ -754,6 +758,7 @@ void check_auto_format(bool end_insert)
 ///      Set default to window width (maximum 79) for "gq" operator.
 ///
 /// @param ff  force formatting (for "gq" command)
+#pragma weak comp_textwidth
 int comp_textwidth(bool ff)
 {
   int textwidth = (int)curbuf->b_p_tw;
@@ -778,6 +783,7 @@ int comp_textwidth(bool ff)
 /// Implementation of the format operator 'gq'.
 ///
 /// @param keep_cursor  keep cursor on same text char
+#pragma weak op_format
 void op_format(oparg_T *oap, bool keep_cursor)
 {
   linenr_T old_line_count = curbuf->b_ml.ml_line_count;
@@ -849,6 +855,7 @@ void op_format(oparg_T *oap, bool keep_cursor)
 }
 
 /// Implementation of the format operator 'gq' for when using 'formatexpr'.
+#pragma weak op_formatexpr
 void op_formatexpr(oparg_T *oap)
 {
   if (oap->is_VIsual) {
@@ -864,6 +871,7 @@ void op_formatexpr(oparg_T *oap)
 }
 
 /// @param c  character to be inserted
+#pragma weak fex_format
 int fex_format(linenr_T lnum, long count, int c)
 {
   bool use_sandbox = was_set_insecurely(curwin, kOptFormatexpr, OPT_LOCAL);
@@ -902,6 +910,7 @@ int fex_format(linenr_T lnum, long count, int c)
 /// first line.
 ///
 /// @param avoid_fex  don't use 'formatexpr'
+#pragma weak format_lines
 void format_lines(linenr_T line_count, bool avoid_fex)
 {
   bool is_not_par;                  // current line not part of parag.

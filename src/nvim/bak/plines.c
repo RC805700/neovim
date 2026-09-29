@@ -45,6 +45,7 @@
 /// @return Number of cells.
 ///
 /// @see charsize_nowrap()
+#pragma weak win_chartabsize
 int win_chartabsize(win_T *wp, char *p, colnr_T col)
 {
   buf_T *buf = wp->w_buffer;
@@ -60,6 +61,7 @@ int win_chartabsize(win_T *wp, char *p, colnr_T col)
 /// @param s
 ///
 /// @return Number of cells the string will take on the screen.
+#pragma weak linetabsize_col
 int linetabsize_col(int startvcol, char *s)
 {
   CharsizeArg csarg;
@@ -74,12 +76,14 @@ int linetabsize_col(int startvcol, char *s)
 /// Return the number of cells line "lnum" of window "wp" will take on the
 /// screen, taking into account the size of a tab and inline virtual text.
 /// Doesn't count the size of 'listchars' "eol".
+#pragma weak linetabsize
 int linetabsize(win_T *wp, linenr_T lnum)
 {
   return win_linetabsize(wp, lnum, ml_get_buf(wp->w_buffer, lnum), MAXCOL);
 }
 
 /// Like linetabsize(), but counts the size of 'listchars' "eol".
+#pragma weak linetabsize_eol
 int linetabsize_eol(win_T *wp, linenr_T lnum)
 {
   return linetabsize(wp, lnum)
@@ -92,6 +96,7 @@ static const uint32_t inline_filter[kMTMetaCount] = {[kMTMetaInline] = kMTFilter
 ///
 /// "line" is the start of the line.
 /// When "lnum" is zero do not use inline virtual text.
+#pragma weak init_charsize_arg
 CSType init_charsize_arg(CharsizeArg *csarg, win_T *wp, linenr_T lnum, char *line)
 {
   csarg->win = wp;
@@ -126,6 +131,7 @@ CSType init_charsize_arg(CharsizeArg *csarg, win_T *wp, linenr_T lnum, char *lin
 /// of 'showbreak'/'breakindent' before "csarg->max_head_vcol".
 /// When "csarg->max_head_vcol" is negative, only count in "head" the size
 /// of 'showbreak'/'breakindent' before where cursor should be placed.
+#pragma weak charsize_regular
 CharSize charsize_regular(CharsizeArg *csarg, char *const cur, colnr_T const vcol,
                           int32_t const cur_char)
 {
@@ -384,6 +390,7 @@ static inline CharSize charsize_fast_impl(win_T *const wp, const char *cur, bool
 /// Can be used if CSType is kCharsizeFast.
 ///
 /// @see charsize_regular
+#pragma weak charsize_fast
 CharSize charsize_fast(CharsizeArg *csarg, const char *cur, colnr_T vcol, int32_t cur_char)
   FUNC_ATTR_PURE
 {
@@ -393,6 +400,7 @@ CharSize charsize_fast(CharsizeArg *csarg, const char *cur, colnr_T vcol, int32_
 /// Get the number of cells taken up on the screen at given virtual column.
 ///
 /// @see win_chartabsize()
+#pragma weak charsize_nowrap
 int charsize_nowrap(buf_T *buf, const char *cur, bool use_tabstop, colnr_T vcol, int32_t cur_char)
 {
   if (cur_char == TAB && use_tabstop) {
@@ -440,6 +448,7 @@ static bool in_win_border(win_T *wp, colnr_T vcol)
 ///
 /// @return virtual column before the character at "len",
 ///         or full size of the line if "len" is MAXCOL.
+#pragma weak linesize_regular
 int linesize_regular(CharsizeArg *const csarg, int vcol_arg, colnr_T const len)
 {
   char *const line = csarg->line;
@@ -470,6 +479,7 @@ int linesize_regular(CharsizeArg *const csarg, int vcol_arg, colnr_T const len)
 /// Like linesize_regular(), but can be used when CSType is kCharsizeFast.
 ///
 /// @see linesize_regular
+#pragma weak linesize_fast
 int linesize_fast(CharsizeArg const *const csarg, int vcol_arg, colnr_T const len)
 {
   win_T *const wp = csarg->win;
@@ -527,6 +537,7 @@ static int virt_text_cursor_off(const CharsizeArg *csarg, bool on_NUL)
 /// @param cursor
 /// @param end
 /// @param flags
+#pragma weak getvcol
 void getvcol(win_T *wp, pos_T *pos, colnr_T *start, colnr_T *cursor, colnr_T *end, int flags)
 {
   char *const line = ml_get_buf(wp->w_buffer, pos->lnum);  // start of the line
@@ -609,6 +620,7 @@ void getvcol(win_T *wp, pos_T *pos, colnr_T *start, colnr_T *cursor, colnr_T *en
 /// @param posp
 ///
 /// @return The virtual cursor column.
+#pragma weak getvcol_nolist
 colnr_T getvcol_nolist(pos_T *posp)
 {
   int list_save = curwin->w_p_list;
@@ -632,6 +644,7 @@ colnr_T getvcol_nolist(pos_T *posp)
 /// @param cursor
 /// @param end
 /// @param flags
+#pragma weak getvvcol
 void getvvcol(win_T *wp, pos_T *pos, colnr_T *start, colnr_T *cursor, colnr_T *end, int flags)
 {
   colnr_T col;
@@ -682,6 +695,7 @@ void getvvcol(win_T *wp, pos_T *pos, colnr_T *start, colnr_T *cursor, colnr_T *e
 /// @param left
 /// @param right
 /// @param flags
+#pragma weak getvcols
 void getvcols(win_T *wp, pos_T *pos1, pos_T *pos2, colnr_T *left, colnr_T *right, int flags)
 {
   colnr_T from1;
@@ -718,6 +732,7 @@ void getvcols(win_T *wp, pos_T *pos1, pos_T *pos2, colnr_T *left, colnr_T *right
 /// Calls horizontal size functions defined above.
 
 /// Check if there may be filler lines anywhere in window "wp".
+#pragma weak win_may_fill
 bool win_may_fill(win_T *wp)
 {
   return ((wp->w_p_diff && diffopt_filler())
@@ -730,6 +745,7 @@ bool win_may_fill(win_T *wp)
 /// @param lnum
 ///
 /// @return Number of filler lines above lnum
+#pragma weak win_get_fill
 int win_get_fill(win_T *wp, linenr_T lnum)
 {
   return decor_virt_lines(wp, lnum - 1, lnum, NULL, NULL, true) + diff_check_fill(wp, lnum);
@@ -739,6 +755,7 @@ int win_get_fill(win_T *wp, linenr_T lnum)
 /// Includes any filler lines.
 ///
 /// @param limit_winheight  when true limit to window height
+#pragma weak plines_win
 int plines_win(win_T *wp, linenr_T lnum, bool limit_winheight)
 {
   // Check for filler lines above this buffer line.
@@ -749,6 +766,7 @@ int plines_win(win_T *wp, linenr_T lnum, bool limit_winheight)
 /// Does not include filler lines.
 ///
 /// @param limit_winheight  when true limit to window height
+#pragma weak plines_win_nofill
 int plines_win_nofill(win_T *wp, linenr_T lnum, bool limit_winheight)
 {
   if (decor_conceal_line(wp, lnum - 1, false)) {
@@ -777,6 +795,7 @@ int plines_win_nofill(win_T *wp, linenr_T lnum, bool limit_winheight)
 
 /// Get number of window lines physical line "lnum" will occupy in window "wp".
 /// Does not care about folding, 'wrap' or filler lines.
+#pragma weak plines_win_nofold
 int plines_win_nofold(win_T *wp, linenr_T lnum)
 {
   char *s = ml_get_buf(wp->w_buffer, lnum);
@@ -815,6 +834,7 @@ int plines_win_nofold(win_T *wp, linenr_T lnum)
 
 /// Like plines_win(), but only reports the number of physical screen lines
 /// used from the start of the line to the given column number.
+#pragma weak plines_win_col
 int plines_win_col(win_T *wp, linenr_T lnum, long column)
 {
   // Check for filler lines above this buffer line.
@@ -884,6 +904,7 @@ int plines_win_col(win_T *wp, linenr_T lnum, long column)
 /// @param[in]  limit_winheight  when true limit to window height
 ///
 /// @return the total number of screen lines
+#pragma weak plines_win_full
 int plines_win_full(win_T *wp, linenr_T lnum, linenr_T *const nextp, bool *const foldedp,
                     const bool cache, const bool limit_winheight)
 {
@@ -911,6 +932,7 @@ int plines_win_full(win_T *wp, linenr_T lnum, linenr_T *const nextp, bool *const
 /// @param max    number of lines to limit the height to
 ///
 /// @see win_text_height
+#pragma weak plines_m_win
 int plines_m_win(win_T *wp, linenr_T first, linenr_T last, int max)
 {
   int count = 0;
@@ -931,6 +953,7 @@ int plines_m_win(win_T *wp, linenr_T first, linenr_T last, int max)
 /// unlike plines_m_win() or win_text_height().
 ///
 /// Mainly used for calculating scrolling offsets.
+#pragma weak plines_m_win_fill
 int plines_m_win_fill(win_T *wp, linenr_T first, linenr_T last)
 {
   int count = last - first + 1 + decor_virt_lines(wp, first - 1, last, NULL, NULL, false);
@@ -961,6 +984,7 @@ int plines_m_win_fill(win_T *wp, linenr_T first, linenr_T last)
 /// @param[in] max           Don't calculate the height for lines beyond the line where "max"
 ///                          height is reached.
 /// @param[out] fill         If not NULL, set to the number of filler lines in the range.
+#pragma weak win_text_height
 int64_t win_text_height(win_T *const wp, const linenr_T start_lnum, const int64_t start_vcol,
                         linenr_T *const end_lnum, int64_t *const end_vcol, int64_t *const fill,
                         int64_t const max)

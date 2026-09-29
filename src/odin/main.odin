@@ -238,7 +238,7 @@ foreign nvim {
   apply_autocmds :: proc "c" (event: c.int, fname: cstring, fname2: cstring, group: bool, buf: rawptr) -> bool ---
 
   // Startup helpers (do_autochdir now defined in buffer.odin — call directly).
-  do_autocmd_uienter_all :: proc() ---
+  // do_autocmd_uienter_all now defined in ui.odin — call directly.
 
   os_exit :: proc(r: c.int) ---
 

@@ -1159,7 +1159,7 @@ set_option_o :: proc "c"(
 		if (opt.flags & kOptFlagUIOption) != 0 {
 			obj := optval_as_object_o(saved_new_value)
 			nm := transmute(cstring)(opt.fullname)
-			ui_call_option_set_r(NvimString{nm, C.size_t(len(string(nm)))}, obj)
+			ui_call_option_set(Api_String{transmute(^u8)(nm), C.size_t(len(string(nm)))}, optobj_to_api_o(obj))
 		}
 	}
 
@@ -1172,8 +1172,7 @@ set_option_o :: proc "c"(
 }
 
 foreign _ {
-	@(link_name = "ui_call_option_set")
-	ui_call_option_set_r :: proc "c" (name: NvimString, obj: Api_Object_Opt) ---
+	// ui_call_option_set now defined in ui.odin — call directly.
 }
 
 // get_varp (exported in C): returns "used" varp
@@ -2279,7 +2278,7 @@ ui_refresh_options :: proc "c"() {
 		}
 		name := transmute(cstring)(opt_at(opt_idx).fullname)
 		value := optval_as_object_o(optval_from_varp(opt_idx, opt_at(opt_idx).varp))
-		ui_call_option_set_r(NvimString{name, C.size_t(len(string(name)))}, value)
+		ui_call_option_set(Api_String{transmute(^u8)(name), C.size_t(len(string(name)))}, optobj_to_api_o(value))
 	}
 	if p_mouse_g != nil {
 		setmouse()

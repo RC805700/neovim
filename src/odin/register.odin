@@ -253,8 +253,7 @@ foreign _ {
 	@(link_name = "vim_strsave_escaped_ext")
 	vim_strsave_escaped_ext_r :: proc "c" (string: cstring, esc_chars: cstring, cc: u8, bsl: bool) -> ^u8 ---
 
-	@(link_name = "ui_has")
-	ui_has_r :: proc "c" (cap: C.int) -> bool ---
+	// ui_has now defined in ui.odin — call directly.
 	@(link_name = "get_recorded")
 	get_recorded_r :: proc "c" () -> ^u8 ---
 	@(link_name = "stuff_inserted")
@@ -315,10 +314,7 @@ foreign _ {
 	@(link_name = "invalidate_botline_win")
 	invalidate_botline_win_r :: proc "c" (wp: rawptr) ---
 	// buf_updates_send_changes is an Odin export (buffer_updates.odin).
-	@(link_name = "extmark_splice")
-	extmark_splice_r :: proc "c" (buf: rawptr, start_row: C.int, start_col: C.int, old_row: C.int, old_col: C.int, old_byte: i64, new_row: C.int, new_col: C.int, new_byte: i64, undo: C.int) ---
-	@(link_name = "extmark_splice_cols")
-	extmark_splice_cols_r :: proc "c" (buf: rawptr, start_row: C.int, start_col: C.int, old_col: C.int, new_col: C.int, undo: C.int) ---
+	// extmark_splice/splice_cols now defined in extmark.odin — call directly.
 
 	@(link_name = "get_indent")
 	get_indent_r :: proc "c" () -> C.int ---
@@ -344,8 +340,7 @@ foreign _ {
 	file_name_at_cursor_r :: proc "c" (options: C.int, count: C.int, file_lnum: ^C.int) -> ^u8 ---
  	@(link_name = "find_ident_under_cursor")
  	find_ident_under_cursor_r :: proc "c" (text: ^^u8, find_type: C.int, offset: ^C.int) -> C.size_t ---
- 	@(link_name = "check_fname")
-	check_fname_r :: proc "c" () -> C.int ---
+	// check_fname now defined in ex_cmds2.odin — call directly.
 	// last_search_pat / set_last_search_pat now defined in search.odin — reuse directly.
 	// buflist_findpat now defined in buffer.odin — call directly.
 	// buflist_name_nr now defined in buffer.odin — call directly.
@@ -800,7 +795,7 @@ do_record :: proc "c" (c: C.int) -> C.int {
 		restore_v_event(dict, &sve)
 		reg_recorded = reg_recording
 		reg_recording = 0
-		if p_ch == 0 || ui_has_r(kUIMessages) {
+		if p_ch == 0 || ui_has(kUIMessages) {
 			showmode()
 		} else {
 			msg_msg(cstring(""), 0)
@@ -1105,7 +1100,7 @@ get_spec_reg :: proc "c" (regname: C.int, argp: ^^u8, allocated: ^bool, errmsg: 
 	switch regname {
 	case '%': // file name
 		if errmsg {
-			check_fname_r()
+			check_fname()
 		}
 		argp^ = (^u8)(buf_read_ptr(curbuf, B_FNAME))
 		return true
@@ -2110,7 +2105,7 @@ do_put :: proc "c" (regname: C.int, reg_arg: ^Yankreg_T, dir_arg: C.int, count_a
 					columns := oldlen - bd.textcol - delcount + 1
 					libc.memmove(ptr, (^u8)(uintptr(oldp) + uintptr(bd.textcol + delcount)), C.size_t(columns))
 					ml_replace_c(cursor_pos().lnum, newp, false)
-					extmark_splice_cols_r(curbuf, cursor_pos().lnum - 1, bd.textcol,
+					extmark_splice_cols(curbuf, cursor_pos().lnum - 1, bd.textcol,
 						delcount, C.int(totlen) + lines_appended, kExtmarkUndo)
 
 					cursor_pos().lnum += 1
@@ -2222,7 +2217,7 @@ do_put :: proc "c" (regname: C.int, reg_arg: ^Yankreg_T, dir_arg: C.int, count_a
 								cursor_pos().col += C.int(totlen) - 1
 							}
 							changed_bytes_r(lnum, col)
-							extmark_splice_cols_r(curbuf, lnum - 1, col, 0, C.int(totlen), kExtmarkUndo)
+							extmark_splice_cols(curbuf, lnum - 1, col, 0, C.int(totlen), kExtmarkUndo)
 							if VIsual_active {
 								lnum += 1
 							}
@@ -2340,11 +2335,11 @@ do_put :: proc "c" (regname: C.int, reg_arg: ^Yankreg_T, dir_arg: C.int, count_a
 								totsize += i64(lastsize)
 							}
 							if y_type == kMTCharWise {
-								extmark_splice_r(curbuf, new_cursor.lnum - 1, col, 0, 0, 0,
+								extmark_splice(curbuf, new_cursor.lnum - 1, col, 0, 0, 0,
 									C.int(y_size) - 1, lastsize, totsize, kExtmarkUndo)
 							} else if y_type == kMTLineWise && (flags & PUT_LINE_SPLIT) != 0 {
 								// Account for last pasted NL + last NL
-								extmark_splice_r(curbuf, new_cursor.lnum - 1, split_pos, 0, 0, 0,
+								extmark_splice(curbuf, new_cursor.lnum - 1, split_pos, 0, 0, 0,
 									C.int(y_size) + 1, 0, totsize + 2, kExtmarkUndo)
 							}
 

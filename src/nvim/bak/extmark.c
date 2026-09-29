@@ -50,6 +50,7 @@
 /// Create or update an extmark
 ///
 /// must not be used during iteration!
+#pragma weak extmark_set
 void extmark_set(buf_T *buf, uint32_t ns_id, uint32_t *idp, int row, colnr_T col, int end_row,
                  colnr_T end_col, DecorInline decor, uint16_t decor_flags, bool right_gravity,
                  bool end_right_gravity, bool no_undo, bool invalidate, Error *err)
@@ -150,6 +151,7 @@ static void extmark_setraw(buf_T *buf, uint64_t mark, int row, colnr_T col, bool
 /// Remove an extmark in "ns_id" by "id"
 ///
 /// @return false on missing id
+#pragma weak extmark_del_id
 bool extmark_del_id(buf_T *buf, uint32_t ns_id, uint32_t id)
 {
   MarkTreeIter itr[1] = { 0 };
@@ -162,6 +164,7 @@ bool extmark_del_id(buf_T *buf, uint32_t ns_id, uint32_t id)
 }
 
 /// Remove a (paired) extmark "key" pointed to by "itr"
+#pragma weak extmark_del
 void extmark_del(buf_T *buf, MarkTreeIter *itr, MTKey key, bool restore)
 {
   assert(key.pos.row >= 0);
@@ -197,6 +200,7 @@ void extmark_del(buf_T *buf, MarkTreeIter *itr, MTKey key, bool restore)
 
 /// Free extmarks in a ns between lines
 /// if ns = 0, it means clear all namespaces
+#pragma weak extmark_clear
 bool extmark_clear(buf_T *buf, uint32_t ns_id, int l_row, colnr_T l_col, int u_row, colnr_T u_col)
 {
   if (!map_size(buf->b_extmark_ns)) {
@@ -258,6 +262,7 @@ bool extmark_clear(buf_T *buf, uint32_t ns_id, int l_row, colnr_T l_col, int u_r
 /// if upper_lnum or upper_col are negative the buffer
 /// will be searched to the start, or end
 /// amount = amount of marks to find or INT64_MAX for all
+#pragma weak extmark_get
 ExtmarkInfoArray extmark_get(buf_T *buf, uint32_t ns_id, int l_row, colnr_T l_col, int u_row,
                              colnr_T u_col, int64_t amount, ExtmarkType type_filter, bool overlap)
 {
@@ -319,6 +324,7 @@ static void push_mark(ExtmarkInfoArray *array, uint32_t ns_id, ExtmarkType type_
 }
 
 /// Lookup an extmark by id
+#pragma weak extmark_from_id
 MTPair extmark_from_id(buf_T *buf, uint32_t ns_id, uint32_t id)
 {
   MTKey mark = marktree_lookup_ns(buf->b_marktree, ns_id, id, false, NULL);
@@ -332,6 +338,7 @@ MTPair extmark_from_id(buf_T *buf, uint32_t ns_id, uint32_t id)
 }
 
 /// free extmarks from the buffer
+#pragma weak extmark_free_all
 void extmark_free_all(buf_T *buf)
 {
   MarkTreeIter itr[1] = { 0 };
@@ -363,6 +370,7 @@ void extmark_free_all(buf_T *buf)
 ///
 /// copying is useful when we cannot simply reverse the operation. This will do
 /// nothing on redo, enforces correct position when undo.
+#pragma weak extmark_splice_delete
 void extmark_splice_delete(buf_T *buf, int l_row, colnr_T l_col, int u_row, colnr_T u_col,
                            extmark_undo_vec_t *uvp, bool only_copy, ExtmarkOp op)
 {
@@ -432,6 +440,7 @@ void extmark_splice_delete(buf_T *buf, int l_row, colnr_T l_col, int u_row, coln
 }
 
 /// undo or redo an extmark operation
+#pragma weak extmark_apply_undo
 void extmark_apply_undo(ExtmarkUndoObject undo_info, bool undo)
 {
   // splice: any text operation changing position (except :move)
@@ -477,6 +486,7 @@ void extmark_apply_undo(ExtmarkUndoObject undo_info, bool undo)
 }
 
 /// Adjust extmark row for inserted/deleted rows (columns stay fixed).
+#pragma weak extmark_adjust
 void extmark_adjust(buf_T *buf, linenr_T line1, linenr_T line2, linenr_T amount,
                     linenr_T amount_after, ExtmarkOp undo)
 {
@@ -528,6 +538,7 @@ void extmark_adjust(buf_T *buf, linenr_T line1, linenr_T line2, linenr_T amount,
 //                      the end column of the new region.
 // @param new_byte    Byte extent of the new region.
 // @param undo
+#pragma weak extmark_splice
 void extmark_splice(buf_T *buf, int start_row, colnr_T start_col, int old_row, colnr_T old_col,
                     bcount_t old_byte, int new_row, colnr_T new_col, bcount_t new_byte,
                     ExtmarkOp undo)
@@ -548,6 +559,7 @@ void extmark_splice(buf_T *buf, int start_row, colnr_T start_col, int old_row, c
                       undo);
 }
 
+#pragma weak extmark_splice_impl
 void extmark_splice_impl(buf_T *buf, int start_row, colnr_T start_col, bcount_t start_byte,
                          int old_row, colnr_T old_col, bcount_t old_byte, int new_row,
                          colnr_T new_col, bcount_t new_byte, ExtmarkOp undo)
@@ -642,6 +654,7 @@ void extmark_splice_impl(buf_T *buf, int start_row, colnr_T start_col, bcount_t 
   }
 }
 
+#pragma weak extmark_splice_cols
 void extmark_splice_cols(buf_T *buf, int start_row, colnr_T start_col, colnr_T old_col,
                          colnr_T new_col, ExtmarkOp undo)
 {
@@ -650,6 +663,7 @@ void extmark_splice_cols(buf_T *buf, int start_row, colnr_T start_col, colnr_T o
                  0, new_col, new_col, undo);
 }
 
+#pragma weak extmark_move_region
 void extmark_move_region(buf_T *buf, int start_row, colnr_T start_col, bcount_t start_byte,
                          int extent_row, colnr_T extent_col, bcount_t extent_byte, int new_row,
                          colnr_T new_col, bcount_t new_byte, ExtmarkOp undo)

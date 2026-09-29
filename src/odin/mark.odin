@@ -285,7 +285,7 @@ foreign _ {
 	vim_ispathsep_nocolon :: proc "c" (c: C.int) -> bool ---
 
 	qf_mark_adjust :: proc "c" (buf, wp: rawptr, line1, line2, amount, amount_after: C.int) -> bool ---
-	extmark_adjust :: proc "c" (buf: rawptr, line1, line2, amount, amount_after, op: C.int) ---
+	// extmark_adjust now defined in extmark.odin — call directly.
 	// foldMarkAdjust now defined in fold.odin — reuse directly.
 	diff_mark_adjust :: proc "c" (buf: rawptr, line1, line2, amount, amount_after: C.int) ---
 
@@ -304,7 +304,7 @@ foreign _ {
 	beginline :: proc "c" (flags: C.int) ---
 	set_topline :: proc "c" (wp: rawptr, lnum: C.int) ---
 	// hasFolding now defined in fold.odin — reuse directly.
-	linetabsize_eol :: proc "c" (wp: rawptr, lnum: C.int) -> C.int ---
+	// linetabsize_eol now defined in plines.odin — call directly.
 
 	findpar :: proc "c" (pincl: ^bool, dir, count, what: C.int, both: bool) -> bool ---
 	findsent :: proc "c" (dir: C.int, count: C.int) -> C.int ---

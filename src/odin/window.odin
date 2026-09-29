@@ -1486,7 +1486,7 @@ win_split_ins :: proc "c"(size: C.int, flags: C.int, new_wp: rawptr, dir: C.int,
 			(^bool)(uintptr(wp) + W_POS_CHANGED_OFF)^ = true
 		} else {
 			// No longer a float, a non-multigrid UI shouldn't draw it as such
-			ui_call_win_hide_r((^C.int)(uintptr(wp) + W_GRID_HANDLE_OFF)^)
+			ui_call_win_hide(i64((^C.int)(uintptr(wp) + W_GRID_HANDLE_OFF)^))
 			win_free_grid(wp, true)
 		}
 
@@ -1846,8 +1846,7 @@ foreign _ {
 	// win_float_anchor_laststatus — PORTED (winfloat.odin).
 	@(link_name = "ui_comp_remove_grid")
 	ui_comp_remove_grid_r :: proc "c" (grid: rawptr) ---
- 	@(link_name = "ui_call_win_hide")
- 	ui_call_win_hide_r :: proc "c" (grid: C.int) ---
+ 	// ui_call_win_hide now defined in ui.odin — call directly.
  	@(link_name = "msg_clr_eos_force")
 	msg_clr_eos_force_r :: proc "c" () ---
  	@(link_name = "changed_line_abv_curs")
@@ -3424,8 +3423,7 @@ foreign _ {
 	// win_float_find_altwin — PORTED (winfloat.odin).
  	@(link_name = "diffopt_closeoff")
 	diffopt_closeoff_r :: proc "c" () -> bool ---
-	@(link_name = "ui_call_win_close")
-	ui_call_win_close_r :: proc "c" (grid: C.longlong) ---
+	// ui_call_win_close now defined in ui.odin — call directly.
 	@(link_name = "p_ru")
 	p_ru_g: C.int
 	@(link_name = "redraw_cmdline")
@@ -3834,7 +3832,7 @@ win_close :: proc "c"(win: rawptr, free_buf: bool, force: bool) -> C.int {
 	split_disallowed_g += 1
 	was_floating := (^bool)(uintptr(win) + W_FLOATING_OFF)^
 	if ui_has(K_UIMULTIGRID_O) {
-		ui_call_win_close_r(C.longlong((^C.int)(uintptr(win) + W_GRID_HANDLE_OFF)^))
+		ui_call_win_close(i64((^C.int)(uintptr(win) + W_GRID_HANDLE_OFF)^))
 	}
 	if (^bool)(uintptr(win) + W_FLOATING_OFF)^ {
 		ui_comp_remove_grid_r(transmute(rawptr)(uintptr(win) + W_GRID_HANDLE_OFF))
@@ -4660,8 +4658,7 @@ M_ONLYONE_S :: "Already only one window"
 E445_S :: "E445: Other window contains changes"
 
 foreign _ {
-	@(link_name = "msg")
-	msg_r :: proc "c" (s: cstring, hl_id: C.int) -> bool ---
+	// msg() now via mark.odin msg_msg (deduped) — call directly.
 	@(link_name = "diff_clear")
 	diff_clear_r :: proc "c" (tp: rawptr) ---
 }
@@ -4702,7 +4699,7 @@ close_others :: proc "c"(message: C.int, forceit: C.int, ignore_pinned: bool) {
 	}
 	if one_window(firstwin, nil) && !(^bool)(uintptr(lastwin_g) + W_FLOATING_OFF)^ {
 		if message != 0 && !autocmd_busy_g {
-			msg_r(cstring(M_ONLYONE_S), 0)
+			msg_msg(cstring(M_ONLYONE_S), 0)
 		}
 		return
 	}
@@ -4729,7 +4726,7 @@ close_others :: proc "c"(message: C.int, forceit: C.int, ignore_pinned: bool) {
 			continue
 		}
 		// Check if it's allowed to abandon this window
-		r := can_abandon_r((^rawptr)(uintptr(wp) + W_BUFFER_OFF)^, forceit != 0)
+		r := can_abandon((^rawptr)(uintptr(wp) + W_BUFFER_OFF)^, forceit != 0)
 		if !win_valid(wp) { // autocommands messed wp up
 			nextwp = firstwin
 			wp = nextwp
@@ -4737,7 +4734,7 @@ close_others :: proc "c"(message: C.int, forceit: C.int, ignore_pinned: bool) {
 		}
 		if !r {
 			if message != 0 && (p_confirm_g != 0 || (cmdmod_cmod_flags & CMOD_CONFIRM_O) != 0) && p_write_g != 0 {
-				dialog_changed_r((^rawptr)(uintptr(wp) + W_BUFFER_OFF)^, false)
+				dialog_changed((^rawptr)(uintptr(wp) + W_BUFFER_OFF)^, false)
 				if !win_valid(wp) { // autocommands messed wp up
 					nextwp = firstwin
 					wp = nextwp
@@ -5494,12 +5491,7 @@ win_locked :: proc "c"(wp: rawptr) -> C.int {
 UPD_SOME_VALID_O :: 35
 
 foreign _ {
-	@(link_name = "plines_win")
-	plines_win_r :: proc "c" (wp: rawptr, lnum: C.int, limit_winheight: bool) -> C.int ---
-	@(link_name = "plines_win_col")
-	plines_win_col_r :: proc "c" (wp: rawptr, lnum: C.int, column: C.long) -> C.int ---
-	@(link_name = "plines_win_nofill")
-	plines_win_nofill_r :: proc "c" (wp: rawptr, lnum: C.int, limit_winheight: bool) -> C.int ---
+	// plines_win/plines_win_col/plines_win_nofill now defined in plines.odin.
 	@(link_name = "decor_conceal_line")
 	decor_conceal_line_r :: proc "c" (wp: rawptr, row: C.int, check_cursor: bool) -> bool ---
 	@(link_name = "curs_columns")
@@ -5530,11 +5522,11 @@ scroll_to_fraction :: proc "c"(wp: rawptr, prev_height: C.int) {
 		lnum = max(lnum, 1)
 		(^C.int)(uintptr(wp) + W_WROW_OFF)^ =
 			((^C.int)(uintptr(wp) + W_FRACTION_OFF)^ * height - 1) / FRACTION_MULT_O
-		line_size := plines_win_col_r(wp, lnum, C.long((^C.int)(uintptr(wp) + W_CURSOR_OFF + 4)^)) - 1
+		line_size := plines_win_col(wp, lnum, C.long((^C.int)(uintptr(wp) + W_CURSOR_OFF + 4)^)) - 1
 		sline := (^C.int)(uintptr(wp) + W_WROW_OFF)^ - line_size
 		if sline >= 0 {
 			// Make sure the whole cursor line is visible, if possible.
-			rows := plines_win_r(wp, lnum, false)
+			rows := plines_win(wp, lnum, false)
 			if sline > (^C.int)(uintptr(wp) + W_VIEW_HEIGHT_OFF)^ - rows {
 				sline = (^C.int)(uintptr(wp) + W_VIEW_HEIGHT_OFF)^ - rows
 				(^C.int)(uintptr(wp) + W_WROW_OFF)^ -= rows - line_size
@@ -5570,10 +5562,10 @@ scroll_to_fraction :: proc "c"(wp: rawptr, prev_height: C.int) {
 				}
 				lnum -= 1
 				if lnum == (^C.int)(uintptr(wp) + W_TOPLINE_OFF)^ {
-					line_size = plines_win_nofill_r(wp, lnum, true) +
+					line_size = plines_win_nofill(wp, lnum, true) +
 						(^C.int)(uintptr(wp) + W_TOPFILL_OFF)^
 				} else {
-					line_size = plines_win_r(wp, lnum, true)
+					line_size = plines_win(wp, lnum, true)
 				}
 				sline -= line_size
 			}
@@ -5908,8 +5900,7 @@ foreign _ {
 	@(link_name = "changed_line_abv_curs_win")
 	changed_line_abv_curs_win_r :: proc "c" (wp: rawptr) ---
 	// win_border_height/width — PORTED (winfloat.odin).
-	@(link_name = "ui_call_win_viewport_margins")
-	ui_call_win_viewport_margins_r :: proc "c" (grid: C.longlong, win: C.int, top: C.int, bottom: C.int, left: C.int, right: C.int) ---
+	// ui_call_win_viewport_margins now defined in ui.odin — call directly.
 	@(link_name = "win_grid_alloc")
 	win_grid_alloc_r :: proc "c" (wp: rawptr) ---
 }
@@ -5981,13 +5972,13 @@ win_set_inner_size :: proc "c"(wp: rawptr, valid_cursor: bool) {
 	(^C.int)(uintptr(wp) + W_WINCOL_OFF2_OFF)^ =
 		(^C.int)(uintptr(wp) + W_BORDER_ADJ_OFF + 3 * 4)^
 	if ui_has(K_UIMULTIGRID_O) {
-		ui_call_win_viewport_margins_r(
-			C.longlong((^C.int)(uintptr(wp) + W_GRID_HANDLE_OFF)^),
-			(^C.int)(uintptr(wp) + W_HANDLE_OFF)^,
-			(^C.int)(uintptr(wp) + W_WINROW_OFF2_OFF)^,
-			(^C.int)(uintptr(wp) + W_BORDER_ADJ_OFF + 2 * 4)^,
-			(^C.int)(uintptr(wp) + W_WINCOL_OFF2_OFF)^,
-			(^C.int)(uintptr(wp) + W_BORDER_ADJ_OFF + 1 * 4)^)
+		ui_call_win_viewport_margins(
+			i64((^C.int)(uintptr(wp) + W_GRID_HANDLE_OFF)^),
+			i64((^C.int)(uintptr(wp) + W_HANDLE_OFF)^),
+			i64((^C.int)(uintptr(wp) + W_WINROW_OFF2_OFF)^),
+			i64((^C.int)(uintptr(wp) + W_BORDER_ADJ_OFF + 2 * 4)^),
+			i64((^C.int)(uintptr(wp) + W_WINCOL_OFF2_OFF)^),
+			i64((^C.int)(uintptr(wp) + W_BORDER_ADJ_OFF + 1 * 4)^))
 	}
 	(^bool)(uintptr(wp) + W_REDR_STATUS_OFF)^ = true
 	// Must keep grid dimensions updated during redraw.
@@ -6119,8 +6110,7 @@ E242_S :: "E242: Can't split a window while closing another"
 SCREEN_GRID_SIZE_O :: 96
 
 foreign _ {
-	@(link_name = "ui_call_grid_destroy")
-	ui_call_grid_destroy_r :: proc "c" (grid: C.longlong) ---
+	// ui_call_grid_destroy now defined in ui.odin — call directly.
 	// grid_free: Odin export in grid.odin (Batch 2c).
 }
 
@@ -6142,7 +6132,7 @@ check_split_disallowed_err :: proc "c"(wp: rawptr, err: rawptr) -> bool {
 @(export)
 win_free_grid :: proc "c"(wp: rawptr, reinit: bool) {
 	if (^C.int)(uintptr(wp) + W_GRID_HANDLE_OFF)^ != 0 && ui_has(K_UIMULTIGRID_O) {
-		ui_call_grid_destroy_r(C.longlong((^C.int)(uintptr(wp) + W_GRID_HANDLE_OFF)^))
+		ui_call_grid_destroy(i64((^C.int)(uintptr(wp) + W_GRID_HANDLE_OFF)^))
 	}
 	grid_free(transmute(^ScreenGrid)(uintptr(wp) + W_GRID_ALLOC_OFF))
 	if reinit {
@@ -7258,7 +7248,7 @@ do_window :: proc "c"(nchar: C.int, prenum_in: C.int, xchar_in: C.int) {
 	// move window to new tab page
 	case 'T':
 		if one_window(curwin, nil) {
-			msg_r(cstring(M_ONLYONE_S), 0)
+			msg_msg(cstring(M_ONLYONE_S), 0)
 		} else {
 			oldtab := curtab
 			// First create a new tab with the window, then go back to
@@ -7479,10 +7469,8 @@ GRID_PENDING_COMP_OFF :: 89
 GRID_CHARS_OFF :: 8
 
 foreign _ {
-	@(link_name = "win_text_height")
-	win_text_height_r :: proc "c" (wp: rawptr, start_lnum: C.int, start_vcol: C.longlong, end_lnum: ^C.int, end_vcol: ^C.longlong, fill: rawptr, max: C.longlong) -> C.longlong ---
- 	@(link_name = "ui_call_win_viewport")
- 	ui_call_win_viewport_r :: proc "c" (grid: C.longlong, win: C.int, topline: C.longlong, botline: C.longlong, curline: C.longlong, curcol: C.longlong, line_count: C.longlong, scroll_delta: C.longlong) ---
+	// win_text_height now defined in plines.odin — call directly.
+ 	// ui_call_win_viewport now defined in ui.odin — call directly.
  	@(link_name = "pum_ui_flush")
 	pum_ui_flush_r :: proc "c" () ---
 	@(link_name = "msg_ui_flush")
@@ -7522,7 +7510,7 @@ ui_ext_win_viewport :: proc "c"(wp: rawptr) {
 				lnume = cur_botline
 				vcole = 0
 			}
-			delta -= win_text_height_r(wp, cur_topline,
+			delta -= win_text_height(wp, cur_topline,
 				C.longlong((^C.int)(uintptr(wp) + W_SKIPCOL_OFF)^), &lnume, &vcole, nil, 0x7fffffffffffffff)
 		} else if cur_topline > last_topline ||
 			(cur_topline == last_topline &&
@@ -7535,7 +7523,7 @@ ui_ext_win_viewport :: proc "c"(wp: rawptr) {
 				lnume = last_botline
 				vcole = 0
 			}
-			delta += win_text_height_r(wp, last_topline, last_skipcol, &lnume, &vcole, nil, 0x7fffffffffffffff)
+			delta += win_text_height(wp, last_topline, last_skipcol, &lnume, &vcole, nil, 0x7fffffffffffffff)
 		}
 		delta += C.longlong(last_topfill)
 		delta -= C.longlong((^C.int)(uintptr(wp) + W_TOPFILL_OFF)^)
@@ -7543,14 +7531,14 @@ ui_ext_win_viewport :: proc "c"(wp: rawptr) {
 		if ev_botline == line_count + 1 && (^C.int)(uintptr(wp) + W_EMPTY_ROWS_OFF)^ == 0 {
 			ev_botline = line_count
 		}
-		ui_call_win_viewport_r(
-			C.longlong((^C.int)(uintptr(wp) + W_GRID_HANDLE_OFF)^),
-			(^C.int)(uintptr(wp) + W_HANDLE_OFF)^,
-			C.longlong((^C.int)(uintptr(wp) + W_TOPLINE_OFF)^ - 1),
-			C.longlong(ev_botline),
-			C.longlong((^C.int)(uintptr(wp) + W_CURSOR_OFF)^ - 1),
-			C.longlong((^C.int)(uintptr(wp) + W_CURSOR_OFF + 4)^),
-			C.longlong(line_count), delta)
+		ui_call_win_viewport(
+			i64((^C.int)(uintptr(wp) + W_GRID_HANDLE_OFF)^),
+			i64((^C.int)(uintptr(wp) + W_HANDLE_OFF)^),
+			i64((^C.int)(uintptr(wp) + W_TOPLINE_OFF)^ - 1),
+			i64(ev_botline),
+			i64((^C.int)(uintptr(wp) + W_CURSOR_OFF)^ - 1),
+			i64((^C.int)(uintptr(wp) + W_CURSOR_OFF + 4)^),
+			i64(line_count), i64(delta))
 		(^bool)(uintptr(wp) + W_VIEWPORT_INVALID_OFF)^ = false
 		(^C.int)(uintptr(wp) + W_VIEWPORT_LAST_TOPLINE_OFF)^ = (^C.int)(uintptr(wp) + W_TOPLINE_OFF)^
 		(^C.int)(uintptr(wp) + W_VIEWPORT_LAST_BOTLINE_OFF)^ = (^C.int)(uintptr(wp) + W_BOTLINE_OFF)^
@@ -7572,7 +7560,7 @@ win_ui_flush :: proc "c"(validate: bool) {
 				if tp == curtab {
 					ui_ext_win_position(wp, validate)
 				} else {
-					ui_call_win_hide_r((^C.int)(uintptr(wp) + W_GRID_HANDLE_OFF)^)
+					ui_call_win_hide(i64((^C.int)(uintptr(wp) + W_GRID_HANDLE_OFF)^))
 					(^bool)(uintptr(wp) + W_POS_CHANGED_OFF)^ = false
 				}
 				(^bool)(grid + GRID_PENDING_COMP_OFF)^ = false
@@ -7634,14 +7622,7 @@ foreign _ {
 	ui_comp_layers_adjust_r :: proc "c" (layer_idx: C.size_t, raise: bool) ---
 	@(link_name = "ui_comp_put_grid")
 	ui_comp_put_grid_r :: proc "c" (grid: rawptr, row: C.int, col: C.int, height: C.int, width: C.int, valid: bool, on_top: bool) -> bool ---
-	@(link_name = "ui_call_win_pos")
-	ui_call_win_pos_r :: proc "c" (grid: C.longlong, win: C.int, startrow: C.longlong, startcol: C.longlong, width: C.longlong, height: C.longlong) ---
-	@(link_name = "ui_call_win_float_pos")
-	ui_call_win_float_pos_r :: proc "c" (grid: C.longlong, win: C.int, anchor: NvimString, anchor_grid: C.longlong, anchor_row: f64, anchor_col: f64, mouse_enabled: bool, zindex: C.longlong, compindex: C.longlong, screen_row: C.longlong, screen_col: C.longlong) ---
-	@(link_name = "ui_call_win_external_pos")
-	ui_call_win_external_pos_r :: proc "c" (grid: C.longlong, win: C.int) ---
-	@(link_name = "ui_check_cursor_grid")
-	ui_check_cursor_grid_r :: proc "c" (grid_handle: C.int) ---
+	// ui_call_win_pos/float_pos/external_pos/check_cursor_grid now defined in ui.odin.
 	@(link_name = "default_grid")
 	default_grid_u8: u8 // address-of only
 	@(link_name = "float_anchor_str")
@@ -7660,13 +7641,13 @@ ui_ext_win_position :: proc "c"(wp: rawptr, validate: bool) {
 			(^C.int)(wgrid + GRID_COMP_COL_OFF)^ = (^C.int)(uintptr(wp) + W_WINCOL_OFF)^
 			(^C.int)(wgrid + GRID_COMP_ROW_OFF)^ = (^C.int)(uintptr(wp) + W_WINROW_OFF)^
 		}
-		ui_call_win_pos_r(
-			C.longlong((^C.int)(wgrid + GRID_HANDLE_OFF2)^),
-			(^C.int)(uintptr(wp) + W_HANDLE_OFF)^,
-			C.longlong((^C.int)(uintptr(wp) + W_WINROW_OFF)^),
-			C.longlong((^C.int)(uintptr(wp) + W_WINCOL_OFF)^),
-			C.longlong((^C.int)(uintptr(wp) + W_WIDTH_OFF)^),
-			C.longlong((^C.int)(uintptr(wp) + W_HEIGHT_OFF)^))
+		ui_call_win_pos(
+			i64((^C.int)(wgrid + GRID_HANDLE_OFF2)^),
+			i64((^C.int)(uintptr(wp) + W_HANDLE_OFF)^),
+			i64((^C.int)(uintptr(wp) + W_WINROW_OFF)^),
+			i64((^C.int)(uintptr(wp) + W_WINCOL_OFF)^),
+			i64((^C.int)(uintptr(wp) + W_WIDTH_OFF)^),
+			i64((^C.int)(uintptr(wp) + W_HEIGHT_OFF)^))
 		return
 	}
 	cfg_external := (^bool)(wcfg + 48)^
@@ -7741,19 +7722,19 @@ ui_ext_win_position :: proc "c"(wp: rawptr, validate: bool) {
 				anchor_s := float_anchor_str_g[(^C.int)(wcfg + WCFG_ANCHOR_OFF)^]
 				anchor := NvimString{data = anchor_s,
 					size = C.size_t(libc.strlen(anchor_s))}
-				ui_call_win_float_pos_r(
-					C.longlong((^C.int)(wgrid + GRID_HANDLE_OFF2)^),
-					(^C.int)(uintptr(wp) + W_HANDLE_OFF)^,
-					anchor,
-					C.longlong((^C.int)(uintptr(grid) + GRID_HANDLE_OFF2)^),
+				ui_call_win_float_pos(
+					i64((^C.int)(wgrid + GRID_HANDLE_OFF2)^),
+					i64((^C.int)(uintptr(wp) + W_HANDLE_OFF)^),
+					Api_String{transmute(^u8)(anchor.data), C.size_t(anchor.size)},
+					i64((^C.int)(uintptr(grid) + GRID_HANDLE_OFF2)^),
 					row, col,
 					(^bool)(wgrid + GRID_MOUSE_OFF2)^,
-					C.longlong((^C.int)(wgrid + GRID_ZINDEX_OFF)^),
-					C.longlong((^C.size_t)(wgrid + GRID_COMP_INDEX_OFF)^),
-					C.longlong((^C.int)(uintptr(wp) + W_WINROW_OFF)^),
-					C.longlong((^C.int)(uintptr(wp) + W_WINCOL_OFF)^))
+					i64((^C.int)(wgrid + GRID_ZINDEX_OFF)^),
+					i64((^C.size_t)(wgrid + GRID_COMP_INDEX_OFF)^),
+					i64((^C.int)(uintptr(wp) + W_WINROW_OFF)^),
+					i64((^C.int)(uintptr(wp) + W_WINCOL_OFF)^))
 			}
-			ui_check_cursor_grid_r((^C.int)(wgrid + GRID_HANDLE_OFF2)^)
+			ui_check_cursor_grid((^C.int)(wgrid + GRID_HANDLE_OFF2)^)
 			(^bool)(wgrid + GRID_MOUSE_OFF2)^ = (^bool)(wcfg + WCFG_MOUSE_OFF2)^
 			if !valid {
 				(^bool)(wgrid + GRID_VALID_OFF)^ = false
@@ -7761,14 +7742,14 @@ ui_ext_win_position :: proc "c"(wp: rawptr, validate: bool) {
 			}
 		} else {
 			if ui_has(K_UIMULTIGRID_O) {
-				ui_call_win_hide_r((^C.int)(wgrid + GRID_HANDLE_OFF2)^)
+				ui_call_win_hide(i64((^C.int)(wgrid + GRID_HANDLE_OFF2)^))
 			}
 			ui_comp_remove_grid_r(transmute(rawptr)(wgrid))
 		}
 	} else {
-		ui_call_win_external_pos_r(
-			C.longlong((^C.int)(wgrid + GRID_HANDLE_OFF2)^),
-			(^C.int)(uintptr(wp) + W_HANDLE_OFF)^)
+		ui_call_win_external_pos(
+			i64((^C.int)(wgrid + GRID_HANDLE_OFF2)^),
+			i64((^C.int)(uintptr(wp) + W_HANDLE_OFF)^))
 	}
 }
 

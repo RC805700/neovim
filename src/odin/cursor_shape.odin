@@ -86,8 +86,7 @@ foreign _ {
 	cmdline_at_end_e :: proc "c" () -> bool ---
 	@(link_name = "cmdline_overstrike")
 	cmdline_overstrike_e :: proc "c" () -> bool ---
-	@(link_name = "ui_mode_info_set")
-	ui_mode_info_set_e :: proc "c" () ---
+	// ui_mode_info_set now defined in ui.odin — call directly.
 }
 
 // Array append for arena arrays (pre-sized; C ADD_C equivalent).
@@ -177,7 +176,7 @@ parse_shape_opt :: proc "c" (what: C.int) -> cstring {
 		if round == 2 || ([^]u8)(p_guicursor_g)[0] == 0 {
 			clear_shape_table_o()
 			if ([^]u8)(p_guicursor_g)[0] == 0 {
-				ui_mode_info_set_e()
+				ui_mode_info_set()
 				return nil
 			}
 		}
@@ -312,7 +311,7 @@ parse_shape_opt :: proc "c" (what: C.int) -> cstring {
 		shape_table[SHAPE_IDX_VE_O].id = shape_table[SHAPE_IDX_V_O].id
 		shape_table[SHAPE_IDX_VE_O].id_lm = shape_table[SHAPE_IDX_V_O].id_lm
 	}
-	ui_mode_info_set_e()
+	ui_mode_info_set()
 	return nil
 }
 

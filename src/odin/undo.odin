@@ -242,8 +242,7 @@ foreign _ {
 	FullName_save_r :: proc "c" (fname: cstring, force: bool) -> ^u8 ---
 	@(link_name = "file_ff_differs")
 	file_ff_differs_r :: proc "c" (buf: rawptr, ignore_empty: bool) -> bool ---
-	@(link_name = "extmark_apply_undo")
-	extmark_apply_undo_r :: proc "c" (undo_info: ExtmarkUndoObject, undo: bool) ---
+	// extmark_apply_undo now defined in extmark.odin — call directly.
 	@(link_name = "ml_delete")
 	ml_delete_r :: proc "c" (lnum: C.int) -> C.int ---
 	// reuse time.odin's os_localtime_r (posix.time_t == C.long on this ABI)
@@ -2213,11 +2212,11 @@ u_undoredo :: proc "c" (undo: bool, do_buf_event: bool) {
 	// Adjust Extmarks
 	if undo {
 		for i := C.int(uh_extmark_size(curhead)) - 1; i > -1; i -= 1 {
-			extmark_apply_undo_r(uh_extmark_at(curhead, i)^, undo)
+			extmark_apply_undo(uh_extmark_at(curhead, i)^, undo)
 		}
 	} else {
 		for i := C.int(0); i < C.int(uh_extmark_size(curhead)); i += 1 {
-			extmark_apply_undo_r(uh_extmark_at(curhead, i)^, undo)
+			extmark_apply_undo(uh_extmark_at(curhead, i)^, undo)
 		}
 	}
 	if (curhead.uh_flags & UH_RELOAD) != 0 {
@@ -2848,7 +2847,7 @@ u_undoline :: proc "c" () {
 	oldp := u_save_line(buf_i32_at(curbuf, B_U_LINE_LNUM))
 	line_ptr := (^u8)(buf_ptr_at(curbuf, B_U_LINE_PTR))
 	ml_replace_c(buf_i32_at(curbuf, B_U_LINE_LNUM), line_ptr, true)
-	extmark_splice_cols_r(curbuf, buf_i32_at(curbuf, B_U_LINE_LNUM) - 1, 0,
+	extmark_splice_cols(curbuf, buf_i32_at(curbuf, B_U_LINE_LNUM) - 1, 0,
 		C.int(libc.strlen(transmute(cstring)(oldp))),
 		C.int(libc.strlen(transmute(cstring)(line_ptr))), kExtmarkUndo)
 	changed_bytes_r(buf_i32_at(curbuf, B_U_LINE_LNUM), 0)

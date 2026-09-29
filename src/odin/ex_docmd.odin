@@ -3078,7 +3078,7 @@ restore_current_state :: proc "c" (sst: rawptr) {
 	pending_end_reg_executing = ([^]bool)(uintptr(sst) + SST_PENDING_OFF)[0]
 	msg_didout_g = msg_didout_g || ([^]bool)(uintptr(sst) + SST_MSGDIDOUT_OFF)[0]
 	State = ([^]C.int)(uintptr(sst) + SST_STATE_OFF)[0]
-	ui_cursor_shape_r()
+	ui_cursor_shape()
 }
 
 // —— Batch 23c: ex_docmd.c skip/profile helpers (plains, C-statics) ——
@@ -3666,7 +3666,7 @@ do_cmdline :: proc "c" (cmdline: cstring, fgetline: LineGetter, cookie: rawptr, 
 				indent = int(cs_idx2 + 1) * 2
 			}
 			if count == 1 && getline_equal(fgetline, cookie, transmute(LineGetter)(getexline_e)) {
-				if ui_has_r(K_UICMDLINE_O) {
+				if ui_has(K_UICMDLINE_O) {
 					ui_ext_cmdline_block_append_e(0, transmute(cstring)(last_cmdline))
 					did_block = true
 				}
@@ -3685,7 +3685,7 @@ do_cmdline :: proc "c" (cmdline: cstring, fgetline: LineGetter, cookie: rawptr, 
 				break
 			}
 			used_getline = true
-			if ui_has_r(K_UICMDLINE_O) && count > 0 && getline_equal(fgetline, cookie, transmute(LineGetter)(getexline_e)) {
+			if ui_has(K_UICMDLINE_O) && count > 0 && getline_equal(fgetline, cookie, transmute(LineGetter)(getexline_e)) {
 				ui_ext_cmdline_block_append_e(C.size_t(indent), next_cmdline)
 			}
 			if (flags & DOCMD_KEEPLINE_O) != 0 {
@@ -5028,7 +5028,7 @@ ex_win_close :: proc "c" (forceit: C.int, win: rawptr, tp: rawptr) {
 		if (p_confirm_g != 0 || (cmdmod_cmod_flags & CMOD_CONFIRM_O) != 0) && p_write_g != 0 {
 			br: Bufref_T
 			set_bufref(&br, buf)
-			dialog_changed_r(buf, false)
+			dialog_changed(buf, false)
 			if bufref_valid(&br) && bufIsChanged(buf) {
 				return
 			}
@@ -5882,10 +5882,8 @@ ex_blast :: proc "c" (eap: rawptr) {
 
 // —— Batch 28: ex_docmd.c quit handlers (exports + unstatic) ——
 foreign _ {
-	@(link_name = "check_changed_any")
-	check_changed_any_e :: proc "c" (hidden: bool, unload: bool) -> bool ---
-	@(link_name = "ui_call_error_exit")
-	ui_call_error_exit_e :: proc "c" (status: C.longlong) ---
+	// check_changed_any now defined in ex_cmds2.odin — call directly.
+	// ui_call_error_exit now defined in ui.odin — call directly.
 }
 
 // :quit (ex_docmd.c static → export).
@@ -5927,7 +5925,7 @@ ex_quit :: proc "c" (eap: rawptr) {
 	if force {
 		ccgd |= CCGD_FORCEIT_O
 	}
-	if (!buf_hide(wbuf) && check_changed_r(wbuf, ccgd)) || check_more_o(true, force) == FAIL_E || (only_one_window() && check_changed_any_e(force, true)) {
+	if (!buf_hide(wbuf) && check_changed(wbuf, ccgd)) || check_more_o(true, force) == FAIL_E || (only_one_window() && check_changed_any(force, true)) {
 		not_exiting(save_exiting)
 	} else {
 		if only_one_window() && (firstwin == lastwin_g || ([^]C.int)(uintptr(eap) + EXARG_ADDR_COUNT_OFF)[0] == 0) {
@@ -5947,7 +5945,7 @@ ex_cquit :: proc "c" (eap: rawptr) {
 	if ([^]C.int)(uintptr(eap) + EXARG_ADDR_COUNT_OFF)[0] > 0 {
 		status = ([^]C.int)(uintptr(eap) + EXARG_LINE2_OFF)[0]
 	}
-	ui_call_error_exit_e(C.longlong(status))
+	ui_call_error_exit(i64(status))
 	getout(C.int(status))
 }
 
@@ -5961,7 +5959,7 @@ ex_quitall :: proc "c" (eap: rawptr) {
 	save_exiting := exiting
 	exiting = true
 	force := ([^]C.int)(uintptr(eap) + EXARG_FORCEIT_OFF)[0] != 0
-	if force || !check_changed_any_e(false, false) {
+	if force || !check_changed_any(false, false) {
 		getout(0)
 	}
 	not_exiting(save_exiting)
@@ -6175,7 +6173,7 @@ ex_read :: proc "c" (eap: rawptr) {
 	i: C.int
 	arg := ([^]cstring)(uintptr(eap) + EXARG_ARG_OFF)[0]
 	if ([^]u8)(arg)[0] == 0 {
-		if check_fname_r() == FAIL_E {
+		if check_fname() == FAIL_E {
 			return
 		}
 		i = readfile_r(transmute(cstring)((^rawptr)(uintptr(curbuf) + B_FFNAME)^), transmute(cstring)((^rawptr)(uintptr(curbuf) + B_FNAME)^), ([^]C.int)(uintptr(eap) + EXARG_LINE2_OFF)[0], 0, MAXLNUM, eap, 0, false)
@@ -6507,8 +6505,7 @@ foreign _ {
 	remote_ui_disconnect_e :: proc "c" (channel_id: u64, err: ^Api_Error, send_error_exit: bool) ---
 	@(link_name = "remote_ui_connect")
 	remote_ui_connect_e :: proc "c" (channel_id: u64, server_addr: cstring, err: ^Api_Error) ---
-	@(link_name = "ui_active")
-	ui_active_e :: proc "c" () -> C.size_t ---
+	// ui_active now defined in ui.odin — call directly.
 }
 
 // :detach (ex_docmd.c static → export; MSWIN branch dropped).
@@ -6552,7 +6549,7 @@ ex_connect :: proc "c" (eap: rawptr) {
 	context = runtime.default_context()
 	stop_server := false
 	if ([^]C.int)(uintptr(eap) + EXARG_FORCEIT_OFF)[0] != 0 {
-		stop_server = ui_active_e() == 1
+		stop_server = ui_active() == 1
 	}
 	err: Api_Error = {typ = -1}
 	remote_ui_connect_e(current_ui, ([^]cstring)(uintptr(eap) + EXARG_ARG_OFF)[0], &err)
@@ -6845,8 +6842,7 @@ foreign _ {
 	set_cursor_for_append_to_line_e :: proc "c" () ---
 	@(link_name = "may_trigger_vim_suspend_resume")
 	may_trigger_vim_suspend_resume_e :: proc "c" (suspend: bool) ---
-	@(link_name = "ui_call_suspend")
-	ui_call_suspend_e :: proc "c" () ---
+	// ui_call_suspend now defined in ui.odin — call directly.
 }
 
 CMD_STARTINSERT_O :: 435
@@ -6929,7 +6925,7 @@ ex_stop :: proc "c" (eap: rawptr) {
 		autowrite_all()
 	}
 	may_trigger_vim_suspend_resume_e(true)
-	ui_call_suspend_e()
+	ui_call_suspend()
 	ui_flush()
 }
 
@@ -7367,7 +7363,7 @@ ex_exit :: proc "c" (eap: rawptr) {
 	if check_more_o(false, force) == OK_E && only_one_window() {
 		exiting = true
 	}
-	if ((([^]C.int)(uintptr(eap) + EXARG_CMDIDX_OFF)[0] == CMD_WQ_O || curbufIsChanged()) && do_write(eap) == FAIL_E) || before_quit_autocmds(curwin, false, force) || check_more_o(true, force) == FAIL_E || (only_one_window() && check_changed_any_e(force, false)) {
+	if ((([^]C.int)(uintptr(eap) + EXARG_CMDIDX_OFF)[0] == CMD_WQ_O || curbufIsChanged()) && do_write(eap) == FAIL_E) || before_quit_autocmds(curwin, false, force) || check_more_o(true, force) == FAIL_E || (only_one_window() && check_changed_any(force, false)) {
 		not_exiting(save_exiting)
 	} else {
 		if only_one_window() {
@@ -7533,7 +7529,7 @@ ex_syncbind :: proc "c" (eap: rawptr) {
 		wp := firstwin
 		for wp != nil {
 			if (^bool)(uintptr(wp) + W_P_SCB_OFF)^ && (^rawptr)(uintptr(wp) + W_BUFFER_OFF)^ != nil {
-				y := plines_m_win_fill_r(wp, 1, ([^]C.int)(uintptr((^rawptr)(uintptr(wp) + W_BUFFER_OFF)^) + B_ML_LINE_COUNT_OFF)[0]) - C.int(get_scrolloff_value(curwin))
+				y := plines_m_win_fill(wp, 1, ([^]C.int)(uintptr((^rawptr)(uintptr(wp) + W_BUFFER_OFF)^) + B_ML_LINE_COUNT_OFF)[0]) - C.int(get_scrolloff_value(curwin))
 				if y < vtopline {
 					vtopline = y
 				}
@@ -7701,7 +7697,7 @@ ex_normal :: proc "c" (eap: rawptr) {
 	restore_current_state(rawptr(&save_state[0]))
 	ex_normal_busy_g -= 1
 	setmouse()
-	ui_cursor_shape_r()
+	ui_cursor_shape()
 	xfree(rawptr(arg))
 }
 
@@ -7868,7 +7864,7 @@ ex_recover :: proc "c" (eap: rawptr) {
 		ccgd |= CCGD_FORCEIT_O
 	}
 	arg := ([^]cstring)(uintptr(eap) + EXARG_ARG_OFF)[0]
-	if !check_changed_r(curbuf, ccgd) && (([^]u8)(arg)[0] == 0 || setfname(curbuf, arg, nil, true) == OK_E) {
+	if !check_changed(curbuf, ccgd) && (([^]u8)(arg)[0] == 0 || setfname(curbuf, arg, nil, true) == OK_E) {
 		ml_recover_r(true)
 	}
 	recoverymode = false
@@ -7883,8 +7879,7 @@ ex_uptime :: proc "c" (eap: rawptr) {
 
 // —— Batch 55: ex_docmd.c restart engine (export + unstatic, Linux-only) ——
 foreign _ {
-	@(link_name = "ui_call_restart")
-	ui_call_restart_e :: proc "c" (addr: NvimString) ---
+	// ui_call_restart now defined in ui.odin — call directly.
 	@(link_name = "nvim_command")
 	nvim_command_e :: proc "c" (cmd: NvimString, err: ^Api_Error) ---
 }
@@ -7930,7 +7925,7 @@ ex_restart :: proc "c" (eap: rawptr) {
 		}
 	}
 	err: Api_Error = {typ = -1}
-	no_ui := ui_active_e() == 0
+	no_ui := ui_active() == 0
 	exepath := get_vim_var_str(VV_PROGPATH)
 	l := get_vim_var_list(VV_ARGV_O)
 	argc := tv_list_len_o(l)
@@ -8052,7 +8047,7 @@ ex_restart :: proc "c" (eap: rawptr) {
 				listen_addr := xmemdupz(rawptr(rs.data), C.size_t(rs.size))
 				arena_mem_free(result_mem)
 				result_mem = nil
-				ui_call_restart_e(NvimString{data = transmute(cstring)(listen_addr), size = C.size_t(rs.size)})
+				ui_call_restart(Api_String{transmute(^u8)(listen_addr), C.size_t(rs.size)})
 				ui_flush()
 				xfree(rawptr(listen_addr))
 				set_vim_var_string(VV_EXITREASON_O, cstring("restart"), 7)

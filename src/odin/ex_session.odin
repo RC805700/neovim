@@ -435,15 +435,10 @@ store_session_globals_o :: proc "c" (fd: ^libc.FILE) -> C.int {
 	d := get_globvar_dict()
 	ht := uintptr(d) + 16
 	todo := (^C.size_t)(ht + 8)^
-	arr := ([^]rawptr)(rawptr((^rawptr)(ht + 32)^))
-	i: uintptr = 0
+	hi := uintptr((^rawptr)(ht + 32)^)
 	for todo > 0 {
-		hi := arr[i]
-		i += 1
-		if hi == nil {
-			continue
-		}
-		key := (^rawptr)(uintptr(hi) + 8)^
+		key := ([^]rawptr)(hi)[1]
+		hi += 16
 		if key == nil || key == rawptr(&hash_removed) {
 			continue
 		}

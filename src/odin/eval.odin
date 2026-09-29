@@ -2086,14 +2086,14 @@ f_prompt_setprompt :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawp
 		if prompt_col < old_prompt_len || prompt_col > old_line_len ||
 			!strnequal(transmute(cstring)(old_prompt), transmute(cstring)(rawptr(uintptr(old_line) + uintptr(prompt_col) - uintptr(old_prompt_len))), C.size_t(old_prompt_len)) {
 			ml_replace_buf_e(buf, prompt_lno, transmute(^u8)(new_prompt), true, false)
-			extmark_splice_cols_r(buf, prompt_lno - 1, 0, old_line_len, new_prompt_len, KEXTMARK_NO_UNDO_O)
+			extmark_splice_cols(buf, prompt_lno - 1, 0, old_line_len, new_prompt_len, KEXTMARK_NO_UNDO_O)
 			cursor_col = new_prompt_len
 		} else {
 			new_line := concat_str_c(transmute(cstring)(new_prompt), transmute(cstring)(rawptr(uintptr(old_line) + uintptr(prompt_col))))
 			if ml_replace_buf_e(buf, prompt_lno, new_line, false, false) != OK_R {
 				xfree(transmute(rawptr)(new_line))
 			}
-			extmark_splice_cols_r(buf, prompt_lno - 1, 0, prompt_col, new_prompt_len, KEXTMARK_NO_UNDO_O)
+			extmark_splice_cols(buf, prompt_lno - 1, 0, prompt_col, new_prompt_len, KEXTMARK_NO_UNDO_O)
 			cursor_col += new_prompt_len - prompt_col
 		}
 		if (^rawptr)(uintptr(curwin) + W_BUFFER_OFF)^ == buf && (^C.int)(uintptr(curwin) + W_CURSOR)^ == prompt_lno {
@@ -13908,8 +13908,7 @@ foreign _ {
 	has_nvim_version_e :: proc "c" (version_str: cstring) -> bool ---
 	@(link_name = "has_vim_patch")
 	has_vim_patch_e :: proc "c" (n: C.int, major_minor_version: C.int) -> bool ---
-	@(link_name = "ui_gui_attached")
-	ui_gui_attached_e :: proc "c" () -> bool ---
+	// ui_gui_attached now defined in ui.odin — call directly.
 	@(link_name = "nlua_exec")
 	nlua_exec_e :: proc "c" (str: NvimString, chunkname: cstring, args: Api_Array, mode: C.int, arena: rawptr, err: rawptr) -> Api_Object ---
 	@(link_name = "strtoul")
@@ -14001,7 +14000,7 @@ f_has :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 		n = true
 	} else if _strcasecmp(name, cstring("gui_running")) == 0 {
 		x = true
-		n = ui_gui_attached_e()
+		n = ui_gui_attached()
 	} else if _strcasecmp(name, cstring("syntax_items")) == 0 {
 		x = true
 		n = syntax_present_r(curwin)
@@ -15839,10 +15838,7 @@ foreign _ {
 	msg_scroll_flush_e :: proc "c" () ---
 	@(link_name = "ui_comp_get_grid_at_coord")
 	ui_comp_get_grid_at_coord_e :: proc "c" (row: C.int, col: C.int) -> ^ScreenGrid ---
-	@(link_name = "ui_current_row")
-	ui_current_row_e :: proc "c" () -> C.int ---
-	@(link_name = "ui_current_col")
-	ui_current_col_e :: proc "c" () -> C.int ---
+	// ui_current_row/col now defined in ui.odin — call directly.
 }
 
 // Grid adjust for screen*() (C-static in funcs.c).
@@ -15935,14 +15931,14 @@ f_screenchars :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 @(export)
 f_screencol :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 	context = runtime.default_context()
-	rettv.vval = transmute(rawptr)(C.longlong(ui_current_col_e() + 1))
+	rettv.vval = transmute(rawptr)(C.longlong(ui_current_col() + 1))
 }
 
 // "screenrow()" function.
 @(export)
 f_screenrow :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 	context = runtime.default_context()
-	rettv.vval = transmute(rawptr)(C.longlong(ui_current_row_e() + 1))
+	rettv.vval = transmute(rawptr)(C.longlong(ui_current_row() + 1))
 }
 
 // —— Batch 27ba: funcs.c tagfiles + taglist ——
@@ -17127,8 +17123,7 @@ f_searchpos :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 foreign _ {
 	@(link_name = "vgetc")
 	vgetc_e :: proc "c" () -> C.int ---
-	@(link_name = "ui_flush")
-	ui_flush_e :: proc "c" () ---
+	// ui_flush now defined in ui.odin — call directly.
 }
 
 // Dummy timer due callback (C-static in funcs.c).
@@ -17174,7 +17169,7 @@ f_wait :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 	exprval := Typval_T{v_type = VAR_UNKNOWN, v_lock = VAR_UNLOCKED}
 	error := false
 	called_before := called_emsg
-	ui_flush_e()
+	ui_flush()
 	remaining := timeout
 	before: u64 = 0
 	if remaining > 0 {
@@ -18006,7 +18001,7 @@ f_synIDattr :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 		if modec != 'c' && modec != 'g' {
 			modec = 0
 		}
-	} else if ui_rgb_attached_r() {
+	} else if ui_rgb_attached() {
 		modec = 'g'
 	} else {
 		modec = 'c'

@@ -12,22 +12,13 @@ foreign _ {
 	set_valid_virtcol_e :: proc "c" (wp: rawptr, vcol: C.int) ---
 	@(link_name = "ml_get_buf_mut")
 	ml_get_buf_mut_e :: proc "c" (buf: rawptr, lnum: C.int) -> ^u8 ---
-	@(link_name = "linetabsize")
-	linetabsize_e :: proc "c" (wp: rawptr, lnum: C.int) -> C.int ---
+	// linetabsize now defined in plines.odin — call directly.
 	@(link_name = "dec")
 	dec_e :: proc "c" (lp: ^Pos_T) -> C.int ---
 }
 
 KOPT_VE_ONEMORE_O :: 0x08 // kOptVeFlagOnemore
 KOPT_VE_ALL_O :: 0x04 // kOptVeFlagAll
-
-// getvvcol/getvcol stay in C (plines.c) — single decls, all callers use these.
-foreign _ {
-	@(link_name = "getvvcol")
-	getvvcol :: proc "c" (wp: rawptr, pos: ^Pos_T, start: ^C.int, cursor: ^C.int, end: ^C.int, flags: C.int) ---
-	@(link_name = "getvcol")
-	getvcol :: proc "c" (wp: rawptr, pos: ^Pos_T, start: ^C.int, cursor: ^C.int, end: ^C.int, flags: C.int) ---
-}
 
 // Screen position of the cursor.
 @(export)
@@ -93,7 +84,7 @@ coladvance2_o :: proc "c" (wp: rawptr, pos: ^Pos_T, addspaces: bool, finetune: b
 		idx = linelen - 1 + one_more
 		col = wcol
 		if (addspaces || finetune) && !VIsual_active {
-			(^C.int)(uintptr(wp) + W_CURSWANT_OFF)^ = linetabsize_e(wp, pos.lnum) + one_more
+			(^C.int)(uintptr(wp) + W_CURSWANT_OFF)^ = linetabsize(wp, pos.lnum) + one_more
 			if (^C.int)(uintptr(wp) + W_CURSWANT_OFF)^ > 0 {
 				(^C.int)(uintptr(wp) + W_CURSWANT_OFF)^ -= 1
 			}
@@ -111,7 +102,7 @@ coladvance2_o :: proc "c" (wp: rawptr, pos: ^Pos_T, addspaces: bool, finetune: b
 			}
 		}
 		csarg: CharsizeArg_O
-		cstype := init_charsize_arg_r(&csarg, wp, pos.lnum, line)
+		cstype := init_charsize_arg(&csarg, wp, pos.lnum, line)
 		ci := utf_ptr2StrCharInfo_o(line)
 		col = 0
 		for col <= wcol && ci.ptr^ != 0 {
