@@ -1030,7 +1030,7 @@ buflist_getfile :: proc "c"(n: C.int, lnum_in: C.int, options: C.int, forceit: C
 		// cursor is at to BOL and w_cursor.lnum is checked due to getfile()
 		if p_sol_g == 0 && col != 0 {
 			(^C.int)(uintptr(curwin) + W_CURSOR_OFF + 4)^ = col // w_cursor.col
-			check_cursor_col_r(curwin)
+			check_cursor_col(curwin)
 			(^C.int)(uintptr(curwin) + W_CURSOR_OFF + 8)^ = 0 // coladd
 			(^bool)(uintptr(curwin) + W_SET_CURSWANT_OFF)^ = true
 		}
@@ -1687,12 +1687,12 @@ buflist_getfpos_o :: proc "c"() {
 	fm := transmute(^Fmark_T)(buflist_findfmark(curbuf))
 	fpos := &fm.mark
 	(^C.int)(uintptr(curwin) + W_CURSOR_OFF)^ = fpos.lnum
-	check_cursor_lnum_r(curwin)
+	check_cursor_lnum(curwin)
 	if p_sol_g != 0 {
 		(^C.int)(uintptr(curwin) + W_CURSOR_OFF + 4)^ = 0
 	} else {
 		(^C.int)(uintptr(curwin) + W_CURSOR_OFF + 4)^ = fpos.col
-		check_cursor_col_r(curwin)
+		check_cursor_col(curwin)
 		(^C.int)(uintptr(curwin) + W_CURSOR_OFF + 8)^ = 0
 		(^bool)(uintptr(curwin) + W_SET_CURSWANT_OFF)^ = true
 	}

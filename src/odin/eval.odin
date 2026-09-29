@@ -1689,7 +1689,7 @@ set_buffer_lines_o :: proc "c" (buf: rawptr, lnum_arg: C.int, append: bool, line
 				inserted_bytes_r(lnum, 0, old_len, C.int(libc.strlen(transmute(cstring)(line))))
 				cur_lnum := (^C.int)(uintptr(curwin) + W_CURSOR)^
 				if is_curbuf && lnum == cur_lnum {
-					check_cursor_col_r(curwin)
+					check_cursor_col(curwin)
 				}
 				rettv.vval = transmute(rawptr)(C.longlong(0)) // OK
 			}
@@ -1722,7 +1722,7 @@ set_buffer_lines_o :: proc "c" (buf: rawptr, lnum_arg: C.int, append: bool, line
 			}
 			tp = (^rawptr)(uintptr(tp) + TP_NEXT_OFF)^
 		}
-		check_cursor_col_r(curwin)
+		check_cursor_col(curwin)
 		update_topline_r(curwin)
 	}
 	if !is_curbuf {
@@ -1855,7 +1855,7 @@ f_deletebufline :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr)
 			}
 			tp = (^rawptr)(uintptr(tp) + TP_NEXT_OFF)^
 		}
-		check_cursor_col_r(curwin)
+		check_cursor_col(curwin)
 		deleted_lines_mark_r(first, count)
 		rettv.vval = transmute(rawptr)(C.longlong(0)) // OK
 	}
@@ -2098,7 +2098,7 @@ f_prompt_setprompt :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawp
 		}
 		if (^rawptr)(uintptr(curwin) + W_BUFFER_OFF)^ == buf && (^C.int)(uintptr(curwin) + W_CURSOR)^ == prompt_lno {
 			(^C.int)(uintptr(curwin) + W_CURSOR + 4)^ = cursor_col
-			check_cursor_col_r(curwin)
+			check_cursor_col(curwin)
 		}
 		changed_lines_r(buf, prompt_lno, 0, prompt_lno + 1, 0, true)
 		u_clearallandblockfree(buf)
@@ -2679,7 +2679,7 @@ f_winrestview :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 	if di != nil {
 		(^C.int)(uintptr(curwin) + W_SKIPCOL_OFF)^ = C.int(tv_get_number(transmute(^Typval_T)(di)))
 	}
-	check_cursor_r(curwin)
+	check_cursor(curwin)
 	win_new_height(curwin, (^C.int)(uintptr(curwin) + W_HEIGHT_OFF)^)
 	win_new_width(curwin, (^C.int)(uintptr(curwin) + W_WIDTH_OFF)^)
 	changed_window_setting_r(curwin)
@@ -3184,7 +3184,7 @@ win_execute_before :: proc "c" (args: ^WinExecute_T, wp: rawptr, tp: rawptr) -> 
 		}
 	}
 	if switch_win_noblock(transmute(rawptr)(&args.switchwin), wp, tp, true) == OK_R {
-		check_cursor_r(curwin)
+		check_cursor(curwin)
 		return true
 	}
 	return false
@@ -3209,9 +3209,9 @@ win_execute_after :: proc "c" (args: ^WinExecute_T) {
 	if win_valid(args.wp) && !pos_equal_o(args.curpos, (^Pos_T)(uintptr(args.wp) + W_CURSOR)^) {
 		(^bool)(uintptr(args.wp) + W_REDR_STATUS_OFF)^ = true
 	}
-	check_cursor_r(curwin)
+	check_cursor(curwin)
 	if VIsual_active {
-		check_pos_r(curbuf, &VIsual_g)
+		check_pos(curbuf, &VIsual_g)
 	}
 }
 
@@ -16654,8 +16654,8 @@ getregionpos_o :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, p1: ^Pos_T, p2
 	} else if region_type^ == kMTBlockWise {
 		sc1, ec1, sc2, ec2: C.int = 0, 0, 0, 0
 		lbr_saved := reset_lbr_e()
-		getvvcol_e(curwin, rawptr(p1), &sc1, nil, &ec1, 0)
-		getvvcol_e(curwin, rawptr(p2), &sc2, nil, &ec2, 0)
+		getvvcol(curwin, (^Pos_T)(rawptr(p1)), &sc1, nil, &ec1, 0)
+		getvvcol(curwin, (^Pos_T)(rawptr(p2)), &sc2, nil, &ec2, 0)
 		restore_lbr_e(lbr_saved)
 		(^C.int)(uintptr(oap) + OAP_MOTION_TYPE)^ = kMTBlockWise
 		(^bool)(uintptr(oap) + OAP_INCLUSIVE)^ = true
@@ -17590,8 +17590,7 @@ foreign _ {
 	get_syntax_info_e :: proc "c" (seqnrp: ^C.int) -> C.int ---
 	@(link_name = "syn_get_sub_char")
 	syn_get_sub_char_e :: proc "c" () -> C.int ---
-	@(link_name = "getvvcol")
-	getvvcol_e :: proc "c" (wp: rawptr, pos: rawptr, start: ^C.int, cursor: ^C.int, end: ^C.int, flags: C.int) ---
+	// getvvcol — PORTED (cursor.odin).
 }
 
 // "synconcealed(lnum, col)" function.
@@ -17663,7 +17662,7 @@ f_virtcol :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 					(^C.int)(uintptr(fp) + 4)^ = length
 				}
 			}
-			getvvcol_e(wp, fp, &vcol_start, nil, &vcol_end, 0)
+			getvvcol(wp, (^Pos_T)(fp), &vcol_start, nil, &vcol_end, 0)
 			vcol_start += 1
 			vcol_end += 1
 		}
@@ -18969,7 +18968,7 @@ f_spellbadword :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) 
 	if ([^]Typval_T)(argvars)[0].v_type == VAR_UNKNOWN {
 		length = spell_move_to(curwin, FORWARD_O, SMT_ALL_O, true, &attr)
 		if length != 0 {
-			word = transmute(cstring)(get_cursor_pos_ptr_r())
+			word = transmute(cstring)(get_cursor_pos_ptr())
 			(^bool)(uintptr(curwin) + W_SET_CURSWANT)^ = true
 		}
 	} else if ([^]u8)((^rawptr)(uintptr(curbuf) + SB_P_SPL)^)[0] != 0 {
@@ -29084,7 +29083,7 @@ prompt_trim_scrollback :: proc "c" (buf: rawptr) {
 		}
 		tp = (^rawptr)(uintptr(tp) + TP_NEXT_OFF)^
 	}
-	check_cursor_col_r(curwin)
+	check_cursor_col(curwin)
 }
 
 // Prompt submit handler (eval.c public).

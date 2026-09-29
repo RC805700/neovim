@@ -310,14 +310,7 @@ foreign _ {
 	@(link_name = "ml_replace")
 	ml_replace_c :: proc "c" (lnum: C.int, line: ^u8, copy: bool) -> C.int ---
 
-	@(link_name = "get_cursor_line_ptr")
-	get_cursor_line_ptr_r :: proc "c" () -> ^u8 ---
-	@(link_name = "get_cursor_pos_ptr")
-	get_cursor_pos_ptr_r :: proc "c" () -> ^u8 ---
-	@(link_name = "get_cursor_line_len")
-	get_cursor_line_len_r :: proc "c" () -> C.int ---
-	@(link_name = "get_cursor_pos_len")
-	get_cursor_pos_len_r :: proc "c" () -> C.int ---
+	// get_cursor_line/pos_ptr/len — PORTED (cursor.odin).
 
 	@(link_name = "update_topline")
 	update_topline_r :: proc "c" (wp: rawptr) ---
@@ -342,14 +335,7 @@ foreign _ {
 	@(link_name = "preprocs_left")
 	preprocs_left_r :: proc "c" () -> bool ---
 
-	@(link_name = "getvcol")
-	getvcol_r :: proc "c" (wp: rawptr, pos: ^Pos_T, start: ^C.int, cursor: ^C.int, end: ^C.int, flags: C.int) ---
-	@(link_name = "getvpos")
-	getvpos_r :: proc "c" (wp: rawptr, pos: ^Pos_T, wcol: C.int) -> C.int ---
-	@(link_name = "coladvance_force")
-	coladvance_force_r :: proc "c" (wcol: C.int) -> C.int ---
-	@(link_name = "getviscol")
-	getviscol_r :: proc "c" () -> C.int ---
+	// getvcol/getvpos/coladvance_force/getviscol — PORTED (cursor.odin).
 	@(link_name = "win_chartabsize")
 	win_chartabsize_r :: proc "c" (wp: rawptr, p: ^u8, col: C.int) -> C.int ---
 	@(link_name = "tabstop_padding")
@@ -486,7 +472,7 @@ win_cursor_r :: #force_inline proc "c"(w: rawptr) -> ^Pos_T {
 
 // gchar_cursor() macro
 gchar_cursor_r :: #force_inline proc "c"() -> u8 {
-	return get_cursor_pos_ptr_r()^
+	return get_cursor_pos_ptr()^
 }
 
 semsg_fmt :: proc "c"(fmt: cstring, arg: rawptr) {
@@ -1768,7 +1754,7 @@ do_put :: proc "c" (regname: C.int, reg_arg: ^Yankreg_T, dir_arg: C.int, count_a
 			if (flags & PUT_LINE) != 0 {
 				stuffReadbuff_r(cstring("j0"))
 			} else {
-				cp := get_cursor_pos_ptr_r()
+				cp := get_cursor_pos_ptr()
 				one_past_line := cp^ == 0
 				eol := false
 				if !one_past_line {
@@ -1887,10 +1873,10 @@ do_put :: proc "c" (regname: C.int, reg_arg: ^Yankreg_T, dir_arg: C.int, count_a
 					done = true
 				}
 				if !done {
-					curline := get_cursor_line_ptr_r()
-					p := get_cursor_pos_ptr_r()
+					curline := get_cursor_line_ptr()
+					p := get_cursor_pos_ptr()
 					p_orig := p
-					plen := C.size_t(get_cursor_pos_len_r())
+					plen := C.size_t(get_cursor_pos_len())
 					if dir == FORWARD_DIR && p^ != 0 {
 						p = (^u8)(uintptr(p) + uintptr(utfc_ptr2len(transmute(cstring)(p))))
 					}
@@ -1901,7 +1887,7 @@ do_put :: proc "c" (regname: C.int, reg_arg: ^Yankreg_T, dir_arg: C.int, count_a
 					ml_append_c(cursor_pos().lnum, ptr, 0, false)
 					xfree(ptr)
 
-					ptr = xmemdupz(get_cursor_line_ptr_r(), C.size_t(split_pos))
+					ptr = xmemdupz(get_cursor_line_ptr(), C.size_t(split_pos))
 					ml_replace_c(cursor_pos().lnum, ptr, false)
 					nr_lines += 1
 					dir = FORWARD_DIR
@@ -1966,16 +1952,16 @@ do_put :: proc "c" (regname: C.int, reg_arg: ^Yankreg_T, dir_arg: C.int, count_a
 
 			if cur_ve_flags == kOptVeFlagAll_V && y_type == kMTCharWise {
 				if gchar_cursor_r() == '\t' {
-					viscol := getviscol_r()
+					viscol := getviscol()
 					ts := (^i64)(uintptr(curbuf) + B_P_TS)^
 					// Don't insert spaces when "p" on last pos of tab / "P" on first.
 					if (dir == FORWARD_DIR ? tabstop_padding_r(viscol, ts, (^C.int)(uintptr(curbuf) + B_P_VTS_ARRAY)) != 1 : cursor_pos().coladd > 0) {
-						coladvance_force_r(viscol)
+						coladvance_force(viscol)
 					} else {
 						cursor_pos().coladd = 0
 					}
 				} else if cursor_pos().coladd > 0 || gchar_cursor_r() == 0 {
-					coladvance_force_r(getviscol_r() + (dir == FORWARD_DIR ? 1 : 0))
+					coladvance_force(getviscol() + (dir == FORWARD_DIR ? 1 : 0))
 				}
 			}
 
@@ -1991,16 +1977,16 @@ do_put :: proc "c" (regname: C.int, reg_arg: ^Yankreg_T, dir_arg: C.int, count_a
 
 				if dir == FORWARD_DIR && c != 0 {
 					if cur_ve_flags == kOptVeFlagAll_V {
-						getvcol_r(curwin, cursor_pos(), &col, nil, &endcol2, 0)
+						getvcol(curwin, cursor_pos(), &col, nil, &endcol2, 0)
 					} else {
-						getvcol_r(curwin, cursor_pos(), nil, nil, &col, 0)
+						getvcol(curwin, cursor_pos(), nil, nil, &col, 0)
 					}
 
 					// move to start of next multi-byte character
-					cursor_pos().col += C.int(utfc_ptr2len(transmute(cstring)(get_cursor_pos_ptr_r())))
+					cursor_pos().col += C.int(utfc_ptr2len(transmute(cstring)(get_cursor_pos_ptr())))
 					col += 1
 				} else {
-					getvcol_r(curwin, cursor_pos(), &col, nil, &endcol2, 0)
+					getvcol(curwin, cursor_pos(), &col, nil, &endcol2, 0)
 				}
 
 				col += cursor_pos().coladd
@@ -2043,8 +2029,8 @@ do_put :: proc "c" (regname: C.int, reg_arg: ^Yankreg_T, dir_arg: C.int, count_a
 						lines_appended = 1
 					}
 					// advance to the position to insert at
-					oldp := get_cursor_line_ptr_r()
-					oldlen := get_cursor_line_len_r()
+					oldp := get_cursor_line_ptr()
+					oldlen := get_cursor_line_len()
 
 					p := oldp
 					vcol = 0
@@ -2157,7 +2143,7 @@ do_put :: proc "c" (regname: C.int, reg_arg: ^Yankreg_T, dir_arg: C.int, count_a
 					cursor_pos().col += 1
 
 					// in Insert mode we might be after the NUL
-					len := get_cursor_line_len_r()
+					len := get_cursor_line_len()
 					cursor_pos().col = min(cursor_pos().col, len)
 				} else {
 					cursor_pos().lnum = lnum
@@ -2169,7 +2155,7 @@ do_put :: proc "c" (regname: C.int, reg_arg: ^Yankreg_T, dir_arg: C.int, count_a
 				if y_type == kMTCharWise {
 					// FORWARD is BACKWARD on the next char
 					if dir == FORWARD_DIR && gchar_cursor_r() != 0 {
-						bytelen := C.int(utfc_ptr2len(transmute(cstring)(get_cursor_pos_ptr_r())))
+						bytelen := C.int(utfc_ptr2len(transmute(cstring)(get_cursor_pos_ptr())))
 
 						col += bytelen
 						if yanklen != 0 {
@@ -2194,7 +2180,7 @@ do_put :: proc "c" (regname: C.int, reg_arg: ^Yankreg_T, dir_arg: C.int, count_a
 						end_lnum = max(get_pos_r(curbuf, B_VISUAL + 12).lnum, get_pos_r(curbuf, B_VISUAL).lnum)
 						if end_lnum > start_lnum {
 							pos := Pos_T{lnum = lnum, col = col, coladd = 0}
-							getvcol_r(curwin, &pos, nil, &vcol, nil, 0)
+							getvcol(curwin, &pos, nil, &vcol, nil, 0)
 						}
 					}
 
@@ -2212,7 +2198,7 @@ do_put :: proc "c" (regname: C.int, reg_arg: ^Yankreg_T, dir_arg: C.int, count_a
 							oldlen := ml_get_len_r2(lnum)
 							if lnum > start_lnum {
 								pos := Pos_T{lnum = lnum}
-								if getvpos_r(curwin, &pos, vcol) == OK_R {
+								if getvpos(curwin, &pos, vcol) == OK_R {
 									col = pos.col
 								} else {
 									col = MAXCOL
@@ -2450,7 +2436,7 @@ do_put :: proc "c" (regname: C.int, reg_arg: ^Yankreg_T, dir_arg: C.int, count_a
 			set_i32_off(curwin, W_SET_CURSWANT, 1)
 
 			// Make sure cursor is not after the NUL.
-			len := get_cursor_line_len_r()
+			len := get_cursor_line_len()
 			if cursor_pos().col > len {
 				if cur_ve_flags == kOptVeFlagAll_V {
 					cursor_pos().coladd = cursor_pos().col - len

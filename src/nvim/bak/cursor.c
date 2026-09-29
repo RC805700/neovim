@@ -30,6 +30,7 @@
 #include "cursor.c.generated.h"
 
 /// @return  the screen position of the cursor.
+#pragma weak getviscol
 int getviscol(void)
 {
   colnr_T x;
@@ -39,6 +40,7 @@ int getviscol(void)
 }
 
 /// @return the screen position of character col with a coladd in the cursor line.
+#pragma weak getviscol2
 int getviscol2(colnr_T col, colnr_T coladd)
 {
   colnr_T x;
@@ -54,6 +56,7 @@ int getviscol2(colnr_T col, colnr_T coladd)
 /// Go to column "wcol", and add/insert white space as necessary to get the
 /// cursor in that column.
 /// The caller must have saved the cursor line for undo!
+#pragma weak coladvance_force
 int coladvance_force(colnr_T wcol)
 {
   int rc = coladvance2(curwin, &curwin->w_cursor, true, false, wcol);
@@ -74,6 +77,7 @@ int coladvance_force(colnr_T wcol)
 /// beginning at coladd 0.
 ///
 /// @return  OK if desired column is reached, FAIL if not
+#pragma weak coladvance
 int coladvance(win_T *wp, colnr_T wcol)
 {
   int rc = getvpos(wp, &wp->w_cursor, wcol);
@@ -249,12 +253,14 @@ static int coladvance2(win_T *wp, pos_T *pos, bool addspaces, bool finetune, col
 /// Return in "pos" the position of the cursor advanced to screen column "wcol".
 ///
 /// @return  OK if desired column is reached, FAIL if not
+#pragma weak getvpos
 int getvpos(win_T *wp, pos_T *pos, colnr_T wcol)
 {
   return coladvance2(wp, pos, false, virtual_active(wp), wcol);
 }
 
 /// Increment the cursor position.  See inc() for return values.
+#pragma weak inc_cursor
 int inc_cursor(void)
 {
   return inc(&curwin->w_cursor);
@@ -263,6 +269,7 @@ int inc_cursor(void)
 /// Decrement the line pointer 'p' crossing line boundaries as necessary.
 ///
 /// @return  1 when crossing a line, -1 when at start of file, 0 otherwise.
+#pragma weak dec_cursor
 int dec_cursor(void)
 {
   return dec(&curwin->w_cursor);
@@ -273,6 +280,7 @@ int dec_cursor(void)
 /// can be visible, folded lines don't count.
 ///
 /// @param lnum line number to get the result for
+#pragma weak get_cursor_rel_lnum
 linenr_T get_cursor_rel_lnum(win_T *wp, linenr_T lnum)
 {
   linenr_T cursor = wp->w_cursor.lnum;
@@ -300,6 +308,7 @@ linenr_T get_cursor_rel_lnum(win_T *wp, linenr_T lnum)
 
 /// Make sure "pos.lnum" and "pos.col" are valid in "buf".
 /// This allows for the col to be on the NUL byte.
+#pragma weak check_pos
 void check_pos(buf_T *buf, pos_T *pos)
 {
   pos->lnum = MIN(pos->lnum, buf->b_ml.ml_line_count);
@@ -309,6 +318,7 @@ void check_pos(buf_T *buf, pos_T *pos)
 }
 
 /// Make sure win->w_cursor.lnum is valid.
+#pragma weak check_cursor_lnum
 void check_cursor_lnum(win_T *win)
 {
   buf_T *buf = win->w_buffer;
@@ -326,6 +336,7 @@ void check_cursor_lnum(win_T *win)
 
 /// Make sure win->w_cursor.col is valid. Special handling of insert-mode.
 /// @see mb_check_adjust_col
+#pragma weak check_cursor_col
 void check_cursor_col(win_T *win)
 {
   colnr_T oldcol = win->w_cursor.col;
@@ -383,6 +394,7 @@ void check_cursor_col(win_T *win)
 }
 
 /// Make sure curwin->w_cursor in on a valid character
+#pragma weak check_cursor
 void check_cursor(win_T *wp)
 {
   check_cursor_lnum(wp);
@@ -391,6 +403,7 @@ void check_cursor(win_T *wp)
 
 /// Check if VIsual position is valid, correct it if not.
 /// Can be called when in Visual mode and a change has been made.
+#pragma weak check_visual_pos
 void check_visual_pos(void)
 {
   if (VIsual.lnum > curbuf->b_ml.ml_line_count) {
@@ -409,6 +422,7 @@ void check_visual_pos(void)
 
 /// Make sure curwin->w_cursor is not on the NUL at the end of the line.
 /// Allow it when in Visual mode and 'selection' is not "old".
+#pragma weak adjust_cursor_col
 void adjust_cursor_col(void)
 {
   if (curwin->w_cursor.col > 0
@@ -422,6 +436,7 @@ void adjust_cursor_col(void)
 /// Adjust the cursor position if needed.
 ///
 /// @return  true if the cursor was moved.
+#pragma weak set_leftcol
 bool set_leftcol(colnr_T leftcol)
 {
   // Return quickly when there is no change.
@@ -471,12 +486,14 @@ bool set_leftcol(colnr_T leftcol)
   return retval;
 }
 
+#pragma weak gchar_cursor
 int gchar_cursor(void)
 {
   return utf_ptr2char(get_cursor_pos_ptr());
 }
 
 /// Return the character immediately before the cursor.
+#pragma weak char_before_cursor
 int char_before_cursor(void)
 {
   if (curwin->w_cursor.col == 0) {
@@ -491,30 +508,35 @@ int char_before_cursor(void)
 
 /// Write a character at the current cursor position.
 /// It is directly written into the block.
+#pragma weak pchar_cursor
 void pchar_cursor(char c)
 {
   *(ml_get_buf_mut(curbuf, curwin->w_cursor.lnum) + curwin->w_cursor.col) = c;
 }
 
 /// @return  pointer to cursor line.
+#pragma weak get_cursor_line_ptr
 char *get_cursor_line_ptr(void)
 {
   return ml_get_buf(curbuf, curwin->w_cursor.lnum);
 }
 
 /// @return  pointer to cursor position.
+#pragma weak get_cursor_pos_ptr
 char *get_cursor_pos_ptr(void)
 {
   return ml_get_buf(curbuf, curwin->w_cursor.lnum) + curwin->w_cursor.col;
 }
 
 /// @return  length (excluding the NUL) of the cursor line.
+#pragma weak get_cursor_line_len
 colnr_T get_cursor_line_len(void)
 {
   return ml_get_buf_len(curbuf, curwin->w_cursor.lnum);
 }
 
 /// @return  length (excluding the NUL) of the cursor position.
+#pragma weak get_cursor_pos_len
 colnr_T get_cursor_pos_len(void)
 {
   return ml_get_buf_len(curbuf, curwin->w_cursor.lnum) - curwin->w_cursor.col;

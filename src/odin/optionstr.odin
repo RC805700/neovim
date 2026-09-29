@@ -1005,7 +1005,7 @@ did_set_virtualedit :: proc "c"(args: ^optset_T) -> cstring {
 			// Recompute cursor position in case the new 've' setting
 			// changes something.
 			validate_virtcol_r(win)
-			coladvance_r(win, (^C.int)(uintptr(win) + W_VIRTCOL_OFF)^)
+			coladvance(win, (^C.int)(uintptr(win) + W_VIRTCOL_OFF)^)
 		}
 	}
 	return nil

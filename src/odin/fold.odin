@@ -767,7 +767,7 @@ deleteFold :: proc "c" (wp: rawptr, start: C.int, end: C.int, recursive: C.int, 
 			redraw_buf_later(w_ptr_at(wp, W_BUFFER), UPD_INVERTED_F)
 		}
 	} else {
-		check_cursor_col_r(wp)
+		check_cursor_col(wp)
 	}
 
 	if last_lnum > 0 {

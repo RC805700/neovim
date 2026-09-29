@@ -2408,7 +2408,7 @@ win_update :: proc "c"(wp: rawptr) {
 							t: C.int
 
 							pos.col = ml_get_buf_len((^rawptr)(uintptr(wp) + W_BUFFER_OFF)^, pos.lnum)
-							getvvcol_r(wp, &pos, nil, nil, &t, 0)
+							getvvcol(wp, &pos, nil, nil, &t, 0)
 							toc = max(toc, t)
 							if cursor_above {
 								pos.lnum += 1

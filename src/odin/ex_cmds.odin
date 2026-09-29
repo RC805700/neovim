@@ -603,7 +603,7 @@ do_ecmd :: proc "c"(fnum: C.int, ffname_in: cstring, sfname_in: cstring, eap: ra
 			// Keep an autocmd-moved cursor (but not first-non-blank).
 			if !equalpos_o((^Pos_T)(uintptr(curwin) + W_CURSOR_OFF)^,
 				orig_pos) {
-				text := get_cursor_line_ptr_r()
+				text := get_cursor_line_ptr()
 
 				if (^C.int)(uintptr(curwin) + W_CURSOR_OFF)^ != orig_pos.lnum ||
 					(^C.int)(uintptr(curwin) + W_CURSOR_OFF + 4)^ !=
@@ -645,11 +645,11 @@ do_ecmd :: proc "c"(fnum: C.int, ffname_in: cstring, sfname_in: cstring, eap: ra
 				check_cursor(curwin)
 			} else if newlnum > 0 { // line number from caller/old position
 				(^C.int)(uintptr(curwin) + W_CURSOR_OFF)^ = newlnum
-				check_cursor_lnum_r(curwin)
+				check_cursor_lnum(curwin)
 				if solcol >= 0 && p_sol_g == 0 {
 					// 'sol' off: use last known column.
 					(^C.int)(uintptr(curwin) + W_CURSOR_OFF + 4)^ = solcol
-					check_cursor_col_r(curwin)
+					check_cursor_col(curwin)
 					(^C.int)(uintptr(curwin) + W_CURSOR_OFF + 8)^ = 0
 					(^bool)(uintptr(curwin) + W_SET_CURSWANT_OFF)^ = true
 				} else {
@@ -1104,7 +1104,7 @@ getfile :: proc "c"(fnum: C.int, ffname_arg: cstring, sfname_arg: cstring, setpm
 		if lnum != 0 {
 			(^C.int)(uintptr(curwin) + W_CURSOR_OFF)^ = lnum
 		}
-		check_cursor_lnum_r(curwin)
+		check_cursor_lnum(curwin)
 		beginline(BL_SOL | BL_FIX)
 		retval = GETFILE_SAME_FILE_O // it's in the same file
 	} else if do_ecmd(fnum, ffname, sfname, nil, lnum,
@@ -1990,7 +1990,7 @@ ex_copy :: proc "c"(line1_in: C.int, line2_in: C.int, n: C.int) {
 
 	appended_lines_mark_r(n, count)
 	if VIsual_active {
-		check_pos_r(curbuf, &VIsual_g)
+		check_pos(curbuf, &VIsual_g)
 	}
 
 	msgmore_r(count)
@@ -2847,7 +2847,7 @@ ex_append :: proc "c"(eap: rawptr) {
 		(^C.int)(uintptr(curbuf) + B_OP_END + 4)^ = 0
 	}
 	(^C.int)(uintptr(curwin) + W_CURSOR_OFF)^ = lnum
-	check_cursor_lnum_r(curwin)
+	check_cursor_lnum(curwin)
 	beginline(BL_SOL | BL_FIX)
 }
 
@@ -2878,7 +2878,7 @@ ex_change :: proc "c"(eap: rawptr) {
 	}
 
 	// Cursor must not be beyond end of file now.
-	check_cursor_lnum_r(curwin)
+	check_cursor_lnum(curwin)
 	deleted_lines_mark_r(line1, line2 - lnum)
 
 	// ":append" on the line above the deleted lines.
@@ -3250,7 +3250,7 @@ foreign _ {
 // Line length excluding trailing white space (C static, plain).
 linelen_o :: proc "c"(has_tab: ^C.int) -> C.int {
 	// Empty line: bail early (may be empty for unloaded buffers).
-	line := get_cursor_line_ptr_r()
+	line := get_cursor_line_ptr()
 	if ([^]u8)(line)[0] == 0 {
 		return 0
 	}
@@ -3379,7 +3379,7 @@ foreign _ {
 // ":ascii" and "ga": show char value, hex, octal, digraph.
 @(export)
 do_ascii :: proc "c"(eap: rawptr) {
-	data := get_cursor_pos_ptr_r()
+	data := get_cursor_pos_ptr()
 	len := C.size_t(utfc_ptr2len(cstring(data)))
 
 	if len == 0 {
@@ -4287,13 +4287,13 @@ sub_engine_o :: proc "c"(eap: rawptr, timeout: proftime_T, cmdpreview_ns: C.int,
 								subflags_f.do_list)
 
 							sc, ec: C.int = 0, 0
-							getvcol_r(curwin,
+							getvcol(curwin,
 								(^Pos_T)(uintptr(curwin) + W_CURSOR_OFF),
 								nil, &sc, nil, 0)
 							(^C.int)(uintptr(curwin) + W_CURSOR_OFF + 4)^ =
 								max(regmatch.endpos[0].col - 1, 0)
 
-							getvcol_r(curwin,
+							getvcol(curwin,
 								(^Pos_T)(uintptr(curwin) + W_CURSOR_OFF),
 								nil, nil, &ec, 0)
 							(^C.int)(uintptr(curwin) + W_CURSOR_OFF + 4)^ =
@@ -4893,7 +4893,7 @@ sub_engine_o :: proc "c"(eap: rawptr, timeout: proftime_T, cmdpreview_ns: C.int,
 			// Interactive: leave cursor on the match.
 			if !subflags_f.do_ask {
 				if endcolumn {
-					coladvance_r(curwin, MAXCOL)
+					coladvance(curwin, MAXCOL)
 				} else {
 					beginline(BL_WHITE | BL_FIX)
 				}

@@ -286,8 +286,7 @@ foreign _ {
 	// highlight_match_g: ex_cmds.odin (identical bool).
 	@(link_name = "syntax_start")
 	syntax_start_r :: proc "c"(wp: rawptr, lnum: C.int) ---
-	@(link_name = "getvvcol")
-	getvvcol_r :: proc "c"(wp: rawptr, pos: ^Pos_T, start: ^C.int, cursor: ^C.int, end: ^C.int, flags: C.int) ---
+	// getvvcol — PORTED (cursor.odin).
 	@(link_name = "gchar_pos")
 	gchar_pos_r :: proc "c"(pos: ^Pos_T) -> C.int ---
 	// cursor_is_block_during_visual is an Odin export (cursor_shape.odin).
@@ -480,7 +479,7 @@ win_line :: proc "c"(wp: rawptr, lnum: C.int, startrow: C.int, endrow: C.int, co
 					if VIsual_mode == 'V' { // linewise
 						wlv.fromcol = 0
 					} else {
-						getvvcol_r(wp, top, &wlv.fromcol, nil, nil, 0)
+						getvvcol(wp, top, &wlv.fromcol, nil, nil, 0)
 						if gchar_pos_r(top) == 0 { // NUL
 							wlv.tocol = wlv.fromcol + 1
 						}
@@ -495,9 +494,9 @@ win_line :: proc "c"(wp: rawptr, lnum: C.int, startrow: C.int, endrow: C.int, co
 					} else {
 						pos := bot^
 						if p_sel^ == 'e' {
-							getvvcol_r(wp, &pos, &wlv.tocol, nil, nil, 0)
+							getvvcol(wp, &pos, &wlv.tocol, nil, nil, 0)
 						} else {
-							getvvcol_r(wp, &pos, nil, nil, &wlv.tocol, 0)
+							getvvcol(wp, &pos, nil, nil, &wlv.tocol, 0)
 							wlv.tocol += 1
 						}
 					}
@@ -520,13 +519,13 @@ win_line :: proc "c"(wp: rawptr, lnum: C.int, startrow: C.int, endrow: C.int, co
 			!has_foldtext && lnum >= (^C.int)(uintptr(cur) + W_CURSOR_OFF)^ &&
 			lnum <= (^C.int)(uintptr(cur) + W_CURSOR_OFF)^ + search_match_lines_g {
 			if lnum == (^C.int)(uintptr(cur) + W_CURSOR_OFF)^ {
-				getvvcol_r(cur, (^Pos_T)(uintptr(cur) + W_CURSOR_OFF), &wlv.fromcol, nil, nil, 0)
+				getvvcol(cur, (^Pos_T)(uintptr(cur) + W_CURSOR_OFF), &wlv.fromcol, nil, nil, 0)
 			} else {
 				wlv.fromcol = 0
 			}
 			if lnum == (^C.int)(uintptr(cur) + W_CURSOR_OFF)^ + search_match_lines_g {
 				pos := Pos_T{lnum = lnum, col = search_match_endcol_g}
-				getvvcol_r(cur, &pos, &wlv.tocol, nil, nil, 0)
+				getvvcol(cur, &pos, &wlv.tocol, nil, nil, 0)
 			}
 			// At least one character; happens past end of line.
 			if wlv.fromcol == wlv.tocol && search_match_endcol_g != 0 {
@@ -2654,7 +2653,7 @@ draw_statuscol_o :: proc "c"(wp: rawptr, wlv: ^WinLineVars, col_rows: C.int, stc
 	// lnum v:vars for first row, first non-filler, first filler of current.
 	relnum: C.int = -1
 	if virtnum == -reset_virt - 1 || virtnum == 0 {
-		relnum = abs(get_cursor_rel_lnum_r(wp, lnum))
+		relnum = abs(get_cursor_rel_lnum(wp, lnum))
 	}
 
 	stc_prev_tick_f = display_tick_g
@@ -3610,8 +3609,7 @@ foreign _ {
 	syn_id2attr_r :: proc "c"(hl_id: C.int) -> C.int ---
 	@(link_name = "decor_redraw_signs")
 	decor_redraw_signs_r :: proc "c"(wp: rawptr, buf: rawptr, row: C.int, sattrs: rawptr, line_id: ^C.int, cul_id: ^C.int, num_id: ^C.int) ---
-	@(link_name = "get_cursor_rel_lnum")
-	get_cursor_rel_lnum_r :: proc "c"(wp: rawptr, lnum: C.int) -> C.int ---
+	// get_cursor_rel_lnum — PORTED (cursor.odin).
 }
 
 // Put one UTF-8 char into a line buffer (plain, C-static).
@@ -3736,7 +3734,7 @@ get_line_number_str_o :: proc "c"(wp: rawptr, lnum: C.int, buf: ^u8, buf_len: C.
 		num = lnum
 	} else {
 		// 'relativenumber', never negative
-		num = abs(get_cursor_rel_lnum_r(wp, lnum))
+		num = abs(get_cursor_rel_lnum(wp, lnum))
 		if num == 0 && (^C.int)(uintptr(wp) + W_P_NU_OFF)^ != 0 &&
 			(^C.int)(uintptr(wp) + W_P_RNU_OFF)^ != 0 {
 			// 'number' + 'relativenumber'

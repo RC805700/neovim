@@ -197,12 +197,7 @@ foreign _ {
 	text_locked_r :: proc "c" () -> bool ---
 	@(link_name = "text_locked_msg")
 	text_locked_msg_r :: proc "c" () ---
-	@(link_name = "coladvance")
-	coladvance_r :: proc "c" (wp: rawptr, wcol: C.int) -> C.int ---
-	@(link_name = "check_cursor_lnum")
-	check_cursor_lnum_r :: proc "c" (win: rawptr) ---
-	@(link_name = "check_cursor_col")
-	check_cursor_col_r :: proc "c" (win: rawptr) ---
+	// coladvance/check_cursor_lnum/check_cursor_col — PORTED (cursor.odin).
 	@(link_name = "changed")
 	changed_r :: proc "c" (buf: rawptr) ---
 	@(link_name = "unchanged")
@@ -534,7 +529,7 @@ u_savecommon :: proc "c" (buf: rawptr, top: C.int, bot: C.int, newbot: C.int, re
 		uhp.uh_getbot_entry = nil
 		uhp.uh_cursor = win_cursor_r(curwin)^ // save cursor pos. for undo
 		if virtual_active(curwin) && win_cursor_r(curwin).coladd > 0 {
-			uhp.uh_cursor_vcol = getviscol_r()
+			uhp.uh_cursor_vcol = getviscol()
 		} else {
 			uhp.uh_cursor_vcol = -1
 		}
@@ -1627,8 +1622,7 @@ foreign _ {
 	@(link_name = "firstbuf")
 	firstbuf: rawptr
 
-	@(link_name = "check_pos")
-	check_pos_r :: proc "c" (buf: rawptr, pos: ^Pos_T) ---
+	// check_pos — PORTED (cursor.odin).
 }
 
 // ── u_undo / u_redo / u_undo_and_forget ──────────────────────────────────────
@@ -2155,7 +2149,7 @@ u_undoredo :: proc "c" (undo: bool, do_buf_event: bool) {
 		}
 
 		// cursor on a valid line after deletions
-		check_cursor_lnum_r(curwin)
+		check_cursor_lnum(curwin)
 
 		// Insert the lines in u_array between top and bot.
 		if newsize != 0 {
@@ -2232,7 +2226,7 @@ u_undoredo :: proc "c" (undo: bool, do_buf_event: bool) {
 
 	// Set the cursor to the desired position.
 	win_cursor_r(curwin)^ = new_curpos
-	check_cursor_lnum_r(curwin)
+	check_cursor_lnum(curwin)
 
 	curhead.uh_entry = newlist
 	curhead.uh_flags = new_flags
@@ -2277,7 +2271,7 @@ u_undoredo :: proc "c" (undo: bool, do_buf_event: bool) {
 		if curhead.uh_cursor.lnum == win_cursor_r(curwin).lnum {
 			win_cursor_r(curwin).col = curhead.uh_cursor.col
 			if virtual_active(curwin) && curhead.uh_cursor_vcol >= 0 {
-				coladvance_r(curwin, curhead.uh_cursor_vcol)
+				coladvance(curwin, curhead.uh_cursor_vcol)
 			} else {
 				win_cursor_r(curwin).coladd = 0
 			}
@@ -2401,7 +2395,7 @@ u_undo_end :: proc "c" (did_undo_arg: bool, absolute: bool, quiet: bool) {
 	}
 
 	if VIsual_active {
-		check_pos_r(curbuf, &VIsual_g)
+		check_pos(curbuf, &VIsual_g)
 	}
 
 	sbuf: [256]u8
@@ -2867,7 +2861,7 @@ u_undoline :: proc "c" () {
 	}
 	win_cursor_r(curwin).col = t
 	win_cursor_r(curwin).lnum = buf_i32_at(curbuf, B_U_LINE_LNUM)
-	check_cursor_col_r(curwin)
+	check_cursor_col(curwin)
 }
 
 /// Check if 'modified' flag is set or file has changed on disk.

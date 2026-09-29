@@ -2637,11 +2637,11 @@ ex_spellrepall :: proc "c"(eap: rawptr) {
 			break
 		}
 
-		line := get_cursor_line_ptr_r()
+		line := get_cursor_line_ptr()
 		if addlen <= 0 ||
 		libc.strncmp(transmute(cstring)(^u8)(uintptr(line) + uintptr(win_cursor_r(curwin)^.col)),
 			transmute(cstring)(repl_to), repl_to_len) != 0 {
-			p := (^u8)(xmalloc_sp(C.size_t(get_cursor_line_len_r() + C.int(addlen)) + 1))
+			p := (^u8)(xmalloc_sp(C.size_t(get_cursor_line_len() + C.int(addlen)) + 1))
 			libc.memmove(p, line, C.size_t(win_cursor_r(curwin)^.col))
 			libc.strcpy(([^]u8)(uintptr(p) + uintptr(win_cursor_r(curwin)^.col)), transmute(cstring)(repl_to))
 			libc.strcat(p, transmute(cstring)(^u8)(uintptr(line) + uintptr(win_cursor_r(curwin)^.col + C.int(repl_from_len))))
@@ -3728,7 +3728,7 @@ spell_word_start :: proc "c"(startcol: C.int) -> C.int {
 		return startcol
 	}
 
-	line := get_cursor_line_ptr_r()
+	line := get_cursor_line_ptr()
 
 	p := (^u8)(uintptr(line) + uintptr(startcol))
 	for uintptr(p) > uintptr(line) {

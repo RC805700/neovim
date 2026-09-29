@@ -300,7 +300,7 @@ foreign _ {
 	msg_puts_title :: proc "c" (s: cstring) ---
 	@(link_name = "msg")
 	msg_msg :: proc "c" (s: cstring, hl_id: C.int) -> bool ---
-	check_cursor :: proc "c" (wp: rawptr) ---
+	// check_cursor — PORTED (cursor.odin).
 	beginline :: proc "c" (flags: C.int) ---
 	set_topline :: proc "c" (wp: rawptr, lnum: C.int) ---
 	// hasFolding now defined in fold.odin — reuse directly.

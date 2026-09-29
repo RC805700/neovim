@@ -2645,7 +2645,7 @@ parse_cmd_address :: proc "c" (eap: rawptr, errormsg: ^cstring, silent: bool) ->
 				if ([^]C.int)(uintptr(eap) + EXARG_LINE2_OFF)[0] > 0 {
 					check_cursor(curwin)
 				} else {
-					check_cursor_col_r(curwin)
+					check_cursor_col(curwin)
 				}
 				need_check_cursor = true
 			}
@@ -6087,7 +6087,7 @@ ex_put :: proc "c" (eap: rawptr) {
 		([^]C.int)(uintptr(eap) + EXARG_FORCEIT_OFF)[0] = 1
 	}
 	([^]C.int)(uintptr(curwin) + W_CURSOR_OFF)[0] = ([^]C.int)(uintptr(eap) + EXARG_LINE2_OFF)[0]
-	check_cursor_col_r(curwin)
+	check_cursor_col(curwin)
 	dir := FORWARD_DIR
 	if ([^]C.int)(uintptr(eap) + EXARG_FORCEIT_OFF)[0] != 0 {
 		dir = BACKWARD_DIR
@@ -6104,7 +6104,7 @@ ex_iput :: proc "c" (eap: rawptr) {
 		([^]C.int)(uintptr(eap) + EXARG_FORCEIT_OFF)[0] = 1
 	}
 	([^]C.int)(uintptr(curwin) + W_CURSOR_OFF)[0] = ([^]C.int)(uintptr(eap) + EXARG_LINE2_OFF)[0]
-	check_cursor_col_r(curwin)
+	check_cursor_col(curwin)
 	dir := FORWARD_DIR
 	if ([^]C.int)(uintptr(eap) + EXARG_FORCEIT_OFF)[0] != 0 {
 		dir = BACKWARD_DIR
@@ -6229,7 +6229,7 @@ ex_at :: proc "c" (eap: rawptr) {
 	context = runtime.default_context()
 	prev_len := typebuf.tb_len
 	([^]C.int)(uintptr(curwin) + W_CURSOR_OFF)[0] = ([^]C.int)(uintptr(eap) + EXARG_LINE2_OFF)[0]
-	check_cursor_col_r(curwin)
+	check_cursor_col(curwin)
 	c := C.int(([^]u8)(([^]cstring)(uintptr(eap) + EXARG_ARG_OFF)[0])[0])
 	if c == 0 {
 		c = '@'

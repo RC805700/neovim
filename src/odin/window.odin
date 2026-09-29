@@ -2047,7 +2047,7 @@ win_enter_ext_o :: proc "c"(wp: rawptr, flags: C.int) {
 	curwin = wp
 	curbuf = (^rawptr)(uintptr(wp) + W_BUFFER_OFF)^
 
-	check_cursor_r(curwin)
+	check_cursor(curwin)
 	if !virtual_active(curwin) {
 		(^C.int)(uintptr(curwin) + W_CURSOR_OFF + 8)^ = 0 // w_cursor.coladd
 	}
@@ -3912,7 +3912,7 @@ win_close :: proc "c"(win: rawptr, free_buf: bool, force: bool) -> C.int {
 		close_curwin = true
 		// The cursor position may be invalid if the buffer changed after last
 		// using the window.
-		check_cursor_r(curwin)
+		check_cursor(curwin)
 	}
 	if !was_floating {
 		// If last window has a status line now and we don't want one,
@@ -7111,7 +7111,7 @@ wingotofile_o :: proc "c"(nchar: C.int, prenum: C.int, prenum1: C.int) {
 		}
 		if wp != nil && nchar == 'F' && lnum >= 0 {
 			(^C.int)(uintptr(curwin) + W_CURSOR_OFF)^ = lnum
-			check_cursor_lnum_r(curwin)
+			check_cursor_lnum(curwin)
 			beginline(BL_SOL | BL_FIX)
 		}
 		xfree(transmute(rawptr)(ptr))

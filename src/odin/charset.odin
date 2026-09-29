@@ -724,7 +724,7 @@ vim_isprintc :: proc "c" (c: C.int) -> bool {
 @(export)
 getwhitecols_curline :: proc "c" () -> C.int {
 	context = runtime.default_context()
-	return getwhitecols(transmute(cstring)(get_cursor_line_ptr_r()))
+	return getwhitecols(transmute(cstring)(get_cursor_line_ptr()))
 }
 
 // Blank whitespace columns at p (charset.c public).

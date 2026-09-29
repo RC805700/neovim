@@ -76,10 +76,7 @@ foreign _ {
 
 	@(link_name = "inc")
 	incl_pos :: proc "c" (lp: ^Pos_T) -> C.int ---
-	@(link_name = "inc_cursor")
-	inc_cursor_r :: proc "c" () -> C.int ---
-	@(link_name = "dec_cursor")
-	dec_cursor_r :: proc "c" () -> C.int ---
+	// inc_cursor/dec_cursor — PORTED (cursor.odin).
 
 	@(link_name = "give_warning")
 	give_warning_s :: proc "c" (message: cstring, hl: bool, hist: bool) ---
@@ -113,8 +110,7 @@ foreign _ {
 	ui_cursor_shape_r :: proc "c" () ---
 	@(link_name = "vim_beep")
 	vim_beep_r :: proc "c" (val: C.int) ---
-	@(link_name = "getvcol")
-	getvcol_s :: proc "c" (wp: rawptr, p: ^Pos_T, start: ^C.int, cursor: ^C.int, end: ^C.int, flags: C.int) ---
+	// getvcol — PORTED (cursor.odin).
 
 	// profile_setlimit/passed_limit — PORTED (profile.odin).
 
@@ -1294,9 +1290,9 @@ searchc :: proc "c"(cap: ^Cmdarg_T, t_cmd_in: bool) -> C.int {
 
 	oap_set_inclusive(cap.oap, dir != C.int(Direction.BACKWARD))
 
-	p := get_cursor_line_ptr_r()
+	p := get_cursor_line_ptr()
 	col := win_cursor_col(curwin)
-	line_len := get_cursor_line_len_r()
+	line_len := get_cursor_line_len()
 
 	for count > 0 {
 		count -= 1
@@ -1467,7 +1463,7 @@ current_search :: proc "c"(count: C.int, forward: bool) -> C.int {
 	save_VIsual := VIsual_g
 
 	if VIsual_active && b_at(p_sel_ptr(), 0) == 'e' && lt_pos_s(VIsual_g, win_cursor_r(curwin)^) {
-		dec_cursor_r()
+		dec_cursor()
 	}
 
 	skip_first_backward := forward && VIsual_active && lt_pos_s(win_cursor_r(curwin)^, VIsual_g)
@@ -1543,7 +1539,7 @@ current_search :: proc "c"(count: C.int, forward: bool) -> C.int {
 		if skip_first_backward {
 			win_cursor_r(curwin)^ = pos
 		} else {
-			dec_cursor_r()
+			dec_cursor()
 		}
 	} else if VIsual_active && lt_pos_s(win_cursor_r(curwin)^, VIsual_g) && forward {
 		win_cursor_r(curwin)^ = pos
@@ -1553,7 +1549,7 @@ current_search :: proc "c"(count: C.int, forward: bool) -> C.int {
 
 	if b_at(p_sel_ptr(), 0) == 'e' {
 		if forward && ltoreq_pos(VIsual_g, win_cursor_r(curwin)^) {
-			inc_cursor_r()
+			inc_cursor()
 		} else if !forward && ltoreq_pos(win_cursor_r(curwin)^, VIsual_g) {
 			_ = incl_pos(&VIsual_g)
 		}
@@ -2795,7 +2791,7 @@ showmatch :: proc "c"(c: C.int) {
 	}
 
 	if w_p_wrap_r(curwin) == 0 {
-		getvcol_s(curwin, lpos, nil, nil, &vcol, 0)
+		getvcol(curwin, lpos, nil, nil, &vcol, 0)
 	}
 
 	col_visible := w_p_wrap_r(curwin) != 0 ||
@@ -3451,7 +3447,7 @@ find_pattern_in_path :: proc "c"(
 									setpcmark()
 								}
 								win_cursor_r(curwin)^.lnum = lnum
-								check_cursor_r(curwin)
+								check_cursor(curwin)
 							} else {
 								if getfile(0, cstring(files[depth].name), nil, true, files[depth].lnum, forceit) > 0 {
 									outer_break = true
@@ -3599,8 +3595,7 @@ buf_fnum_of :: proc "c"(buf: rawptr) -> C.int {
 }
 
 foreign _ {
-	@(link_name = "check_cursor")
-	check_cursor_r :: proc "c" (wp: rawptr) ---
+	// check_cursor — PORTED (cursor.odin).
 }
 
 UPD_VALID_S :: 10 // drawscreen.h
