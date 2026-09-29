@@ -41,6 +41,7 @@
 /// @param last    make the window the last one in the window list.
 ///                Only used when allocating the autocommand window.
 /// @param config  must already have been validated!
+#pragma weak win_new_float
 win_T *win_new_float(win_T *wp, bool last, WinConfig fconfig, Error *err)
 {
   if (wp == NULL) {
@@ -103,6 +104,7 @@ win_T *win_new_float(win_T *wp, bool last, WinConfig fconfig, Error *err)
   return wp;
 }
 
+#pragma weak win_set_minimal_style
 void win_set_minimal_style(win_T *wp)
 {
   wp->w_p_nu = false;
@@ -164,16 +166,19 @@ void win_set_minimal_style(win_T *wp)
   }
 }
 
+#pragma weak win_border_height
 int win_border_height(win_T *wp)
 {
   return wp->w_border_adj[0] + wp->w_border_adj[2];
 }
 
+#pragma weak win_border_width
 int win_border_width(win_T *wp)
 {
   return wp->w_border_adj[1] + wp->w_border_adj[3];
 }
 
+#pragma weak win_config_float
 void win_config_float(win_T *wp, WinConfig fconfig)
 {
   // Process statusline changes before applying new height from config
@@ -278,6 +283,7 @@ static int float_zindex_cmp(const void *a, const void *b)
   return za == zb ? 0 : za < zb ? 1 : -1;
 }
 
+#pragma weak win_float_remove
 void win_float_remove(bool bang, int count)
 {
   kvec_t(win_T *) float_win_arr = KV_INITIAL_VALUE;
@@ -305,6 +311,7 @@ void win_float_remove(bool bang, int count)
   kv_destroy(float_win_arr);
 }
 
+#pragma weak win_check_anchored_floats
 void win_check_anchored_floats(win_T *win)
 {
   for (win_T *wp = lastwin; wp && wp->w_floating; wp = wp->w_prev) {
@@ -316,6 +323,7 @@ void win_check_anchored_floats(win_T *win)
   }
 }
 
+#pragma weak win_float_update_statusline
 void win_float_update_statusline(void)
 {
   for (win_T *wp = lastwin; wp && wp->w_floating; wp = wp->w_prev) {
@@ -327,6 +335,7 @@ void win_float_update_statusline(void)
   }
 }
 
+#pragma weak win_float_anchor_laststatus
 void win_float_anchor_laststatus(void)
 {
   FOR_ALL_WINDOWS_IN_TAB(win, curtab) {
@@ -336,6 +345,7 @@ void win_float_anchor_laststatus(void)
   }
 }
 
+#pragma weak win_reconfig_floats
 void win_reconfig_floats(void)
 {
   for (win_T *wp = lastwin; wp && wp->w_floating; wp = wp->w_prev) {
@@ -346,6 +356,7 @@ void win_reconfig_floats(void)
 /// Return true if "win" is floating window in the current tab page.
 ///
 /// @param  win  window to check
+#pragma weak win_float_valid
 bool win_float_valid(const win_T *win)
   FUNC_ATTR_PURE FUNC_ATTR_WARN_UNUSED_RESULT
 {
@@ -361,6 +372,7 @@ bool win_float_valid(const win_T *win)
   return false;
 }
 
+#pragma weak win_float_find_preview
 win_T *win_float_find_preview(void)
 {
   for (win_T *wp = lastwin; wp && wp->w_floating; wp = wp->w_prev) {
@@ -377,6 +389,7 @@ win_T *win_float_find_preview(void)
 /// moved to a different tabpage.
 ///
 /// @param  tp  `win`'s original tabpage, or NULL for current.
+#pragma weak win_float_find_altwin
 win_T *win_float_find_altwin(const win_T *win, const tabpage_T *tp)
   FUNC_ATTR_NONNULL_ARG(1)
 {
@@ -412,6 +425,7 @@ static inline win_T *handle_error_and_cleanup(win_T *wp, Error *err)
 /// @param[in] bool create a new buffer for window.
 ///
 /// @return win_T
+#pragma weak win_float_create_preview
 win_T *win_float_create_preview(bool enter, bool new_buf)
 {
   WinConfig config = WIN_CONFIG_INIT;

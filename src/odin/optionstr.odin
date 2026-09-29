@@ -1270,8 +1270,7 @@ foreign _ {
 	p_ruf_g: ^u8
 	@(link_name = "ru_wid")
 	ru_wid_g: C.int
-	@(link_name = "win_config_float")
-	win_config_float_r :: proc "c" (wp: rawptr, cfg: WinConfig_Opaque) ---
+	// win_config_float — PORTED (winfloat.odin).
 }
 // get_option_default_o/xfree/xmalloc_sp/comp_col/
 // OPT_GLOBAL_S/OPT_LOCAL_S/strstr_c/skip_to_option_part/is_digit_o/illegal_char reused.
@@ -1305,7 +1304,7 @@ statuscolumn: bool) -> cstring {
 
 	// handle floating window statusline changes
 	if is_stl && win != nil && (^bool)(uintptr(win) + W_FLOATING_OFF)^ {
-		win_config_float_r(win, (^WinConfig_Opaque)(uintptr(win) + W_CONFIG_OFF)^)
+		win_config_float(win, (^WinConfig_Opaque)(uintptr(win) + W_CONFIG_OFF)^)
 	}
 
 	if rulerformat && b_at(s, 0) == '%' {

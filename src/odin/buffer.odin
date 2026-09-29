@@ -207,8 +207,7 @@ W_ALLBUF_OPT_OFF :: 2520
 K_WIN_STYLE_MINIMAL_O :: 1
 
 foreign _ {
-	@(link_name = "win_set_minimal_style")
-	win_set_minimal_style_r :: proc "c" (wp: rawptr) ---
+	// win_set_minimal_style — PORTED (winfloat.odin).
 	@(link_name = "p_fdls")
 	p_fdls_g: C.longlong
 }
@@ -257,7 +256,7 @@ get_winopts :: proc "c"(buf: rawptr) {
 
 	if (^C.int)(uintptr(curwin) + W_CONFIG_OFF)^ == K_WIN_STYLE_MINIMAL_O {
 		didset_window_options(curwin, false)
-		win_set_minimal_style_r(curwin)
+		win_set_minimal_style(curwin)
 	}
 
 	// Set 'foldlevel' to 'foldlevelstart' if it's not negative.

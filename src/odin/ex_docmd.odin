@@ -7805,16 +7805,13 @@ ex_packupdate :: proc "c" (eap: rawptr) {
 }
 
 // —— Batch 50: ex_docmd.c fclose + setfiletype (exports + unstatic) ——
-foreign _ {
-	@(link_name = "win_float_remove")
-	win_float_remove_e :: proc "c" (bang: bool, count: C.int) ---
-}
+// (win_float_remove — PORTED (winfloat.odin).)
 
 // :fclose (ex_docmd.c static → export).
 @(export)
 ex_fclose :: proc "c" (eap: rawptr) {
 	context = runtime.default_context()
-	win_float_remove_e(([^]C.int)(uintptr(eap) + EXARG_FORCEIT_OFF)[0] != 0, ([^]C.int)(uintptr(eap) + EXARG_LINE1_OFF)[0])
+	win_float_remove(([^]C.int)(uintptr(eap) + EXARG_FORCEIT_OFF)[0] != 0, ([^]C.int)(uintptr(eap) + EXARG_LINE1_OFF)[0])
 }
 
 // :setfiletype (ex_docmd.c static → export).

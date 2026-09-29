@@ -2543,8 +2543,7 @@ foreign _ {
 	parse_cino_r :: proc "c" (buf: rawptr) ---
 	@(link_name = "parse_shape_opt")
 	parse_shape_opt_r :: proc "c" (shape: C.int) -> cstring ---
-	@(link_name = "win_float_update_statusline")
-	win_float_update_statusline_r :: proc "c" (wp: rawptr) ---
+	// win_float_update_statusline — PORTED (winfloat.odin).
 }
 
 SHAPE_CURSOR_S :: 0
@@ -2626,7 +2625,7 @@ didset_options2_o :: proc "c"() {
 didset_options_all_o :: proc "c"() {
 	_ = parse_shape_opt_r(SHAPE_CURSOR_S)
 		last_status(false)
-	win_float_update_statusline_r(nil)
+	win_float_update_statusline()
 	win_new_screen_rows()
 }
 

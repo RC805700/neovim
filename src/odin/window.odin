@@ -1272,7 +1272,7 @@ win_split_ins :: proc "c"(size: C.int, flags: C.int, new_wp: rawptr, dir: C.int,
 			return nil
 		}
 		need_status = STATUS_HEIGHT_O
-		win_float_anchor_laststatus_r()
+		win_float_anchor_laststatus()
 	}
 
 	do_equal := false
@@ -1847,8 +1847,7 @@ foreign _ {
 	is_aucmd_win_r :: proc "c" (wp: rawptr) -> bool ---
 	@(link_name = "lastwin")
 	lastwin_g: rawptr
-	@(link_name = "win_float_anchor_laststatus")
-	win_float_anchor_laststatus_r :: proc "c" () ---
+	// win_float_anchor_laststatus — PORTED (winfloat.odin).
 	@(link_name = "ui_comp_remove_grid")
 	ui_comp_remove_grid_r :: proc "c" (grid: rawptr) ---
  	@(link_name = "ui_call_win_hide")
@@ -2939,7 +2938,7 @@ enter_tabpage_o :: proc "c"(tp: rawptr, old_curbuf: rawptr, trigger_enter_autocm
 		(trigger_leave_autocmds ? WEE_TRIGGER_LEAVE_AUTOCMDS_O : 0))
 	prevwin_g = next_prevwin
 	last_status(false) // status line may appear or disappear
-	win_float_update_statusline_r(nil)
+	win_float_update_statusline()
 	win_comp_pos() // recompute w_winrow for all windows
 	diff_need_scrollbind_g = true
 	// If there was a click in a window, it won't be usable for a following drag.
@@ -3426,8 +3425,7 @@ E_AUCMD_ONLY_S :: "E814: Cannot close window, only autocmd window would remain"
 trigger_tabclosedpre_busy: bool = false
 
 foreign _ {
-	@(link_name = "win_float_find_altwin")
-	win_float_find_altwin_r :: proc "c" (win: rawptr, tp: rawptr) -> rawptr ---
+	// win_float_find_altwin — PORTED (winfloat.odin).
  	@(link_name = "diffopt_closeoff")
 	diffopt_closeoff_r :: proc "c" () -> bool ---
 	@(link_name = "ui_call_win_close")
@@ -3660,7 +3658,7 @@ win_free_mem_o :: proc "c"(win: rawptr, dirp: ^C.int, tp: rawptr) -> rawptr {
 		xfree(frp)
 	} else {
 		dirp^ = C.int('h') // Dummy value.
-		wp = win_float_find_altwin_r(win, tp)
+		wp = win_float_find_altwin(win, tp)
 	}
 	win_free(win, tp)
 	// When deleting the current window in the tab, select a new current window.
@@ -3756,7 +3754,7 @@ win_close :: proc "c"(win: rawptr, free_buf: bool, force: bool) -> C.int {
 		// This may change because of the autocommands (sigh).
 		wp: rawptr
 		if (^bool)(uintptr(win) + W_FLOATING_OFF)^ {
-			wp = win_float_find_altwin_r(win, nil)
+			wp = win_float_find_altwin(win, nil)
 		} else {
 			wp = frame2win(win_altframe_o(win, nil))
 		}
@@ -4302,8 +4300,7 @@ win_equal_rec_o :: proc "c"(next_curwin: rawptr, current: bool, topfr: rawptr, d
 // ── Batch 17: screen resize ──────────────────────────────────────────────────
 
 foreign _ {
-	@(link_name = "win_reconfig_floats")
-	win_reconfig_floats_r :: proc "c" () ---
+	// win_reconfig_floats — PORTED (winfloat.odin).
 	@(link_name = "compute_cmdrow")
 	compute_cmdrow_r :: proc "c" () ---
 }
@@ -4356,7 +4353,7 @@ win_new_screen_rows :: proc "c"() {
 		frame_new_height(topframe_g, h, false, false, false)
 	}
 	win_comp_pos() // recompute w_winrow and w_wincol
-	win_reconfig_floats_r() // The size of floats might change
+	win_reconfig_floats() // The size of floats might change
 	compute_cmdrow_r()
 	(^C.longlong)(uintptr(curtab) + TP_CH_USED_OFF)^ = C.longlong(p_ch)
 	if !skip_win_fix_scroll_g {
@@ -4377,7 +4374,7 @@ win_new_screen_cols :: proc "c"() {
 		frame_new_width(topframe_g, Columns, false, false)
 	}
 	win_comp_pos() // recompute w_winrow and w_wincol
-	win_reconfig_floats_r() // The size of floats might change
+	win_reconfig_floats() // The size of floats might change
 }
 
 // ── Batch 18: win_setheight/width + frame_set helpers ────────────────────────
@@ -4399,7 +4396,7 @@ win_setheight_win :: proc "c"(height: C.int, win: rawptr, from_top: bool) {
 		(^C.int)(uintptr(win) + W_WINBAR_HEIGHT_OFF)^)
 	if (^bool)(uintptr(win) + W_FLOATING_OFF)^ {
 		(^C.int)(uintptr(win) + WC_HEIGHT_OFF)^ = max(h, 1)
-		win_config_float_r(win, (^WinConfig_Opaque)(uintptr(win) + W_CONFIG_OFF)^)
+		win_config_float(win, (^WinConfig_Opaque)(uintptr(win) + W_CONFIG_OFF)^)
 		redraw_later(win, UPD_VALID_O)
 	} else {
 		frame_setheight_o((^rawptr)(uintptr(win) + W_FRAME_OFF)^,
@@ -4550,7 +4547,7 @@ win_setwidth_win :: proc "c"(width: C.int, wp: rawptr, from_left: bool) {
 	}
 	if (^bool)(uintptr(wp) + W_FLOATING_OFF)^ {
 		(^C.int)(uintptr(wp) + WC_WIDTH_OFF)^ = w
-		win_config_float_r(wp, (^WinConfig_Opaque)(uintptr(wp) + W_CONFIG_OFF)^)
+		win_config_float(wp, (^WinConfig_Opaque)(uintptr(wp) + W_CONFIG_OFF)^)
 		redraw_later(wp, UPD_NOT_VALID_O)
 	} else {
 		frame_setwidth_o((^rawptr)(uintptr(wp) + W_FRAME_OFF)^,
@@ -5148,7 +5145,7 @@ last_status_rec_o :: proc "c"(fr: rawptr, statusline: bool, is_stl_global: bool)
 last_status :: proc "c"(morewin: bool) {
 	// Don't make a difference between horizontal or vertical split.
 	last_status_rec_o(topframe_g, last_stl_height(morewin) > 0, global_stl_height() > 0)
-	win_float_anchor_laststatus_r()
+	win_float_anchor_laststatus()
 }
 
 // Remove status line from window (hsep instead if add_hsep).
@@ -5914,10 +5911,7 @@ W_WINCOL_OFF2_OFF :: 496 // w_wincol_off (vs w_wincol@440)
 foreign _ {
 	@(link_name = "changed_line_abv_curs_win")
 	changed_line_abv_curs_win_r :: proc "c" (wp: rawptr) ---
-	@(link_name = "win_border_height")
-	win_border_height_r :: proc "c" (wp: rawptr) -> C.int ---
-	@(link_name = "win_border_width")
-	win_border_width_r :: proc "c" (wp: rawptr) -> C.int ---
+	// win_border_height/width — PORTED (winfloat.odin).
 	@(link_name = "ui_call_win_viewport_margins")
 	ui_call_win_viewport_margins_r :: proc "c" (grid: C.longlong, win: C.int, top: C.int, bottom: C.int, left: C.int, right: C.int) ---
 	@(link_name = "win_grid_alloc")
@@ -5981,10 +5975,10 @@ win_set_inner_size :: proc "c"(wp: rawptr, valid_cursor: bool) {
 		float_stl_height = STATUS_HEIGHT_O
 	}
 	(^C.int)(uintptr(wp) + W_HEIGHT_OUTER_OFF)^ =
-		(^C.int)(uintptr(wp) + W_VIEW_HEIGHT_OFF)^ + win_border_height_r(wp) +
+		(^C.int)(uintptr(wp) + W_VIEW_HEIGHT_OFF)^ + win_border_height(wp) +
 		(^C.int)(uintptr(wp) + W_WINBAR_HEIGHT_OFF)^ + float_stl_height
 	(^C.int)(uintptr(wp) + W_WIDTH_OUTER_OFF)^ =
-		(^C.int)(uintptr(wp) + W_VIEW_WIDTH_OFF)^ + win_border_width_r(wp)
+		(^C.int)(uintptr(wp) + W_VIEW_WIDTH_OFF)^ + win_border_width(wp)
 	(^C.int)(uintptr(wp) + W_WINROW_OFF2_OFF)^ =
 		(^C.int)(uintptr(wp) + W_BORDER_ADJ_OFF)^ +
 		(^C.int)(uintptr(wp) + W_WINBAR_HEIGHT_OFF)^
@@ -6536,8 +6530,7 @@ WCFG_REL_HIDE :: 470
 foreign _ {
 	@(link_name = "aucmd_win_vec")
 	aucmd_win_vec_g: Aucmdwin_Kvec
-	@(link_name = "win_new_float")
-	win_new_float_r :: proc "c" (wp: rawptr, last: bool, fconfig: WinConfig_Opaque, err: rawptr) -> rawptr ---
+	// win_new_float — PORTED (winfloat.odin).
 }
 
 // Put "wp"'s frame back where it was (undo of winframe_remove).
@@ -6611,7 +6604,7 @@ win_alloc_aucmd_win :: proc "c"(idx: C.int) {
 	([^]u8)(&fc)[50] = 0 // mouse = false
 	([^]u8)(&fc)[470] = 1 // hide = true
 	auw := &([^]Aucmdwin_T)(aucmd_win_vec_g.items)[idx]
-	auw.win = win_new_float_r(nil, true, fc, transmute(rawptr)(&err))
+	auw.win = win_new_float(nil, true, fc, transmute(rawptr)(&err))
 	(^C.int)(uintptr((^rawptr)(uintptr(auw.win) + W_BUFFER_OFF)^) + B_NWINDOWS_OFF)^ -= 1
 	(^bool)(uintptr(auw.win) + W_P_SCB_OFF)^ = false // RESET_BINDING
 	(^bool)(uintptr(auw.win) + W_P_CRB_OFF)^ = false
@@ -7447,7 +7440,7 @@ do_window :: proc "c"(nchar: C.int, prenum_in: C.int, xchar_in: C.int) {
 			([^]C.int)(&fc)[3] = (^C.int)(uintptr(curwin) + W_HEIGHT_OFF)^
 			([^]u8)(&fc)[48] = 1 // external = true
 			err: Api_Error = {typ = -1, msg = nil}
-			if win_new_float_r(curwin, false, fc, transmute(rawptr)(&err)) == nil {
+			if win_new_float(curwin, false, fc, transmute(rawptr)(&err)) == nil {
 				emsg(transmute(cstring)(err.msg))
 				api_clear_error_r(&err)
 				beep_flush_r()
