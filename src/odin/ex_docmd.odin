@@ -174,7 +174,7 @@ do_exedit :: proc "c"(eap: rawptr, old_curwin: rawptr) {
 			do_cmdline_cmd(cstring(transmute(^u8)(do_ecmd_cmd)))
 		}
 		n := (^C.int)(uintptr(curwin) + W_ARG_IDX_INVALID_OFF)^
-		check_arg_idx_r(curwin)
+		check_arg_idx(curwin)
 		if n != (^C.int)(uintptr(curwin) + W_ARG_IDX_INVALID_OFF)^ {
 			maketitle()
 		}

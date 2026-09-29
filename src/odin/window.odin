@@ -1051,8 +1051,6 @@ WC_TITLE_CHUNKS_OFF :: 400
 WC_FOOTER_CHUNKS_OFF :: 440
 
 foreign _ {
-	@(link_name = "alist_unlink")
-	alist_unlink_r :: proc "c" (al: rawptr) ---
 	@(link_name = "tagstack_clear_entry")
 	tagstack_clear_entry_r :: proc "c" (item: rawptr) ---
 	@(link_name = "stl_clear_click_defs")
@@ -1086,7 +1084,7 @@ win_free :: proc "c"(wp: rawptr, tp: rawptr) {
 	clearFolding(wp)
 
 	// reduce the reference count to the argument list.
-	alist_unlink_r((^rawptr)(uintptr(wp) + W_ALIST_OFF)^)
+	alist_unlink((^rawptr)(uintptr(wp) + W_ALIST_OFF)^)
 
 	// Don't execute autocommands while the window is halfway being deleted.
 	block_autocmds_r()

@@ -183,7 +183,7 @@ do_ecmd :: proc "c"(fnum: C.int, ffname_in: cstring, sfname_in: cstring, eap: ra
 	if !done {
 		// Re-editing a terminal buffer: skip re-initialization.
 		if !other_file && (^rawptr)(uintptr(curbuf) + B_TERMINAL_OFF)^ != nil {
-			check_arg_idx_r(curwin) // needed when called from do_argfile()
+			check_arg_idx(curwin) // needed when called from do_argfile()
 			maketitle() // title may show the arg index, e.g. "(2 of 5)"
 			retval = OK
 			done = true
@@ -542,7 +542,7 @@ do_ecmd :: proc "c"(fnum: C.int, ffname_in: cstring, sfname_in: cstring, eap: ra
 		}
 
 		// Check for the w_arg_idx file in the argument list.
-		check_arg_idx_r(curwin)
+		check_arg_idx(curwin)
 
 		if !auto_buf {
 			// Cursor/window first (autocmds may position the cursor).
@@ -597,7 +597,7 @@ do_ecmd :: proc "c"(fnum: C.int, ffname_in: cstring, sfname_in: cstring, eap: ra
 						false, curbuf, &retval)
 				}
 			}
-			check_arg_idx_r(curwin)
+			check_arg_idx(curwin)
 
 			// Keep an autocmd-moved cursor (but not first-non-blank).
 			if !equalpos_o((^Pos_T)(uintptr(curwin) + W_CURSOR_OFF)^,
@@ -858,8 +858,6 @@ E45_S :: "E45: 'readonly' option is set (add ! to override)"
 E505_S :: "E505: \"%s\" is read-only (add ! to override)"
 
 foreign _ {
-	@(link_name = "do_argfile")
-	do_argfile_r :: proc "c"(eap: rawptr, argn: C.int) ---
 	// check_overwrite now defined below (Batch 39) — call directly.
 	@(link_name = "buf_write_all")
 	buf_write_all_r :: proc "c"(buf: rawptr, forceit: bool) -> C.int ---
@@ -1039,7 +1037,7 @@ ex_wnext :: proc "c"(eap: rawptr) {
 	(^C.int)(uintptr(eap) + EXARG_LINE2_OFF)^ =
 		(^C.int)(uintptr(curbuf) + B_ML_LINE_COUNT_OFF)^
 	if do_write(eap) != FAIL {
-		do_argfile_r(eap, i)
+		do_argfile(eap, i)
 	}
 }
 

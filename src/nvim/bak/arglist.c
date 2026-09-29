@@ -89,6 +89,7 @@ static int check_arglist_locked(void)
 }
 
 /// Clear an argument list: free all file names and reset it to zero entries.
+#pragma weak alist_clear
 void alist_clear(alist_T *al)
 {
   if (check_arglist_locked() == FAIL) {
@@ -99,6 +100,7 @@ void alist_clear(alist_T *al)
 }
 
 /// Init an argument list.
+#pragma weak alist_init
 void alist_init(alist_T *al)
 {
   ga_init(&al->al_ga, (int)sizeof(aentry_T), 5);
@@ -107,6 +109,7 @@ void alist_init(alist_T *al)
 /// Remove a reference from an argument list.
 /// Ignored when the argument list is the global one.
 /// If the argument list is no longer used by any window, free it.
+#pragma weak alist_unlink
 void alist_unlink(alist_T *al)
 {
   if (al != &global_alist && --al->al_refcount <= 0) {
@@ -116,6 +119,7 @@ void alist_unlink(alist_T *al)
 }
 
 /// Create a new argument list and use it for the current window.
+#pragma weak alist_new
 void alist_new(void)
 {
   curwin->w_alist = xmalloc(sizeof(*curwin->w_alist));
@@ -159,6 +163,7 @@ void alist_expand(int *fnum_list, int fnum_len)
 
 /// Set the argument list for the current window.
 /// Takes over the allocated files[] and the allocated fnames in it.
+#pragma weak alist_set
 void alist_set(alist_T *al, int count, char **files, int use_curbuf, int *fnum_list, int fnum_len)
 {
   if (check_arglist_locked() == FAIL) {
@@ -203,6 +208,7 @@ void alist_set(alist_T *al, int count, char **files, int use_curbuf, int *fnum_l
 /// May trigger Buf* autocommands
 ///
 /// @param set_fnum  1: set buffer number; 2: re-use curbuf
+#pragma weak alist_add
 void alist_add(alist_T *al, char *fname, int set_fnum)
 {
   win_T *wp = curwin;
@@ -305,6 +311,7 @@ static void get_arglist(garray_T *gap, char *str, bool escaped)
 /// "fnames[fcountp]".  When "wig" is true, removes files matching 'wildignore'.
 ///
 /// @return  FAIL or OK.
+#pragma weak get_arglist_exp
 int get_arglist_exp(char *str, int *fcountp, char ***fnamesp, bool wig)
 {
   garray_T ga;
@@ -476,6 +483,7 @@ static int do_arglist(char *str, int what, int after, bool will_edit)
 }
 
 /// Redefine the argument list.
+#pragma weak set_arglist
 void set_arglist(char *str)
 {
   do_arglist(str, AL_SET, 0, true);
@@ -483,6 +491,7 @@ void set_arglist(char *str)
 
 /// @return  true if window "win" is editing the file at the current argument
 ///          index.
+#pragma weak editing_arg_idx
 bool editing_arg_idx(win_T *win)
 {
   return !(win->w_arg_idx >= WARGCOUNT(win)
@@ -495,6 +504,7 @@ bool editing_arg_idx(win_T *win)
 }
 
 /// Check if window "win" is editing the w_arg_idx file in its argument list.
+#pragma weak check_arg_idx
 void check_arg_idx(win_T *win)
 {
   if (WARGCOUNT(win) > 1 && !editing_arg_idx(win)) {
@@ -524,6 +534,7 @@ void check_arg_idx(win_T *win)
 }
 
 /// ":args", ":arglocal" and ":argglobal".
+#pragma weak ex_args
 void ex_args(exarg_T *eap)
 {
   if (eap->cmdidx != CMD_args) {
@@ -586,6 +597,7 @@ void ex_args(exarg_T *eap)
 }
 
 /// ":previous", ":sprevious", ":Next" and ":sNext".
+#pragma weak ex_previous
 void ex_previous(exarg_T *eap)
 {
   // If past the last one already, go to the last one.
@@ -597,18 +609,21 @@ void ex_previous(exarg_T *eap)
 }
 
 /// ":rewind", ":first", ":sfirst" and ":srewind".
+#pragma weak ex_rewind
 void ex_rewind(exarg_T *eap)
 {
   do_argfile(eap, 0);
 }
 
 /// ":last" and ":slast".
+#pragma weak ex_last
 void ex_last(exarg_T *eap)
 {
   do_argfile(eap, ARGCOUNT - 1);
 }
 
 /// ":argument" and ":sargument".
+#pragma weak ex_argument
 void ex_argument(exarg_T *eap)
 {
   int i;
@@ -622,6 +637,7 @@ void ex_argument(exarg_T *eap)
 }
 
 /// Edit file "argn" of the argument lists.
+#pragma weak do_argfile
 void do_argfile(exarg_T *eap, int argn)
 {
   bool is_split_cmd = *eap->cmd == 's';
@@ -692,6 +708,7 @@ void do_argfile(exarg_T *eap, int argn)
 }
 
 /// ":next", and commands that behave like it.
+#pragma weak ex_next
 void ex_next(exarg_T *eap)
 {
   // check for changed buffer now, if this fails the argument list is not
@@ -715,6 +732,7 @@ void ex_next(exarg_T *eap)
 }
 
 /// ":argdedupe"
+#pragma weak ex_argdedupe
 void ex_argdedupe(exarg_T *eap FUNC_ATTR_UNUSED)
 {
   for (int i = 0; i < ARGCOUNT; i++) {
@@ -749,6 +767,7 @@ void ex_argdedupe(exarg_T *eap FUNC_ATTR_UNUSED)
 }
 
 /// ":argedit"
+#pragma weak ex_argedit
 void ex_argedit(exarg_T *eap)
 {
   int i = eap->addr_count ? (int)eap->line2 : curwin->w_arg_idx + 1;
@@ -772,6 +791,7 @@ void ex_argedit(exarg_T *eap)
 }
 
 /// ":argadd"
+#pragma weak ex_argadd
 void ex_argadd(exarg_T *eap)
 {
   do_arglist(eap->arg, AL_ADD,
@@ -781,6 +801,7 @@ void ex_argadd(exarg_T *eap)
 }
 
 /// ":argdelete"
+#pragma weak ex_argdelete
 void ex_argdelete(exarg_T *eap)
 {
   if (check_arglist_locked() == FAIL) {
@@ -834,6 +855,7 @@ void ex_argdelete(exarg_T *eap)
 
 /// Function given to ExpandGeneric() to obtain the possible arguments of the
 /// argedit and argdelete commands.
+#pragma weak get_arglist_name
 char *get_arglist_name(expand_T *xp FUNC_ATTR_UNUSED, int idx)
 {
   if (idx >= ARGCOUNT) {
@@ -843,6 +865,7 @@ char *get_arglist_name(expand_T *xp FUNC_ATTR_UNUSED, int idx)
 }
 
 /// Get the file name for an argument list entry.
+#pragma weak alist_name
 char *alist_name(aentry_T *aep)
 {
   // Use the name from the associated buffer if it exists.
@@ -1154,6 +1177,7 @@ static void do_arg_all(int count, int forceit, int keep_tabs)
 
 /// ":all" and ":sall".
 /// Also used for ":tab drop file ..." after setting the argument list.
+#pragma weak ex_all
 void ex_all(exarg_T *eap)
 {
   if (eap->addr_count == 0) {
@@ -1165,6 +1189,7 @@ void ex_all(exarg_T *eap)
 /// Concatenate all files in the argument list, separated by spaces, and return
 /// it in one allocated string.
 /// Spaces and backslashes in the file names are escaped with a backslash.
+#pragma weak arg_all
 char *arg_all(void)
 {
   char *retval = NULL;
@@ -1219,6 +1244,7 @@ char *arg_all(void)
 }
 
 /// "argc([window id])" function
+#pragma weak f_argc
 void f_argc(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 {
   if (argvars[0].v_type == VAR_UNKNOWN) {
@@ -1240,12 +1266,14 @@ void f_argc(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 }
 
 /// "argidx()" function
+#pragma weak f_argidx
 void f_argidx(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 {
   rettv->vval.v_number = curwin->w_arg_idx;
 }
 
 /// "arglistid()" function
+#pragma weak f_arglistid
 void f_arglistid(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 {
   rettv->vval.v_number = -1;
@@ -1267,6 +1295,7 @@ static void get_arglist_as_rettv(aentry_T *arglist, int argcount, typval_T *rett
 }
 
 /// "argv(nr)" function
+#pragma weak f_argv
 void f_argv(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 {
   aentry_T *arglist = NULL;

@@ -530,9 +530,9 @@ os_expand_wildcards :: proc "c" (num_pat: c.int, pat: ^^u8, num_file: ^c.int, fi
 		os_remove(tempname)
 		xfree(transmute(rawptr)(tempname))
 		if flags & EW_SILENT == 0 {
-			msg_putchar('\'')
+			msg_putchar('\n')
 			cmdline_row = Rows - 1
-			emsg(GT(cstring("E79: Cannot expand wildcards")))
+			msg_msg(GT(cstring("E79: Cannot expand wildcards")), 0)
 			msg_start()
 		}
 		if shell_style == STYLE_BT {
@@ -544,7 +544,7 @@ os_expand_wildcards :: proc "c" (num_pat: c.int, pat: ^^u8, num_file: ^c.int, fi
 	fd := os_fopen(transmute(cstring)(tempname), READBIN)
 	if fd == nil {
 		if flags & EW_SILENT == 0 {
-			emsg(GT(cstring("E79: Cannot expand wildcards")))
+			msg_msg(GT(cstring("E79: Cannot expand wildcards")), 0)
 			msg_start()
 		}
 		xfree(transmute(rawptr)(tempname))

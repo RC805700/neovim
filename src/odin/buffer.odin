@@ -1104,8 +1104,6 @@ foreign _ {
 	fullname_save_r :: proc "c" (fname: cstring, force: bool) -> cstring ---
 	@(link_name = "ml_setname")
 	ml_setname_r :: proc "c" (buf: rawptr) ---
-	@(link_name = "check_arg_idx")
-	check_arg_idx_r :: proc "c" (win: rawptr) ---
 	@(link_name = "ml_timestamp")
 	ml_timestamp_r :: proc "c" (buf: rawptr) ---
 }
@@ -1232,7 +1230,7 @@ buf_name_changed :: proc "c"(buf: rawptr) {
 		ml_setname_r(buf)
 	}
 	if (^rawptr)(uintptr(curwin) + W_BUFFER_OFF)^ == buf {
-		check_arg_idx_r(curwin) // check file name for arg list
+		check_arg_idx(curwin) // check file name for arg list
 	}
 	maketitle() // set window title
 	status_redraw_all() // status lines need to be redrawn
@@ -1823,7 +1821,7 @@ enter_buffer_o :: proc "c"(buf: rawptr) {
 	if (^C.int)(uintptr(curwin) + W_CURSOR_OFF)^ == 1 && inindent_r(0) {
 		buflist_getfpos_o()
 	}
-	check_arg_idx_r(curwin) // check for valid arg_idx
+	check_arg_idx(curwin) // check for valid arg_idx
 	maketitle()
 	// when autocmds didn't change it
 	if (^C.int)(uintptr(curwin) + W_TOPLINE_OFF)^ == 1 &&
