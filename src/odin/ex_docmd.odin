@@ -3398,8 +3398,7 @@ foreign _ {
 	@(link_name = "has_loop_cmd")
 	has_loop_cmd_e :: proc "c" (p: cstring) -> bool ---
 	// (script_line_end/start — PORTED (profile.odin).)
-	@(link_name = "do_debug")
-	do_debug_e :: proc "c" (cmd: cstring) ---
+	// do_debug — PORTED (debugger.odin).
 	@(link_name = "rewind_conditionals")
 	rewind_conditionals_e :: proc "c" (cstack: rawptr, idx: C.int, cond_type: C.int, cond_level: ^C.int) ---
 	@(link_name = "source_breakpoint")
@@ -3642,14 +3641,14 @@ do_cmdline :: proc "c" (cmdline: cstring, fgetline: LineGetter, cookie: rawptr, 
 				break
 			}
 			if breakpoint != nil && dbg_tick != nil && dbg_tick^ != debug_tick_g {
-				breakpoint^ = dbg_find_breakpoint_e(getline_equal(fgetline, cookie, getsourceline), fname, sourcing_lnum_o())
+				breakpoint^ = dbg_find_breakpoint(getline_equal(fgetline, cookie, getsourceline), fname, sourcing_lnum_o())
 				dbg_tick^ = debug_tick_g
 			}
 			next_cmdline = transmute(cstring)(([^]rawptr)(uintptr(lines_ga.ga_data) + uintptr(current_line) * 16)[0])
 			set_sourcing_lnum_o(([^]C.int)(uintptr(lines_ga.ga_data) + uintptr(current_line) * 16 + 8)[0])
 			if breakpoint != nil && breakpoint^ != 0 && breakpoint^ <= sourcing_lnum_o() {
-				dbg_breakpoint_e(fname, sourcing_lnum_o())
-				breakpoint^ = dbg_find_breakpoint_e(getline_equal(fgetline, cookie, getsourceline), fname, sourcing_lnum_o())
+				dbg_breakpoint(fname, sourcing_lnum_o())
+				breakpoint^ = dbg_find_breakpoint(getline_equal(fgetline, cookie, getsourceline), fname, sourcing_lnum_o())
 				dbg_tick^ = debug_tick_g
 			}
 			if do_profiling == PROF_YES {
@@ -3776,7 +3775,7 @@ do_cmdline :: proc "c" (cmdline: cstring, fgetline: LineGetter, cookie: rawptr, 
 					([^]C.int)(uintptr(rawptr(&cs[0])) + CSTACK_LFLAGS_OFF)[0] |= CSL_HAD_LOOP_O
 					line_breakcheck()
 					if breakpoint != nil && lines_ga.ga_len > current_line {
-						breakpoint^ = dbg_find_breakpoint_e(getline_equal(fgetline, cookie, getsourceline), fname, ([^]C.int)(uintptr(lines_ga.ga_data) + uintptr(current_line) * 16 + 8)[0] - 1)
+						breakpoint^ = dbg_find_breakpoint(getline_equal(fgetline, cookie, getsourceline), fname, ([^]C.int)(uintptr(lines_ga.ga_data) + uintptr(current_line) * 16 + 8)[0] - 1)
 						dbg_tick^ = debug_tick_g
 					}
 				} else {
@@ -3883,9 +3882,9 @@ do_cmdline :: proc "c" (cmdline: cstring, fgetline: LineGetter, cookie: rawptr, 
 		}
 		if (nest_src || nest_func) && ex_nesting_level_g + 1 <= debug_break_level {
 			if nest_src {
-				do_debug_e(cstring("End of sourced file"))
+				do_debug(cstring("End of sourced file"))
 			} else {
-				do_debug_e(cstring("End of function"))
+				do_debug(cstring("End of function"))
 			}
 		}
 	}
@@ -3957,8 +3956,7 @@ foreign _ {
 	do_errthrow_e :: proc "c" (cstack: rawptr, cmdname: cstring) ---
 	@(link_name = "do_intthrow")
 	do_intthrow_e :: proc "c" (cstack: rawptr) -> bool ---
-	@(link_name = "dbg_check_breakpoint")
-	dbg_check_breakpoint_e :: proc "c" (eap: rawptr) ---
+	// dbg_check_breakpoint — PORTED (debugger.odin).
 	@(link_name = "ask_yesno")
 	ask_yesno_e :: proc "c" (str: cstring) -> C.int ---
 }
@@ -4011,7 +4009,7 @@ do_one_cmd_o :: proc "c" (cmdlinep: ^cstring, flags: C.int, cstack: rawptr, fget
 		p := find_excmd_after_range_o(rawptr(&ea[0]))
 		profile_cmd_o(rawptr(&ea[0]), cstack, fgetline, cookie)
 		if !exiting {
-			dbg_check_breakpoint_e(rawptr(&ea[0]))
+			dbg_check_breakpoint(rawptr(&ea[0]))
 		}
 		if !([^]bool)(uintptr(rawptr(&ea[0])) + EXARG_SKIP_OFF)[0] && got_int {
 			([^]bool)(uintptr(rawptr(&ea[0])) + EXARG_SKIP_OFF)[0] = true

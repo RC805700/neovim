@@ -55,6 +55,7 @@
 
 /// ":help": open a read-only window on a help file
 /// ":help!": DWIM parse the best match at cursor
+#pragma weak ex_help
 void ex_help(exarg_T *eap)
 {
   char *arg;
@@ -236,6 +237,7 @@ erret:
 }
 
 /// ":helpclose": Close one help window
+#pragma weak ex_helpclose
 void ex_helpclose(exarg_T *eap)
 {
   FOR_ALL_WINDOWS_IN_TAB(win, curtab) {
@@ -250,6 +252,7 @@ void ex_helpclose(exarg_T *eap)
 /// Changes the "@" to NUL if found, and returns a pointer to "xx".
 ///
 /// @return  NULL if not found.
+#pragma weak check_help_lang
 char *check_help_lang(char *arg)
 {
   int len = (int)strlen(arg);
@@ -276,6 +279,7 @@ char *check_help_lang(char *arg)
 /// @param wrong_case  no matching case
 ///
 /// @return  a heuristic indicating how well the given string matches.
+#pragma weak help_heuristic
 int help_heuristic(char *matched_string, int offset, bool wrong_case)
   FUNC_ATTR_PURE
 {
@@ -332,6 +336,7 @@ static int help_compare(const void *s1, const void *s2)
 /// the number of matches in num_matches.
 /// The matches will be sorted with a "best" match algorithm.
 /// When "keep_lang" is true try keeping the language of the current buffer.
+#pragma weak find_help_tags
 int find_help_tags(const char *arg, int *num_matches, char ***matches, bool keep_lang)
 {
   typval_T tv_args[] = {
@@ -370,6 +375,7 @@ int find_help_tags(const char *arg, int *num_matches, char ***matches, bool keep
 /// Cleanup matches for help tags:
 /// Remove "@ab" if the top of 'helplang' is "ab" and the language of the first
 /// tag matches it.  Otherwise remove "@en" if "en" is the only language.
+#pragma weak cleanup_help_tags
 void cleanup_help_tags(int num_file, char **file)
 {
   char buf[4];
@@ -420,6 +426,7 @@ void cleanup_help_tags(int num_file, char **file)
 }
 
 /// Called when starting to edit a buffer for a help file.
+#pragma weak prepare_help_buffer
 void prepare_help_buffer(void)
 {
   curbuf->b_help = true;
@@ -458,6 +465,7 @@ void prepare_help_buffer(void)
 }
 
 /// Populate *local-additions* in help.txt
+#pragma weak get_local_additions
 void get_local_additions(void)
 {
   typval_T no_args[] = { { .v_type = VAR_UNKNOWN } };
@@ -465,12 +473,14 @@ void get_local_additions(void)
 }
 
 /// ":exusage"
+#pragma weak ex_exusage
 void ex_exusage(exarg_T *eap)
 {
   do_cmdline_cmd("help ex-cmd-index");
 }
 
 /// ":viusage"
+#pragma weak ex_viusage
 void ex_viusage(exarg_T *eap)
 {
   do_cmdline_cmd("help normal-index");
@@ -763,6 +773,7 @@ static bool helptags_cb(int num_fnames, char **fnames, bool all, void *cookie)
 }
 
 /// ":helptags"
+#pragma weak ex_helptags
 void ex_helptags(exarg_T *eap)
 {
   expand_T xpc;

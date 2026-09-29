@@ -138,6 +138,7 @@ static int count_n_matched_chars(mmfile_t **sp, const size_t n, bool iwhite)
   return matched_chars;
 }
 
+#pragma weak fastforward_buf_to_lnum
 mmfile_t fastforward_buf_to_lnum(mmfile_t s, linenr_T lnum)
 {
   for (int i = 0; i < lnum - 1; i++) {
@@ -326,6 +327,7 @@ static void populate_tensor(int *df_iters, const size_t ch_dim, diffcmppath_T *d
 /// @param ndiffs
 /// @param [out] [allocated] decisions
 /// @return the length of decisions
+#pragma weak linematch_nbuffers
 size_t linematch_nbuffers(const mmfile_t **diff_blk, const int *diff_len, const size_t ndiffs,
                           int **decisions, bool iwhite)
 {

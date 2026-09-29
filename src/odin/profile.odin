@@ -9,8 +9,7 @@ import "core:c/libc"
 // proftime_T itself is shell.odin's u64 alias — reused directly.
 
 foreign _ {
-	@(link_name = "ex_breakadd")
-	ex_breakadd_e :: proc "c" (eap: rawptr) ---
+	// ex_breakadd — PORTED (debugger.odin).
 	@(link_name = "setvbuf")
 	setvbuf_e :: proc "c" (stream: rawptr, buf: rawptr, mode: C.int, size: C.size_t) -> C.int ---
 	// time_fd is EXTERN in globals.h, defined by main.c.o — C retains it.
@@ -310,7 +309,7 @@ ex_profile :: proc "c" (eap: rawptr) {
 	} else if libc.strcmp(arg, cstring("dump")) == 0 {
 		profile_dump()
 	} else {
-		ex_breakadd_e(eap)
+		ex_breakadd(eap)
 	}
 }
 

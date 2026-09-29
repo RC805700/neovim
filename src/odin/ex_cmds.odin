@@ -40,8 +40,7 @@ foreign _ {
 	set_file_options_r :: proc "c"(set_options: bool, eap: rawptr) ---
 	@(link_name = "set_forced_fenc")
 	set_forced_fenc_r :: proc "c"(eap: rawptr) ---
-	@(link_name = "prepare_help_buffer")
-	prepare_help_buffer_r :: proc "c"() ---
+	// prepare_help_buffer — PORTED (help.odin).
 	@(link_name = "should_abort")
 	should_abort_r :: proc "c"(retcode: C.int) -> bool ---
 	@(link_name = "plines_m_win_fill")
@@ -449,7 +448,7 @@ do_ecmd :: proc "c"(fnum: C.int, ffname_in: cstring, sfname_in: cstring, eap: ra
 
 		buf = curbuf
 		if (flags & ECMD_SET_HELP_O) != 0 || keep_help_flag_g {
-			prepare_help_buffer_r()
+			prepare_help_buffer()
 		} else if !(^bool)(uintptr(curbuf) + B_HELP_OFF)^ {
 			// Listed, unless a help buffer (CTRL-O back to help).
 			set_buflisted(1)

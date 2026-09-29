@@ -65,6 +65,7 @@ struct debuggy {
 
 /// Debug mode. Repeatedly get Ex commands, until told to continue normal
 /// execution.
+#pragma weak do_debug
 void do_debug(char *cmd)
 {
   int save_msg_scroll = msg_scroll;
@@ -392,6 +393,7 @@ static void do_showbacktrace(char *cmd)
 }
 
 /// ":debug".
+#pragma weak ex_debug
 void ex_debug(exarg_T *eap)
 {
   int debug_break_level_save = debug_break_level;
@@ -417,6 +419,7 @@ static char *debug_skipped_name;
 /// executed.  Return true and set breakpoint_name for skipped commands that
 /// decide to execute something themselves.
 /// Called from do_one_cmd() before executing a command.
+#pragma weak dbg_check_breakpoint
 void dbg_check_breakpoint(exarg_T *eap)
 {
   debug_skipped = false;
@@ -456,6 +459,7 @@ void dbg_check_breakpoint(exarg_T *eap)
 /// set.
 ///
 /// @return true when the debug mode is entered this time.
+#pragma weak dbg_check_skipped
 bool dbg_check_skipped(exarg_T *eap)
 {
   if (!debug_skipped) {
@@ -588,6 +592,7 @@ static int dbg_parsearg(char *arg, garray_T *gap)
 }
 
 /// ":breakadd".  Also used for ":profile".
+#pragma weak ex_breakadd
 void ex_breakadd(exarg_T *eap)
 {
   garray_T *gap = &dbg_breakp;
@@ -631,6 +636,7 @@ void ex_breakadd(exarg_T *eap)
 }
 
 /// ":debuggreedy".
+#pragma weak ex_debuggreedy
 void ex_debuggreedy(exarg_T *eap)
 {
   if (eap->addr_count == 0 || eap->line2 != 0) {
@@ -652,6 +658,7 @@ static void update_has_expr_breakpoint(void)
 }
 
 /// ":breakdel" and ":profdel".
+#pragma weak ex_breakdel
 void ex_breakdel(exarg_T *eap)
 {
   int todel = -1;
@@ -731,6 +738,7 @@ void ex_breakdel(exarg_T *eap)
 }
 
 /// ":breaklist".
+#pragma weak ex_breaklist
 void ex_breaklist(exarg_T *eap)
 {
   if (GA_EMPTY(&dbg_breakp)) {
@@ -761,6 +769,7 @@ void ex_breaklist(exarg_T *eap)
 /// @param file  true for a file, false for a function
 /// @param fname  file or function name
 /// @param after  after this line number
+#pragma weak dbg_find_breakpoint
 linenr_T dbg_find_breakpoint(bool file, char *fname, linenr_T after)
 {
   return debuggy_find(file, fname, after, &dbg_breakp, NULL);
@@ -771,6 +780,7 @@ linenr_T dbg_find_breakpoint(bool file, char *fname, linenr_T after)
 /// @param fp[out]  forceit
 ///
 /// @returns true if profiling is on for a function or sourced file.
+#pragma weak has_profiling
 bool has_profiling(bool file, char *fname, bool *fp)
 {
   return debuggy_find(file, fname, 0, &prof_ga, fp)
@@ -873,6 +883,7 @@ static linenr_T debuggy_find(bool file, char *fname, linenr_T after, garray_T *g
 }
 
 /// Called when a breakpoint was encountered.
+#pragma weak dbg_breakpoint
 void dbg_breakpoint(char *name, linenr_T lnum)
 {
   // We need to check if this line is actually executed in do_one_cmd()

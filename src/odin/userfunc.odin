@@ -1144,8 +1144,7 @@ foreign _ {
 	verbose_leave_scroll_e :: proc "c" () ---
 	@(link_name = "trunc_string")
 	trunc_string_e :: proc "c" (s: cstring, buf: ^u8, room: C.int, buflen: C.int) ---
-	@(link_name = "has_profiling")
-	has_profiling_e :: proc "c" (file: bool, fname: cstring, fp: rawptr) -> bool ---
+	// has_profiling — PORTED (debugger.odin).
 	// func_do_profile/profile_start/zero/end/sub_wait/add/self/script_prof_save/restore — PORTED (profile.odin).
 	@(link_name = "estack_push_ufunc")
 	estack_push_ufunc_e :: proc "c" (fp: rawptr, lnum: C.int) ---
@@ -1217,7 +1216,7 @@ call_user_func :: proc "c" (fp: rawptr, argcount: C.int, argvars: ^Typval_T, ret
 	line_breakcheck()
 	fc := create_funccal(fp, rettv)
 	(^C.int)(uintptr(fc) + FC_LEVEL_OFF_O)^ = ex_nesting_level_g
-	(^C.int)(uintptr(fc) + FC_BREAKPOINT_OFF_O)^ = dbg_find_breakpoint_e(false, transmute(cstring)(rawptr(uintptr(fp) + UF_NAME_OFF_O)), 0)
+	(^C.int)(uintptr(fc) + FC_BREAKPOINT_OFF_O)^ = dbg_find_breakpoint(false, transmute(cstring)(rawptr(uintptr(fp) + UF_NAME_OFF_O)), 0)
 	(^C.int)(uintptr(fc) + FC_DBG_TICK_OFF_O)^ = debug_tick_g
 	ga_init((^Garray)(uintptr(fc) + FC_UFUNCS_OFF_O), 8, 1)
 	if libc.strncmp(transmute(cstring)(rawptr(uintptr(fp) + UF_NAME_OFF_O)), cstring("<lambda>"), 8) == 0 {
@@ -1381,7 +1380,7 @@ call_user_func :: proc "c" (fp: rawptr, argcount: C.int, argvars: ^Typval_T, ret
 		no_wait_return -= 1
 	}
 	do_profiling_yes := do_profiling == PROF_YES
-	func_not_yet_profiling_but_should := do_profiling_yes && !(^bool)(uintptr(fp) + UF_PROFILING_OFF_O)^ && has_profiling_e(false, transmute(cstring)(rawptr(uintptr(fp) + UF_NAME_OFF_O)), nil)
+	func_not_yet_profiling_but_should := do_profiling_yes && !(^bool)(uintptr(fp) + UF_PROFILING_OFF_O)^ && has_profiling(false, transmute(cstring)(rawptr(uintptr(fp) + UF_NAME_OFF_O)), nil)
 	if func_not_yet_profiling_but_should {
 		started_profiling = true
 		func_do_profile(fp)
@@ -1507,13 +1506,11 @@ foreign _ {
 	debug_tick_g: C.int
 	@(link_name = "ex_nesting_level")
 	ex_nesting_level_g: C.int
-	@(link_name = "dbg_find_breakpoint")
-	dbg_find_breakpoint_e :: proc "c" (file: bool, fname: cstring, after: C.int) -> C.int ---
+	// dbg_find_breakpoint — PORTED (debugger.odin).
 	@(link_name = "aborted_in_try")
 	aborted_in_try_e :: proc "c" () -> bool ---
 	// func_line_start/end — PORTED (profile.odin).
-	@(link_name = "dbg_breakpoint")
-	dbg_breakpoint_e :: proc "c" (name: cstring, lnum: C.int) ---
+	// dbg_breakpoint — PORTED (debugger.odin).
 	@(link_name = "exception_state_save")
 	exception_state_save_e :: proc "c" (estate: rawptr) ---
 	@(link_name = "exception_state_restore")
@@ -1544,7 +1541,7 @@ get_func_line :: proc "c" (c: C.int, cookie: rawptr, indent: C.int, do_concat: b
 	fp := (^rawptr)(uintptr(fcp) + FC_FUNC_OFF_O)^
 	retval: cstring = nil
 	if (^C.int)(uintptr(fcp) + FC_DBG_TICK_OFF_O)^ != debug_tick_g {
-		(^C.int)(uintptr(fcp) + FC_BREAKPOINT_OFF_O)^ = dbg_find_breakpoint_e(false, transmute(cstring)(rawptr(uintptr(fp) + UF_NAME_OFF_O)), sourcing_lnum_o())
+		(^C.int)(uintptr(fcp) + FC_BREAKPOINT_OFF_O)^ = dbg_find_breakpoint(false, transmute(cstring)(rawptr(uintptr(fp) + UF_NAME_OFF_O)), sourcing_lnum_o())
 		(^C.int)(uintptr(fcp) + FC_DBG_TICK_OFF_O)^ = debug_tick_g
 	}
 	if do_profiling == PROF_YES {
@@ -1569,8 +1566,8 @@ get_func_line :: proc "c" (c: C.int, cookie: rawptr, indent: C.int, do_concat: b
 		}
 	}
 	if (^C.int)(uintptr(fcp) + FC_BREAKPOINT_OFF_O)^ != 0 && (^C.int)(uintptr(fcp) + FC_BREAKPOINT_OFF_O)^ <= sourcing_lnum_o() {
-		dbg_breakpoint_e(transmute(cstring)(rawptr(uintptr(fp) + UF_NAME_OFF_O)), sourcing_lnum_o())
-		(^C.int)(uintptr(fcp) + FC_BREAKPOINT_OFF_O)^ = dbg_find_breakpoint_e(false, transmute(cstring)(rawptr(uintptr(fp) + UF_NAME_OFF_O)), sourcing_lnum_o())
+		dbg_breakpoint(transmute(cstring)(rawptr(uintptr(fp) + UF_NAME_OFF_O)), sourcing_lnum_o())
+		(^C.int)(uintptr(fcp) + FC_BREAKPOINT_OFF_O)^ = dbg_find_breakpoint(false, transmute(cstring)(rawptr(uintptr(fp) + UF_NAME_OFF_O)), sourcing_lnum_o())
 		(^C.int)(uintptr(fcp) + FC_DBG_TICK_OFF_O)^ = debug_tick_g
 	}
 	return retval

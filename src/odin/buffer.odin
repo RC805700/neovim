@@ -2171,8 +2171,7 @@ foreign _ {
 	ml_open_r :: proc "c" (buf: rawptr) -> C.int ---
 	@(link_name = "save_file_ff")
 	save_file_ff_r :: proc "c" (buf: rawptr) ---
-	@(link_name = "get_local_additions")
-	get_local_additions_r :: proc "c" () ---
+	// get_local_additions — PORTED (help.odin).
 	@(link_name = "readonlymode")
 	readonlymode_g: bool
 }
@@ -2325,7 +2324,7 @@ open_buffer :: proc "c"(read_stdin: bool, eap: rawptr, flags_arg: C.int) -> C.in
 		}
 		// Help buffer: populate *local-additions* in help.txt
 		if bt_help(curbuf) {
-			get_local_additions_r()
+			get_local_additions()
 		}
 	} else if read_stdin {
 		save_bin := (^C.int)(uintptr(curbuf) + B_P_BIN_OFF)^
