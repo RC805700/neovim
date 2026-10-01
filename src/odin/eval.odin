@@ -245,12 +245,7 @@ eexe_mod_op :: proc "c" (tv1: ^Typval_T, tv2: ^Typval_T, op: cstring) -> C.int {
 foreign _ {
 	@(link_name = "reverse_text")
 	reverse_text_e :: proc "c" (s: ^u8) -> ^u8 ---
-	@(link_name = "channel_job_start")
-	channel_job_start_e :: proc "c" (argv: rawptr, exepath: cstring, on_stdout: CallbackReader_E, on_stderr: CallbackReader_E, on_exit: Callback_E, pty: bool, rpc: bool, overlapped: bool, detach: bool, stdin_mode: C.int, cwd: cstring, pty_width: C.uint16_t, pty_height: C.uint16_t, env: rawptr, status_out: rawptr) -> rawptr ---
-	@(link_name = "channel_create_event")
-	channel_create_event_e :: proc "c" (chan: rawptr, ext_source: cstring) ---
-	@(link_name = "channel_close")
-	channel_close_e :: proc "c" (id: C.ulonglong, part: C.int, error: ^cstring) -> bool ---
+	// channel_job_start/create_event/close now defined in channel.odin — call directly.
 }
 
 // Callback mirror (channel_defs.h): union{ptr}+type = 16B with tail pad.
@@ -340,9 +335,9 @@ f_rpcstart :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 	argv[i] = nil
 	cri := CallbackReader_E{}
 	cri.ga_growsize = 1 // GA_EMPTY_INIT_VALUE growsize
-	chan := channel_job_start_e(transmute(rawptr)(argv), nil, cri, cri, Callback_E{}, false, true, false, false, 0, nil, 0, 0, nil, rawptr(&rettv.vval))
+	chan := channel_job_start(transmute(rawptr)(argv), nil, cri, cri, Callback_E{}, false, true, false, false, 0, nil, 0, 0, nil, rawptr(&rettv.vval))
 	if chan != nil {
-		channel_create_event_e(chan, nil)
+		channel_create_event(chan, nil)
 	}
 }
 
@@ -360,12 +355,12 @@ f_rpcstop :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 		emsg(cstring(e_invarg_s))
 		return
 	}
-	id := C.ulonglong(transmute(C.longlong)(a0.vval))
+	id := u64(transmute(C.longlong)(a0.vval))
 	if find_job(id, false) != nil {
 		f_jobstop(argvars, rettv, fptr)
 	} else {
 		err: cstring
-		ok := channel_close_e(id, 3, &err) // kChannelPartRpc
+		ok := channel_close(id, 3, &err) // kChannelPartRpc
 		rettv.vval = transmute(rawptr)(C.longlong(ok ? 1 : 0))
 		if !ok {
 			emsg(err)
@@ -14941,7 +14936,7 @@ f_chanclose :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 		}
 	}
 	err: cstring = nil
-	if channel_close_e(C.ulonglong(transmute(C.longlong)(([^]Typval_T)(argvars)[0].vval)), part, &err) {
+	if channel_close(u64(transmute(C.longlong)(([^]Typval_T)(argvars)[0].vval)), part, &err) {
 		rettv.vval = transmute(rawptr)(C.longlong(1))
 	} else {
 		emsg(err)
@@ -15640,8 +15635,7 @@ f_repeat :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 
 // —— Batch 27an: funcs.c chansend (FFI fully rewired) ——
 foreign _ {
-	@(link_name = "channel_send")
-	channel_send_e :: proc "c" (id: C.ulonglong, data: ^u8, len: C.size_t, data_owned: bool, error: ^cstring) -> C.size_t ---
+	// channel_send now defined in channel.odin — call directly.
 }
 
 // "chansend(id, data)" function.
@@ -15659,7 +15653,7 @@ f_chansend :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 	}
 	input_len: C.ptrdiff_t = 0
 	input: ^u8 = nil
-	id := C.ulonglong(transmute(C.longlong)(([^]Typval_T)(argvars)[0].vval))
+	id := u64(transmute(C.longlong)(([^]Typval_T)(argvars)[0].vval))
 	if ([^]Typval_T)(argvars)[1].v_type == VAR_BLOB {
 		b := rawptr(([^]Typval_T)(argvars)[1].vval)
 		input_len = C.ptrdiff_t(tv_blob_len_o(b))
@@ -15673,7 +15667,7 @@ f_chansend :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 		return
 	}
 	err: cstring = nil
-	rettv.vval = transmute(rawptr)(C.longlong(channel_send_e(id, input, C.size_t(input_len), true, &err)))
+	rettv.vval = transmute(rawptr)(C.longlong(channel_send(id, input, C.size_t(input_len), true, &err)))
 	if err != nil {
 		emsg(err)
 	}
@@ -16118,10 +16112,7 @@ f_rpcrequest :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 foreign _ {
 	@(link_name = "channels")
 	channels_g: PMap_uint64_t
-	@(link_name = "channel_incref")
-	channel_incref_e :: proc "c" (chan: rawptr) ---
-	@(link_name = "channel_decref")
-	channel_decref_e :: proc "c" (chan: rawptr) ---
+	// channel_incref/decref now defined in channel.odin — call directly.
 }
 
 PROC_STATUS_OFF :: 28
@@ -16184,7 +16175,7 @@ f_jobwait :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 			jobs[i] = nil
 		} else {
 			jobs[i] = chan
-			channel_incref_e(chan)
+			channel_incref(chan)
 			if (^C.int)(uintptr(chan) + CHAN_STREAM_OFF + PROC_STATUS_OFF)^ < 0 {
 				multiqueue_process_events((^MultiQueue)((^rawptr)(uintptr(chan) + CHAN_EVENTS_OFF)^))
 				multiqueue_replace_parent((^MultiQueue)((^rawptr)(uintptr(chan) + CHAN_EVENTS_OFF)^), waiting_jobs)
@@ -16233,7 +16224,7 @@ f_jobwait :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 			multiqueue_process_events((^MultiQueue)((^rawptr)(uintptr(jobs[i]) + CHAN_EVENTS_OFF)^))
 			multiqueue_replace_parent((^MultiQueue)((^rawptr)(uintptr(jobs[i]) + CHAN_EVENTS_OFF)^), main_loop.events)
 			tv_list_append_number(rv, C.longlong((^C.int)(uintptr(jobs[i]) + CHAN_STREAM_OFF + PROC_STATUS_OFF)^))
-			channel_decref_e(jobs[i])
+			channel_decref(jobs[i])
 		}
 		i += 1
 	}
@@ -17207,10 +17198,7 @@ f_wait :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 
 // —— Batch 27bk: funcs.c sockconnect + stdioopen ——
 foreign _ {
-	@(link_name = "channel_connect")
-	channel_connect_e :: proc "c" (tcp: bool, address: cstring, rpc: bool, on_output: CallbackReader_E, timeout: C.int, error: ^cstring) -> C.ulonglong ---
-	@(link_name = "channel_from_stdio")
-	channel_from_stdio_e :: proc "c" (rpc: bool, on_output: CallbackReader_E, error: ^cstring) -> C.ulonglong ---
+	// channel_connect/from_stdio now defined in channel.odin — call directly.
 	@(link_name = "on_print")
 	on_print_g: Callback_E
 }
@@ -17257,7 +17245,7 @@ f_sockconnect :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 		}
 	}
 	err: cstring = nil
-	id := channel_connect_e(tcp, address, rpc, on_data, 50, &err)
+	id := channel_connect(tcp, address, rpc, on_data, 50, &err)
 	if err != nil {
 		semsg(cstring(E_CONNFAIL_S), err)
 	}
@@ -17287,7 +17275,7 @@ f_stdioopen :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 		on_stdin.self = opts
 	}
 	err: cstring = nil
-	id := channel_from_stdio_e(rpc, on_stdin, &err)
+	id := channel_from_stdio(rpc, on_stdin, &err)
 	if id == 0 {
 		semsg(cstring(E905_S), err)
 	}
@@ -27095,7 +27083,7 @@ f_jobstop :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 	}
 	err: cstring = nil
 	if (^bool)(uintptr(data) + CHAN_IS_RPC_OFF)^ {
-		channel_close_e((^C.ulonglong)(uintptr(data) + CHAN_ID_OFF)^, KCHPART_RPC_O, &err)
+		channel_close(u64((^C.ulonglong)(uintptr(data) + CHAN_ID_OFF)^), KCHPART_RPC_O, &err)
 	}
 	proc_stop((^Proc)(rawptr(uintptr(data) + CHAN_STREAM_OFF)))
 	rettv.vval = transmute(rawptr)(C.longlong(1))
@@ -27106,8 +27094,7 @@ f_jobstop :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 
 // —— Batch 27cb: funcs.c jobstart engine (FFI fully rewired) ——
 foreign _ {
-	@(link_name = "channel_terminal_alloc")
-	channel_terminal_alloc_e :: proc "c" (buf: rawptr, chan: rawptr) ---
+	// channel_terminal_alloc now defined in channel.odin — call directly.
 	@(link_name = "terminal_open")
 	terminal_open_e :: proc "c" (termpp: ^rawptr, buf: rawptr) ---
 	@(link_name = "terminal_buf")
@@ -27281,13 +27268,13 @@ f_jobstart :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 	}
 	env := create_environment(job_env, clear_env, pty, true, term_name)
 	status: C.longlong = 0
-	chan := channel_job_start_e(transmute(rawptr)(argv), nil, on_stdout, on_stderr, on_exit, pty, rpc, overlapped, detach, stdin_mode, cwd, width, height, env, rawptr(&status))
+	chan := channel_job_start(transmute(rawptr)(argv), nil, on_stdout, on_stderr, on_exit, pty, rpc, overlapped, detach, stdin_mode, cwd, width, height, env, rawptr(&status))
 	rettv.vval = transmute(rawptr)(status)
 	if chan == nil {
 		return
 	}
 	if !term {
-		channel_create_event_e(chan, nil)
+		channel_create_event(chan, nil)
 		return
 	}
 	if status <= 0 {
@@ -27298,11 +27285,11 @@ f_jobstart :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 	(^C.int)(uintptr(buf) + B_P_SWF_OFF)^ = 0
 	if (^rawptr)(uintptr(buf) + B_ML_MFP_OFF)^ == nil && ml_open_r(buf) == FAIL_E {
 		proc_stop((^Proc)(rawptr(uintptr(chan) + CHAN_STREAM_OFF)))
-		channel_decref_e(chan)
+		channel_decref(chan)
 		return
 	}
-	channel_incref_e(chan)
-	channel_terminal_alloc_e(buf, chan)
+	channel_incref(chan)
+	channel_terminal_alloc(buf, chan)
 	apply_autocmds(EVENT_BUFFILEPRE_O, nil, nil, false, buf)
 	term_alive := true
 	if (^rawptr)(uintptr(chan) + CHAN_TERM_OFF)^ == nil || terminal_buf_e((^rawptr)(uintptr(chan) + CHAN_TERM_OFF)^) == 0 {
@@ -27347,8 +27334,8 @@ f_jobstart :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 	if term_alive {
 		terminal_open_e((^rawptr)(uintptr(chan) + CHAN_TERM_OFF), buf)
 	}
-	channel_create_event_e(chan, nil)
-	channel_decref_e(chan)
+	channel_create_event(chan, nil)
+	channel_decref(chan)
 }
 
 // —— Batch 28bb: eval.c callback/lua-name + string leaves (exports + weak) ——

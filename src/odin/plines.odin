@@ -9,12 +9,7 @@ import "base:runtime"
 // DecorVirtText_O, K_CHARSIZE_*_O, K_VPOS_INLINE_O.
 
 foreign _ {
-	@(link_name = "marktree_itr_get_filter")
-	marktree_itr_get_filter_e :: proc "c" (b: rawptr, row: C.int, col: C.int, stop_row: C.int, stop_col: C.int, meta_filter: ^C.uint32_t, itr: rawptr) -> bool ---
-	@(link_name = "marktree_itr_next_filter")
-	marktree_itr_next_filter_e :: proc "c" (b: rawptr, itr: rawptr, stop_row: C.int, stop_col: C.int, meta_filter: ^C.uint32_t) -> bool ---
-	@(link_name = "marktree_itr_current")
-	marktree_itr_current_e :: proc "c" (itr: rawptr) -> MTKey_O ---
+	// marktree_itr_get_filter/next_filter/current now defined in marktree.odin — call directly.
 	@(link_name = "nvim_odin_ns_in_win")
 	ns_in_win_e :: proc "c" (ns_id: C.uint32_t, wp: rawptr) -> bool ---
 	@(link_name = "diffopt_filler")
@@ -192,7 +187,7 @@ init_charsize_arg :: proc "c" (csarg: ^CharsizeArg_O, wp: rawptr, lnum: C.int, l
 	csarg.indent_width = INT_MIN_O
 	csarg.use_tabstop = (^C.int)(uintptr(wp) + W_P_LIST_OFF)^ == 0 || (^u32)(uintptr(wp) + W_P_LCS_CHARS_OFF + LCS_TAB1_OFF)^ != 0
 	if lnum > 0 {
-		if marktree_itr_get_filter_e(rawptr(uintptr(buf) + B_MARKTREE_OFF), lnum - 1, 0, lnum, 0, &inline_filter_g[0], csarg_iter_o(csarg)) {
+		if marktree_itr_get_filter(rawptr(uintptr(buf) + B_MARKTREE_OFF), lnum - 1, 0, lnum, 0, ([^]u32)(&inline_filter_g[0]), csarg_iter_o(csarg)) {
 			csarg.virt_row = lnum - 1
 		}
 	}
@@ -581,7 +576,7 @@ charsize_regular :: proc "c" (csarg: ^CharsizeArg_O, cur: ^u8, vcol: C.int, cur_
 		tab_size := size
 		col := C.int(uintptr(rawptr(cur)) - uintptr(rawptr(line)))
 		for {
-			mark := marktree_itr_current_e(csarg_iter_o(csarg))
+			mark := marktree_itr_current(csarg_iter_o(csarg))
 			if mark.pos.row != csarg.virt_row || mark.pos.col > col {
 				break
 			}
@@ -611,7 +606,7 @@ charsize_regular :: proc "c" (csarg: ^CharsizeArg_O, cur: ^u8, vcol: C.int, cur_
 					}
 				}
 			}
-			marktree_itr_next_filter_e(rawptr(uintptr(buf) + B_MARKTREE_OFF), csarg_iter_o(csarg), csarg.virt_row + 1, 0, &inline_filter_g[0])
+			marktree_itr_next_filter(rawptr(uintptr(buf) + B_MARKTREE_OFF), csarg_iter_o(csarg), csarg.virt_row + 1, 0, ([^]u32)(&inline_filter_g[0]))
 		}
 	}
 	if is_doublewidth && (^C.int)(uintptr(wp) + W_P_WRAP_OFF)^ != 0 && in_win_border_o(wp, vcol + size - 2) {

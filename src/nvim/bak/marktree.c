@@ -294,6 +294,7 @@ static inline void marktree_putp_aux(MarkTree *b, MTNode *x, MTKey k, uint32_t *
   }
 }
 
+#pragma weak marktree_put
 void marktree_put(MarkTree *b, MTKey key, int end_row, int end_col, bool end_right)
 {
   assert(!(key.flags & ~(MT_FLAG_EXTERNAL_MASK | MT_FLAG_RIGHT_GRAVITY)));
@@ -383,6 +384,7 @@ static void unintersect_node(MarkTree *b, MTNode *x, uint64_t id, bool strict)
 
 /// @param itr mutated
 /// @param end_itr not mutated
+#pragma weak marktree_intersect_pair
 void marktree_intersect_pair(MarkTree *b, uint64_t id, MarkTreeIter *itr, MarkTreeIter *end_itr,
                              bool delete)
 {
@@ -483,6 +485,7 @@ static bool meta_has(const uint32_t *meta_count, MetaFilter meta_filter)
   return count > 0;
 }
 
+#pragma weak marktree_put_key
 void marktree_put_key(MarkTree *b, MTKey k)
 {
   k.flags |= MT_FLAG_REAL;  // let's be real.
@@ -536,6 +539,7 @@ void marktree_put_key(MarkTree *b, MTKey k)
 /// @param rev should be true if we plan to iterate _backwards_ and delete
 ///            stuff before this key. Most of the time this is false (the
 ///            recommended strategy is to always iterate forward)
+#pragma weak marktree_del_itr
 uint64_t marktree_del_itr(MarkTree *b, MarkTreeIter *itr, bool rev)
 {
   int adjustment = 0;
@@ -772,6 +776,7 @@ uint64_t marktree_del_itr(MarkTree *b, MarkTreeIter *itr, bool rev)
   return other;
 }
 
+#pragma weak marktree_revise_meta
 void marktree_revise_meta(MarkTree *b, MarkTreeIter *itr, MTKey old_key)
 {
   uint32_t meta_old[kMTMetaCount], meta_new[kMTMetaCount];
@@ -897,6 +902,7 @@ static void intersect_mov(Intersection *restrict x, Intersection *restrict y,
   kv_size(*y) = yn;
 }
 
+#pragma weak intersect_mov_test
 bool intersect_mov_test(const uint64_t *x, size_t nx, const uint64_t *y, size_t ny,
                         const uint64_t *win, size_t nwin, uint64_t *wout, size_t *nwout,
                         uint64_t *dout, size_t *ndout)
@@ -1092,6 +1098,7 @@ static MTNode *merge_node(MarkTree *b, MTNode *p, int i)
 
 /// @param dest is overwritten (assumed to already been freed/moved)
 /// @param src consumed (don't free or use)
+#pragma weak kvi_move
 void kvi_move(Intersection *dest, Intersection *src)
 {
   dest->size = src->size;
@@ -1281,6 +1288,7 @@ static void pivot_left(MarkTree *b, MTPos p_pos, MTNode *p, int i)
 }
 
 /// frees all mem, resets tree to valid empty state
+#pragma weak marktree_clear
 void marktree_clear(MarkTree *b)
 {
   if (b->root) {
@@ -1293,6 +1301,7 @@ void marktree_clear(MarkTree *b)
   assert(b->n_nodes == 0);
 }
 
+#pragma weak marktree_free_subtree
 void marktree_free_subtree(MarkTree *b, MTNode *x)
 {
   if (x->level) {
@@ -1311,6 +1320,7 @@ static void marktree_free_node(MarkTree *b, MTNode *x)
 }
 
 /// @param itr iterator is invalid after call
+#pragma weak marktree_move
 void marktree_move(MarkTree *b, MarkTreeIter *itr, int row, int col)
 {
   MTKey key = rawkey(itr);
@@ -1369,6 +1379,7 @@ void marktree_move(MarkTree *b, MarkTreeIter *itr, int row, int col)
   itr->x = NULL;  // itr might become invalid by put
 }
 
+#pragma weak marktree_restore_pair
 void marktree_restore_pair(MarkTree *b, MTKey key)
 {
   MarkTreeIter itr[1];
@@ -1388,11 +1399,13 @@ void marktree_restore_pair(MarkTree *b, MTKey key)
 
 // itr functions
 
+#pragma weak marktree_itr_get
 bool marktree_itr_get(MarkTree *b, int32_t row, int col, MarkTreeIter *itr)
 {
   return marktree_itr_get_ext(b, MTPos(row, col), itr, false, false, NULL, NULL);
 }
 
+#pragma weak marktree_itr_get_ext
 bool marktree_itr_get_ext(MarkTree *b, MTPos p, MarkTreeIter *itr, bool last, bool gravity,
                           MTPos *oldbase, MetaFilter meta_filter)
 {
@@ -1447,6 +1460,7 @@ bool marktree_itr_get_ext(MarkTree *b, MTPos p, MarkTreeIter *itr, bool last, bo
   return true;
 }
 
+#pragma weak marktree_itr_first
 bool marktree_itr_first(MarkTree *b, MarkTreeIter *itr)
 {
   if (b->n_keys == 0) {
@@ -1468,6 +1482,7 @@ bool marktree_itr_first(MarkTree *b, MarkTreeIter *itr)
 }
 
 // gives the first key that is greater or equal to p
+#pragma weak marktree_itr_last
 int marktree_itr_last(MarkTree *b, MarkTreeIter *itr)
 {
   if (b->n_keys == 0) {
@@ -1497,6 +1512,7 @@ int marktree_itr_last(MarkTree *b, MarkTreeIter *itr)
   return true;
 }
 
+#pragma weak marktree_itr_next
 bool marktree_itr_next(MarkTree *b, MarkTreeIter *itr)
 {
   return marktree_itr_next_skip(b, itr, false, false, NULL, NULL);
@@ -1568,6 +1584,7 @@ static bool marktree_itr_next_skip(MarkTree *b, MarkTreeIter *itr, bool skip, bo
   return true;
 }
 
+#pragma weak marktree_itr_get_filter
 bool marktree_itr_get_filter(MarkTree *b, int32_t row, int col, int stop_row, int stop_col,
                              MetaFilter meta_filter, MarkTreeIter *itr)
 {
@@ -1586,6 +1603,7 @@ bool marktree_itr_get_filter(MarkTree *b, int32_t row, int col, int stop_row, in
 /// not strictly needed but steps out to the right parent node where there
 /// might be "start" keys matching the filter ("end" keys are properly handled
 /// by marktree_itr_step_overlap() already)
+#pragma weak marktree_itr_step_out_filter
 bool marktree_itr_step_out_filter(MarkTree *b, MarkTreeIter *itr, MetaFilter meta_filter)
 {
   if (!meta_has(b->meta_root, meta_filter)) {
@@ -1607,6 +1625,7 @@ bool marktree_itr_step_out_filter(MarkTree *b, MarkTreeIter *itr, MetaFilter met
   return itr->x;
 }
 
+#pragma weak marktree_itr_next_filter
 bool marktree_itr_next_filter(MarkTree *b, MarkTreeIter *itr, int stop_row, int stop_col,
                               MetaFilter meta_filter)
 {
@@ -1652,6 +1671,7 @@ static bool marktree_itr_check_filter(MarkTree *b, MarkTreeIter *itr, int stop_r
   }
 }
 
+#pragma weak marktree_itr_prev
 bool marktree_itr_prev(MarkTree *b, MarkTreeIter *itr)
 {
   if (!itr->x) {
@@ -1697,11 +1717,13 @@ bool marktree_itr_prev(MarkTree *b, MarkTreeIter *itr)
   return true;
 }
 
+#pragma weak marktree_itr_node_done
 bool marktree_itr_node_done(MarkTreeIter *itr)
 {
   return !itr->x || itr->i == itr->x->n - 1;
 }
 
+#pragma weak marktree_itr_pos
 MTPos marktree_itr_pos(MarkTreeIter *itr)
 {
   MTPos pos = rawkey(itr).pos;
@@ -1709,6 +1731,7 @@ MTPos marktree_itr_pos(MarkTreeIter *itr)
   return pos;
 }
 
+#pragma weak marktree_itr_current
 MTKey marktree_itr_current(MarkTreeIter *itr)
 {
   if (itr->x) {
@@ -1740,6 +1763,7 @@ static bool itr_eq(MarkTreeIter *itr1, MarkTreeIter *itr2)
 /// @return false if we already know no marks can be found
 ///               even if "true" the first call to marktree_itr_step_overlap
 ///               could return false
+#pragma weak marktree_itr_get_overlap
 bool marktree_itr_get_overlap(MarkTree *b, int row, int col, MarkTreeIter *itr)
 {
   if (b->n_keys == 0) {
@@ -1766,6 +1790,7 @@ bool marktree_itr_get_overlap(MarkTree *b, int row, int col, MarkTreeIter *itr)
 /// When all overlapping mark pairs have been found, false will be returned. `itr`
 /// is then valid as an ordinary iterator at the (row, col) position specified in
 /// marktree_itr_step_overlap
+#pragma weak marktree_itr_step_overlap
 bool marktree_itr_step_overlap(MarkTree *b, MarkTreeIter *itr, MTPair *pair)
 {
   // phase one: we start at the root node and step inwards towards itr->intersect_pos
@@ -1910,6 +1935,7 @@ static void swap_keys(MarkTree *b, MarkTreeIter *itr1, MarkTreeIter *itr2, MTDam
   refkey(b, itr2->x, itr2->i);
 }
 
+#pragma weak marktree_splice
 bool marktree_splice(MarkTree *b, int32_t start_line, int start_col, int old_extent_line,
                      int old_extent_col, int new_extent_line, int new_extent_col)
 {
@@ -2106,6 +2132,7 @@ past_continue_same_node:
   return moved;
 }
 
+#pragma weak marktree_move_region
 void marktree_move_region(MarkTree *b, int start_row, colnr_T start_col, int extent_row,
                           colnr_T extent_col, int new_row, colnr_T new_col)
 {
@@ -2145,6 +2172,7 @@ void marktree_move_region(MarkTree *b, int start_row, colnr_T start_col, int ext
 }
 
 /// @param itr OPTIONAL. set itr to pos.
+#pragma weak marktree_lookup_ns
 MTKey marktree_lookup_ns(MarkTree *b, uint32_t ns, uint32_t id, bool end, MarkTreeIter *itr)
 {
   return marktree_lookup(b, mt_lookup_id(ns, id, end), itr);
@@ -2191,6 +2219,7 @@ static uint64_t pseudo_index_for_id(MarkTree *b, uint64_t id, bool sloppy)
 }
 
 /// @param itr OPTIONAL. set itr to pos.
+#pragma weak marktree_lookup
 MTKey marktree_lookup(MarkTree *b, uint64_t id, MarkTreeIter *itr)
 {
   MTNode *n = id2node(b, id);
@@ -2210,6 +2239,7 @@ MTKey marktree_lookup(MarkTree *b, uint64_t id, MarkTreeIter *itr)
   abort();
 }
 
+#pragma weak marktree_itr_set_node
 MTKey marktree_itr_set_node(MarkTree *b, MarkTreeIter *itr, MTNode *n, int i)
 {
   MTKey key = n->key[i];
@@ -2237,12 +2267,14 @@ MTKey marktree_itr_set_node(MarkTree *b, MarkTreeIter *itr, MTNode *n, int i)
   return key;
 }
 
+#pragma weak marktree_get_altpos
 MTPos marktree_get_altpos(MarkTree *b, MTKey mark, MarkTreeIter *itr)
 {
   return marktree_get_alt(b, mark, itr).pos;
 }
 
 /// @return alt mark for a paired mark or mark itself for unpaired mark
+#pragma weak marktree_get_alt
 MTKey marktree_get_alt(MarkTree *b, MTKey mark, MarkTreeIter *itr)
 {
   return mt_paired(mark) ? marktree_lookup_ns(b, mark.ns, mark.id, !mt_end(mark), itr) : mark;
@@ -2265,6 +2297,7 @@ static void marktree_itr_fix_pos(MarkTree *b, MarkTreeIter *itr)
 }
 
 // for unit test
+#pragma weak marktree_put_test
 void marktree_put_test(MarkTree *b, uint32_t ns, uint32_t id, int row, int col, bool right_gravity,
                        int end_row, int end_col, bool end_right, bool meta_inline)
 {
@@ -2277,12 +2310,14 @@ void marktree_put_test(MarkTree *b, uint32_t ns, uint32_t id, int row, int col, 
 }
 
 // for unit test
+#pragma weak mt_right_test
 bool mt_right_test(MTKey key)
 {
   return mt_right(key);
 }
 
 // for unit test
+#pragma weak marktree_del_pair_test
 void marktree_del_pair_test(MarkTree *b, uint32_t ns, uint32_t id)
 {
   MarkTreeIter itr[1];
@@ -2294,6 +2329,7 @@ void marktree_del_pair_test(MarkTree *b, uint32_t ns, uint32_t id)
   marktree_del_itr(b, itr, false);
 }
 
+#pragma weak marktree_check
 void marktree_check(MarkTree *b)
 {
 #ifndef NDEBUG
@@ -2368,6 +2404,7 @@ size_t marktree_check_node(MarkTree *b, MTNode *x, MTPos *last, bool *last_right
   return n_keys;
 }
 
+#pragma weak marktree_check_intersections
 bool marktree_check_intersections(MarkTree *b)
 {
   if (!b->root) {
@@ -2415,6 +2452,7 @@ bool marktree_check_intersections(MarkTree *b)
   return status;
 }
 
+#pragma weak mt_recurse_nodes
 void mt_recurse_nodes(MTNode *x, PMap(ptr_t) *checked)
 {
   if (kv_size(x->intersect)) {
@@ -2436,6 +2474,7 @@ void mt_recurse_nodes(MTNode *x, PMap(ptr_t) *checked)
   }
 }
 
+#pragma weak mt_recurse_nodes_compare
 bool mt_recurse_nodes_compare(MTNode *x, PMap(ptr_t) *checked)
 {
   uint64_t *ref = pmap_get(ptr_t)(checked, x);
@@ -2475,6 +2514,7 @@ bool mt_recurse_nodes_compare(MTNode *x, PMap(ptr_t) *checked)
 #define GA_PRINT(fmt, ...) snprintf(buf, sizeof(buf), fmt, __VA_ARGS__); \
   GA_PUT(buf);
 
+#pragma weak mt_inspect
 String mt_inspect(MarkTree *b, bool keys, bool dot)
 {
   garray_T ga[1];

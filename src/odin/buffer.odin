@@ -18,8 +18,7 @@ E948_BANG_S :: "E948: Job still running (add ! to end the job)"
 foreign _ {
 	@(link_name = "lastbuf")
 	lastbuf_g: rawptr
-	@(link_name = "channel_job_running")
-	channel_job_running_r :: proc "c" (id: u64) -> bool ---
+	// channel_job_running now defined in channel.odin — call directly.
 	@(link_name = "buffer_handles")
 	buffer_handles_g: Map_int_ptr_t
 }
@@ -71,7 +70,7 @@ buf_valid :: proc "c"(buf: rawptr) -> bool {
 @(export)
 no_write_message_buf :: proc "c"(buf: rawptr) {
 	if (^rawptr)(uintptr(buf) + B_TERMINAL_OFF)^ != nil &&
-	channel_job_running_r(u64((^C.longlong)(uintptr(buf) + B_P_CHANNEL_OFF)^)) {
+	channel_job_running(u64((^C.longlong)(uintptr(buf) + B_P_CHANNEL_OFF)^)) {
 		emsg(E948_BANG_S)
 	} else {
 		semsg_int_o(E89_S, (^C.int)(uintptr(buf) + B_FNUM_OFF)^)
@@ -81,7 +80,7 @@ no_write_message_buf :: proc "c"(buf: rawptr) {
 @(export)
 no_write_message :: proc "c"() {
 	if (^rawptr)(uintptr(curbuf) + B_TERMINAL_OFF)^ != nil &&
-	channel_job_running_r(u64((^C.longlong)(uintptr(curbuf) + B_P_CHANNEL_OFF)^)) {
+	channel_job_running(u64((^C.longlong)(uintptr(curbuf) + B_P_CHANNEL_OFF)^)) {
 		emsg(E948_BANG_S)
 	} else {
 		emsg(E37_BANG_S)
@@ -91,7 +90,7 @@ no_write_message :: proc "c"() {
 @(export)
 no_write_message_nobang :: proc "c"(buf: rawptr) {
 	if (^rawptr)(uintptr(buf) + B_TERMINAL_OFF)^ != nil &&
-	channel_job_running_r(u64((^C.longlong)(uintptr(buf) + B_P_CHANNEL_OFF)^)) {
+	channel_job_running(u64((^C.longlong)(uintptr(buf) + B_P_CHANNEL_OFF)^)) {
 		emsg(E948_S)
 	} else {
 		emsg(E37_S)

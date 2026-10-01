@@ -61,6 +61,7 @@ static uint64_t next_chan_id = CHAN_STDERR + 1;
 #include "channel.c.generated.h"
 
 /// Teardown the module
+#pragma weak channel_teardown
 void channel_teardown(void)
 {
   Channel *chan;
@@ -86,6 +87,7 @@ void channel_free_all_mem(void)
 ///
 /// @param id The channel id
 /// @return true if successful, false otherwise
+#pragma weak channel_close
 bool channel_close(uint64_t id, ChannelPart part, const char **error)
 {
   Channel *chan;
@@ -201,6 +203,7 @@ bool channel_close(uint64_t id, ChannelPart part, const char **error)
 }
 
 /// Initializes the module
+#pragma weak channel_init
 void channel_init(void)
 {
   channel_alloc(kChannelStreamStderr);
@@ -211,6 +214,7 @@ void channel_init(void)
 ///
 /// Channel is allocated with refcount 1, which should be decreased
 /// when the underlying stream closes.
+#pragma weak channel_alloc
 Channel *channel_alloc(ChannelStreamType type)
   FUNC_ATTR_NONNULL_RET
 {
@@ -232,6 +236,7 @@ Channel *channel_alloc(ChannelStreamType type)
   return chan;
 }
 
+#pragma weak channel_create_event
 void channel_create_event(Channel *chan, const char *ext_source)
 {
 #ifdef NVIM_LOG_DEBUG
@@ -266,11 +271,13 @@ void channel_create_event(Channel *chan, const char *ext_source)
   channel_event(chan, EVENT_CHANOPEN);
 }
 
+#pragma weak channel_incref
 void channel_incref(Channel *chan)
 {
   chan->refcount++;
 }
 
+#pragma weak channel_decref
 void channel_decref(Channel *chan)
 {
   if (chan->refcount == 1 && !chan->did_close_event) {
@@ -284,12 +291,14 @@ void channel_decref(Channel *chan)
   }
 }
 
+#pragma weak callback_reader_free
 void callback_reader_free(CallbackReader *reader)
 {
   callback_free(&reader->cb);
   ga_clear(&reader->buffer);
 }
 
+#pragma weak callback_reader_start
 void callback_reader_start(CallbackReader *reader, const char *type)
 {
   ga_init(&reader->buffer, sizeof(char *), 32);
@@ -375,6 +384,7 @@ static void close_cb(Stream *stream, void *data)
 ///                          < 0 if the job can't start
 ///
 /// @returns [allocated] channel
+#pragma weak channel_job_start
 Channel *channel_job_start(char **argv, const char *exepath, CallbackReader on_stdout,
                            CallbackReader on_stderr, Callback on_exit, bool pty, bool rpc,
                            bool overlapped, bool detach, ChannelStdinMode stdin_mode,
@@ -487,6 +497,7 @@ Channel *channel_job_start(char **argv, const char *exepath, CallbackReader on_s
   return chan;
 }
 
+#pragma weak channel_connect
 uint64_t channel_connect(bool tcp, const char *address, bool rpc, CallbackReader on_output,
                          int timeout, const char **error)
 {
@@ -533,6 +544,7 @@ end:
 /// Creates an RPC channel from a tcp/pipe socket connection
 ///
 /// @param watcher The SocketWatcher ready to accept the connection
+#pragma weak channel_from_connection
 void channel_from_connection(SocketWatcher *watcher)
 {
   Channel *channel = channel_alloc(kChannelStreamSocket);
@@ -546,6 +558,7 @@ void channel_from_connection(SocketWatcher *watcher)
 }
 
 /// Creates an API channel from stdin/stdout. Used when embedding Nvim.
+#pragma weak channel_from_stdio
 uint64_t channel_from_stdio(bool rpc, CallbackReader on_output, const char **error)
   FUNC_ATTR_NONNULL_ALL
 {
@@ -615,6 +628,7 @@ uint64_t channel_from_stdio(bool rpc, CallbackReader on_output, const char **err
 }
 
 /// @param data will be consumed
+#pragma weak channel_send
 size_t channel_send(uint64_t id, char *data, size_t len, bool data_owned, const char **error)
   FUNC_ATTR_NONNULL_ALL
 {
@@ -694,12 +708,14 @@ static inline list_T *buffer_to_tv_list(const char *const buf, const size_t len)
   return l;
 }
 
+#pragma weak on_channel_data
 size_t on_channel_data(RStream *stream, const char *buf, size_t count, void *data, bool eof)
 {
   Channel *chan = data;
   return on_channel_output(stream, chan, buf, count, eof, &chan->on_data);
 }
 
+#pragma weak on_job_stderr
 size_t on_job_stderr(RStream *stream, const char *buf, size_t count, void *data, bool eof)
 {
   Channel *chan = data;
@@ -773,6 +789,7 @@ static void on_channel_event(void **args)
   channel_decref(chan);
 }
 
+#pragma weak channel_reader_callbacks
 void channel_reader_callbacks(Channel *chan, CallbackReader *reader)
 {
   if (reader->buffered) {
@@ -886,6 +903,7 @@ static void channel_callback_call(Channel *chan, CallbackReader *reader)
 ///
 /// Channel `chan` is assumed to be an open pty channel,
 /// and `buf` is assumed to be a new, unmodified buffer.
+#pragma weak channel_terminal_alloc
 void channel_terminal_alloc(buf_T *buf, Channel *chan)
 {
   TerminalOptions topts = {
@@ -963,6 +981,7 @@ static void term_close(void *data)
   multiqueue_put(chan->events, term_delayed_free, data);
 }
 
+#pragma weak channel_event
 void channel_event(Channel *chan, event_T event)
 {
   if (has_event(event)) {
@@ -995,6 +1014,7 @@ static void set_info_event(void **argv)
 
 /// Unlike terminal_running(), this returns false immediately after stopping a job.
 /// However, this always returns false for nvim_open_term() terminals.
+#pragma weak channel_job_running
 bool channel_job_running(uint64_t id)
 {
   Channel *chan = find_channel(id);
@@ -1003,6 +1023,7 @@ bool channel_job_running(uint64_t id)
           && !proc_is_stopped(&chan->stream.proc));
 }
 
+#pragma weak channel_info
 Dict channel_info(uint64_t id, Arena *arena)
 {
   Channel *chan = find_channel(id);
@@ -1078,6 +1099,7 @@ static int int64_t_cmp(const void *pa, const void *pb)
   return a == b ? 0 : a > b ? 1 : -1;
 }
 
+#pragma weak channel_all_info
 Array channel_all_info(Arena *arena)
 {
   // order the items in the array by channel number, for Determinism™

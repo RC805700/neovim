@@ -943,7 +943,7 @@ do_wqall :: proc "c"(eap: rawptr) {
 			(^rawptr)(uintptr(buf) + B_TERMINAL_OFF)^ != nil &&
 			// TODO(zeertzjq): always false for nvim_open_term() terminals;
 			// use terminal_running() instead?
-			channel_job_running_r((^u64)(uintptr(buf) + B_P_CHANNEL_OFF)^) {
+			channel_job_running((^u64)(uintptr(buf) + B_P_CHANNEL_OFF)^) {
 			no_write_message_buf(buf)
 			error += 1
 		} else if !bufIsChanged(buf) || bt_dontwrite(buf) {

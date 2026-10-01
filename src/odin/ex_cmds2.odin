@@ -437,7 +437,7 @@ check_changed_any :: proc "c" (hidden: bool, unload: bool) -> bool {
 			msg_col = 0
 			msg_didout_g = false
 		}
-		term_running := (^bool)(uintptr(buf) + B_TERMINAL_OFF)^ && channel_job_running_r(u64((^C.longlong)(uintptr(buf) + B_P_CHANNEL_OFF)^))
+		term_running := (^bool)(uintptr(buf) + B_TERMINAL_OFF)^ && channel_job_running(u64((^C.longlong)(uintptr(buf) + B_P_CHANNEL_OFF)^))
 		shown := false
 		if term_running {
 			sp := buf_spname(buf)

@@ -9,39 +9,7 @@ import "core:c/libc"
 // marktree.c + decoration.c + api/extmark.c stay C (FFI below).
 
 foreign _ {
-	@(link_name = "marktree_put")
-	marktree_put_e :: proc "c" (b: rawptr, key: MTKey_O, end_row: C.int, end_col: C.int, end_right: bool) ---
-	@(link_name = "marktree_del_itr")
-	marktree_del_itr_e :: proc "c" (b: rawptr, itr: rawptr, rev: bool) -> u64 ---
-	@(link_name = "marktree_revise_meta")
-	marktree_revise_meta_e :: proc "c" (b: rawptr, itr: rawptr, old_key: MTKey_O) ---
-	@(link_name = "marktree_lookup")
-	marktree_lookup_e :: proc "c" (b: rawptr, id: u64, itr: rawptr) -> MTKey_O ---
-	@(link_name = "marktree_lookup_ns")
-	marktree_lookup_ns_e :: proc "c" (b: rawptr, ns: u32, id: u32, end: bool, itr: rawptr) -> MTKey_O ---
-	@(link_name = "marktree_move")
-	marktree_move_e :: proc "c" (b: rawptr, itr: rawptr, row: C.int, col: C.int) ---
-	@(link_name = "marktree_move_region")
-	marktree_move_region_e :: proc "c" (b: rawptr, start_row: C.int, start_col: C.int, extent_row: C.int, extent_col: C.int, new_row: C.int, new_col: C.int) ---
-	@(link_name = "marktree_splice")
-	marktree_splice_e :: proc "c" (b: rawptr, start_line: C.int32_t, start_col: C.int, old_extent_line: C.int, old_extent_col: C.int, new_extent_line: C.int, new_extent_col: C.int) -> bool ---
-	@(link_name = "marktree_clear")
-	marktree_clear_e :: proc "c" (b: rawptr) ---
-	@(link_name = "marktree_itr_get")
-	marktree_itr_get_e :: proc "c" (b: rawptr, row: C.int32_t, col: C.int, itr: rawptr) -> bool ---
-	@(link_name = "marktree_itr_get_ext")
-	marktree_itr_get_ext_e :: proc "c" (b: rawptr, p: MTPos_O, itr: rawptr, last: bool, gravity: bool, oldbase: rawptr, meta_filter: rawptr) -> bool ---
-	// marktree_itr_current now via plines.odin marktree_itr_current_e — call directly.
-	@(link_name = "marktree_itr_next")
-	marktree_itr_next_e :: proc "c" (b: rawptr, itr: rawptr) -> bool ---
-	@(link_name = "marktree_itr_get_overlap")
-	marktree_itr_get_overlap_e :: proc "c" (b: rawptr, row: C.int, col: C.int, itr: rawptr) -> bool ---
-	@(link_name = "marktree_itr_step_overlap")
-	marktree_itr_step_overlap_e :: proc "c" (b: rawptr, itr: rawptr, pair: ^MTPair_O) -> bool ---
-	@(link_name = "marktree_get_alt")
-	marktree_get_alt_e :: proc "c" (b: rawptr, mark: MTKey_O, itr: rawptr) -> MTKey_O ---
-	@(link_name = "marktree_get_altpos")
-	marktree_get_altpos_e :: proc "c" (b: rawptr, mark: MTKey_O, itr: rawptr) -> MTPos_O ---
+	// marktree_* now defined in marktree.odin — call directly.
 	@(link_name = "buf_decor_remove")
 	buf_decor_remove_e :: proc "c" (buf: rawptr, row1: C.int, row2: C.int, col1: C.int, decor: DecorInline_O, free_decor: bool) ---
 	@(link_name = "buf_put_decor")
@@ -246,7 +214,7 @@ extmark_set :: proc "c" (buf: rawptr, ns_id: u32, idp: ^u32, row: C.int, col: C.
 		id = ns^
 	} else {
 		itr := MarkTreeIter_O{}
-		old_mark := marktree_lookup_ns_e(rawptr(uintptr(buf) + uintptr(B_MARKTREE_OFF)), ns_id, id, false, rawptr(&itr))
+		old_mark := marktree_lookup_ns(rawptr(uintptr(buf) + uintptr(B_MARKTREE_OFF)), ns_id, id, false, rawptr(&itr))
 		if old_mark.id != 0 {
 			if mt_paired_o(old_mark) || end_row > -1 {
 				extmark_del_id(buf, ns_id, id)
@@ -263,10 +231,10 @@ extmark_set :: proc "c" (buf: rawptr, ns_id: u32, idp: ^u32, row: C.int, col: C.
 					rk := mt_itr_rawkey_o(&itr)
 					rk.flags |= flags
 					rk.decor = decor.data
-					marktree_revise_meta_e(rawptr(uintptr(buf) + uintptr(B_MARKTREE_OFF)), rawptr(&itr), old_mark)
+					marktree_revise_meta(rawptr(uintptr(buf) + uintptr(B_MARKTREE_OFF)), rawptr(&itr), old_mark)
 					revised = true
 				} else {
-					marktree_del_itr_e(rawptr(uintptr(buf) + uintptr(B_MARKTREE_OFF)), rawptr(&itr), false)
+					marktree_del_itr(rawptr(uintptr(buf) + uintptr(B_MARKTREE_OFF)), rawptr(&itr), false)
 					if !mt_invalid_o(old_mark) {
 						buf_decor_remove_e(buf, C.int(old_mark.pos.row), C.int(old_mark.pos.row), C.int(old_mark.pos.col), mt_decor_o(old_mark), true)
 					}
@@ -285,7 +253,7 @@ extmark_set :: proc "c" (buf: rawptr, ns_id: u32, idp: ^u32, row: C.int, col: C.
 		mark.id = id
 		mark.flags = flags
 		mark.decor = decor.data
-		marktree_put_e(rawptr(uintptr(buf) + uintptr(B_MARKTREE_OFF)), mark, end_row, end_col, end_right_gravity)
+		marktree_put(rawptr(uintptr(buf) + uintptr(B_MARKTREE_OFF)), mark, end_row, end_col, end_right_gravity)
 		decor_state_invalidate_e(buf)
 	}
 	if decor_flags != 0 || decor.ext {
@@ -304,7 +272,7 @@ extmark_set :: proc "c" (buf: rawptr, ns_id: u32, idp: ^u32, row: C.int, col: C.
 extmark_setraw_o :: proc "c" (buf: rawptr, mark_id: u64, row: C.int, col: C.int, invalid: bool) {
 	context = runtime.default_context()
 	itr := MarkTreeIter_O{}
-	key := marktree_lookup_e(rawptr(uintptr(buf) + uintptr(B_MARKTREE_OFF)), mark_id, rawptr(&itr))
+	key := marktree_lookup(rawptr(uintptr(buf) + uintptr(B_MARKTREE_OFF)), mark_id, rawptr(&itr))
 	move := C.int(key.pos.row) != row || C.int(key.pos.col) != col
 	if C.int(key.pos.row) < 0 || (!move && !invalid) {
 		return
@@ -315,16 +283,16 @@ extmark_setraw_o :: proc "c" (buf: rawptr, mark_id: u64, row: C.int, col: C.int,
 	row1: C.int = 0
 	row2: C.int = 0
 	altitr := itr
-	alt := marktree_get_alt_e(rawptr(uintptr(buf) + uintptr(B_MARKTREE_OFF)), key, rawptr(&altitr))
+	alt := marktree_get_alt(rawptr(uintptr(buf) + uintptr(B_MARKTREE_OFF)), key, rawptr(&altitr))
 	if invalid {
 		rk := mt_itr_rawkey_o(&itr)
 		rk.flags &= ~u16(MT_FLAG_INVALID_O)
 		arka := mt_itr_rawkey_o(&altitr)
 		arka.flags &= ~u16(MT_FLAG_INVALID_O)
 		if mt_end_o(key) {
-			marktree_revise_meta_e(rawptr(uintptr(buf) + uintptr(B_MARKTREE_OFF)), rawptr(&altitr), alt)
+			marktree_revise_meta(rawptr(uintptr(buf) + uintptr(B_MARKTREE_OFF)), rawptr(&altitr), alt)
 		} else {
-			marktree_revise_meta_e(rawptr(uintptr(buf) + uintptr(B_MARKTREE_OFF)), rawptr(&itr), key)
+			marktree_revise_meta(rawptr(uintptr(buf) + uintptr(B_MARKTREE_OFF)), rawptr(&itr), key)
 		}
 	} else if !mt_invalid_o(key) && (key.flags & MT_FLAG_DECOR_SIGNTEXT_O) != 0 && (^bool)(uintptr(buf) + uintptr(B_SIGNCOLS_AUTOM_OFF))^ {
 		row1 = min(C.int(alt.pos.row), min(C.int(key.pos.row), row))
@@ -332,7 +300,7 @@ extmark_setraw_o :: proc "c" (buf: rawptr, mark_id: u64, row: C.int, col: C.int,
 		buf_signcols_count_range_r(buf, row1, min((^C.int)(uintptr(curbuf) + uintptr(B_ML_LINE_COUNT_OFF))^ - 1, row2), 0, C.int(TriState.kTrue))
 	}
 	if move {
-		marktree_move_e(rawptr(uintptr(buf) + uintptr(B_MARKTREE_OFF)), rawptr(&itr), row, col)
+		marktree_move(rawptr(uintptr(buf) + uintptr(B_MARKTREE_OFF)), rawptr(&itr), row, col)
 	}
 	if invalid {
 		lo := min(row, C.int(alt.pos.row))
@@ -348,7 +316,7 @@ extmark_setraw_o :: proc "c" (buf: rawptr, mark_id: u64, row: C.int, col: C.int,
 extmark_del_id :: proc "c" (buf: rawptr, ns_id: u32, id: u32) -> bool {
 	context = runtime.default_context()
 	itr := MarkTreeIter_O{}
-	key := marktree_lookup_ns_e(rawptr(uintptr(buf) + uintptr(B_MARKTREE_OFF)), ns_id, id, false, rawptr(&itr))
+	key := marktree_lookup_ns(rawptr(uintptr(buf) + uintptr(B_MARKTREE_OFF)), ns_id, id, false, rawptr(&itr))
 	if key.id != 0 {
 		extmark_del(buf, rawptr(&itr), key, false)
 	}
@@ -363,15 +331,15 @@ extmark_del :: proc "c" (buf: rawptr, itr_raw: rawptr, key: MTKey_O, restore: bo
 		libc.abort()
 	}
 	key2 := key
-	other := marktree_del_itr_e(rawptr(uintptr(buf) + uintptr(B_MARKTREE_OFF)), itr_raw, false)
+	other := marktree_del_itr(rawptr(uintptr(buf) + uintptr(B_MARKTREE_OFF)), itr_raw, false)
 	if other != 0 {
-		key2 = marktree_lookup_e(rawptr(uintptr(buf) + uintptr(B_MARKTREE_OFF)), other, itr_raw)
+		key2 = marktree_lookup(rawptr(uintptr(buf) + uintptr(B_MARKTREE_OFF)), other, itr_raw)
 		if C.int(key2.pos.row) < 0 {
 			libc.abort()
 		}
-		marktree_del_itr_e(rawptr(uintptr(buf) + uintptr(B_MARKTREE_OFF)), itr_raw, false)
+		marktree_del_itr(rawptr(uintptr(buf) + uintptr(B_MARKTREE_OFF)), itr_raw, false)
 		if restore {
-			marktree_itr_get_e(rawptr(uintptr(buf) + uintptr(B_MARKTREE_OFF)), key.pos.row, C.int(key.pos.col), itr_raw)
+			marktree_itr_get(rawptr(uintptr(buf) + uintptr(B_MARKTREE_OFF)), key.pos.row, C.int(key.pos.col), itr_raw)
 		}
 	}
 	if mt_decor_any_o(key) {
@@ -408,9 +376,9 @@ extmark_clear :: proc "c" (buf: rawptr, ns_id: u32, l_row: C.int, l_col: C.int, 
 	marks_cleared_any := false
 	marks_cleared_all := l_row == 0 && l_col == 0
 	itr := MarkTreeIter_O{}
-	marktree_itr_get_e(rawptr(uintptr(buf) + uintptr(B_MARKTREE_OFF)), C.int32_t(l_row), l_col, rawptr(&itr))
+	marktree_itr_get(rawptr(uintptr(buf) + uintptr(B_MARKTREE_OFF)), C.int32_t(l_row), l_col, rawptr(&itr))
 	for {
-		mark := marktree_itr_current_e(rawptr(&itr))
+		mark := marktree_itr_current(rawptr(&itr))
 		if C.int(mark.pos.row) < 0 || C.int(mark.pos.row) > u_row || (C.int(mark.pos.row) == u_row && C.int(mark.pos.col) > u_col) {
 			if C.int(mark.pos.row) >= 0 {
 				marks_cleared_all = false
@@ -421,7 +389,7 @@ extmark_clear :: proc "c" (buf: rawptr, ns_id: u32, l_row: C.int, l_col: C.int, 
 			marks_cleared_any = true
 			extmark_del(buf, rawptr(&itr), mark, true)
 		} else {
-			marktree_itr_next_e(rawptr(uintptr(buf) + uintptr(B_MARKTREE_OFF)), rawptr(&itr))
+			marktree_itr_next(rawptr(uintptr(buf) + uintptr(B_MARKTREE_OFF)), rawptr(&itr))
 		}
 	}
 	if marks_cleared_all {
@@ -448,29 +416,29 @@ extmark_get :: proc "c" (buf: rawptr, ns_id: u32, l_row: C.int, l_col: C.int, u_
 	array := ExtmarkInfoArray_O{}
 	itr := MarkTreeIter_O{}
 	if overlap {
-		if !marktree_itr_get_overlap_e(rawptr(uintptr(buf) + uintptr(B_MARKTREE_OFF)), l_row, l_col, rawptr(&itr)) {
+		if !marktree_itr_get_overlap(rawptr(uintptr(buf) + uintptr(B_MARKTREE_OFF)), l_row, l_col, rawptr(&itr)) {
 			return array
 		}
 		for i64(array.n) < amount {
 			pair := MTPair_O{}
-			if !marktree_itr_step_overlap_e(rawptr(uintptr(buf) + uintptr(B_MARKTREE_OFF)), rawptr(&itr), &pair) {
+			if !marktree_itr_step_overlap(rawptr(uintptr(buf) + uintptr(B_MARKTREE_OFF)), rawptr(&itr), &pair) {
 				break
 			}
 			push_mark_o(&array, ns_id, type_filter, pair)
 		}
 	} else {
-		marktree_itr_get_ext_e(rawptr(uintptr(buf) + uintptr(B_MARKTREE_OFF)), MTPos_O{row = C.int32_t(l_row), col = C.int32_t(l_col)}, rawptr(&itr), false, false, nil, nil)
+		marktree_itr_get_ext(rawptr(uintptr(buf) + uintptr(B_MARKTREE_OFF)), MTPos_O{row = C.int32_t(l_row), col = C.int32_t(l_col)}, rawptr(&itr), false, false, nil, nil)
 	}
 	for i64(array.n) < amount {
-		mark := marktree_itr_current_e(rawptr(&itr))
+		mark := marktree_itr_current(rawptr(&itr))
 		if C.int(mark.pos.row) < 0 || C.int(mark.pos.row) > u_row || (C.int(mark.pos.row) == u_row && C.int(mark.pos.col) > u_col) {
 			break
 		}
 		if !mt_end_o(mark) {
-			end := marktree_get_alt_e(rawptr(uintptr(buf) + uintptr(B_MARKTREE_OFF)), mark, nil)
+			end := marktree_get_alt(rawptr(uintptr(buf) + uintptr(B_MARKTREE_OFF)), mark, nil)
 			push_mark_o(&array, ns_id, type_filter, mtpair_from_o(mark, end))
 		}
-		marktree_itr_next_e(rawptr(uintptr(buf) + uintptr(B_MARKTREE_OFF)), rawptr(&itr))
+		marktree_itr_next(rawptr(uintptr(buf) + uintptr(B_MARKTREE_OFF)), rawptr(&itr))
 	}
 	return array
 }
@@ -496,14 +464,14 @@ push_mark_o :: proc "c" (array: ^ExtmarkInfoArray_O, ns_id: u32, type_filter: C.
 @(export)
 extmark_from_id :: proc "c" (buf: rawptr, ns_id: u32, id: u32) -> MTPair_O {
 	context = runtime.default_context()
-	mark := marktree_lookup_ns_e(rawptr(uintptr(buf) + uintptr(B_MARKTREE_OFF)), ns_id, id, false, nil)
+	mark := marktree_lookup_ns(rawptr(uintptr(buf) + uintptr(B_MARKTREE_OFF)), ns_id, id, false, nil)
 	if mark.id == 0 {
 		return mtpair_from_o(mark, mark)
 	}
 	if C.int(mark.pos.row) < 0 {
 		libc.abort()
 	}
-	end := marktree_get_alt_e(rawptr(uintptr(buf) + uintptr(B_MARKTREE_OFF)), mark, nil)
+	end := marktree_get_alt(rawptr(uintptr(buf) + uintptr(B_MARKTREE_OFF)), mark, nil)
 	return mtpair_from_o(mark, end)
 }
 
@@ -512,18 +480,18 @@ extmark_from_id :: proc "c" (buf: rawptr, ns_id: u32, id: u32) -> MTPair_O {
 extmark_free_all :: proc "c" (buf: rawptr) {
 	context = runtime.default_context()
 	itr := MarkTreeIter_O{}
-	marktree_itr_get_e(rawptr(uintptr(buf) + uintptr(B_MARKTREE_OFF)), 0, 0, rawptr(&itr))
+	marktree_itr_get(rawptr(uintptr(buf) + uintptr(B_MARKTREE_OFF)), 0, 0, rawptr(&itr))
 	for {
-		mark := marktree_itr_current_e(rawptr(&itr))
+		mark := marktree_itr_current(rawptr(&itr))
 		if C.int(mark.pos.row) < 0 {
 			break
 		}
 		if !(mt_paired_o(mark) && mt_end_o(mark)) {
 			decor_free_e(mt_decor_o(mark))
 		}
-		marktree_itr_next_e(rawptr(uintptr(buf) + uintptr(B_MARKTREE_OFF)), rawptr(&itr))
+		marktree_itr_next(rawptr(uintptr(buf) + uintptr(B_MARKTREE_OFF)), rawptr(&itr))
 	}
-	marktree_clear_e(rawptr(uintptr(buf) + uintptr(B_MARKTREE_OFF)))
+	marktree_clear(rawptr(uintptr(buf) + uintptr(B_MARKTREE_OFF)))
 	(^C.int)(uintptr(buf) + uintptr(B_SIGNCOLS_MAX_OFF))^ = 0
 	libc.memset(rawptr(uintptr(buf) + uintptr(B_SIGNCOLS_COUNT_OFF)), 0, B_SIGNCOLS_COUNT_SIZE)
 	nsmap := (^Map_uint32_t_uint32_t)(uintptr(buf) + uintptr(B_EXTMARK_NS_OFF))
@@ -539,9 +507,9 @@ extmark_free_all :: proc "c" (buf: rawptr) {
 extmark_splice_delete :: proc "c" (buf: rawptr, l_row: C.int, l_col: C.int, u_row: C.int, u_col: C.int, uvp: ^Kvec_XUndo, only_copy: bool, op: C.int) {
 	context = runtime.default_context()
 	itr := MarkTreeIter_O{}
-	marktree_itr_get_e(rawptr(uintptr(buf) + uintptr(B_MARKTREE_OFF)), C.int32_t(l_row), l_col, rawptr(&itr))
+	marktree_itr_get(rawptr(uintptr(buf) + uintptr(B_MARKTREE_OFF)), C.int32_t(l_row), l_col, rawptr(&itr))
 	for {
-		mark := marktree_itr_current_e(rawptr(&itr))
+		mark := marktree_itr_current(rawptr(&itr))
 		if C.int(mark.pos.row) < 0 || C.int(mark.pos.row) > u_row {
 			break
 		}
@@ -558,7 +526,7 @@ extmark_splice_delete :: proc "c" (buf: rawptr, l_row: C.int, l_col: C.int, u_ro
 		invalidated := false
 		if !only_copy && !mt_invalid_o(mark) && mt_invalidate_o(mark) && !mt_end_o(mark) {
 			enditr := itr
-			endpos := marktree_get_altpos_e(rawptr(uintptr(buf) + uintptr(B_MARKTREE_OFF)), mark, rawptr(&enditr))
+			endpos := marktree_get_altpos(rawptr(uintptr(buf) + uintptr(B_MARKTREE_OFF)), mark, rawptr(&enditr))
 			start_in := C.int(mark.pos.row) > l_row || (C.int(mark.pos.row) == l_row && C.int(mark.pos.col) >= l_col)
 			end_in := C.int(endpos.row) < u_row || (C.int(endpos.row) == u_row && C.int(endpos.col) <= u_col)
 			if (!mt_paired_o(mark) && C.int(mark.pos.row) < u_row) || (mt_paired_o(mark) && start_in && end_in) {
@@ -572,7 +540,7 @@ extmark_splice_delete :: proc "c" (buf: rawptr, l_row: C.int, l_col: C.int, u_ro
 					rk.flags |= MT_FLAG_INVALID_O
 					erk := mt_itr_rawkey_o(&enditr)
 					erk.flags |= MT_FLAG_INVALID_O
-					marktree_revise_meta_e(rawptr(uintptr(buf) + uintptr(B_MARKTREE_OFF)), rawptr(&itr), mark)
+					marktree_revise_meta(rawptr(uintptr(buf) + uintptr(B_MARKTREE_OFF)), rawptr(&itr), mark)
 					buf_decor_remove_e(buf, C.int(mark.pos.row), C.int(endpos.row), C.int(mark.pos.col), mt_decor_o(mark), false)
 				}
 			}
@@ -588,7 +556,7 @@ extmark_splice_delete :: proc "c" (buf: rawptr, l_row: C.int, l_col: C.int, u_ro
 			(^ExtmarkSavePos_O)(&undo.data[0])^ = pos
 			kv_push_xundo(uvp, undo)
 		}
-		marktree_itr_next_e(rawptr(uintptr(buf) + uintptr(B_MARKTREE_OFF)), rawptr(&itr))
+		marktree_itr_next(rawptr(uintptr(buf) + uintptr(B_MARKTREE_OFF)), rawptr(&itr))
 	}
 }
 
@@ -691,7 +659,7 @@ extmark_splice_impl :: proc "c" (buf: rawptr, start_row: C.int, start_col: C.int
 		buf_signcols_count_range_r(buf, start_row, hi, 0, C.int(TriState.kTrue))
 		(^C.int)(uintptr(buf) + uintptr(B_PREV_LINE_COUNT_OFF))^ = 0
 	}
-	marktree_splice_e(rawptr(uintptr(buf) + uintptr(B_MARKTREE_OFF)), C.int32_t(start_row), start_col, old_row, old_col, new_row, new_col)
+	marktree_splice(rawptr(uintptr(buf) + uintptr(B_MARKTREE_OFF)), C.int32_t(start_row), start_col, old_row, old_col, new_row, new_col)
 	if old_row > 0 || new_row > 0 {
 		row2 := (^C.int)(uintptr(buf) + uintptr(B_ML_LINE_COUNT_OFF))^ - 1
 		if start_row + new_row < row2 {
@@ -761,7 +729,7 @@ extmark_move_region :: proc "c" (buf: rawptr, start_row: C.int, start_col: C.int
 	row1 := min(start_row, new_row)
 	row2 := max(start_row, new_row) + extent_row
 	buf_signcols_count_range_r(buf, row1, row2, 0, C.int(TriState.kTrue))
-	marktree_move_region_e(rawptr(uintptr(buf) + uintptr(B_MARKTREE_OFF)), start_row, start_col, extent_row, extent_col, new_row, new_col)
+	marktree_move_region(rawptr(uintptr(buf) + uintptr(B_MARKTREE_OFF)), start_row, start_col, extent_row, extent_col, new_row, new_col)
 	buf_signcols_count_range_r(buf, row1, row2, 0, C.int(TriState.kNone))
 	buf_updates_send_splice(buf, new_row, new_col, new_byte, extent_row, extent_col, extent_byte, 0, 0, 0)
 	if undo == kExtmarkUndo {

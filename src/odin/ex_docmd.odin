@@ -6536,7 +6536,7 @@ ex_detach :: proc "c" (eap: rawptr) {
 		return
 	}
 	err: cstring = nil
-	rv := channel_close_e(C.ulonglong((^u64)(uintptr(chan) + CHAN_ID_OFF)^), KCHPART_ALL_O, &err)
+	rv := channel_close(u64((^u64)(uintptr(chan) + CHAN_ID_OFF)^), KCHPART_ALL_O, &err)
 	if !rv && err != nil {
 		emsg(err)
 		return
@@ -7984,7 +7984,7 @@ ex_restart :: proc "c" (eap: rawptr) {
 	on_err := CallbackReader_E{}
 	on_err.fwd_err = true
 	exit_status: C.longlong = 0
-	channel := channel_job_start_e(argv, exepath, CallbackReader_E{}, on_err, Callback_E{}, false, true, true, true, KCHSTDIN_PIPE_O, nil, 0, 0, env, rawptr(&exit_status))
+	channel := channel_job_start(argv, exepath, CallbackReader_E{}, on_err, Callback_E{}, false, true, true, true, KCHSTDIN_PIPE_O, nil, 0, 0, env, rawptr(&exit_status))
 	failed := false
 	if channel == nil {
 		emsg(cstring("cannot create a channel job"))
