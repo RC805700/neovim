@@ -229,7 +229,8 @@ typedef struct {
 // If it is 0 there are no marks at all.
 // (always used for the current buffer only, no buffer change possible while
 // executing a global command).
-static linenr_T lowest_marked = 0;
+// Owned by Odin (memline.odin exports lowest_marked); C only declares it.
+extern linenr_T lowest_marked;
 
 // arguments for ml_find_line()
 enum {
@@ -284,6 +285,7 @@ static const char e_warning_pointer_block_corrupted[]
 /// Open a new memline for "buf".
 ///
 /// @return  FAIL for failure, OK otherwise.
+#pragma weak ml_open
 int ml_open(buf_T *buf)
 {
   // init fields in memline struct
@@ -398,6 +400,7 @@ error:
 
 /// ml_setname() is called when the file name of "buf" has been changed.
 /// It may rename the swapfile.
+#pragma weak ml_setname
 void ml_setname(buf_T *buf)
 {
   bool success = false;
@@ -468,6 +471,7 @@ void ml_setname(buf_T *buf)
 /// Open a file for the memfile for all buffers that are not readonly or have
 /// been modified.
 /// Used when 'updatecount' changes from zero to non-zero.
+#pragma weak ml_open_files
 void ml_open_files(void)
 {
   FOR_ALL_BUFFERS(buf) {
@@ -480,6 +484,7 @@ void ml_open_files(void)
 /// Open a swapfile for an existing memfile, if there is no swapfile yet.
 /// If we are unable to find a file name, mf_fname will be NULL
 /// and the memfile will be in memory only (no recovery possible).
+#pragma weak ml_open_file
 void ml_open_file(buf_T *buf)
 {
   memfile_T *mfp = buf->b_ml.ml_mfp;
@@ -550,6 +555,7 @@ void ml_open_file(buf_T *buf)
 /// file, or reading into an existing buffer, create a swapfile now.
 ///
 /// @param newfile reading file into new buffer
+#pragma weak check_need_swap
 void check_need_swap(bool newfile)
 {
   int old_msg_silent = msg_silent;  // might be reset by an E325 message
@@ -565,6 +571,7 @@ void check_need_swap(bool newfile)
 /// Close memline for buffer 'buf'.
 ///
 /// @param del_file  if true, delete the swapfile
+#pragma weak ml_close
 void ml_close(buf_T *buf, int del_file)
 {
   if (buf->b_ml.ml_mfp == NULL) {               // not open
@@ -588,6 +595,7 @@ void ml_close(buf_T *buf, int del_file)
 /// Only used when exiting.
 ///
 /// @param del_file  if true, delete the memfiles.
+#pragma weak ml_close_all
 void ml_close_all(bool del_file)
 {
   FOR_ALL_BUFFERS(buf) {
@@ -599,6 +607,7 @@ void ml_close_all(bool del_file)
 
 /// Close all memfiles for not modified buffers.
 /// Only use just before exiting!
+#pragma weak ml_close_notmod
 void ml_close_notmod(void)
 {
   FOR_ALL_BUFFERS(buf) {
@@ -610,6 +619,7 @@ void ml_close_notmod(void)
 
 /// Update the timestamp in the .swp file.
 /// Used when the file has been written.
+#pragma weak ml_timestamp
 void ml_timestamp(buf_T *buf)
 {
   ml_upd_block0(buf, UB_FNAME);
@@ -758,6 +768,7 @@ static int swapfile_proc_running(const ZeroBlock *b0p, const char *swap_fname)
 /// Try to recover curbuf from the .swp file.
 ///
 /// @param checkext  if true, check the extension and detect whether it is a swapfile.
+#pragma weak ml_recover
 void ml_recover(bool checkext)
 {
   buf_T *buf = NULL;
@@ -1300,6 +1311,7 @@ theend:
 /// @param skip_curbuf  exclude the current buffer's own active swapfile (used by `:recover`,
 ///                     not by `swapfilelist()`).
 /// @param ret_list  receives the paths.
+#pragma weak recover_names
 void recover_names(char *fname, bool skip_curbuf, list_T *ret_list)
   FUNC_ATTR_NONNULL_ARG(3)
 {
@@ -1433,6 +1445,7 @@ void recover_names(char *fname, bool skip_curbuf, list_T *ret_list)
 /// signs, to "dir". An unnamed buffer is handled as "" (<currentdir>/"")
 /// The last character in "dir" must be an extra slash or backslash, it is
 /// removed.
+#pragma weak make_percent_swname
 char *make_percent_swname(char *dir, char *dir_end, const char *name)
   FUNC_ATTR_NONNULL_ARG(1, 2)
 {
@@ -1476,6 +1489,7 @@ static int proc_running;
 /// For Vimscript "swapinfo()".
 ///
 /// @return  information found in swapfile "fname" in dictionary "d".
+#pragma weak swapfile_dict
 void swapfile_dict(const char *fname, dict_T *d)
 {
   int fd;
@@ -1701,6 +1715,7 @@ static int recov_file_names(char **names, char *path, bool prepend_dot)
 /// @param check_char  if true, stop syncing when character becomes available, but
 ///
 /// always sync at least one block.
+#pragma weak ml_sync_all
 void ml_sync_all(int check_file, int check_char, bool do_fsync)
 {
   FOR_ALL_BUFFERS(buf) {
@@ -1742,6 +1757,7 @@ void ml_sync_all(int check_file, int check_char, bool do_fsync)
 /// changed or deleted.
 ///
 /// @param message  if true, the success of preserving is reported.
+#pragma weak ml_preserve
 void ml_preserve(buf_T *buf, bool message, bool do_fsync)
 {
   memfile_T *mfp = buf->b_ml.ml_mfp;
@@ -1815,6 +1831,7 @@ theend:
 ///
 /// On failure an error message is given and IObuff is returned (to avoid
 /// having to check for error everywhere).
+#pragma weak ml_get
 char *ml_get(linenr_T lnum)
   FUNC_ATTR_NONNULL_RET
 {
@@ -1825,6 +1842,7 @@ char *ml_get(linenr_T lnum)
 ///
 /// This is the same as ml_get(), but taking in the buffer
 /// as an argument.
+#pragma weak ml_get_buf
 char *ml_get_buf(buf_T *buf, linenr_T lnum)
   FUNC_ATTR_NONNULL_ALL FUNC_ATTR_NONNULL_RET
 {
@@ -1837,6 +1855,7 @@ char *ml_get_buf(buf_T *buf, linenr_T lnum)
 /// should be used to modify a line.
 ///
 /// @return a pointer to a line in the buffer
+#pragma weak ml_get_buf_mut
 char *ml_get_buf_mut(buf_T *buf, linenr_T lnum)
   FUNC_ATTR_NONNULL_ALL FUNC_ATTR_NONNULL_RET
 {
@@ -1844,6 +1863,7 @@ char *ml_get_buf_mut(buf_T *buf, linenr_T lnum)
 }
 
 /// @return  pointer to position "pos".
+#pragma weak ml_get_pos
 char *ml_get_pos(const pos_T *pos)
   FUNC_ATTR_NONNULL_ALL
 {
@@ -1851,18 +1871,21 @@ char *ml_get_pos(const pos_T *pos)
 }
 
 /// @return  length (excluding the NUL) of the given line.
+#pragma weak ml_get_len
 colnr_T ml_get_len(linenr_T lnum)
 {
   return ml_get_buf_len(curbuf, lnum);
 }
 
 /// @return  length (excluding the NUL) of the text after position "pos".
+#pragma weak ml_get_pos_len
 colnr_T ml_get_pos_len(pos_T *pos)
 {
   return ml_get_buf_len(curbuf, pos->lnum) - pos->col;
 }
 
 /// @return  length (excluding the NUL) of the given line in the given buffer.
+#pragma weak ml_get_buf_len
 colnr_T ml_get_buf_len(buf_T *buf, linenr_T lnum)
 {
   const char *line = ml_get_buf(buf, lnum);
@@ -1876,6 +1899,7 @@ colnr_T ml_get_buf_len(buf_T *buf, linenr_T lnum)
 }
 
 /// @return  codepoint at pos. pos must be either valid or have col set to MAXCOL!
+#pragma weak gchar_pos
 int gchar_pos(pos_T *pos)
   FUNC_ATTR_NONNULL_ARG(1)
 {
@@ -1984,6 +2008,7 @@ errorret:
 /// Check if a line that was just obtained by a call to ml_get
 /// is in allocated memory.
 /// This ignores ML_ALLOCATED to get the same behavior as without ML_GET_ALLOC_LINES.
+#pragma weak ml_line_alloced
 int ml_line_alloced(void)
 {
   return curbuf->b_ml.ml_flags & ML_LINE_DIRTY;
@@ -2444,6 +2469,7 @@ static int ml_append_flush(buf_T *buf, linenr_T lnum, char *line, colnr_T len, i
 /// @param newfile  flag, see above
 ///
 /// @return  FAIL for failure, OK otherwise
+#pragma weak ml_append
 int ml_append(linenr_T lnum, char *line, colnr_T len, bool newfile)
 {
   return ml_append_flags(lnum, line, len, newfile ? ML_APPEND_NEW : 0);
@@ -2455,6 +2481,7 @@ int ml_append(linenr_T lnum, char *line, colnr_T len, bool newfile)
 /// @param flags  ML_APPEND_ values
 ///
 /// @return  FAIL for failure, OK otherwise
+#pragma weak ml_append_flags
 int ml_append_flags(linenr_T lnum, char *line, colnr_T len, int flags)
 {
   // When starting up, we might still need to create the memfile
@@ -2472,6 +2499,7 @@ int ml_append_flags(linenr_T lnum, char *line, colnr_T len, int flags)
 /// @param line  text of the new line
 /// @param len  length of new line, including NUL, or 0
 /// @param newfile  flag, see above
+#pragma weak ml_append_buf
 int ml_append_buf(buf_T *buf, linenr_T lnum, char *line, colnr_T len, bool newfile)
   FUNC_ATTR_NONNULL_ARG(1)
 {
@@ -2482,11 +2510,13 @@ int ml_append_buf(buf_T *buf, linenr_T lnum, char *line, colnr_T len, bool newfi
   return ml_append_flush(buf, lnum, line, len, newfile ? ML_APPEND_NEW : 0);
 }
 
+#pragma weak ml_add_deleted_len
 void ml_add_deleted_len(char *ptr, ssize_t len)
 {
   ml_add_deleted_len_buf(curbuf, ptr, len);
 }
 
+#pragma weak ml_add_deleted_len_buf
 void ml_add_deleted_len_buf(buf_T *buf, char *ptr, ssize_t len)
 {
   if (inhibit_delete_count) {
@@ -2507,6 +2537,7 @@ void ml_add_deleted_len_buf(buf_T *buf, char *ptr, ssize_t len)
 }
 
 /// Replace line "lnum", with buffering, in current buffer.
+#pragma weak ml_replace
 int ml_replace(linenr_T lnum, char *line, bool copy)
 {
   return ml_replace_buf(curbuf, lnum, line, copy, false);
@@ -2514,11 +2545,13 @@ int ml_replace(linenr_T lnum, char *line, bool copy)
 
 /// Replace a line for the current buffer.  Like ml_replace() with:
 /// "len" is the length of the text, excluding NUL.
+#pragma weak ml_replace_len
 int ml_replace_len(linenr_T lnum, char *line, size_t len, bool copy)
 {
   return ml_replace_buf_len(curbuf, lnum, line, len, copy, false);
 }
 
+#pragma weak ml_replace_buf
 int ml_replace_buf(buf_T *buf, linenr_T lnum, char *line, bool copy, bool noalloc)
   FUNC_ATTR_NONNULL_ARG(1)
 {
@@ -2539,6 +2572,7 @@ int ml_replace_buf(buf_T *buf, linenr_T lnum, char *line, bool copy, bool noallo
 /// changed_lines(), unless update_screen(UPD_NOT_VALID) is used.
 ///
 /// @return  FAIL for failure, OK otherwise
+#pragma weak ml_replace_buf_len
 int ml_replace_buf_len(buf_T *buf, linenr_T lnum, char *line_arg, size_t len_arg, bool copy,
                        bool noalloc)
   FUNC_ATTR_NONNULL_ARG(1)
@@ -2594,6 +2628,7 @@ int ml_replace_buf_len(buf_T *buf, linenr_T lnum, char *line_arg, size_t len_arg
 /// @param message  Show "--No lines in buffer--" message.
 ///
 /// @return  FAIL for failure, OK otherwise
+#pragma weak ml_delete_buf
 int ml_delete_buf(buf_T *buf, linenr_T lnum, bool message)
   FUNC_ATTR_NONNULL_ALL
 {
@@ -2742,6 +2777,7 @@ theend:
 /// deleted_lines() after this.
 ///
 /// @return  FAIL for failure, OK otherwise
+#pragma weak ml_delete
 int ml_delete(linenr_T lnum)
 {
   return ml_delete_flags(lnum, 0);
@@ -2750,6 +2786,7 @@ int ml_delete(linenr_T lnum)
 /// Like ml_delete() but using flags (see ml_delete_int()).
 ///
 /// @return  FAIL for failure, OK otherwise
+#pragma weak ml_delete_flags
 int ml_delete_flags(linenr_T lnum, int flags)
 {
   ml_flush_line(curbuf, false);
@@ -2761,6 +2798,7 @@ int ml_delete_flags(linenr_T lnum, int flags)
 }
 
 /// set the DB_MARKED flag for line 'lnum'
+#pragma weak ml_setmarked
 void ml_setmarked(linenr_T lnum)
 {
   // invalid line number
@@ -2785,6 +2823,7 @@ void ml_setmarked(linenr_T lnum)
 }
 
 /// find the first line with its DB_MARKED flag set
+#pragma weak ml_firstmarked
 linenr_T ml_firstmarked(void)
 {
   if (curbuf->b_ml.ml_mfp == NULL) {
@@ -2818,6 +2857,7 @@ linenr_T ml_firstmarked(void)
 }
 
 /// clear all DB_MARKED flags
+#pragma weak ml_clearmarked
 void ml_clearmarked(void)
 {
   if (curbuf->b_ml.ml_mfp == NULL) {        // nothing to do
@@ -2847,6 +2887,7 @@ void ml_clearmarked(void)
   lowest_marked = 0;
 }
 
+#pragma weak ml_flush_deleted_bytes
 size_t ml_flush_deleted_bytes(buf_T *buf, size_t *codepoints, size_t *codeunits)
 {
   size_t ret = buf->deleted_bytes;
@@ -3207,6 +3248,7 @@ static void ml_lineadd(buf_T *buf, int count)
 ///
 /// @return  OK if it worked and the resolved link in "buf[MAXPATHL]",
 ///          FAIL otherwise
+#pragma weak resolve_symlink
 int resolve_symlink(const char *fname, char *buf)
 {
   char tmp[MAXPATHL];
@@ -3270,6 +3312,7 @@ int resolve_symlink(const char *fname, char *buf)
 /// Make swapfile name out of the file name and a directory name.
 ///
 /// @return  pointer to allocated memory or NULL.
+#pragma weak makeswapname
 char *makeswapname(char *fname, char *ffname, buf_T *buf, char *dir_name)
 {
   char *fname_res = fname;
@@ -3317,6 +3360,7 @@ char *makeswapname(char *fname, char *ffname, buf_T *buf, char *dir_name)
 /// The return value is an allocated string and can be NULL.
 ///
 /// @param dname  don't use "dirname", it is a global for Alpha
+#pragma weak get_file_in_dir
 char *get_file_in_dir(char *fname, char *dname)
 {
   String retval;
@@ -3801,6 +3845,7 @@ static long char_to_long(const char *s_in)
 /// - file is modified or not: buf->b_changed
 /// - 'fileformat'
 /// - 'fileencoding'
+#pragma weak ml_setflags
 void ml_setflags(buf_T *buf)
 {
   if (!buf->b_ml.ml_mfp) {
@@ -4016,6 +4061,7 @@ static void ml_updatechunk(buf_T *buf, linenr_T line, int len, int updtype)
 /// @param no_ff ignore 'fileformat' option, always use one byte for NL.
 ///
 /// @return  -1 if information is not available
+#pragma weak ml_find_line_or_offset
 int ml_find_line_or_offset(buf_T *buf, linenr_T lnum, int *offp, bool no_ff)
 {
   bhdr_T *hp;
@@ -4162,6 +4208,7 @@ int ml_find_line_or_offset(buf_T *buf, linenr_T lnum, int *offp, bool no_ff)
 }
 
 /// Goto byte in buffer with offset 'cnt'.
+#pragma weak goto_byte
 void goto_byte(int cnt)
 {
   int boff = cnt;
@@ -4194,6 +4241,7 @@ void goto_byte(int cnt)
 ///           2 when moving forward onto a NUL at the end of the line).
 ///          -1 when at the end of file.
 ///           0 otherwise.
+#pragma weak inc
 int inc(pos_T *lp)
 {
   // when searching position may be set to end of a line
@@ -4216,6 +4264,7 @@ int inc(pos_T *lp)
 }
 
 /// Same as inc(), but skip NUL at the end of non-empty lines.
+#pragma weak incl
 int incl(pos_T *lp)
 {
   int r;
@@ -4226,6 +4275,7 @@ int incl(pos_T *lp)
   return r;
 }
 
+#pragma weak dec
 int dec(pos_T *lp)
 {
   lp->coladd = 0;
@@ -4258,6 +4308,7 @@ int dec(pos_T *lp)
 }
 
 /// Same as dec(), but skip NUL at the end of non-empty lines.
+#pragma weak decl
 int decl(pos_T *lp)
 {
   int r;

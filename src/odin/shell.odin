@@ -1333,8 +1333,7 @@ set_curbuf_no_eol :: proc(b: rawptr, v: c.int) {
 }
 
 foreign _ {
-	@(link_name = "ml_append")
-	ml_append :: proc "c" (lnum: c.int, line: ^u8, len: c.int, heap: bool) -> bool ---
+	// ml_append now defined in memline.odin — call directly.
 }
 
 shell_write_cb :: proc "c" (stream: ^Stream, data: rawptr, status: c.int) {

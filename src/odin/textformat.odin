@@ -21,20 +21,14 @@ foreign _ {
 	cindent_on_e :: proc "c" () -> C.int ---
 	@(link_name = "change_indent")
 	change_indent_e :: proc "c" (type: C.int, amount: C.int, round: bool, keep_zero: bool) -> bool ---
-	@(link_name = "del_bytes")
-	del_bytes_e :: proc "c" (count: C.int, fixpos_arg: bool, use_delcombine: bool) -> C.int ---
-	@(link_name = "open_line")
-	open_line_e :: proc "c" (dir: C.int, flags: C.int, second_line_indent: C.int, did_do_comment: ^bool) -> bool ---
-	@(link_name = "ins_str")
-	ins_str_e :: proc "c" (s: ^u8, slen: C.size_t) ---
-	@(link_name = "ins_bytes")
-	ins_bytes_e :: proc "c" (p: ^u8) ---
+	// del_bytes/ins_str/ins_bytes/del_char/open_line now defined in change.odin — call directly.
+	// (see above)
+	// (see above)
 	@(link_name = "insertchar")
 	insertchar_e :: proc "c" (c: C.int, flags: C.int, second_indent: C.int) ---
 	@(link_name = "backspace_until_column")
 	backspace_until_column_e :: proc "c" (col: C.int) ---
-	@(link_name = "del_char")
-	del_char_e :: proc "c" (fixpos: bool) -> C.int ---
+	// (see above)
 	@(link_name = "undisplay_dollar")
 	undisplay_dollar_e :: proc "c" () ---
 	@(link_name = "startPS")
@@ -130,7 +124,7 @@ fmt_check_par_o :: proc "c" (lnum: C.int, leader_len: ^C.int, leader_flags: ^^u8
 	flags: ^u8 = nil
 	ptr := ml_get(lnum)
 	if do_comments {
-		leader_len^ = get_leader_len(ptr, transmute(^C.int)(&flags), false, true)
+		leader_len^ = get_leader_len(ptr, &flags, false, true)
 	} else {
 		leader_len^ = 0
 	}
@@ -162,7 +156,7 @@ ends_in_white_o :: proc "c" (lnum: C.int) -> bool {
 	if ([^]u8)(s)[0] == 0 {
 		return false
 	}
-	l := ml_get_len_r2(lnum) - 1
+	l := ml_get_len(lnum) - 1
 	return ascii_iswhite(([^]u8)(s)[l])
 }
 
@@ -185,7 +179,7 @@ same_leader_o :: proc "c" (lnum: C.int, leader1_len: C.int, leader1_flags: ^u8, 
 				return false
 			}
 			if ch == COM_START_O {
-				if ml_get_len_r2(lnum) <= leader1_len {
+				if ml_get_len(lnum) <= leader1_len {
 					return false
 				}
 				if leader2_flags == nil || leader2_len == 0 {
@@ -203,7 +197,7 @@ same_leader_o :: proc "c" (lnum: C.int, leader1_len: C.int, leader1_flags: ^u8, 
 			p = (^u8)(uintptr(p) + 1)
 		}
 	}
-	line1 := xstrnsave_c(transmute(cstring)(ml_get(lnum)), C.size_t(ml_get_len_r2(lnum)))
+	line1 := xstrnsave_c(transmute(cstring)(ml_get(lnum)), C.size_t(ml_get_len(lnum)))
 	for ascii_iswhite(([^]u8)(line1)[idx1]) {
 		idx1 += 1
 	}
@@ -531,7 +525,7 @@ internal_format :: proc "c" (textwidth: C.int, second_indent_in: C.int, flags: C
 		if (flags & INSCHAR_COM_LIST_O) != 0 {
 			ol_indent = second_indent
 		}
-		open_line_e(FORWARD_O, ol_flags, ol_indent, &did_do_comment)
+		open_line(FORWARD_O, ol_flags, ol_indent, &did_do_comment)
 		if (flags & INSCHAR_COM_LIST_O) == 0 {
 			old_indent_g = 0
 		}
@@ -550,7 +544,7 @@ internal_format :: proc "c" (textwidth: C.int, second_indent_in: C.int, flags: C
 					} else if leader_len > 0 && second_indent - leader_len > 0 {
 						padding := second_indent - leader_len
 						for i: C.int = 0; i < padding; i += 1 {
-							ins_str_e(transmute(^u8)(cstring(" ")), 1)
+							ins_str(transmute(^u8)(cstring(" ")), 1)
 						}
 					} else {
 						set_indent_r(second_indent, SIN_CHANGED_O)
@@ -560,7 +554,7 @@ internal_format :: proc "c" (textwidth: C.int, second_indent_in: C.int, flags: C
 			first_line = false
 		}
 		if (State & VREPLACE_FLAG_O) != 0 {
-			ins_bytes_e(saved_text)
+			ins_bytes(saved_text)
 			xfree(rawptr(saved_text))
 		} else {
 			(^C.int)(uintptr(curwin) + W_CURSOR_OFF + 4)^ += startcol
@@ -582,7 +576,7 @@ internal_format :: proc "c" (textwidth: C.int, second_indent_in: C.int, flags: C
 	}
 	(^C.int)(uintptr(curwin) + W_P_LBR_OFF)^ = has_lbr
 	if !format_only && haveto_redraw {
-		update_topline_r(curwin)
+		update_topline(curwin)
 		redraw_curbuf_later(UPD_VALID_O)
 	}
 }
@@ -649,7 +643,7 @@ auto_format :: proc "c" (trailblank: bool, prev_line: bool) {
 			plinep := xstrnsave_c(transmute(cstring)(linep), C.size_t(len) + 2)
 			([^]u8)(plinep)[len] = ' '
 			([^]u8)(plinep)[len + 1] = 0
-			ml_replace_c((^C.int)(uintptr(curwin) + W_CURSOR_OFF)^, plinep, false)
+			ml_replace((^C.int)(uintptr(curwin) + W_CURSOR_OFF)^, plinep, false)
 			did_add_space_g = true
 		} else {
 			check_auto_format(false)
@@ -676,7 +670,7 @@ check_auto_format :: proc "c" (end_insert: bool) {
 			dec_cursor()
 		}
 		if c != 0 {
-			del_char_e(false)
+			del_char(false)
 			did_add_space_g = false
 		}
 	}
@@ -841,7 +835,7 @@ format_lines :: proc "c" (line_count: C.int, avoid_fex: bool) {
 			}
 		} else {
 			if first_par_line && (do_second_indent || do_number_indent) && prev_is_end_par && (^C.int)(uintptr(curwin) + W_CURSOR_OFF)^ < (^C.int)(uintptr(curbuf) + B_ML_LINE_COUNT)^ {
-				if do_second_indent && ml_get_len_r2((^C.int)(uintptr(curwin) + W_CURSOR_OFF)^ + 1) != 0 {
+				if do_second_indent && ml_get_len((^C.int)(uintptr(curwin) + W_CURSOR_OFF)^ + 1) != 0 {
 					if leader_len == 0 && next_leader_len == 0 {
 						second_indent = get_indent_lnum_r((^C.int)(uintptr(curwin) + W_CURSOR_OFF)^ + 1)
 					} else {
@@ -926,12 +920,12 @@ format_lines :: proc "c" (line_count: C.int, avoid_fex: bool) {
 					break
 				}
 				if next_leader_len > 0 {
-					del_bytes_e(next_leader_len, false, false)
+					del_bytes(next_leader_len, false, false)
 					mark_col_adjust((^C.int)(uintptr(curwin) + W_CURSOR_OFF)^, 0, 0, -next_leader_len, 0)
 				} else if second_indent > 0 {
 					indent := getwhitecols_curline()
 					if indent > 0 {
-						del_bytes_e(indent, false, false)
+						del_bytes(indent, false, false)
 						mark_col_adjust((^C.int)(uintptr(curwin) + W_CURSOR_OFF)^, 0, 0, -indent, 0)
 					}
 				}

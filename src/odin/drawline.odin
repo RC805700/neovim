@@ -40,7 +40,7 @@ TERM_ATTRS_MAX_O :: 1024
 foreign _ {
 	@(link_name = "decor_providers_invoke_line")
 	decor_providers_invoke_line_r :: proc "c"(wp: rawptr, lnum: C.int) ---
-	// validate_virtcol_r: optionstr.odin (identical sig).
+	// validate_virtcol now defined in move.odin — call directly.
 	// decor_redraw_line_r: spell.odin (identical sig).
 	@(link_name = "decor_has_more_decorations")
 	decor_has_more_decorations_r :: proc "c"(state: rawptr, lnum: C.int) -> bool ---
@@ -64,20 +64,20 @@ decor_providers_setup_o :: proc "c"(rows_to_draw: C.int, draw_from_line_start: b
 	// Assume 1-cell ascii; ignore linebreak/breakindent/etc.
 	rem_vcols: C.int
 	if (^C.int)(uintptr(wp) + W_P_WRAP_OFF)^ != 0 {
-		width := (^C.int)(uintptr(wp) + W_VIEW_WIDTH_OFF)^ - win_col_off_r(wp)
-		width2 := width + win_col_off2_r(wp)
+		width := (^C.int)(uintptr(wp) + W_VIEW_WIDTH_OFF)^ - win_col_off(wp)
+		width2 := width + win_col_off2(wp)
 		first_row_width := width2
 		if draw_from_line_start {
 			first_row_width = width
 		}
 		rem_vcols = first_row_width + (rows_to_draw - 1) * width2
 	} else {
-		rem_vcols = (^C.int)(uintptr(wp) + W_VIEW_WIDTH_OFF)^ - win_col_off_r(wp)
+		rem_vcols = (^C.int)(uintptr(wp) + W_VIEW_WIDTH_OFF)^ - win_col_off(wp)
 	}
 
 	// Invalidate the line pointer anyway.
 	decor_providers_invoke_line_r(wp, lnum - 1)
-	validate_virtcol_r(wp)
+	validate_virtcol(wp)
 
 	return invoke_range_next_o(wp, lnum, col, rem_vcols + 1)
 }
@@ -100,11 +100,11 @@ invoke_range_next_o :: proc "c"(wp: rawptr, lnum: C.int, begin_col: C.int, col_o
 		end_col := begin_col + co
 		end_col += mb_off_next_r(line, (^u8)(uintptr(line) + uintptr(end_col)))
 		decor_providers_invoke_range_r(wp, lnum - 1, begin_col, lnum - 1, end_col)
-		validate_virtcol_r(wp)
+		validate_virtcol(wp)
 		new_col = end_col
 	} else {
 		decor_providers_invoke_range_r(wp, lnum - 1, begin_col, lnum, 0)
-		validate_virtcol_r(wp)
+		validate_virtcol(wp)
 		new_col = 2147483647 // INT_MAX
 	}
 
@@ -278,8 +278,7 @@ foreign _ {
 	@(link_name = "syntax_start")
 	syntax_start_r :: proc "c"(wp: rawptr, lnum: C.int) ---
 	// getvvcol — PORTED (cursor.odin).
-	@(link_name = "gchar_pos")
-	gchar_pos_r :: proc "c"(pos: ^Pos_T) -> C.int ---
+	// gchar_pos now defined in memline.odin — call directly.
 	// cursor_is_block_during_visual is an Odin export (cursor_shape.odin).
 	@(link_name = "win_bg_attr")
 	win_bg_attr_r :: proc "c"(wp: rawptr) -> C.int ---
@@ -471,7 +470,7 @@ win_line :: proc "c"(wp: rawptr, lnum: C.int, startrow: C.int, endrow: C.int, co
 						wlv.fromcol = 0
 					} else {
 						getvvcol(wp, top, &wlv.fromcol, nil, nil, 0)
-						if gchar_pos_r(top) == 0 { // NUL
+						if gchar_pos(top) == 0 { // NUL
 							wlv.tocol = wlv.fromcol + 1
 						}
 					}
@@ -603,7 +602,7 @@ win_line :: proc "c"(wp: rawptr, lnum: C.int, startrow: C.int, endrow: C.int, co
 		statuscol.sattrs = transmute(rawptr)(&wlv.sattrs[0])
 		statuscol.lnum = lnum
 		statuscol.foldinfo = foldinfo
-		statuscol.width = win_col_off_r(wp)
+		statuscol.width = win_col_off(wp)
 		if use_cursor_line_highlight(wp, lnum) {
 			statuscol.sign_cul_id = wlv.sign_cul_attr
 		} else {
@@ -1638,7 +1637,7 @@ win_line :: proc "c"(wp: rawptr, lnum: C.int, startrow: C.int, endrow: C.int, co
 							p = prev_ptr
 						}
 						spv.spv_cap_col -= C.int(uintptr(prev_ptr) - uintptr(line))
-						tmplen := spell_check_r(wp, p, &spell_hlf, &spv.spv_cap_col, spv.spv_unchanged)
+						tmplen := spell_check(wp, p, &spell_hlf, &spv.spv_cap_col, spv.spv_unchanged)
 						if tmplen > 2147483647 {
 							libc.abort()
 						}
@@ -2135,7 +2134,7 @@ win_line :: proc "c"(wp: rawptr, lnum: C.int, startrow: C.int, endrow: C.int, co
 				// Highlight 'cursorcolumn'/'colorcolumn' past EOL.
 
 				// Line ends before left margin.
-				wlv.vcol = max(wlv.vcol, start_vcol + wlv.col - win_col_off_r(wp))
+				wlv.vcol = max(wlv.vcol, start_vcol + wlv.col - win_col_off(wp))
 				// Boguscols done: draw to the right edge for 'cursorcolumn'.
 				wlv.col -= wlv.boguscols
 				wlv.boguscols = 0
@@ -2526,7 +2525,7 @@ win_line :: proc "c"(wp: rawptr, lnum: C.int, startrow: C.int, endrow: C.int, co
 				if wlv.col <= leftcols_width {
 					win_draw_end(wp, 64, true, wlv.row, // '@'
 						(^C.int)(uintptr(wp) + W_VIEW_HEIGHT_OFF)^, HLF_AT_O)
-					set_empty_rows_r(wp, wlv.row)
+					set_empty_rows(wp, wlv.row)
 					wlv.row = endrow
 				}
 
@@ -3221,7 +3220,7 @@ handle_breakindent_o :: proc "c"(wp: rawptr, wlv: ^WinLineVars) {
 		num := get_breakindent_win_r(wp,
 			ml_get_buf((^rawptr)(uintptr(wp) + W_BUFFER_OFF)^, wlv.lnum))
 		if wlv.row == wlv.startrow {
-			num -= win_col_off2_r(wp)
+			num -= win_col_off2(wp)
 			if wlv.n_extra < 0 {
 				num = 0
 			}
@@ -3449,9 +3448,9 @@ margin_prev_right_f:    C.int = 0
 // 'cursorlineopt' screenline margins (plain, C-static).
 margin_columns_win_o :: proc "c"(wp: rawptr, left_col: ^C.int, right_col: ^C.int) {
 	// Cached on w_virtcol.
-	cur_col_off := win_col_off_r(wp)
+	cur_col_off := win_col_off(wp)
 	width1 := (^C.int)(uintptr(wp) + W_VIEW_WIDTH_OFF)^ - cur_col_off
-	width2 := width1 + win_col_off2_r(wp)
+	width2 := width1 + win_col_off2(wp)
 
 	if margin_saved_virtcol_f == (^C.int)(uintptr(wp) + W_VIRTCOL_OFF)^ &&
 		margin_prev_wp_f == wp && margin_prev_width1_f == width1 &&
@@ -3498,8 +3497,7 @@ foreign _ {
 	get_syntax_attr_r :: proc "c"(col: C.int, can_spell: ^bool, keep_state: bool) -> C.int ---
 	@(link_name = "get_syntax_info")
 	get_syntax_info_r :: proc "c"(seqnrp: ^C.int) -> C.int ---
-	@(link_name = "spell_check")
-	spell_check_r :: proc "c"(wp: rawptr, ptr: ^u8, attrp: ^C.int, capcol: ^C.int, docount: bool) -> C.size_t ---
+	// spell_check now defined in spell.odin — call directly.
 	@(link_name = "spell_redraw_lnum")
 	spell_redraw_lnum_g: C.int
 }
@@ -3547,8 +3545,7 @@ foreign _ {
 
 HLF_CUC_O :: 55
 foreign _ {
-	@(link_name = "set_empty_rows")
-	set_empty_rows_r :: proc "c"(wp: rawptr, used: C.int) ---
+	// set_empty_rows now defined in move.odin — call directly.
 }
 
 K_VL_OVERFLOW_SCROLL_O :: 1

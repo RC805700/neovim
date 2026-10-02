@@ -278,12 +278,10 @@ foreign _ {
 	// transchar is an Odin export (charset.odin) — call directly.
 	@(link_name = "adjust_cursor_eol")
 	adjust_cursor_eol_r :: proc "c" () ---
-	@(link_name = "decl")
-	decl_pos :: proc "c" (p: ^Pos_T) -> C.int ---
+	// decl now defined in memline.odin — call directly.
 
 	// u_save / u_save_cursor are now defined in undo.odin — reuse directly.
-	@(link_name = "del_chars")
-	del_chars_r :: proc "c" (count: C.int, fixpos: C.int) -> C.int ---
+	// del_chars now defined in change.odin — call directly (note: fixpos is C.int).
 	@(link_name = "mb_charlen")
 	mb_charlen_r :: proc "c" (str: cstring) -> C.int ---
 	@(link_name = "oneright")
@@ -296,23 +294,15 @@ foreign _ {
 	@(link_name = "charwise_block_prep")
 	charwise_block_prep_r :: proc "c" (start: Pos_T, end: Pos_T, bdp: ^Block_Def, lnum: C.int, inclusive: bool) ---
 
-	@(link_name = "ml_append")
-	ml_append_c :: proc "c" (lnum: C.int, line: ^u8, len: C.int, newfile: bool) -> bool ---
-	@(link_name = "ml_replace")
-	ml_replace_c :: proc "c" (lnum: C.int, line: ^u8, copy: bool) -> C.int ---
+	// ml_append/ml_replace now defined in memline.odin — call directly.
 
 	// get_cursor_line/pos_ptr/len — PORTED (cursor.odin).
 
-	@(link_name = "update_topline")
-	update_topline_r :: proc "c" (wp: rawptr) ---
-	@(link_name = "changed_lines")
-	changed_lines_r :: proc "c" (buf: rawptr, lnum: C.int, col: C.int, lnume: C.int, xtra: C.int, do_buf_event: bool) ---
-	@(link_name = "changed_bytes")
-	changed_bytes_r :: proc "c" (lnum: C.int, col: C.int) ---
-	@(link_name = "changed_cline_bef_curs")
-	changed_cline_bef_curs_r :: proc "c" (wp: rawptr) ---
-	@(link_name = "invalidate_botline_win")
-	invalidate_botline_win_r :: proc "c" (wp: rawptr) ---
+	// update_topline now defined in move.odin — call directly.
+	// update_curswant now defined in move.odin — call directly.
+	// changed_lines/changed_bytes now defined in change.odin — call directly.
+	// changed_cline_bef_curs now defined in move.odin — call directly.
+	// invalidate_botline_win now defined in move.odin — call directly.
 	// buf_updates_send_changes is an Odin export (buffer_updates.odin).
 	// extmark_splice/splice_cols now defined in extmark.odin — call directly.
 
@@ -1066,7 +1056,7 @@ insert_reg :: proc "c" (regname: C.int, reg_arg: ^Yankreg_T, literally_arg: bool
 						if u_save_cursor() == FAIL_R {
 							return FAIL_R
 						}
-						del_chars_r(mb_charlen_r(transmute(cstring)(reg.y_array[0].data)), 1)
+						del_chars(mb_charlen_r(transmute(cstring)(reg.y_array[0].data)), 1)
 						curpos := win_cursor_r(curwin)^
 						if oneright_r() == FAIL_R {
 							// hit end of line, put forward instead
@@ -1328,7 +1318,7 @@ op_yank_reg :: proc "c" (oap: rawptr, message: bool, reg_arg: ^Yankreg_T, append
 
 		case kMTLineWise:
 			reg.y_array[y_idx] = cbuf_to_string_r(transmute(cstring)(ml_get(lnum)),
-				C.size_t(ml_get_len_r2(lnum)))
+				C.size_t(ml_get_len(lnum)))
 
 		case kMTCharWise:
 			charwise_block_prep_r(oap_get_pos(oap, OAP_START)^, oap_get_pos(oap, OAP_END)^,
@@ -1402,7 +1392,7 @@ op_yank_reg :: proc "c" (oap: rawptr, message: bool, reg_arg: ^Yankreg_T, append
 			}
 
 			// redisplay now, so message is not deleted
-			update_topline_r(curwin)
+			update_topline(curwin)
 			if must_redraw != 0 {
 				update_screen()
 			}
@@ -1430,7 +1420,7 @@ op_yank_reg :: proc "c" (oap: rawptr, message: bool, reg_arg: ^Yankreg_T, append
 		}
 		if yank_type != kMTLineWise && !oap_get_bool(oap, OAP_INCLUSIVE) {
 			// Exclude the end position.
-			_ = decl_pos(get_pos_r2(curbuf, B_OP_END))
+			_ = decl(get_pos_r2(curbuf, B_OP_END))
 		}
 	}
 }
@@ -1627,8 +1617,7 @@ foreign _ {
 	beep_flush_r2 :: proc "c" () ---
 	@(link_name = "get_last_insert_save")
 	get_last_insert_save_r2 :: proc "c" () -> ^u8 ---
-	@(link_name = "ml_get_len")
-	ml_get_len_r2 :: proc "c" (lnum: C.int) -> C.int ---
+	// ml_get_len now defined in memline.odin — call directly.
 }
 
 @(private="file")
@@ -1871,11 +1860,11 @@ do_put :: proc "c" (regname: C.int, reg_arg: ^Yankreg_T, dir_arg: C.int, count_a
 					split_pos = C.int(uintptr(p) - uintptr(curline))
 
 					ptr := xmemdupz(p, plen - C.size_t(uintptr(p) - uintptr(p_orig)))
-					ml_append_c(cursor_pos().lnum, ptr, 0, false)
+					ml_append(cursor_pos().lnum, ptr, 0, false)
 					xfree(ptr)
 
 					ptr = xmemdupz(get_cursor_line_ptr(), C.size_t(split_pos))
-					ml_replace_c(cursor_pos().lnum, ptr, false)
+					ml_replace(cursor_pos().lnum, ptr, false)
 					nr_lines += 1
 					dir = FORWARD_DIR
 
@@ -2009,7 +1998,7 @@ do_put :: proc "c" (regname: C.int, reg_arg: ^Yankreg_T, dir_arg: C.int, count_a
 
 					// add a new line
 					if cursor_pos().lnum > get_i32_off(curbuf, B_ML_LINE_COUNT) {
-						if !ml_append_c(get_i32_off(curbuf, B_ML_LINE_COUNT), transmute(^u8)(cstring("")), 1, false) {
+						if ml_append(get_i32_off(curbuf, B_ML_LINE_COUNT), transmute(^u8)(cstring("")), 1, false) == 0 {
 							break
 						}
 						nr_lines += 1
@@ -2104,7 +2093,7 @@ do_put :: proc "c" (regname: C.int, reg_arg: ^Yankreg_T, dir_arg: C.int, count_a
 					// move the text after the cursor to end of line
 					columns := oldlen - bd.textcol - delcount + 1
 					libc.memmove(ptr, (^u8)(uintptr(oldp) + uintptr(bd.textcol + delcount)), C.size_t(columns))
-					ml_replace_c(cursor_pos().lnum, newp, false)
+					ml_replace(cursor_pos().lnum, newp, false)
 					extmark_splice_cols(curbuf, cursor_pos().lnum - 1, bd.textcol,
 						delcount, C.int(totlen) + lines_appended, kExtmarkUndo)
 
@@ -2114,7 +2103,7 @@ do_put :: proc "c" (regname: C.int, reg_arg: ^Yankreg_T, dir_arg: C.int, count_a
 					}
 				}
 
-				changed_lines_r(curbuf, lnum, 0,
+				changed_lines(curbuf, lnum, 0,
 					op_start().lnum + C.int(y_size) - nr_lines, nr_lines, true)
 
 				// Set '[ mark.
@@ -2182,7 +2171,7 @@ do_put :: proc "c" (regname: C.int, reg_arg: ^Yankreg_T, dir_arg: C.int, count_a
 						totlen = C.size_t(count) * C.size_t(yanklen)
 						for true {
 							oldp := ml_get(lnum)
-							oldlen := ml_get_len_r2(lnum)
+							oldlen := ml_get_len(lnum)
 							if lnum > start_lnum {
 								pos := Pos_T{lnum = lnum}
 								if getvpos(curwin, &pos, vcol) == OK_R {
@@ -2205,18 +2194,18 @@ do_put :: proc "c" (regname: C.int, reg_arg: ^Yankreg_T, dir_arg: C.int, count_a
 								i += 1
 							}
 							libc.memmove(ptr, (^u8)(uintptr(oldp) + uintptr(col)), C.size_t(oldlen - col) + 1) // +1 NUL
-							ml_replace_c(lnum, newp, false)
+							ml_replace(lnum, newp, false)
 
 							// byte offset of last character
 							first_byte_off = utf_head_off(transmute(cstring)(newp), transmute(cstring)((^u8)(uintptr(ptr) - 1)))
 
 							// Place cursor on last putted char.
 							if lnum == cursor_pos().lnum {
-								changed_cline_bef_curs_r(curwin)
-								invalidate_botline_win_r(curwin)
+								changed_cline_bef_curs(curwin)
+								invalidate_botline_win(curwin)
 								cursor_pos().col += C.int(totlen) - 1
 							}
-							changed_bytes_r(lnum, col)
+							changed_bytes(lnum, col)
 							extmark_splice_cols(curbuf, lnum - 1, col, 0, C.int(totlen), kExtmarkUndo)
 							if VIsual_active {
 								lnum += 1
@@ -2260,12 +2249,12 @@ do_put :: proc "c" (regname: C.int, reg_arg: ^Yankreg_T, dir_arg: C.int, count_a
 							// Split current line in two at insert position.
 							lnum = new_cursor.lnum
 							srcptr := (^u8)(uintptr(ml_get(lnum)) + uintptr(col))
-							ptrlen := C.size_t(ml_get_len_r2(lnum)) - C.size_t(col)
+							ptrlen := C.size_t(ml_get_len(lnum)) - C.size_t(col)
 							totlen = y_array[y_size - 1].size
 							newp := (^u8)(xmalloc(ptrlen + totlen + 1))
 							libc.memcpy(newp, y_array[y_size - 1].data, totlen)
 							libc.memcpy((^u8)(uintptr(newp) + uintptr(totlen)), srcptr, ptrlen + 1)
-							ml_append_c(lnum, newp, 0, false)
+							ml_append(lnum, newp, 0, false)
 							new_lnum += 1
 							xfree(newp)
 
@@ -2273,7 +2262,7 @@ do_put :: proc "c" (regname: C.int, reg_arg: ^Yankreg_T, dir_arg: C.int, count_a
 							newp2 := (^u8)(xmalloc(C.size_t(col) + C.size_t(yanklen) + 1))
 							libc.memmove(newp2, oldp, C.size_t(col))
 							libc.memmove((^u8)(uintptr(newp2) + uintptr(col)), y_array[0].data, C.size_t(yanklen) + 1)
-							ml_replace_c(lnum, newp2, false)
+							ml_replace(lnum, newp2, false)
 
 							cursor_pos().lnum = lnum
 							i = 1
@@ -2282,7 +2271,7 @@ do_put :: proc "c" (regname: C.int, reg_arg: ^Yankreg_T, dir_arg: C.int, count_a
 						mfailed := false
 						for i < y_size {
 							if y_type != kMTCharWise || i < y_size - 1 {
-								if !ml_append_c(lnum, y_array[i].data, 0, false) {
+								if ml_append(lnum, y_array[i].data, 0, false) == 0 {
 									mfailed = true
 									break
 								}
@@ -2295,7 +2284,7 @@ do_put :: proc "c" (regname: C.int, reg_arg: ^Yankreg_T, dir_arg: C.int, count_a
 								cursor_pos().lnum = lnum
 								ptr := ml_get(lnum)
 								if cnt == count && i == y_size - 1 {
-									lendiff = ml_get_len_r2(lnum)
+									lendiff = ml_get_len(lnum)
 								}
 								if ptr^ == '#' && preprocs_left_r() {
 									indent = 0 // Leave # lines at start
@@ -2315,7 +2304,7 @@ do_put :: proc "c" (regname: C.int, reg_arg: ^Yankreg_T, dir_arg: C.int, count_a
 								cursor_pos()^ = old_pos
 								// remember how many chars were removed
 								if cnt == count && i == y_size - 1 {
-									lendiff -= ml_get_len_r2(lnum)
+									lendiff -= ml_get_len(lnum)
 								}
 							}
 							i += 1
@@ -2364,10 +2353,10 @@ do_put :: proc "c" (regname: C.int, reg_arg: ^Yankreg_T, dir_arg: C.int, count_a
 
 					// note changed text for displaying and folding
 					if y_type == kMTCharWise {
-						changed_lines_r(curbuf, cursor_pos().lnum, col,
+						changed_lines(curbuf, cursor_pos().lnum, col,
 							cursor_pos().lnum + 1, nr_lines, true)
 					} else {
-						changed_lines_r(curbuf, op_start().lnum, 0,
+						changed_lines(curbuf, op_start().lnum, 0,
 							op_start().lnum, nr_lines, true)
 					}
 

@@ -967,8 +967,7 @@ foreign _ {
 	diffopt_changed_r :: proc "c" () -> C.int ---
 	@(link_name = "diffanchors_changed")
 	diffanchors_changed_r :: proc "c" (buflocal: bool) -> C.int ---
-	@(link_name = "validate_virtcol")
-	validate_virtcol_r :: proc "c" (wp: rawptr) ---
+	// validate_virtcol now defined in move.odin — call directly.
 }
 // fill_culopt_flags/check_opt_wim_r/coladvance_r reused from sibling files.
 
@@ -1004,7 +1003,7 @@ did_set_virtualedit :: proc "c"(args: ^optset_T) -> cstring {
 		transmute(cstring)((^NvimString)(uintptr(&args.os_oldval))^.data)) != 0 {
 			// Recompute cursor position in case the new 've' setting
 			// changes something.
-			validate_virtcol_r(win)
+			validate_virtcol(win)
 			coladvance(win, (^C.int)(uintptr(win) + W_VIRTCOL_OFF)^)
 		}
 	}
@@ -1603,8 +1602,7 @@ foreign _ {
 	p_mousescroll_vert_g: C.longlong
 	@(link_name = "p_mousescroll_hor")
 	p_mousescroll_hor_g: C.longlong
-	@(link_name = "get_scriptlocal_funcname")
-	get_scriptlocal_funcname_r :: proc "c" (funcname: ^u8) -> ^u8 ---
+	// get_scriptlocal_funcname now defined in userfunc.odin — call directly.
 }
 // valid_spellfile/valid_spelllang/did_set_spell_option/compile_cap_prog from
 // spell.odin; didset_vim/didset_vimruntime/vim_unsetenv_ext from os_env.odin.
@@ -1729,7 +1727,7 @@ did_set_optexpr :: proc "c"(args: ^optset_T) -> cstring {
 
 	// If the option value starts with <SID> or s:, then replace that with
 	// the script identifier.
-	name := get_scriptlocal_funcname_r(varp^)
+	name := transmute(^u8)(get_scriptlocal_funcname(transmute(cstring)(varp^)))
 	if name != nil {
 		free_string_option(varp^)
 		varp^ = name
@@ -2318,8 +2316,7 @@ foreign _ {
 	p_bg_g: ^u8
 	// p_fenc/redraw_titles/spell_reload/p_enc/opt_bt_values already
 	// exported/declared in option.odin/spell.odin/digraph.odin/Batch 2.
-	@(link_name = "ml_setflags")
-	ml_setflags_r :: proc "c" (buf: rawptr) ---
+	// ml_setflags now defined in memline.odin — call directly.
 	@(link_name = "init_highlight")
 	init_highlight_r :: proc "c" (both: bool, reset: bool) ---
  	@(link_name = "enc_canonize")
@@ -2436,7 +2433,7 @@ did_set_encoding :: proc "c"(args: ^optset_T) -> cstring {
 		// May show a "+" in the title now.
 		redraw_titles()
 		// Add 'fileencoding' to the swap file.
-		ml_setflags_r(buf)
+		ml_setflags(buf)
 	}
 
 	// canonize the value, so that strcmp() can be used on it
@@ -2469,7 +2466,7 @@ did_set_fileformat :: proc "c"(args: ^optset_T) -> cstring {
 
 	redraw_titles()
 	// update flag in swap file
-	ml_setflags_r(buf)
+	ml_setflags(buf)
 	// Redraw needed when switching to/from "mac": a CR in the text
 	// will be displayed differently.
 	if get_fileformat(buf) == EOL_MAC_E || b_at((^u8)(old_str.data), 0) == 'm' {

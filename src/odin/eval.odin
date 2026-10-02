@@ -1680,8 +1680,8 @@ set_buffer_lines_o :: proc "c" (buf: rawptr, lnum_arg: C.int, append: bool, line
 		}
 		if !append && lnum <= count_now {
 			old_len := C.int(libc.strlen(transmute(cstring)(ml_get(lnum))))
-			if u_savesub(lnum) == OK_R && ml_replace_c(lnum, line, true) == OK_R {
-				inserted_bytes_r(lnum, 0, old_len, C.int(libc.strlen(transmute(cstring)(line))))
+			if u_savesub(lnum) == OK_R && ml_replace(lnum, line, true) == OK_R {
+				inserted_bytes(lnum, 0, old_len, C.int(libc.strlen(transmute(cstring)(line))))
 				cur_lnum := (^C.int)(uintptr(curwin) + W_CURSOR)^
 				if is_curbuf && lnum == cur_lnum {
 					check_cursor_col(curwin)
@@ -1690,7 +1690,7 @@ set_buffer_lines_o :: proc "c" (buf: rawptr, lnum_arg: C.int, append: bool, line
 			}
 		} else if added > 0 || u_save(lnum - 1, lnum) == OK_R {
 			added += 1
-			if ml_append_c(lnum - 1, line, 0, false) {
+			if ml_append(lnum - 1, line, 0, false) != 0 {
 				rettv.vval = transmute(rawptr)(C.longlong(0)) // OK
 			}
 		}
@@ -1701,7 +1701,7 @@ set_buffer_lines_o :: proc "c" (buf: rawptr, lnum_arg: C.int, append: bool, line
 	}
 	xfree(transmute(rawptr)(line))
 	if added > 0 {
-		appended_lines_mark_r(append_lnum, added)
+		appended_lines_mark(append_lnum, added)
 		tp := first_tabpage
 		for tp != nil {
 			wp := tp == curtab ? firstwin : (^rawptr)(uintptr(tp) + TP_FIRSTWIN_OFF)^
@@ -1718,7 +1718,7 @@ set_buffer_lines_o :: proc "c" (buf: rawptr, lnum_arg: C.int, append: bool, line
 			tp = (^rawptr)(uintptr(tp) + TP_NEXT_OFF)^
 		}
 		check_cursor_col(curwin)
-		update_topline_r(curwin)
+		update_topline(curwin)
 	}
 	if !is_curbuf {
 		change_other_buffer_restore_o(&cob)
@@ -1824,7 +1824,7 @@ f_deletebufline :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr)
 	} else {
 		ln := first
 		for ln <= last2 {
-			ml_delete_flags_r(first, ML_DEL_MESSAGE_O)
+			ml_delete_flags(first, ML_DEL_MESSAGE_O)
 			ln += 1
 		}
 	}
@@ -1851,7 +1851,7 @@ f_deletebufline :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr)
 			tp = (^rawptr)(uintptr(tp) + TP_NEXT_OFF)^
 		}
 		check_cursor_col(curwin)
-		deleted_lines_mark_r(first, count)
+		deleted_lines_mark(first, count)
 		rettv.vval = transmute(rawptr)(C.longlong(0)) // OK
 	}
 	if !is_curbuf {
@@ -1866,8 +1866,7 @@ foreign _ {
 	buf_has_signs_e :: proc "c" (buf: rawptr) -> bool ---
 	@(link_name = "get_buffer_signs")
 	get_buffer_signs_e :: proc "c" (buf: rawptr) -> rawptr ---
-	@(link_name = "ml_replace_buf")
-	ml_replace_buf_e :: proc "c" (buf: rawptr, lnum: C.int, line: ^u8, copy: bool, noalloc: bool) -> C.int ---
+	// ml_replace_buf now defined in memline.odin — call directly.
 	@(link_name = "buf_prompt_text")
 	buf_prompt_text_e :: proc "c" (buf: rawptr) -> ^u8 ---
 }
@@ -2080,12 +2079,12 @@ f_prompt_setprompt :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawp
 		prompt_col := (^C.int)(uintptr(buf) + B_PROMPT_START + 4)^
 		if prompt_col < old_prompt_len || prompt_col > old_line_len ||
 			!strnequal(transmute(cstring)(old_prompt), transmute(cstring)(rawptr(uintptr(old_line) + uintptr(prompt_col) - uintptr(old_prompt_len))), C.size_t(old_prompt_len)) {
-			ml_replace_buf_e(buf, prompt_lno, transmute(^u8)(new_prompt), true, false)
+			ml_replace_buf(buf, prompt_lno, transmute(^u8)(new_prompt), true, false)
 			extmark_splice_cols(buf, prompt_lno - 1, 0, old_line_len, new_prompt_len, KEXTMARK_NO_UNDO_O)
 			cursor_col = new_prompt_len
 		} else {
 			new_line := concat_str_c(transmute(cstring)(new_prompt), transmute(cstring)(rawptr(uintptr(old_line) + uintptr(prompt_col))))
-			if ml_replace_buf_e(buf, prompt_lno, new_line, false, false) != OK_R {
+			if ml_replace_buf(buf, prompt_lno, new_line, false, false) != OK_R {
 				xfree(transmute(rawptr)(new_line))
 			}
 			extmark_splice_cols(buf, prompt_lno - 1, 0, prompt_col, new_prompt_len, KEXTMARK_NO_UNDO_O)
@@ -2095,7 +2094,7 @@ f_prompt_setprompt :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawp
 			(^C.int)(uintptr(curwin) + W_CURSOR + 4)^ = cursor_col
 			check_cursor_col(curwin)
 		}
-		changed_lines_r(buf, prompt_lno, 0, prompt_lno + 1, 0, true)
+		changed_lines(buf, prompt_lno, 0, prompt_lno + 1, 0, true)
 		u_clearallandblockfree(buf)
 	}
 	xfree((^rawptr)(uintptr(buf) + B_PROMPT_TEXT_OFF)^)
@@ -2470,10 +2469,8 @@ f_winbufnr :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 
 // —— Batch 13: eval/window.c winnr/view/layout/dimensions (FFI fully rewired) ——
 foreign _ {
-	@(link_name = "set_topline")
-	set_topline_e :: proc "c" (wp: rawptr, lnum: C.int) ---
-	@(link_name = "check_topfill")
-	check_topfill_e :: proc "c" (wp: rawptr, down: bool) ---
+	// set_topline now defined in move.odin — call directly.
+	// check_topfill now defined in move.odin — call directly.
 }
 
 E15_S :: "E15: Invalid expression: \"%s\""
@@ -2660,7 +2657,7 @@ f_winrestview :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 	}
 	di = 	tv_dict_find(dict, cstring("topline"), 7)
 	if di != nil {
-		set_topline_e(curwin, C.int(tv_get_number(transmute(^Typval_T)(di))))
+		set_topline(curwin, C.int(tv_get_number(transmute(^Typval_T)(di))))
 	}
 	di = 	tv_dict_find(dict, cstring("topfill"), 7)
 	if di != nil {
@@ -2677,7 +2674,7 @@ f_winrestview :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 	check_cursor(curwin)
 	win_new_height(curwin, (^C.int)(uintptr(curwin) + W_HEIGHT_OFF)^)
 	win_new_width(curwin, (^C.int)(uintptr(curwin) + W_WIDTH_OFF)^)
-	changed_window_setting_r(curwin)
+	changed_window_setting(curwin)
 	topline := (^C.int)(uintptr(curwin) + W_TOPLINE_OFF)^
 	if topline <= 0 {
 		(^C.int)(uintptr(curwin) + W_TOPLINE_OFF)^ = 1
@@ -2687,7 +2684,7 @@ f_winrestview :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 			(^C.int)(uintptr(curwin) + W_TOPLINE_OFF)^ = maxln
 		}
 	}
-	check_topfill_e(curwin, true)
+	check_topfill(curwin, true)
 }
 
 // "winsaveview()" function.
@@ -2699,7 +2696,7 @@ f_winsaveview :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 	tv_dict_add_nr(dict, cstring("lnum"), 4, C.longlong((^C.int)(uintptr(curwin) + W_CURSOR)^))
 	tv_dict_add_nr(dict, cstring("col"), 3, C.longlong((^C.int)(uintptr(curwin) + W_CURSOR + 4)^))
 	tv_dict_add_nr(dict, cstring("coladd"), 6, C.longlong((^C.int)(uintptr(curwin) + W_CURSOR + 8)^))
-	update_curswant_r()
+	update_curswant()
 	tv_dict_add_nr(dict, cstring("curswant"), 8, C.longlong((^C.int)(uintptr(curwin) + W_CURSWANT_OFF)^))
 	tv_dict_add_nr(dict, cstring("topline"), 7, C.longlong((^C.int)(uintptr(curwin) + W_TOPLINE_OFF)^))
 	tv_dict_add_nr(dict, cstring("topfill"), 7, C.longlong((^C.int)(uintptr(curwin) + W_TOPFILL_OFF)^))
@@ -2762,7 +2759,7 @@ f_winlayout :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 @(export)
 f_wincol :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 	context = runtime.default_context()
-	validate_cursor_r(curwin)
+	validate_cursor(curwin)
 	rettv.vval = transmute(rawptr)(C.longlong((^C.int)(uintptr(curwin) + W_WCOL_OFF)^ + 1))
 }
 
@@ -2770,7 +2767,7 @@ f_wincol :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 @(export)
 f_winline :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 	context = runtime.default_context()
-	validate_cursor_r(curwin)
+	validate_cursor(curwin)
 	rettv.vval = transmute(rawptr)(C.longlong((^C.int)(uintptr(curwin) + W_WROW_OFF)^ + 1))
 }
 
@@ -2814,7 +2811,7 @@ E_AUABORT_S :: "E855: Autocommands caused command to abort"
 get_win_info_o :: proc "c" (wp: rawptr, tpnr: C.int, winnr: C.int) -> rawptr {
 	context = runtime.default_context()
 	dict := tv_dict_alloc()
-	validate_botline_win_r(wp)
+	validate_botline_win(wp)
 	tv_dict_add_nr(dict, cstring("tabnr"), 5, C.longlong(tpnr))
 	tv_dict_add_nr(dict, cstring("winnr"), 5, C.longlong(winnr))
 	tv_dict_add_nr(dict, cstring("winid"), 5, C.longlong((^C.int)(wp)^))
@@ -2828,7 +2825,7 @@ get_win_info_o :: proc "c" (wp: rawptr, tpnr: C.int, winnr: C.int) -> rawptr {
 	tv_dict_add_nr(dict, cstring("width"), 5, C.longlong((^C.int)(uintptr(wp) + W_VIEW_WIDTH_OFF)^))
 	tv_dict_add_nr(dict, cstring("bufnr"), 5, C.longlong((^C.int)(uintptr((^rawptr)(uintptr(wp) + W_BUFFER_OFF)^) + B_FNUM_OFF)^))
 	tv_dict_add_nr(dict, cstring("wincol"), 6, C.longlong((^C.int)(uintptr(wp) + W_WINCOL_OFF)^ + 1))
-	tv_dict_add_nr(dict, cstring("textoff"), 7, C.longlong(win_col_off_r(wp)))
+	tv_dict_add_nr(dict, cstring("textoff"), 7, C.longlong(win_col_off(wp)))
 	wbuf := (^rawptr)(uintptr(wp) + W_BUFFER_OFF)^
 	if bt_terminal(wbuf) {
 		tv_dict_add_nr(dict, cstring("terminal"), 8, 1)
@@ -3421,12 +3418,10 @@ foreign _ {
 	path_tail_e :: proc "c" (fname: cstring) -> ^u8 ---
 	@(link_name = "path_tail_with_sep")
 	path_tail_with_sep_e :: proc "c" (fname: ^u8) -> ^u8 ---
-	@(link_name = "can_add_defer")
-	can_add_defer_e :: proc "c" () -> bool ---
+	// can_add_defer now defined in userfunc.odin — call directly.
 	@(link_name = "FullName_save")
 	FullName_save_e :: proc "c" (fname: cstring, force: bool) -> ^u8 ---
-	@(link_name = "add_defer")
-	add_defer_e :: proc "c" (name: cstring, argcount_arg: C.int, argvars: ^Typval_T) ---
+	// add_defer now defined in userfunc.odin — call directly.
 	@(link_name = "shorten_dir_len")
 	shorten_dir_len_e :: proc "c" (str: ^u8, trim_len: C.int) ---
 }
@@ -3678,7 +3673,7 @@ f_mkdir :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 		arg2 := tv_get_string(a1)
 		defer_del = vim_strchr_c(transmute(^u8)(arg2), C.int('D')) != nil
 		defer_rec = vim_strchr_c(transmute(^u8)(arg2), C.int('R')) != nil
-		if (defer_del || defer_rec) && !can_add_defer_e() {
+		if (defer_del || defer_rec) && !can_add_defer() {
 			return
 		}
 		if vim_strchr_c(transmute(^u8)(arg2), C.int('p')) != nil {
@@ -3713,7 +3708,7 @@ f_mkdir :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 			tv_clear(&tv[1])
 			tv[1].vval = transmute(rawptr)(xstrdup_o(transmute(^u8)(cstring("rf"))))
 		}
-		add_defer_e(cstring("delete"), 2, &tv[0])
+		add_defer(cstring("delete"), 2, &tv[0])
 	}
 }
 
@@ -4719,7 +4714,7 @@ f_writefile :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 	if fname == nil {
 		return
 	}
-	if defer_flag && !can_add_defer_e() {
+	if defer_flag && !can_add_defer() {
 		return
 	}
 	fp: FileDescriptor
@@ -4741,7 +4736,7 @@ f_writefile :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 		} else {
 			if defer_flag {
 				tv := Typval_T{v_type = VAR_STRING, v_lock = VAR_UNLOCKED, vval = transmute(rawptr)(FullName_save_e(fname, false))}
-				add_defer_e(cstring("delete"), 1, &tv)
+				add_defer(cstring("delete"), 1, &tv)
 			}
 			write_ok := false
 			if a0.v_type == VAR_BLOB {
@@ -7414,8 +7409,7 @@ tv_list_free_list :: proc "c" (l: rawptr) {
 
 // —— Batch 21k: eval/typval.c dict-add scalar cluster ——
 foreign _ {
-	@(link_name = "get_funccal_local_ht")
-	get_funccal_local_ht_e :: proc "c" () -> rawptr ---
+	// get_funccal_local_ht now defined in userfunc.odin — call directly.
 }
 
 // Check for adding a function to g: or l: (true + error on bad name).
@@ -7423,7 +7417,7 @@ foreign _ {
 tv_dict_wrong_func_name :: proc "c" (d: rawptr, tv: ^Typval_T, name: cstring) -> C.int {
 	context = runtime.default_context()
 	is_glob := d == 	get_globvar_dict()
-	is_local := rawptr(uintptr(d) + 16) == get_funccal_local_ht_e()
+	is_local := rawptr(uintptr(d) + 16) == get_funccal_local_ht()
 	if (is_glob || is_local) && (tv.v_type == VAR_FUNC || tv.v_type == VAR_PARTIAL) && 	var_wrong_func_name(name, true) {
 		return 1
 	}
@@ -12052,8 +12046,7 @@ f_setbufvar :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 
 // —— Batch 26g: :let sub-engines (dormant) ——
 foreign _ {
-	@(link_name = "get_tty_option")
-	get_tty_option_e :: proc "c" (name: cstring) -> OptVal ---
+	// get_tty_option now defined in option.odin — call directly.
 }
 
 E996_ENV_S :: "E996: Cannot lock an environment variable"
@@ -12127,7 +12120,7 @@ ex_let_option_o :: proc "c" (arg: cstring, tv: ^Typval_T, is_const: bool, endcha
 	hidden := is_option_hidden(opt_idx)
 	curval := OptVal{}
 	if is_tty {
-		curval = get_tty_option_e(arg)
+		curval = get_tty_option(arg)
 	} else {
 		curval = get_option_value(opt_idx, opt_flags)
 	}
@@ -12362,7 +12355,7 @@ f_byte2line :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 	if boff < 0 {
 		rettv.vval = transmute(rawptr)(C.longlong(-1))
 	} else {
-		rettv.vval = transmute(rawptr)(C.longlong(ml_find_line_or_offset_r(curbuf, 0, rawptr(&boff), false)))
+		rettv.vval = transmute(rawptr)(C.longlong(ml_find_line_or_offset(curbuf, 0, &boff, false)))
 	}
 }
 
@@ -12741,7 +12734,7 @@ f_line2byte :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 	lnum := tv_get_lnum((^Typval_T)(uintptr(argvars)))
 	n: C.longlong = -1
 	if lnum >= 1 && lnum <= (^C.int)(uintptr(curbuf) + B_ML_LINE_COUNT)^ + 1 {
-		n = C.longlong(ml_find_line_or_offset_r(curbuf, lnum, nil, false))
+		n = C.longlong(ml_find_line_or_offset(curbuf, lnum, nil, false))
 	}
 	if n >= 0 {
 		n += 1
@@ -12925,7 +12918,7 @@ getpos_both_o :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, getcurpos: bool
 		save_curswant := (^C.int)(uintptr(curwin) + W_CURSWANT_OFF)^
 		save_virtcol := (^C.int)(uintptr(curwin) + W_VIRTCOL_OFF)^
 		if wp == curwin {
-			update_curswant_r()
+			update_curswant()
 		}
 		if wp == nil {
 			tv_list_append_number(l, C.longlong(0))
@@ -13686,10 +13679,7 @@ f_getregtype :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 
 // —— Batch 27t: funcs.c expand + expandcmd ——
 foreign _ {
-	@(link_name = "eval_vars")
-	eval_vars_e :: proc "c" (src: cstring, srcstart: cstring, usedlen: ^C.size_t, lnump: ^C.int, errormsg: ^cstring, escaped: ^C.int, empty_is_error: bool) -> cstring ---
-	@(link_name = "expand_filename")
-	expand_filename_e :: proc "c" (eap: rawptr, cmdlinep: ^cstring, errormsgp: ^cstring) -> C.int ---
+	// eval_vars/expand_filename now defined in ex_docmd.odin — call directly.
 }
 
 WILD_LIST_NOTFOUND_O :: 0x01
@@ -13714,7 +13704,7 @@ f_expand :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 		}
 		usedlen: C.size_t = 0
 		errormsg: cstring = nil
-		result := eval_vars_e(transmute(cstring)(s), s, &usedlen, nil, &errormsg, nil, false)
+		result := eval_vars(transmute(cstring)(s), s, &usedlen, nil, &errormsg, nil, false)
 		if p_verbose == 0 {
 			emsg_off -= 1
 		} else if errormsg != nil {
@@ -13783,7 +13773,7 @@ f_expandcmd :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 		emsg_off += 1
 	}
 	cmdline := transmute(cstring)(cmdstr)
-	if expand_filename_e(rawptr(&eap[0]), &cmdline, &errormsg) == FAIL_E {
+	if expand_filename(rawptr(&eap[0]), &cmdline, &errormsg) == FAIL_E {
 		if !emsgoff && errormsg != nil && ([^]u8)(errormsg)[0] != 0 {
 			emsg(errormsg)
 		}
@@ -14162,8 +14152,7 @@ f_dictwatcherdel :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr
 foreign _ {
 	@(link_name = "nlua_func_exists")
 	nlua_func_exists_e :: proc "c" (lua_funcname: cstring) -> bool ---
-	@(link_name = "cmd_exists")
-	cmd_exists_e :: proc "c" (name: cstring) -> C.int ---
+	// cmd_exists now defined in ex_docmd.odin — call directly.
 	@(link_name = "autocmd_supported")
 	autocmd_supported_e :: proc "c" (event: cstring) -> bool ---
 	@(link_name = "au_exists")
@@ -14203,7 +14192,7 @@ f_exists :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 			n = 1
 		}
 	} else if ([^]u8)(p)[0] == ':' {
-		n = C.longlong(cmd_exists_e(transmute(cstring)(rawptr(uintptr(rawptr(p)) + 1))))
+		n = C.longlong(cmd_exists(transmute(cstring)(rawptr(uintptr(rawptr(p)) + 1))))
 	} else if ([^]u8)(p)[0] == '#' {
 		if ([^]u8)(p)[1] == '#' {
 			if autocmd_supported_e(transmute(cstring)(rawptr(uintptr(rawptr(p)) + 2))) {
@@ -15175,8 +15164,7 @@ f_matchstrpos :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 
 // —— Batch 27ak: funcs.c range + getreginfo ——
 foreign _ {
-	@(link_name = "get_unname_register")
-	get_unname_register_e :: proc "c" () -> C.int ---
+	// get_unname_register now defined in register.odin — call directly.
 }
 
 E726_S :: "E726: Stride is zero"
@@ -15278,7 +15266,7 @@ f_getreginfo :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 		libc.abort()
 	}
 	tv_dict_add_str_len(dict, cstring("regtype"), 7, transmute(cstring)(&buf[0]), C.int(buflen))
-	buf[0] = u8(get_register_name_o(get_unname_register_e()))
+	buf[0] = u8(get_register_name_o(get_unname_register()))
 	buf[1] = 0
 	if buf[0] == 0 {
 		buflen = 0
@@ -16472,8 +16460,7 @@ foreign _ {
 	charwise_block_prep_e :: proc "c" (start: Pos_T, end: Pos_T, bdp: rawptr, lnum: C.int, inclusive: bool) ---
 	@(link_name = "mb_prevptr")
 	mb_prevptr_e :: proc "c" (line: ^u8, p: ^u8) -> ^u8 ---
-	@(link_name = "ml_get_pos")
-	ml_get_pos_e :: proc "c" (pos: ^Pos_T) -> ^u8 ---
+	// ml_get_pos now defined in memline.odin — call directly.
 	@(link_name = "unadjust_for_sel_inner")
 	unadjust_for_sel_inner_e :: proc "c" (pp: ^Pos_T) -> bool ---
 	@(link_name = "reset_lbr")
@@ -16635,7 +16622,7 @@ getregionpos_o :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, p1: ^Pos_T, p2
 		if is_select_exclusive && !pos_equal_o(p1^, p2^) {
 			inclusive^ = !unadjust_for_sel_inner_e(p2)
 		}
-		if inclusive^ && virtual_op_g != TriState.kTrue && ([^]u8)(ml_get_pos_e(p2))[0] == 0 {
+		if inclusive^ && virtual_op_g != TriState.kTrue && ([^]u8)(ml_get_pos(p2))[0] == 0 {
 			inclusive^ = false
 		}
 	} else if region_type^ == kMTBlockWise {
@@ -16658,7 +16645,7 @@ getregionpos_o :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, p1: ^Pos_T, p2
 			(^C.int)(uintptr(oap) + OAP_END_VCOL)^ = ec1 if ec1 > ec2 else ec2
 		}
 	}
-	l := C.int(utfc_ptr2len(transmute(cstring)(ml_get_pos_e(p2))))
+	l := C.int(utfc_ptr2len(transmute(cstring)(ml_get_pos(p2))))
 	if l > 1 {
 		p2.col += l - 1
 	}
@@ -16708,7 +16695,7 @@ f_getregion :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 			block_prep_e(rawptr(&oa[0]), rawptr(&bd), lnum, false)
 			akt = block_def2str_o(&bd)
 		} else if region_type == kMTLineWise || (p1.lnum < lnum && lnum < p2.lnum) {
-			akt = transmute(NvimString)(cbuf_to_string_r(transmute(cstring)(ml_get(lnum)), C.size_t(ml_get_len_r2(lnum))))
+			akt = transmute(NvimString)(cbuf_to_string_r(transmute(cstring)(ml_get(lnum)), C.size_t(ml_get_len(lnum))))
 		} else {
 			bd := Block_Def_O{}
 			charwise_block_prep_e(p1, p2, rawptr(&bd), lnum, inclusive)
@@ -16748,7 +16735,7 @@ f_getregionpos :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) 
 		ret_p1 := Pos_T{}
 		ret_p2 := Pos_T{}
 		line := ml_get(lnum)
-		line_len := ml_get_len_r2(lnum)
+		line_len := ml_get_len(lnum)
 		if region_type == kMTLineWise {
 			ret_p1.col = 1
 			ret_p1.coladd = 0
@@ -17587,7 +17574,7 @@ f_synconcealed :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) 
 	tv_list_set_ret_o(rettv, nil)
 	lnum := tv_get_lnum((^Typval_T)(uintptr(argvars)))
 	col := C.int(tv_get_number((^Typval_T)(uintptr(argvars) + 16))) - 1
-	if lnum >= 1 && lnum <= (^C.int)(uintptr(curbuf) + B_ML_LINE_COUNT)^ && col >= 0 && col <= ml_get_len_r2(lnum) && (^C.int)(uintptr(curwin) + W_P_COLE_OFF)^ > 0 {
+	if lnum >= 1 && lnum <= (^C.int)(uintptr(curbuf) + B_ML_LINE_COUNT)^ && col >= 0 && col <= ml_get_len(lnum) && (^C.int)(uintptr(curwin) + W_P_COLE_OFF)^ > 0 {
 		syn_get_id_r(curwin, lnum, col, false, nil, false)
 		syntax_flags = get_syntax_info_e(&matchid)
 		if (syntax_flags & HL_CONCEAL_O) != 0 && (^C.int)(uintptr(curwin) + W_P_COLE_OFF)^ < 3 {
@@ -17759,10 +17746,7 @@ f_timer_info :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 
 // —— Batch 27bb: funcs.c swapinfo cluster ——
 foreign _ {
-	@(link_name = "recover_names")
-	recover_names_e :: proc "c" (fname: cstring, skip_curbuf: bool, ret_list: rawptr) ---
-	@(link_name = "swapfile_dict")
-	swapfile_dict_e :: proc "c" (fname: cstring, d: rawptr) ---
+	// recover_names/swapfile_dict now defined in memline.odin — call directly.
 }
 
 // "swapfilelist()" function.
@@ -17770,7 +17754,7 @@ foreign _ {
 f_swapfilelist :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 	context = runtime.default_context()
 	l := tv_list_alloc_ret(transmute(^Typval)(rettv), KLISTLEN_UNKNOWN_O)
-	recover_names_e(nil, false, l)
+	recover_names(nil, false, l)
 }
 
 // "swapinfo(swap_filename)" function.
@@ -17778,7 +17762,7 @@ f_swapfilelist :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) 
 f_swapinfo :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 	context = runtime.default_context()
 	tv_dict_alloc_ret(rettv)
-	swapfile_dict_e(tv_get_string((^Typval_T)(uintptr(argvars))), rawptr(rettv.vval))
+	swapfile_dict(tv_get_string((^Typval_T)(uintptr(argvars))), rawptr(rettv.vval))
 }
 
 // "swapname(expr)" function.
@@ -18270,7 +18254,7 @@ f_synID :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 	transerr := false
 	trans := C.int(tv_get_number_chk((^Typval_T)(uintptr(argvars) + 32), &transerr))
 	id: C.int = 0
-	if !transerr && lnum >= 1 && lnum <= (^C.int)(uintptr(curbuf) + B_ML_LINE_COUNT)^ && col >= 0 && col < ml_get_len_r2(lnum) {
+	if !transerr && lnum >= 1 && lnum <= (^C.int)(uintptr(curbuf) + B_ML_LINE_COUNT)^ && col >= 0 && col < ml_get_len(lnum) {
 		id = syn_get_id_r(curwin, lnum, col, trans != 0, nil, false)
 	}
 	rettv.vval = transmute(rawptr)(C.longlong(id))
@@ -18296,7 +18280,7 @@ f_synstack :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 	tv_list_set_ret_o(rettv, nil)
 	lnum := tv_get_lnum((^Typval_T)(uintptr(argvars)))
 	col := C.int(tv_get_number((^Typval_T)(uintptr(argvars) + 16))) - 1
-	if lnum >= 1 && lnum <= (^C.int)(uintptr(curbuf) + B_ML_LINE_COUNT)^ && col >= 0 && col <= ml_get_len_r2(lnum) {
+	if lnum >= 1 && lnum <= (^C.int)(uintptr(curbuf) + B_ML_LINE_COUNT)^ && col >= 0 && col <= ml_get_len(lnum) {
 		tv_list_alloc_ret(transmute(^Typval)(rettv), KLISTLEN_MAYKNOW_O)
 		syn_get_id_r(curwin, lnum, col, false, nil, true)
 		id: C.int = 0
@@ -24396,8 +24380,7 @@ set_context_for_expression :: proc "c" (xp: ^expand_T, arg: cstring, cmdidx: C.i
 
 // —— Batch 28ax: eval.c var2fpos (export + weak) ——
 foreign _ {
-	@(link_name = "check_cursor_moved")
-	check_cursor_moved_e :: proc "c" (wp: rawptr) ---
+	// check_cursor_moved now defined in move.odin — call directly.
 }
 
 @(private = "file")
@@ -24475,10 +24458,10 @@ var2fpos :: proc "c" (tv: ^Typval_T, dollar_lnum: bool, ret_fnum: ^C.int, charco
 	}
 	pos.coladd = 0
 	if ([^]u8)(name)[0] == 'w' && dollar_lnum {
-		check_cursor_moved_e(wp)
+		check_cursor_moved(wp)
 		pos.col = 0
 		if ([^]u8)(name)[1] == '0' {
-			update_topline_r(wp)
+			update_topline(wp)
 			top := (^C.int)(uintptr(wp) + W_TOPLINE_OFF)^
 			if top > 0 {
 				pos.lnum = top
@@ -24487,7 +24470,7 @@ var2fpos :: proc "c" (tv: ^Typval_T, dollar_lnum: bool, ret_fnum: ^C.int, charco
 			}
 			return pos
 		} else if ([^]u8)(name)[1] == '$' {
-			validate_botline_win_r(wp)
+			validate_botline_win(wp)
 			bot := (^C.int)(uintptr(wp) + W_BOTLINE_OFF)^
 			if bot > 0 {
 				pos.lnum = bot - 1
@@ -27248,7 +27231,7 @@ f_jobstart :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 		detach = false
 		stdin_mode = KCHSTDIN_PIPE_O
 		if width == 0 {
-			ww := (^C.int)(uintptr(curwin) + W_VIEW_WIDTH_OFF)^ - win_col_off_r(curwin)
+			ww := (^C.int)(uintptr(curwin) + W_VIEW_WIDTH_OFF)^ - win_col_off(curwin)
 			if ww < 0 {
 				ww = 0
 			}
@@ -27283,7 +27266,7 @@ f_jobstart :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 	pid := (^C.int)(uintptr(chan) + CHAN_STREAM_OFF + PROC_PID_OFF)^
 	buf := curbuf
 	(^C.int)(uintptr(buf) + B_P_SWF_OFF)^ = 0
-	if (^rawptr)(uintptr(buf) + B_ML_MFP_OFF)^ == nil && ml_open_r(buf) == FAIL_E {
+	if (^rawptr)(uintptr(buf) + B_ML_MFP_OFF)^ == nil && ml_open(buf) == FAIL_E {
 		proc_stop((^Proc)(rawptr(uintptr(chan) + CHAN_STREAM_OFF)))
 		channel_decref(chan)
 		return
@@ -28127,10 +28110,7 @@ get_expr_name :: proc "c" (xp: ^expand_T, idx: C.int) -> cstring {
 
 // —— Batch 28bm: eval/funcs.c do_searchpair (export + weak) ——
 foreign _ {
-	@(link_name = "decl")
-	decl_pos_e :: proc "c" (p: ^Pos_T) -> C.int ---
-	@(link_name = "incl")
-	incl_pos_e :: proc "c" (p: ^Pos_T) -> C.int ---
+	// decl/incl now defined in memline.odin — call directly.
 }
 
 // Nested-pair search driver (eval/funcs.c public).
@@ -28183,9 +28163,9 @@ do_searchpair :: proc "c" (spat: cstring, mpat: cstring, epat: cstring, dir: C.i
 		}
 		if pos_equal_o(pos, foundpos) {
 			if dir == C.int(Direction.BACKWARD) {
-				decl_pos_e(&pos)
+				decl(&pos)
 			} else {
-				incl_pos_e(&pos)
+				incl(&pos)
 			}
 		}
 		foundpos = pos
@@ -28763,8 +28743,7 @@ foreign _ {
 	set_ref_in_opfunc_e :: proc "c" (copyID: C.int) -> bool ---
 	@(link_name = "set_ref_in_tagfunc")
 	set_ref_in_tagfunc_e :: proc "c" (copyID: C.int) -> bool ---
-	@(link_name = "set_ref_in_findfunc")
-	set_ref_in_findfunc_e :: proc "c" (copyID: C.int) -> bool ---
+	// set_ref_in_findfunc now defined in ex_docmd.odin — call directly.
 	@(link_name = "set_ref_in_quickfix")
 	set_ref_in_quickfix_e :: proc "c" (copyID: C.int) -> bool ---
 	@(link_name = "set_ref_in_cpt_callbacks")
@@ -28888,7 +28867,7 @@ garbage_collect :: proc "c" (testing: bool) -> bool {
 		abort = set_ref_in_tagfunc_e(copyID)
 	}
 	if !abort {
-		abort = set_ref_in_findfunc_e(copyID)
+		abort = set_ref_in_findfunc(copyID)
 	}
 	tp := first_tabpage
 	for tp != nil {
@@ -28966,10 +28945,8 @@ garbage_collect :: proc "c" (testing: bool) -> bool {
 
 // —— Batch 28bh: eval.c prompt cluster (exports + weak) ——
 foreign _ {
-	@(link_name = "ml_delete_buf")
-	ml_delete_buf_e :: proc "c" (buf: rawptr, lnum: C.int, message: bool) -> C.int ---
-	@(link_name = "deleted_lines_buf")
-	deleted_lines_buf_e :: proc "c" (buf: rawptr, lnum: C.int, count: C.int) ---
+	// ml_delete_buf now defined in memline.odin — call directly.
+	// deleted_lines_buf now defined in change.odin — call directly.
 }
 
 // v:event dict accessor with recursive-save (eval.c public).
@@ -29039,11 +29016,11 @@ prompt_trim_scrollback :: proc "c" (buf: rawptr) {
 	to_delete := above_prompt - C.int((^C.longlong)(uintptr(buf) + B_P_SCBK_OFF)^)
 	i: C.int = 0
 	for i < to_delete {
-		ml_delete_buf_e(buf, 1, false)
+		ml_delete_buf(buf, 1, false)
 		i += 1
 	}
 	mark_adjust_buf(buf, 1, to_delete, MAXLNUM, -to_delete, true, kMarkAdjustNormal, kExtmarkUndo)
-	deleted_lines_buf_e(buf, 1, to_delete)
+	deleted_lines_buf(buf, 1, to_delete)
 	tp := first_tabpage
 	for tp != nil {
 		wp := (^rawptr)(uintptr(tp) + TP_FIRSTWIN_OFF)^
@@ -29077,7 +29054,7 @@ prompt_invoke_callback :: proc "c" () {
 		return
 	}
 	ml_append(lnum, transmute(^u8)(cstring("")), 0, false)
-	appended_lines_mark_r(lnum, 1)
+	appended_lines_mark(lnum, 1)
 	(^C.int)(uintptr(curwin) + W_CURSOR_OFF)^ = lnum + 1
 	(^C.int)(uintptr(curwin) + W_CURSOR_OFF + 4)^ = 0
 	(^C.int)(uintptr(curbuf) + B_PROMPT_START)^ = lnum + 1

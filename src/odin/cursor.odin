@@ -8,13 +8,10 @@ import "core:c/libc"
 // All 20 publics are @(export); coladvance2 is a dormant _o plain.
 
 foreign _ {
-	@(link_name = "set_valid_virtcol")
-	set_valid_virtcol_e :: proc "c" (wp: rawptr, vcol: C.int) ---
-	@(link_name = "ml_get_buf_mut")
-	ml_get_buf_mut_e :: proc "c" (buf: rawptr, lnum: C.int) -> ^u8 ---
+	// set_valid_virtcol now defined in move.odin — call directly.
+	// ml_get_buf_mut now defined in memline.odin — call directly.
 	// linetabsize now defined in plines.odin — call directly.
-	@(link_name = "dec")
-	dec_e :: proc "c" (lp: ^Pos_T) -> C.int ---
+	// dec now defined in memline.odin — call directly.
 }
 
 KOPT_VE_ONEMORE_O :: 0x08 // kOptVeFlagOnemore
@@ -47,7 +44,7 @@ coladvance_force :: proc "c" (wcol: C.int) -> C.int {
 	if wcol == MAXCOL {
 		(^C.int)(uintptr(curwin) + W_VALID_OFF)^ &= ~C.int(VALID_VIRTCOL_O)
 	} else {
-		set_valid_virtcol_e(curwin, wcol)
+		set_valid_virtcol(curwin, wcol)
 	}
 	return rc
 }
@@ -60,7 +57,7 @@ coladvance :: proc "c" (wp: rawptr, wcol: C.int) -> C.int {
 	if wcol == MAXCOL || rc == FAIL_E {
 		(^C.int)(uintptr(wp) + W_VALID_OFF)^ &= ~C.int(VALID_VIRTCOL_O)
 	} else if ([^]u8)(ml_get_buf((^rawptr)(uintptr(wp) + W_BUFFER_OFF)^, (^Pos_T)(uintptr(wp) + W_CURSOR_OFF).lnum))[(^Pos_T)(uintptr(wp) + W_CURSOR_OFF).col] != 9 {
-		set_valid_virtcol_e(curwin, wcol)
+		set_valid_virtcol(curwin, wcol)
 	}
 	return rc
 }
@@ -90,7 +87,7 @@ coladvance2_o :: proc "c" (wp: rawptr, pos: ^Pos_T, addspaces: bool, finetune: b
 			}
 		}
 	} else {
-		width := (^C.int)(uintptr(wp) + W_VIEW_WIDTH_OFF)^ - win_col_off_r(wp)
+		width := (^C.int)(uintptr(wp) + W_VIEW_WIDTH_OFF)^ - win_col_off(wp)
 		csize: C.int = 0
 		if finetune && (^C.int)(uintptr(wp) + W_P_WRAP_OFF)^ != 0 && (^C.int)(uintptr(wp) + W_VIEW_WIDTH_OFF)^ != 0 && wcol >= width && width > 0 {
 			csize = linetabsize_eol(wp, pos.lnum)
@@ -128,8 +125,8 @@ coladvance2_o :: proc "c" (wp: rawptr, pos: ^Pos_T, addspaces: bool, finetune: b
 				newline := xmallocz(newline_size)
 				libc.memcpy(rawptr(newline), rawptr(line), C.size_t(idx))
 				libc.memset(rawptr(uintptr(newline) + uintptr(idx)), ' ', C.size_t(correct))
-				ml_replace_c(pos.lnum, newline, false)
-				inserted_bytes_r(pos.lnum, idx, 0, correct)
+				ml_replace(pos.lnum, newline, false)
+				inserted_bytes(pos.lnum, idx, 0, correct)
 				idx += correct
 				col = wcol
 			} else {
@@ -147,8 +144,8 @@ coladvance2_o :: proc "c" (wp: rawptr, pos: ^Pos_T, addspaces: bool, finetune: b
 				n = C.size_t(linelen - idx)
 				n = n - 1
 				libc.memcpy(rawptr(uintptr(newline) + uintptr(idx) + uintptr(csize)), rawptr(uintptr(line) + uintptr(idx) + 1), n)
-				ml_replace_c(pos.lnum, newline, false)
-				inserted_bytes_r(pos.lnum, idx, 1, csize)
+				ml_replace(pos.lnum, newline, false)
+				inserted_bytes(pos.lnum, idx, 1, csize)
 				idx += (csize - 1 + correct)
 				col += correct
 			}
@@ -189,14 +186,14 @@ getvpos :: proc "c" (wp: rawptr, pos: ^Pos_T, wcol: C.int) -> C.int {
 @(export)
 inc_cursor :: proc "c" () -> C.int {
 	context = runtime.default_context()
-	return incl_pos((^Pos_T)(uintptr(curwin) + W_CURSOR_OFF))
+	return inc((^Pos_T)(uintptr(curwin) + W_CURSOR_OFF))
 }
 
 // Decrement the cursor position.
 @(export)
 dec_cursor :: proc "c" () -> C.int {
 	context = runtime.default_context()
-	return dec_e((^Pos_T)(uintptr(curwin) + W_CURSOR_OFF))
+	return dec((^Pos_T)(uintptr(curwin) + W_CURSOR_OFF))
 }
 
 // Line number relative to the cursor, skipping folds.
@@ -303,7 +300,7 @@ check_visual_pos :: proc "c" () {
 		VIsual_g.col = 0
 		VIsual_g.coladd = 0
 	} else {
-		len := ml_get_len_r2(VIsual_g.lnum)
+		len := ml_get_len(VIsual_g.lnum)
 		if VIsual_g.col > len {
 			VIsual_g.col = len
 			VIsual_g.coladd = 0
@@ -328,9 +325,9 @@ set_leftcol :: proc "c" (leftcol: C.int) -> bool {
 		return false
 	}
 	(^C.int)(uintptr(curwin) + W_LEFTCOL_OFF)^ = leftcol
-	changed_cline_bef_curs_r(curwin)
-	lastcol := i64((^C.int)(uintptr(curwin) + W_LEFTCOL_OFF)^) + i64((^C.int)(uintptr(curwin) + W_VIEW_WIDTH_OFF)^) - i64(win_col_off_r(curwin)) - 1
-	validate_virtcol_r(curwin)
+	changed_cline_bef_curs(curwin)
+	lastcol := i64((^C.int)(uintptr(curwin) + W_LEFTCOL_OFF)^) + i64((^C.int)(uintptr(curwin) + W_VIEW_WIDTH_OFF)^) - i64(win_col_off(curwin)) - 1
+	validate_virtcol(curwin)
 	retval := false
 	siso := get_sidescrolloff_value(curwin)
 	if i64((^C.int)(uintptr(curwin) + W_VIRTCOL_OFF)^) > lastcol - i64(siso) {
@@ -349,7 +346,7 @@ set_leftcol :: proc "c" (leftcol: C.int) -> bool {
 		retval = true
 		if coladvance(curwin, e + 1) == FAIL_E {
 			(^C.int)(uintptr(curwin) + W_LEFTCOL_OFF)^ = s
-			changed_cline_bef_curs_r(curwin)
+			changed_cline_bef_curs(curwin)
 		}
 	}
 	if retval {
@@ -382,7 +379,7 @@ char_before_cursor :: proc "c" () -> C.int {
 @(export)
 pchar_cursor :: proc "c" (c: u8) {
 	context = runtime.default_context()
-	([^]u8)(ml_get_buf_mut_e(curbuf, (^Pos_T)(uintptr(curwin) + W_CURSOR_OFF).lnum))[(^Pos_T)(uintptr(curwin) + W_CURSOR_OFF).col] = c
+	([^]u8)(ml_get_buf_mut(curbuf, (^Pos_T)(uintptr(curwin) + W_CURSOR_OFF).lnum))[(^Pos_T)(uintptr(curwin) + W_CURSOR_OFF).col] = c
 }
 
 // Pointer to the cursor line.

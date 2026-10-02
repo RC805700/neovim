@@ -76,6 +76,7 @@ static int adjust_plines_for_skipcol(win_T *wp)
 /// Return how many lines "lnum" will take on the screen, taking into account
 /// whether it is the first line, whether w_skipcol is non-zero and limiting to
 /// the window height.
+#pragma weak plines_correct_topline
 int plines_correct_topline(win_T *wp, linenr_T lnum, linenr_T *nextp, bool limit_winheight,
                            bool *foldedp)
 {
@@ -183,6 +184,7 @@ static void redraw_for_cursorcolumn(win_T *wp)
 
 /// Set wp->w_virtcol to a value ("vcol") that is already valid.
 /// Handles redrawing if wp->w_virtcol was previously invalid.
+#pragma weak set_valid_virtcol
 void set_valid_virtcol(win_T *wp, colnr_T vcol)
 {
   wp->w_virtcol = vcol;
@@ -196,6 +198,7 @@ void set_valid_virtcol(win_T *wp, colnr_T vcol)
 /// line. When "extra2" is -1 calculate the padding.
 /// Returns the number of columns of overlap with buffer text, excluding the
 /// extra padding on the ledge.
+#pragma weak sms_marker_overlap
 int sms_marker_overlap(win_T *wp, int extra2)
 {
   if (extra2 == -1) {
@@ -267,6 +270,7 @@ static bool scrolloffpad_eof_pressure(win_T *wp, linenr_T lnum, OptInt so)
 }
 
 // Update wp->w_topline to move the cursor onto the screen.
+#pragma weak update_topline
 void update_topline(win_T *wp)
 {
   bool check_botline = false;
@@ -520,6 +524,7 @@ static bool check_top_offset(win_T *wp)
 }
 
 /// Update w_curswant.
+#pragma weak update_curswant_force
 void update_curswant_force(void)
 {
   validate_virtcol(curwin);
@@ -528,6 +533,7 @@ void update_curswant_force(void)
 }
 
 /// Update w_curswant if w_set_curswant is set.
+#pragma weak update_curswant
 void update_curswant(void)
 {
   if (curwin->w_set_curswant) {
@@ -536,6 +542,7 @@ void update_curswant(void)
 }
 
 // Check if the cursor has moved.  Set the w_valid flag accordingly.
+#pragma weak check_cursor_moved
 void check_cursor_moved(win_T *wp)
 {
   if (wp->w_cursor.lnum != wp->w_valid_cursor.lnum) {
@@ -575,6 +582,7 @@ void check_cursor_moved(win_T *wp)
 // Call this function when some window settings have changed, which require
 // the cursor position, botline and topline to be recomputed and the window to
 // be redrawn.  E.g, when changing the 'wrap' option or folding.
+#pragma weak changed_window_setting
 void changed_window_setting(win_T *wp)
 {
   wp->w_lines_valid = 0;
@@ -584,6 +592,7 @@ void changed_window_setting(win_T *wp)
 }
 
 /// Call changed_window_setting() for every window.
+#pragma weak changed_window_setting_all
 void changed_window_setting_all(void)
 {
   FOR_ALL_TAB_WINDOWS(tp, wp) {
@@ -592,6 +601,7 @@ void changed_window_setting_all(void)
 }
 
 // Set wp->w_topline to a certain number.
+#pragma weak set_topline
 void set_topline(win_T *wp, linenr_T lnum)
 {
   linenr_T prev_topline = wp->w_topline;
@@ -619,6 +629,7 @@ void set_topline(win_T *wp, linenr_T lnum)
 /// If the line length changed the number of screen lines might change,
 /// requiring updating w_topline.  That may also invalidate w_crow.
 /// Need to take care of w_botline separately!
+#pragma weak changed_cline_bef_curs
 void changed_cline_bef_curs(win_T *wp)
 {
   wp->w_valid &= ~(VALID_WROW|VALID_WCOL|VALID_VIRTCOL|VALID_CROW
@@ -628,12 +639,14 @@ void changed_cline_bef_curs(win_T *wp)
 // Call this function when the length of a line (in screen characters) above
 // the cursor have changed.
 // Need to take care of w_botline separately!
+#pragma weak changed_line_abv_curs
 void changed_line_abv_curs(void)
 {
   curwin->w_valid &= ~(VALID_WROW|VALID_WCOL|VALID_VIRTCOL|VALID_CROW
                        |VALID_CHEIGHT|VALID_TOPLINE);
 }
 
+#pragma weak changed_line_abv_curs_win
 void changed_line_abv_curs_win(win_T *wp)
 {
   wp->w_valid &= ~(VALID_WROW|VALID_WCOL|VALID_VIRTCOL|VALID_CROW
@@ -641,6 +654,7 @@ void changed_line_abv_curs_win(win_T *wp)
 }
 
 /// Make sure the value of wp->w_botline is valid.
+#pragma weak validate_botline_win
 void validate_botline_win(win_T *wp)
   FUNC_ATTR_NONNULL_ALL
 {
@@ -650,18 +664,21 @@ void validate_botline_win(win_T *wp)
 }
 
 /// Mark wp->w_botline as invalid (because of some change in the buffer).
+#pragma weak invalidate_botline_win
 void invalidate_botline_win(win_T *wp)
   FUNC_ATTR_NONNULL_ALL
 {
   wp->w_valid &= ~(VALID_BOTLINE|VALID_BOTLINE_AP);
 }
 
+#pragma weak approximate_botline_win
 void approximate_botline_win(win_T *wp)
 {
   wp->w_valid &= ~VALID_BOTLINE;
 }
 
 // Return true if wp->w_wrow and wp->w_wcol are valid.
+#pragma weak cursor_valid
 int cursor_valid(win_T *wp)
 {
   check_cursor_moved(wp);
@@ -670,6 +687,7 @@ int cursor_valid(win_T *wp)
 
 // Validate cursor position.  Makes sure w_wrow and w_wcol are valid.
 // w_topline must be valid, you may need to call update_topline() first!
+#pragma weak validate_cursor
 void validate_cursor(win_T *wp)
 {
   check_cursor_lnum(wp);
@@ -751,6 +769,7 @@ static void curs_rows(win_T *wp)
 }
 
 // Validate wp->w_virtcol only.
+#pragma weak validate_virtcol
 void validate_virtcol(win_T *wp)
 {
   check_cursor_moved(wp);
@@ -765,6 +784,7 @@ void validate_virtcol(win_T *wp)
 }
 
 // Validate wp->w_cline_height only.
+#pragma weak validate_cheight
 void validate_cheight(win_T *wp)
 {
   check_cursor_moved(wp);
@@ -780,6 +800,7 @@ void validate_cheight(win_T *wp)
 }
 
 // Validate w_wcol and w_virtcol only.
+#pragma weak validate_cursor_col
 void validate_cursor_col(win_T *wp)
 {
   validate_virtcol(wp);
@@ -810,6 +831,7 @@ void validate_cursor_col(win_T *wp)
 
 // Compute offset of a window, occupied by absolute or relative line number,
 // fold column and sign column (these don't move when scrolling horizontally).
+#pragma weak win_col_off
 int win_col_off(win_T *wp)
 {
   return ((wp->w_p_nu || wp->w_p_rnu || *wp->w_p_stc != NUL)
@@ -820,6 +842,7 @@ int win_col_off(win_T *wp)
 // Return the difference in column offset for the second screen line of a
 // wrapped line.  It's positive if 'number' or 'relativenumber' is on and 'n'
 // is in 'cpoptions'.
+#pragma weak win_col_off2
 int win_col_off2(win_T *wp)
 {
   if ((wp->w_p_nu || wp->w_p_rnu || *wp->w_p_stc != NUL)
@@ -833,6 +856,7 @@ int win_col_off2(win_T *wp)
 // Also updates wp->w_wrow and wp->w_cline_row.
 // Also updates wp->w_leftcol.
 // @param may_scroll when true, may scroll horizontally
+#pragma weak curs_columns
 void curs_columns(win_T *wp, int may_scroll)
 {
   colnr_T startcol;
@@ -1075,6 +1099,7 @@ void curs_columns(win_T *wp, int may_scroll)
 /// @param[out] scolp start screen column
 /// @param[out] ccolp cursor screen column
 /// @param[out] ecolp end screen column
+#pragma weak textpos2screenpos
 void textpos2screenpos(win_T *wp, pos_T *pos, int *rowp, int *scolp, int *ccolp, int *ecolp,
                        bool local)
 {
@@ -1149,6 +1174,7 @@ void textpos2screenpos(win_T *wp, pos_T *pos, int *rowp, int *scolp, int *ccolp,
 }
 
 /// "screenpos({winid}, {lnum}, {col})" function
+#pragma weak f_screenpos
 void f_screenpos(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 {
   tv_dict_alloc_ret(rettv);
@@ -1201,6 +1227,7 @@ static int virtcol2col(win_T *wp, linenr_T lnum, int vcol)
 }
 
 /// "virtcol2col({winid}, {lnum}, {col})" function
+#pragma weak f_virtcol2col
 void f_virtcol2col(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 {
   rettv->vval.v_number = -1;
@@ -1303,6 +1330,7 @@ static void cursor_correct_sms(win_T *wp)
 }
 
 /// Scroll "count" lines up or down, and redraw.
+#pragma weak scroll_redraw
 void scroll_redraw(int up, linenr_T count)
 {
   linenr_T prev_topline = curwin->w_topline;
@@ -1361,6 +1389,7 @@ void scroll_redraw(int up, linenr_T count)
 ///
 /// @param line_count number of lines to scroll
 /// @param byfold if true, count a closed fold as one line
+#pragma weak scrolldown
 bool scrolldown(win_T *wp, linenr_T line_count, int byfold)
 {
   int done = 0;                // total # of physical lines done
@@ -1483,6 +1512,7 @@ bool scrolldown(win_T *wp, linenr_T line_count, int byfold)
 ///
 /// @param line_count number of lines to scroll
 /// @param byfold if true, count a closed fold as one line
+#pragma weak scrollup
 bool scrollup(win_T *wp, linenr_T line_count, bool byfold)
 {
   linenr_T topline = wp->w_topline;
@@ -1579,6 +1609,7 @@ bool scrollup(win_T *wp, linenr_T line_count, bool byfold)
 
 /// Called after changing the cursor column: make sure that curwin->w_skipcol is
 /// valid for 'smoothscroll'.
+#pragma weak adjust_skipcol
 void adjust_skipcol(void)
 {
   if (!curwin->w_p_wrap || !curwin->w_p_sms || curwin->w_cursor.lnum != curwin->w_topline) {
@@ -1656,6 +1687,7 @@ void adjust_skipcol(void)
 /// Don't end up with too many filler lines in the window.
 ///
 /// @param down  when true scroll down when not enough space
+#pragma weak check_topfill
 void check_topfill(win_T *wp, bool down)
 {
   if (wp->w_topfill > 0) {
@@ -1675,6 +1707,7 @@ void check_topfill(win_T *wp, bool down)
 
 // Scroll the screen one line down, but don't do it if it would move the
 // cursor off the screen.
+#pragma weak scrolldown_clamp
 void scrolldown_clamp(void)
 {
   bool can_fill = (curwin->w_topfill < win_get_fill(curwin, curwin->w_topline));
@@ -1717,6 +1750,7 @@ void scrolldown_clamp(void)
 
 // Scroll the screen one line up, but don't do it if it would move the cursor
 // off the screen.
+#pragma weak scrollup_clamp
 void scrollup_clamp(void)
 {
   if (curwin->w_topline == curbuf->b_ml.ml_line_count
@@ -1806,6 +1840,7 @@ static void botline_forw(win_T *wp, lineoff_T *lp)
 // Recompute topline to put the cursor at the top of the window.
 // Scroll at least "min_scroll" lines.
 // If "always" is true, always set topline (for "zt").
+#pragma weak scroll_cursor_top
 void scroll_cursor_top(win_T *wp, int min_scroll, int always)
 {
   linenr_T old_topline = wp->w_topline;
@@ -1914,6 +1949,7 @@ void scroll_cursor_top(win_T *wp, int min_scroll, int always)
 
 // Set w_empty_rows and w_filler_rows for window "wp", having used up "used"
 // screen lines for text lines.
+#pragma weak set_empty_rows
 void set_empty_rows(win_T *wp, int used)
 {
   wp->w_filler_rows = 0;
@@ -1937,6 +1973,7 @@ void set_empty_rows(win_T *wp, int used)
 /// When scrolling scroll at least "min_scroll" lines.
 /// If "set_topbot" is true, set topline and botline first (for "zb").
 /// This is messy stuff!!!
+#pragma weak scroll_cursor_bot
 void scroll_cursor_bot(win_T *wp, int min_scroll, bool set_topbot)
 {
   lineoff_T loff;
@@ -2169,6 +2206,7 @@ void scroll_cursor_bot(win_T *wp, int min_scroll, bool set_topbot)
 ///
 /// @param atend if true, also put the cursor halfway to the end of the file.
 ///
+#pragma weak scroll_cursor_halfway
 void scroll_cursor_halfway(win_T *wp, bool atend, bool prefer_above)
 {
   linenr_T old_topline = wp->w_topline;
@@ -2298,6 +2336,7 @@ void scroll_cursor_halfway(win_T *wp, bool atend, bool prefer_above)
 // 'so' lines from the top and bottom, if possible.
 // If not possible, put it at the same position as scroll_cursor_halfway().
 // When called topline must be valid!
+#pragma weak cursor_correct
 void cursor_correct(win_T *wp)
 {
   // How many lines we would like to have above/below the cursor depends on
@@ -2498,6 +2537,7 @@ static bool scroll_with_sms(Direction dir, int count, int *curscount)
 /// to reveal end of buffer lines for half-page scrolling with CTRL-D and CTRL-U.
 ///
 /// @return  FAIL for failure, OK otherwise.
+#pragma weak pagescroll
 int pagescroll(Direction dir, int count, bool half)
 {
   bool did_move = false;
@@ -2585,6 +2625,7 @@ int pagescroll(Direction dir, int count, bool half)
   return did_move ? OK : FAIL;
 }
 
+#pragma weak do_check_cursorbind
 void do_check_cursorbind(void)
 {
   static win_T *prev_curwin = NULL;

@@ -1849,8 +1849,7 @@ foreign _ {
  	// ui_call_win_hide now defined in ui.odin — call directly.
  	@(link_name = "msg_clr_eos_force")
 	msg_clr_eos_force_r :: proc "c" () ---
- 	@(link_name = "changed_line_abv_curs")
- 	changed_line_abv_curs_r :: proc "c" () ---
+ 	// changed_line_abv_curs now defined in move.odin — call directly.
  	// get_real_state is an Odin export (state.odin) — call directly.
  	// do_autochdir now defined in buffer.odin — call directly.
  	@(link_name = "aborting")
@@ -1859,8 +1858,7 @@ foreign _ {
 	cursor_down_inner_r :: proc "c" (wp: rawptr, n: C.int, skip_conceal: bool) ---
 	@(link_name = "cursor_up_inner")
  	cursor_up_inner_r :: proc "c" (wp: rawptr, n: C.long, skip_conceal: bool) ---
-  	@(link_name = "validate_botline_win")
- 	validate_botline_win_r :: proc "c" (wp: rawptr) ---
+  	// validate_botline_win now defined in move.odin — call directly.
  	@(link_name = "p_ls")
 	p_ls_g: C.longlong
 	@(link_name = "p_ea")
@@ -1983,7 +1981,7 @@ win_fix_cursor_o :: proc "c"(normal: bool) {
 		} else { // Scroll instead when not in normal mode.
 			(^C.int)(uintptr(wp) + W_FRACTION_OFF)^ = (nlnum == bot) ? FRACTION_MULT_O : 0
 			scroll_to_fraction(wp, (^C.int)(uintptr(wp) + W_PREV_HEIGHT_OFF)^)
-			validate_botline_win_r(curwin)
+			validate_botline_win(curwin)
 		}
 	}
 }
@@ -2027,7 +2025,7 @@ win_enter_ext_o :: proc "c"(wp: rawptr, flags: C.int) {
 	// Might need to scroll the old window before switching, e.g., when the
 	// cursor was moved.
 	if b_at(p_spk_g, 0) == 'c' && !curwin_invalid {
-		update_topline_r(curwin)
+		update_topline(curwin)
 	}
 
 	// may have to copy the buffer options when 'cpo' contains 'S'
@@ -2046,7 +2044,7 @@ win_enter_ext_o :: proc "c"(wp: rawptr, flags: C.int) {
 		(^C.int)(uintptr(curwin) + W_CURSOR_OFF + 8)^ = 0 // w_cursor.coladd
 	}
 	if b_at(p_spk_g, 0) == 'c' {
-		changed_line_abv_curs_r() // assume cursor position needs updating
+		changed_line_abv_curs() // assume cursor position needs updating
 	} else {
 		// Make sure the cursor position is valid, either by moving the cursor
 		// or by scrolling the text.
@@ -5435,8 +5433,8 @@ win_fix_scroll :: proc "c"(resize: bool) {
 			} else if wp == curwin {
 				(^C.int)(uintptr(wp) + W_VALID_OFF)^ &= ~C.int(VALID_CROW_O)
 			}
-			invalidate_botline_win_r(wp)
-			validate_botline_win_r(wp)
+			invalidate_botline_win(wp)
+			validate_botline_win(wp)
 		}
 		(^C.int)(uintptr(wp) + W_PREV_HEIGHT_OFF)^ = (^C.int)(uintptr(wp) + W_HEIGHT_OFF)^
 		(^C.int)(uintptr(wp) + W_PREV_WINROW_OFF)^ = (^C.int)(uintptr(wp) + W_WINROW_OFF)^
@@ -5494,12 +5492,8 @@ foreign _ {
 	// plines_win/plines_win_col/plines_win_nofill now defined in plines.odin.
 	@(link_name = "decor_conceal_line")
 	decor_conceal_line_r :: proc "c" (wp: rawptr, row: C.int, check_cursor: bool) -> bool ---
-	@(link_name = "curs_columns")
-	curs_columns_r :: proc "c" (wp: rawptr, may_scroll: C.int) ---
-	@(link_name = "win_col_off")
-	win_col_off_r :: proc "c" (wp: rawptr) -> C.int ---
-	@(link_name = "win_col_off2")
-	win_col_off2_r :: proc "c" (wp: rawptr) -> C.int ---
+	// curs_columns now defined in move.odin — call directly.
+	// win_col_off/off2 now defined in move.odin — call directly.
 }
 
 // Scroll so the cursor sits at the same relative height as before.
@@ -5539,15 +5533,15 @@ scroll_to_fraction :: proc "c"(wp: rawptr, prev_height: C.int) {
 			(^C.int)(uintptr(wp) + W_WROW_OFF)^ = line_size
 			if (^C.int)(uintptr(wp) + W_WROW_OFF)^ >=
 				(^C.int)(uintptr(wp) + W_VIEW_HEIGHT_OFF)^ &&
-				(^C.int)(uintptr(wp) + W_VIEW_WIDTH_OFF)^ - win_col_off_r(wp) > 0 {
+				(^C.int)(uintptr(wp) + W_VIEW_WIDTH_OFF)^ - win_col_off(wp) > 0 {
 				(^C.int)(uintptr(wp) + W_SKIPCOL_OFF)^ +=
-					(^C.int)(uintptr(wp) + W_VIEW_WIDTH_OFF)^ - win_col_off_r(wp)
+					(^C.int)(uintptr(wp) + W_VIEW_WIDTH_OFF)^ - win_col_off(wp)
 				(^C.int)(uintptr(wp) + W_WROW_OFF)^ -= 1
 				for (^C.int)(uintptr(wp) + W_WROW_OFF)^ >=
 					(^C.int)(uintptr(wp) + W_VIEW_HEIGHT_OFF)^ {
 					(^C.int)(uintptr(wp) + W_SKIPCOL_OFF)^ +=
-						(^C.int)(uintptr(wp) + W_VIEW_WIDTH_OFF)^ - win_col_off_r(wp) +
-						win_col_off2_r(wp)
+						(^C.int)(uintptr(wp) + W_VIEW_WIDTH_OFF)^ - win_col_off(wp) +
+						win_col_off2(wp)
 					(^C.int)(uintptr(wp) + W_WROW_OFF)^ -= 1
 				}
 			}
@@ -5584,14 +5578,14 @@ scroll_to_fraction :: proc "c"(wp: rawptr, prev_height: C.int) {
 		set_topline(wp, lnum)
 	}
 	if wp == curwin {
-		curs_columns_r(wp, 0) // validate w_wrow
+		curs_columns(wp, 0) // validate w_wrow
 	}
 	if prev_height > 0 {
 		(^C.int)(uintptr(wp) + W_PREV_FRACTION_ROW_OFF)^ =
 			(^C.int)(uintptr(wp) + W_WROW_OFF)^
 	}
 	redraw_later(wp, UPD_SOME_VALID_O)
-	invalidate_botline_win_r(wp)
+	invalidate_botline_win(wp)
 }
 
 // ── Batch 28: win_comp_pos ───────────────────────────────────────────────────
@@ -5897,8 +5891,7 @@ W_WINROW_OFF2_OFF :: 492 // w_winrow_off (vs w_winrow@416)
 W_WINCOL_OFF2_OFF :: 496 // w_wincol_off (vs w_wincol@440)
 
 foreign _ {
-	@(link_name = "changed_line_abv_curs_win")
-	changed_line_abv_curs_win_r :: proc "c" (wp: rawptr) ---
+	// changed_line_abv_curs_win now defined in move.odin — call directly.
 	// win_border_height/width — PORTED (winfloat.odin).
 	// ui_call_win_viewport_margins now defined in ui.odin — call directly.
 	@(link_name = "win_grid_alloc")
@@ -5922,7 +5915,7 @@ win_set_inner_size :: proc "c"(wp: rawptr, valid_cursor: bool) {
 		if height > 0 && valid_cursor {
 			if wp == curwin && (b_at(p_spk_g, 0) == 'c' || (^bool)(uintptr(wp) + W_FLOATING_OFF)^) {
 				// w_wrow needs to be valid (may recurse via laststatus).
-				validate_cursor_r(curwin)
+				validate_cursor(curwin)
 			}
 			if (^C.int)(uintptr(wp) + W_VIEW_HEIGHT_OFF)^ != prev_height {
 				return // Recursive call already changed the size, bail out.
@@ -5945,10 +5938,10 @@ win_set_inner_size :: proc "c"(wp: rawptr, valid_cursor: bool) {
 		(^C.int)(uintptr(wp) + W_VIEW_WIDTH_OFF)^ = width
 		(^C.int)(uintptr(wp) + W_LINES_VALID_OFF)^ = 0
 		if valid_cursor {
-			changed_line_abv_curs_win_r(wp)
-			invalidate_botline_win_r(wp)
+			changed_line_abv_curs_win(wp)
+			invalidate_botline_win(wp)
 			if wp == curwin && (b_at(p_spk_g, 0) == 'c' || (^bool)(uintptr(wp) + W_FLOATING_OFF)^) {
-				curs_columns_r(wp, 1) // validate w_wrow
+				curs_columns(wp, 1) // validate w_wrow
 			}
 		}
 		redraw_later(wp, UPD_NOT_VALID_O)
@@ -6655,7 +6648,7 @@ win_set_buf :: proc "c"(win: rawptr, buf: rawptr, err: rawptr) {
 		api_set_error_r(err, 2, cstring("%s"), transmute(rawptr)(&msg[0]))
 	}
 	// If window is not current, state logic will not validate its cursor.
-	validate_cursor_r(curwin)
+	validate_cursor(curwin)
 	restore_win_noblock(&switchwin, true)
 	RedrawingDisabled -= 1
 }
@@ -7616,8 +7609,7 @@ foreign _ {
 	find_window_by_handle_r :: proc "c" (window: C.int, err: rawptr) -> rawptr ---
 	@(link_name = "grid_adjust")
 	grid_adjust_r :: proc "c" (grid: rawptr, row_off: ^C.int, col_off: ^C.int) -> rawptr ---
-	@(link_name = "textpos2screenpos")
-	textpos2screenpos_r :: proc "c" (wp: rawptr, pos: ^Pos_T, rowp: ^C.int, scolp: ^C.int, ccolp: ^C.int, ecolp: ^C.int, local: bool) ---
+	// textpos2screenpos now defined in move.odin — call directly.
 	@(link_name = "ui_comp_layers_adjust")
 	ui_comp_layers_adjust_r :: proc "c" (layer_idx: C.size_t, raise: bool) ---
 	@(link_name = "ui_comp_put_grid")
@@ -7679,7 +7671,7 @@ ui_ext_win_position :: proc "c"(wp: rawptr, validate: bool) {
 						(^C.int)(uintptr((^rawptr)(uintptr(win) + W_BUFFER_OFF)^) + B_ML_LINE_COUNT_OFF)^)
 					pos := Pos_T{lnum, (^C.int)(wcfg + WCFG_BUFPOS_COL_OFF)^, 0}
 					trow, tcol, tcolc, tcole: C.int
-					textpos2screenpos_r(win, &pos, &trow, &tcol, &tcolc, &tcole, true)
+					textpos2screenpos(win, &pos, &trow, &tcol, &tcolc, &tcole, true)
 					row += f64(trow - 1)
 					col += f64(tcol - 1)
 				}

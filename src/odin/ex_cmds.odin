@@ -614,7 +614,7 @@ do_ecmd :: proc "c"(fnum: C.int, ffname_in: cstring, sfname_in: cstring, eap: ra
 			}
 
 			// Recompute topline even when the cursor didn't move.
-			changed_line_abv_curs_r()
+			changed_line_abv_curs()
 
 			maketitle()
 		}
@@ -705,7 +705,7 @@ do_ecmd :: proc "c"(fnum: C.int, ffname_in: cstring, sfname_in: cstring, eap: ra
 			if topline == 0 && command == nil {
 				(^C.longlong)(so_ptr)^ = 999 // vertically center cursor
 			}
-			update_topline_r(curwin)
+			update_topline(curwin)
 			(^C.int)(uintptr(curwin) + W_SCBIND_POS_OFF)^ =
 				plines_m_win_fill(curwin, 1,
 					(^C.int)(uintptr(curwin) + W_TOPLINE_OFF)^)
@@ -1348,7 +1348,7 @@ ex_sort :: proc "c"(eap: rawptr) {
 		lnum := line1
 		for lnum <= line2 {
 			s := ml_get(lnum)
-			len := ml_get_len_r2(lnum)
+			len := ml_get_len(lnum)
 			if len > maxlen {
 				maxlen = len
 			}
@@ -1458,7 +1458,7 @@ ex_sort :: proc "c"(eap: rawptr) {
 			}
 
 			s := ml_get(get_lnum)
-			bytelen := ml_get_len_r2(get_lnum) + 1 // include EOL
+			bytelen := ml_get_len(get_lnum) + 1 // include EOL
 			old_count += C.longlong(bytelen)
 			if !unique || i == 0 ||
 				string_compare_o(transmute(rawptr)(s),
@@ -1466,7 +1466,7 @@ ex_sort :: proc "c"(eap: rawptr) {
 				// Copy: may invalidate in ml_append(); needed for unique.
 				xstrlcpy(cstring(sortbuf1_f), cstring(s),
 					C.size_t(maxlen) + 1)
-				if !ml_append_c(lnum, sortbuf1_f, 0, false) {
+				if ml_append(lnum, sortbuf1_f, 0, false) == 0 {
 					break
 				}
 				lnum += 1
@@ -1485,7 +1485,7 @@ ex_sort :: proc "c"(eap: rawptr) {
 			if i == count {
 				j: C.size_t = 0
 				for j < count {
-					ml_delete_r(line1)
+					ml_delete(line1)
 					j += 1
 				}
 			} else {
@@ -1506,7 +1506,7 @@ ex_sort :: proc "c"(eap: rawptr) {
 				extmark_splice(curbuf, line1 - 1, 0, C.int(count), 0,
 					i64(old_count), lnum - line2, 0, i64(new_count),
 					kExtmarkUndo)
-				changed_lines_r(curbuf, line1, 0, line2 + 1, -deleted, true)
+				changed_lines(curbuf, line1, 0, line2 + 1, -deleted, true)
 			}
 
 			(^C.int)(uintptr(curwin) + W_CURSOR_OFF)^ = line1
@@ -1619,7 +1619,7 @@ ex_uniq :: proc "c"(eap: rawptr) {
 	if !done {
 		lnum := line1
 		for lnum <= line2 {
-			len := ml_get_len_r2(lnum)
+			len := ml_get_len(lnum)
 			if maxlen < len {
 				maxlen = len
 			}
@@ -1646,7 +1646,7 @@ ex_uniq :: proc "c"(eap: rawptr) {
 			get_lnum := line1 + i
 
 			s := ml_get(get_lnum)
-			len := ml_get_len_r2(get_lnum)
+			len := ml_get_len(get_lnum)
 
 			start_col: C.int = 0
 			end_col: C.int = len
@@ -1729,7 +1729,7 @@ ex_uniq :: proc "c"(eap: rawptr) {
 			}
 
 			if delete_lnum > 0 {
-				ml_delete_r(delete_lnum)
+				ml_delete(delete_lnum)
 				i -= get_lnum - delete_lnum + 1
 				count -= 1
 				deleted += 1
@@ -1751,7 +1751,7 @@ ex_uniq :: proc "c"(eap: rawptr) {
 			msgmore_r(-deleted)
 
 			if change_occurred {
-				changed_lines_r(curbuf, line1, 0, line2 + 1, -deleted, true)
+				changed_lines(curbuf, line1, 0, line2 + 1, -deleted, true)
 			}
 
 			(^C.int)(uintptr(curwin) + W_CURSOR_OFF)^ = line1
@@ -1774,13 +1774,9 @@ CMOD_LOCKMARKS_O :: 0x0800
 E134_S :: "E134: Cannot move a range of lines into itself"
 
 foreign _ {
-	@(link_name = "ml_find_line_or_offset")
-	ml_find_line_or_offset_r :: proc "c"(buf: rawptr, lnum: C.int, offp: rawptr, no_ff: bool) -> C.longlong ---
-	@(link_name = "appended_lines_mark")
-	appended_lines_mark_r :: proc "c"(lnum: C.int, count: C.int) ---
+	// appended_lines_mark now defined in change.odin — call directly.
 	// extmark_move_region now defined in extmark.odin — call directly.
-	@(link_name = "ml_delete_flags")
-	ml_delete_flags_r :: proc "c"(lnum: C.int, flags: C.int) -> C.int ---
+	// ml_delete_flags now defined in memline.odin — call directly.
 	// disable_fold_update (fold.odin), p_report (register.odin) — reuse.
 }
 
@@ -1802,10 +1798,10 @@ do_move :: proc "c"(line1: C.int, line2: C.int, dest: C.int) -> C.int {
 		return OK
 	}
 
-	start_byte := ml_find_line_or_offset_r(curbuf, line1, nil, true)
-	end_byte := ml_find_line_or_offset_r(curbuf, line2 + 1, nil, true)
+	start_byte := i64(ml_find_line_or_offset(curbuf, line1, nil, true))
+	end_byte := i64(ml_find_line_or_offset(curbuf, line2 + 1, nil, true))
 	extent_byte := end_byte - start_byte
-	dest_byte := ml_find_line_or_offset_r(curbuf, dest + 1, nil, true)
+	dest_byte := i64(ml_find_line_or_offset(curbuf, dest + 1, nil, true))
 
 	num_lines := line2 - line1 + 1 // lines moved
 
@@ -1818,8 +1814,8 @@ do_move :: proc "c"(line1: C.int, line2: C.int, dest: C.int) -> C.int {
 	l := line1
 	for l <= line2 {
 		str := xstrnsave_c(cstring(ml_get(l + extra)),
-			C.size_t(ml_get_len_r2(l + extra)))
-		ml_append_c(dest + l - line1, str, 0, false)
+			C.size_t(ml_get_len(l + extra)))
+		ml_append(dest + l - line1, str, 0, false)
 		xfree(transmute(rawptr)(str))
 		if dest < line1 {
 			extra += 1
@@ -1833,7 +1829,7 @@ do_move :: proc "c"(line1: C.int, line2: C.int, dest: C.int) -> C.int {
 	mark_adjust_nofold(line1, line2, last_line - line2, 0, kExtmarkNOOP)
 
 	disable_fold_update += 1
-	changed_lines_r(curbuf, last_line - num_lines + 1, 0, last_line + 1,
+	changed_lines(curbuf, last_line - num_lines + 1, 0, last_line + 1,
 		num_lines, false)
 	disable_fold_update -= 1
 
@@ -1888,7 +1884,7 @@ do_move :: proc "c"(line1: C.int, line2: C.int, dest: C.int) -> C.int {
 		-(last_line - dest - extra), 0, kExtmarkNOOP)
 
 	disable_fold_update += 1
-	changed_lines_r(curbuf, last_line - num_lines + 1, 0, last_line + 1,
+	changed_lines(curbuf, last_line - num_lines + 1, 0, last_line + 1,
 		-extra, false)
 	disable_fold_update -= 1
 
@@ -1902,7 +1898,7 @@ do_move :: proc "c"(line1: C.int, line2: C.int, dest: C.int) -> C.int {
 
 	l = line1
 	for l <= line2 {
-		ml_delete_flags_r(line1 + extra, ML_DEL_MESSAGE_O)
+		ml_delete_flags(line1 + extra, ML_DEL_MESSAGE_O)
 		l += 1
 	}
 	if global_busy == 0 && i64(num_lines) > p_report {
@@ -1928,9 +1924,9 @@ do_move :: proc "c"(line1: C.int, line2: C.int, dest: C.int) -> C.int {
 		if dest_v > last_line_v + 1 {
 			dest_v = last_line_v + 1
 		}
-		changed_lines_r(curbuf, line1, 0, dest_v, 0, false)
+		changed_lines(curbuf, line1, 0, dest_v, 0, false)
 	} else {
-		changed_lines_r(curbuf, dest + 1, 0, line1 + num_lines, 0, false)
+		changed_lines(curbuf, dest + 1, 0, line1 + num_lines, 0, false)
 	}
 
 	// Deleted-lines event.
@@ -1963,8 +1959,8 @@ ex_copy :: proc "c"(line1_in: C.int, line2_in: C.int, n: C.int) {
 	for line1 <= line2 {
 		// Copy: the line is unlocked within ml_append().
 		p := xstrnsave_c(cstring(ml_get(line1)),
-			C.size_t(ml_get_len_r2(line1)))
-		ml_append_c((^C.int)(uintptr(curwin) + W_CURSOR_OFF)^, p, 0, false)
+			C.size_t(ml_get_len(line1)))
+		ml_append((^C.int)(uintptr(curwin) + W_CURSOR_OFF)^, p, 0, false)
 		xfree(transmute(rawptr)(p))
 
 		// Situation 2: skip already copied lines.
@@ -1981,7 +1977,7 @@ ex_copy :: proc "c"(line1_in: C.int, line2_in: C.int, n: C.int) {
 		(^C.int)(uintptr(curwin) + W_CURSOR_OFF)^ += 1
 	}
 
-	appended_lines_mark_r(n, count)
+	appended_lines_mark(n, count)
 	if VIsual_active {
 		check_pos(curbuf, &VIsual_g)
 	}
@@ -2023,12 +2019,10 @@ foreign _ {
 	need_check_timestamps_g: bool
 	@(link_name = "buf_write")
 	buf_write_r :: proc "c"(buf: rawptr, fname: cstring, sfname: cstring, start: C.int, end: C.int, eap: rawptr, append: bool, forceit: bool, reset_changed: bool, filtering: bool) -> C.int ---
-	@(link_name = "del_lines")
-	del_lines_r :: proc "c"(nlines: C.int, undo: bool) ---
+	// del_lines now defined in change.odin — call directly.
 	@(link_name = "write_lnum_adjust")
 	write_lnum_adjust_r :: proc "c"(offset: C.int) ---
-	@(link_name = "foldUpdate")
-	foldUpdate_r :: proc "c"(wp: rawptr, top: C.int, bot: C.int) ---
+	// foldUpdate now defined in fold.odin — call directly.
 	@(link_name = "wait_return")
 	wait_return_r :: proc "c"(redraw: C.int) ---
 }
@@ -2177,8 +2171,8 @@ do_filter_o :: proc "c"(line1: C.int, line2: C.int, eap: rawptr, cmd: ^u8, do_in
 	linecount := line2 - line1 + 1
 	(^C.int)(uintptr(curwin) + W_CURSOR_OFF)^ = line1
 	(^C.int)(uintptr(curwin) + W_CURSOR_OFF + 4)^ = 0
-	changed_line_abv_curs_r()
-	invalidate_botline_win_r(curwin)
+	changed_line_abv_curs()
+	invalidate_botline_win(curwin)
 
 	// Temp files: 1. names 2. write lines 3. run filter 4. read output
 	// 5. delete originals 6. remove temps. Pipes skip the temp steps.
@@ -2296,7 +2290,7 @@ do_filter_o :: proc "c"(line1: C.int, line2: C.int, eap: rawptr, cmd: ^u8, do_in
 						(^C.int)(uintptr(curbuf) + B_OP_START)^ = line2 + 1
 						(^C.int)(uintptr(curbuf) + B_OP_END)^ =
 							(^C.int)(uintptr(curwin) + W_CURSOR_OFF)^
-						appended_lines_mark_r(line2, read_linecount)
+						appended_lines_mark(line2, read_linecount)
 					}
 
 					if do_in {
@@ -2321,7 +2315,7 @@ do_filter_o :: proc "c"(line1: C.int, line2: C.int, eap: rawptr, cmd: ^u8, do_in
 						// Cursor on first filtered line (":range!cmd").
 						// Adjust '[ and '] (set by buf_write()).
 						(^C.int)(uintptr(curwin) + W_CURSOR_OFF)^ = line1
-						del_lines_r(linecount, true)
+						del_lines(linecount, true)
 						if read_linecount == 0 {
 							// No output: clamp '[ and '] to a valid line.
 							op_lnum := min(line1,
@@ -2335,7 +2329,7 @@ do_filter_o :: proc "c"(line1: C.int, line2: C.int, eap: rawptr, cmd: ^u8, do_in
 							(^C.int)(uintptr(curbuf) + B_OP_END)^ -= linecount
 						}
 						write_lnum_adjust_r(-linecount)
-						foldUpdate_r(curwin,
+						foldUpdate(curwin,
 							(^C.int)(uintptr(curbuf) + B_OP_START)^,
 							(^C.int)(uintptr(curbuf) + B_OP_END)^)
 					} else {
@@ -2665,8 +2659,7 @@ E144_S :: "E144: Non-numeric argument to :z"
 foreign _ {
 	@(link_name = "get_indent_lnum")
 	get_indent_lnum_r :: proc "c"(lnum: C.int) -> C.int ---
-	@(link_name = "appended_lines")
-	appended_lines_r :: proc "c"(lnum: C.int, count: C.int) ---
+	// appended_lines now defined in change.odin — call directly.
 	// p_window_g already in window.odin — reuse.
 }
 
@@ -2791,19 +2784,19 @@ ex_append :: proc "c"(eap: rawptr) {
 		}
 
 		did_undo = true
-		ml_append_c(lnum, theline, 0, false)
+		ml_append(lnum, theline, 0, false)
 		if empty {
 			// No marks below the inserted lines.
-			appended_lines_r(lnum, 1)
+			appended_lines(lnum, 1)
 		} else {
-			appended_lines_mark_r(lnum, 1)
+			appended_lines_mark(lnum, 1)
 		}
 
 		xfree(transmute(rawptr)(theline))
 		lnum += 1
 
 		if empty {
-			ml_delete_r(2)
+			ml_delete(2)
 			empty = false
 		}
 	}
@@ -2865,13 +2858,13 @@ ex_change :: proc "c"(eap: rawptr) {
 		if ((^C.int)(uintptr(curbuf) + B_ML_FLAGS_OFF)^ & ML_EMPTY_O) != 0 {
 			break // nothing to delete
 		}
-		ml_delete_r(line1)
+		ml_delete(line1)
 		lnum -= 1
 	}
 
 	// Cursor must not be beyond end of file now.
 	check_cursor_lnum(curwin)
-	deleted_lines_mark_r(line1, line2 - lnum)
+	deleted_lines_mark(line1, line2 - lnum)
 
 	// ":append" on the line above the deleted lines.
 	(^C.int)(uintptr(eap) + EXARG_LINE2_OFF)^ = line1
@@ -3015,12 +3008,7 @@ E476_S :: "E476: Invalid command"
 E146_S :: "E146: Regular expressions can't be delimited by letters"
 
 foreign _ {
-	@(link_name = "ml_setmarked")
-	ml_setmarked_r :: proc "c"(lnum: C.int) ---
-	@(link_name = "ml_firstmarked")
-	ml_firstmarked_r :: proc "c"() -> C.int ---
-	@(link_name = "ml_clearmarked")
-	ml_clearmarked_r :: proc "c"() ---
+	// ml_setmarked/firstmarked/clearmarked now defined in memline.odin — call directly.
 	// do_sub_msg now defined below (Batch 38) — call directly.
 	// sub_nsubs/sub_nlines/msg_didout already bound (spell.odin C.longlong,
 	// Batch-31b bool) — reuse; C sees consistent zero values here.
@@ -3073,7 +3061,7 @@ global_exe :: proc "c"(cmd: cstring) {
 	old_lcount = (^C.int)(uintptr(curbuf) + B_ML_LINE_COUNT_OFF)^
 
 	for got_int == false && global_busy == 1 {
-		lnum = ml_firstmarked_r()
+		lnum = ml_firstmarked()
 		if lnum == 0 {
 			break
 		}
@@ -3089,7 +3077,7 @@ global_exe :: proc "c"(cmd: cstring) {
 	}
 
 	// Text unchanged on screen, but an earlier line changed: move cursor.
-	changed_line_abv_curs_r()
+	changed_line_abv_curs()
 
 	// No message written: allow overwriting the command with the
 	// change-count report.
@@ -3196,7 +3184,7 @@ ex_global :: proc "c"(eap: rawptr) {
 				break // re-compiling regprog failed
 			}
 			if (type == 'g' && match != 0) || (type == 'v' && match == 0) {
-				ml_setmarked_r(lnum)
+				ml_setmarked(lnum)
 				ndone += 1
 			}
 			line_breakcheck()
@@ -3221,7 +3209,7 @@ ex_global :: proc "c"(eap: rawptr) {
 		} else {
 			global_exe(cstring(cmd))
 		}
-		ml_clearmarked_r() // clear rest of the marks
+		ml_clearmarked() // clear rest of the marks
 	}
 	vim_regfree(regmatch.regprog)
 }
@@ -3354,7 +3342,7 @@ ex_align :: proc "c"(eap: rawptr) {
 		set_indent_r(new_indent, 0) // set indent
 		lnum += 1
 	}
-	changed_lines_r(curbuf, (^C.int)(uintptr(eap) + EXARG_LINE1_OFF)^, 0,
+	changed_lines(curbuf, (^C.int)(uintptr(eap) + EXARG_LINE1_OFF)^, 0,
 		(^C.int)(uintptr(eap) + EXARG_LINE2_OFF)^ + 1, 0, true)
 	(^Pos_T)(uintptr(curwin) + W_CURSOR_OFF)^ = save_curpos
 	beginline(BL_WHITE | BL_FIX)
@@ -3632,8 +3620,7 @@ EXARG_SKIP_OFF :: 72
 foreign _ {
 	@(link_name = "do_join")
 	do_join_r :: proc "c"(count: C.size_t, insert_space: bool, save_undo: bool, use_formatoptions: bool, setmark: bool) -> C.int ---
-	@(link_name = "ex_may_print")
-	ex_may_print_r :: proc "c"(eap: rawptr) ---
+	// ex_may_print now defined in ex_docmd.odin — call directly.
 }
 
 // Recognize ":%s/\n//" as a join (much more efficient) (C static, plain).
@@ -3671,7 +3658,7 @@ sub_joining_lines_o :: proc "c"(eap: rawptr, pat: ^NvimString, sub: cstring, cmd
 			sub_nsubs_sp = C.int(joined_lines_count) - 1
 			sub_nlines_sp = 1
 			do_sub_msg(false)
-			ex_may_print_r(eap)
+			ex_may_print(eap)
 		}
 
 		if save {
@@ -3750,8 +3737,7 @@ foreign _ {
 	vim_regsub_multi_r :: proc "c"(rmp: ^Regmmatch_T, lnum: C.int, src: ^u8, dst: ^u8, dstlen: C.int, flags: C.int) -> C.size_t ---
 	@(link_name = "regtilde")
 	regtilde_r :: proc "c"(source: ^u8, magic: C.int, preview: bool) -> ^u8 ---
-	@(link_name = "deleted_lines")
-	deleted_lines_r :: proc "c"(lnum: C.int, count: C.int) ---
+	// deleted_lines now defined in change.odin — call directly.
 	// no_u_sync already in undo.odin — reuse.
 	@(link_name = "ex_normal_busy")
 	ex_normal_busy_g: C.int
@@ -3763,12 +3749,8 @@ foreign _ {
 	getcmdline_prompt_r :: proc "c"(firstc: C.int, prompt: cstring, hl_id: C.int, xp_context: C.int, xp_arg: cstring, highlight_callback: Callback_T, one_key: bool, mouse_used: rawptr) -> ^u8 ---
 	@(link_name = "prompt_for_input")
 	prompt_for_input_r :: proc "c"(p: ^u8, hl_id: C.int, one_key: bool, mouse_used: rawptr) -> C.int ---
-	@(link_name = "scrollup_clamp")
-	scrollup_clamp_r :: proc "c"() ---
-	@(link_name = "scrolldown_clamp")
-	scrolldown_clamp_r :: proc "c"() ---
-	@(link_name = "do_check_cursorbind")
-	do_check_cursorbind_r :: proc "c"() ---
+	// scrollup/down_clamp now defined in move.odin — call directly.
+	// do_check_cursorbind now defined in move.odin — call directly.
 	@(link_name = "p_cwh")
 	p_cwh_g: C.longlong
 	@(link_name = "re_multiline")
@@ -3781,8 +3763,7 @@ foreign _ {
 	p_rdt_g: C.longlong
 	@(link_name = "bufhl_add_hl_pos_offset")
 	bufhl_add_hl_pos_offset_r :: proc "c"(buf: rawptr, ns_id: C.int, hl_id: C.int, pos1: Lpos_T, pos2: Lpos_T, col_offset: C.int) ---
-	@(link_name = "ml_append_buf")
-	ml_append_buf_r :: proc "c"(buf: rawptr, lnum: C.int, line: ^u8, len: C.int, noalloc: bool) -> C.int ---
+	// ml_append_buf now defined in memline.odin — call directly.
 }
 
 // Persistent :substitute flags + preview hl id (C statics, file-private).
@@ -3814,7 +3795,7 @@ show_sub_o :: proc "c"(eap: rawptr, old_cusr: Pos_T, preview_lines: ^PreviewLine
 	}
 
 	// Topline for the main window.
-	update_topline_r(curwin)
+	update_topline(curwin)
 
 	// "| lnum|..." column width; preview window only for inccommand=split
 	// with a multi-line range.
@@ -3899,9 +3880,9 @@ show_sub_o :: proc "c"(eap: rawptr, old_cusr: Pos_T, preview_lines: ^PreviewLine
 				libc.snprintf(str, C.size_t(line_size), cstring("|%*d| %s"),
 					col_width - 3, next_linenr, cstring(line))
 				if linenr_preview == 0 {
-					ml_replace_buf_r(cmdpreview_buf, 1, str, true, false)
+					ml_replace_buf(cmdpreview_buf, 1, str, true, false)
 				} else {
-					ml_append_buf_r(cmdpreview_buf, linenr_preview, str,
+					ml_append_buf(cmdpreview_buf, linenr_preview, str,
 						line_size, false)
 				}
 				linenr_preview += 1
@@ -4209,7 +4190,7 @@ sub_engine_o :: proc "c"(eap: rawptr, timeout: proftime_T, cmdpreview_ns: C.int,
 				if sub_firstline.data == nil {
 					sub_firstline = transmute(NvimString)(cbuf_to_string_r(
 						cstring(ml_get(sub_firstlnum)),
-						C.size_t(ml_get_len_r2(sub_firstlnum))))
+						C.size_t(ml_get_len(sub_firstlnum))))
 				}
 
 				// Save last-change line for final cursor (like Vi).
@@ -4263,7 +4244,7 @@ sub_engine_o :: proc "c"(eap: rawptr, timeout: proftime_T, cmdpreview_ns: C.int,
 						regmatch.startpos[0].col
 
 					if (^bool)(uintptr(curwin) + W_P_CRB_OFF)^ {
-						do_check_cursorbind_r()
+						do_check_cursorbind()
 					}
 
 					// 'cpoptions' "u": no undo sync while asking.
@@ -4338,7 +4319,7 @@ sub_engine_o :: proc "c"(eap: rawptr, timeout: proftime_T, cmdpreview_ns: C.int,
 								orig_line = transmute(NvimString)(
 									cbuf_to_string_r(
 										cstring(ml_get(lnum)),
-										C.size_t(ml_get_len_r2(lnum))))
+										C.size_t(ml_get_len(lnum))))
 								rest_ptr := (^u8)(uintptr(transmute(^u8)(sub_firstline.data)) + uintptr(copycol))
 								rest_size := sub_firstline.size - C.size_t(copycol)
 								new_data := concat_str_r(cstring(transmute(^u8)(new_start.data)), cstring(rest_ptr))
@@ -4348,7 +4329,7 @@ sub_engine_o :: proc "c"(eap: rawptr, timeout: proftime_T, cmdpreview_ns: C.int,
 								// substitutes may have shifted it).
 								len_change = C.int(new_line.size) - C.int(orig_line.size)
 								(^C.int)(uintptr(curwin) + W_CURSOR_OFF + 4)^ += len_change
-								ml_replace_c(lnum,
+								ml_replace(lnum,
 									transmute(^u8)(new_line.data), false)
 							}
 
@@ -4363,8 +4344,8 @@ sub_engine_o :: proc "c"(eap: rawptr, timeout: proftime_T, cmdpreview_ns: C.int,
 							}
 							highlight_match_g = true
 
-							update_topline_r(curwin)
-							validate_cursor_r(curwin)
+							update_topline(curwin)
+							validate_cursor(curwin)
 							redraw_later(curwin, UPD_SOME_VALID_S)
 							show_cursor_info_later(true)
 							update_screen()
@@ -4386,7 +4367,7 @@ sub_engine_o :: proc "c"(eap: rawptr, timeout: proftime_T, cmdpreview_ns: C.int,
 
 							// Restore the line.
 							if orig_line.data != nil {
-								ml_replace_c(lnum,
+								ml_replace(lnum,
 									transmute(^u8)(orig_line.data), false)
 							}
 						}
@@ -4413,9 +4394,9 @@ sub_engine_o :: proc "c"(eap: rawptr, timeout: proftime_T, cmdpreview_ns: C.int,
 							break
 						}
 						if typed == 5 {
-							scrollup_clamp_r()
+							scrollup_clamp()
 						} else if typed == 25 {
-							scrolldown_clamp_r()
+							scrolldown_clamp()
 						}
 					}
 					State = save_State
@@ -4470,7 +4451,7 @@ sub_engine_o :: proc "c"(eap: rawptr, timeout: proftime_T, cmdpreview_ns: C.int,
 						xfree(transmute(rawptr)(sub_firstline.data))
 						sub_firstline = transmute(NvimString)(cbuf_to_string_r(
 							cstring(ml_get(sub_firstlnum)),
-							C.size_t(ml_get_len_r2(sub_firstlnum))))
+							C.size_t(ml_get_len(sub_firstlnum))))
 						if sub_firstlnum <= line2_v {
 							do_again = 1
 						} else {
@@ -4525,7 +4506,7 @@ sub_engine_o :: proc "c"(eap: rawptr, timeout: proftime_T, cmdpreview_ns: C.int,
 							lastlnum := sub_firstlnum + nmatch - 1
 							tmp = transmute(NvimString)(cbuf_to_string_r(
 								cstring(ml_get(lastlnum)),
-								C.size_t(ml_get_len_r2(lastlnum))))
+								C.size_t(ml_get_len(lastlnum))))
 							nmatch_tl += nmatch - 1
 						}
 						copy_len := C.size_t(regmatch.startpos[0].col - copycol)
@@ -4580,7 +4561,7 @@ sub_engine_o :: proc "c"(eap: rawptr, timeout: proftime_T, cmdpreview_ns: C.int,
 							xfree(transmute(rawptr)(sub_firstline.data))
 							sub_firstline = transmute(NvimString)(
 								cbuf_to_string_r(cstring(ml_get(sub_firstlnum)),
-									C.size_t(ml_get_len_r2(sub_firstlnum))))
+									C.size_t(ml_get_len(sub_firstlnum))))
 							if sub_firstlnum <= line2_v {
 								do_again = 1
 							} else {
@@ -4627,12 +4608,12 @@ sub_engine_o :: proc "c"(eap: rawptr, timeout: proftime_T, cmdpreview_ns: C.int,
 									plen := C.int(uintptr(p1) -
 										uintptr(transmute(rawptr)(new_start.data)) + 1)
 									([^]u8)(p1)[0] = 0 // truncate at CR
-									ml_append_c(lnum - 1, transmute(^u8)(
+									ml_append(lnum - 1, transmute(^u8)(
 										new_start.data), plen, false)
 									mark_adjust(lnum + 1, MAXLNUM, 1, 0,
 										kExtmarkNOOP)
 									if subflags_f.do_ask {
-										appended_lines_r(lnum - 1, 1)
+										appended_lines(lnum - 1, 1)
 									} else {
 										if first_line == 0 {
 											first_line = lnum
@@ -4741,7 +4722,7 @@ sub_engine_o :: proc "c"(eap: rawptr, timeout: proftime_T, cmdpreview_ns: C.int,
 						if u_savesub(lnum) != OK {
 							break
 						}
-						ml_replace_c(lnum, transmute(^u8)(new_start.data), true)
+						ml_replace(lnum, transmute(^u8)(new_start.data), true)
 
 						// extmark_splice for each match on this line.
 						for match_idx: C.int = 0; match_idx < lm_len; match_idx += 1 {
@@ -4766,11 +4747,11 @@ sub_engine_o :: proc "c"(eap: rawptr, timeout: proftime_T, cmdpreview_ns: C.int,
 								break
 							}
 							for i_del: C.int = 0; i_del < nmatch_tl; i_del += 1 {
-								ml_delete_r(lnum)
+								ml_delete(lnum)
 							}
 							mark_adjust(lnum, lnum + nmatch_tl - 1, MAXLNUM, -nmatch_tl, kExtmarkNOOP)
 							if subflags_f.do_ask {
-								deleted_lines_r(lnum, nmatch_tl)
+								deleted_lines(lnum, nmatch_tl)
 							}
 							lnum -= 1
 							line2_v -= nmatch_tl // fewer lines now
@@ -4780,7 +4761,7 @@ sub_engine_o :: proc "c"(eap: rawptr, timeout: proftime_T, cmdpreview_ns: C.int,
 						// Asking: undo saved each time, set changed
 						// flag each time too.
 						if subflags_f.do_ask {
-							changed_bytes_r(lnum, 0)
+							changed_bytes(lnum, 0)
 						} else {
 							if first_line == 0 {
 								first_line = lnum
@@ -4856,7 +4837,7 @@ sub_engine_o :: proc "c"(eap: rawptr, timeout: proftime_T, cmdpreview_ns: C.int,
 		// last_line is post-change; subtract added lines for the
 		// pre-change line number (same as adding deleted lines).
 		i := (^C.int)(uintptr(curbuf) + B_ML_LINE_COUNT_OFF)^ - old_line_count
-		changed_lines_r(curbuf, first_line, 0, last_line - i, i, false)
+		changed_lines(curbuf, first_line, 0, last_line - i, i, false)
 
 		num_added := C.longlong(last_line - first_line)
 		num_removed := num_added - C.longlong(i)
@@ -4915,7 +4896,7 @@ sub_engine_o :: proc "c"(eap: rawptr, timeout: proftime_T, cmdpreview_ns: C.int,
 
 	if subflags_f.do_ask && hasAnyFolding(curwin) != 0 {
 		// Cursor position may require updating.
-		changed_window_setting_r(curwin)
+		changed_window_setting(curwin)
 	}
 
 	vim_regfree(regmatch.regprog)
@@ -5001,8 +4982,7 @@ foreign _ {
 	// p_dir already in option.odin as p_dir_opt — reuse.
 	@(link_name = "p_wa")
 	p_wa_g: C.int
-	@(link_name = "makeswapname")
-	makeswapname_r :: proc "c"(fname: cstring, ffname: cstring, buf: rawptr, dir_name: cstring) -> ^u8 ---
+	// makeswapname now defined in memline.odin — call directly.
 	@(link_name = "augroup_exists")
 	augroup_exists_r :: proc "c"(name: cstring) -> bool ---
 	@(link_name = "do_doautocmd")
@@ -5082,7 +5062,7 @@ check_overwrite :: proc "c"(eap: rawptr, buf: rawptr, fname: cstring, ffname: cs
 				p := p_dir_opt
 				copy_option_part(&p, dir, C.size_t(MAXPATHL), cstring(","))
 			}
-			swapname := makeswapname_r(fname, ffname, curbuf, cstring(dir))
+			swapname := makeswapname(transmute(^u8)(fname), transmute(^u8)(ffname), curbuf, dir)
 			xfree(transmute(rawptr)(dir))
 			if os_path_exists(cstring(swapname)) {
 				if p_confirm_g != 0 ||

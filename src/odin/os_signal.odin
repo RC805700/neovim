@@ -31,10 +31,7 @@ foreign _ {
 	@(link_name = "IObuff")
 	IObuff: [1025]u8
 
-	// autowrite_all now defined in ex_cmds2.odin — call directly.
-
-	@(link_name = "ml_sync_all")
-	ml_sync_all :: proc(check_file: c.int, check_char: c.int, do_fsync: bool) ---
+	// ml_sync_all now defined in memline.odin — call directly.
 }
 
 // VimVarIndex / event_T constants.

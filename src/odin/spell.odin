@@ -2604,8 +2604,7 @@ foreign _ {
 	sub_nlines_sp: C.int
 	@(link_name = "ml_replace")
 	ml_replace_sp :: proc "c" (lnum: C.int, line: ^u8, copy: bool) -> C.int ---
-	@(link_name = "inserted_bytes")
-	inserted_bytes_r :: proc "c" (lnum: C.int, col: C.int, oldlen: C.int, newlen: C.int) ---
+	// inserted_bytes now defined in change.odin — call directly.
 	// do_sub_msg now defined in ex_cmds.odin — call directly.
 }
 
@@ -2646,7 +2645,7 @@ ex_spellrepall :: proc "c"(eap: rawptr) {
 			libc.strcpy(([^]u8)(uintptr(p) + uintptr(win_cursor_r(curwin)^.col)), transmute(cstring)(repl_to))
 			libc.strcat(p, transmute(cstring)(^u8)(uintptr(line) + uintptr(win_cursor_r(curwin)^.col + C.int(repl_from_len))))
 			_ = ml_replace_sp(win_cursor_r(curwin)^.lnum, p, false)
-			inserted_bytes_r(win_cursor_r(curwin)^.lnum, win_cursor_r(curwin)^.col,
+			inserted_bytes(win_cursor_r(curwin)^.lnum, win_cursor_r(curwin)^.col,
 				C.int(repl_from_len), C.int(repl_to_len))
 
 			if win_cursor_r(curwin)^.lnum != prev_lnum {
@@ -3229,8 +3228,7 @@ spell_reload :: proc "c"() {
 }
 
 foreign _ {
-	@(link_name = "ml_open_file")
-	ml_open_file_sp :: proc "c" (buf: rawptr) ---
+	// ml_open_file now defined in memline.odin — call directly.
 }
 
 @(export)
@@ -3239,15 +3237,14 @@ open_spellbuf :: proc "c"() -> rawptr {
 
 	(^bool)(uintptr(buf) + 11171)^ = true // b_spell
 	(^C.int)(uintptr(buf) + 10672)^ = 1 // b_p_swf
-	ml_open_sp(buf)
-	ml_open_file_sp(buf)
+	ml_open(buf)
+	ml_open_file(buf)
 
 	return buf
 }
 
 foreign _ {
-	@(link_name = "ml_open")
-	ml_open_sp :: proc "c" (buf: rawptr) -> C.int ---
+	// ml_open now defined in memline.odin — call directly.
 }
 
 @(export)
@@ -3255,13 +3252,12 @@ close_spellbuf :: proc "c"(buf: rawptr) {
 	if buf == nil {
 		return
 	}
-	ml_close_sp(buf, true)
+	ml_close(buf, 1)
 	xfree(buf)
 }
 
 foreign _ {
-	@(link_name = "ml_close")
-	ml_close_sp :: proc "c" (buf: rawptr, del_file: bool) ---
+	// ml_close now defined in memline.odin — call directly.
 }
 
 // ── did_set_spell_option / compile_cap_prog ─────────────────────────────────
@@ -3567,7 +3563,7 @@ ex_spelldump :: proc "c"(eap: rawptr) {
 	spell_dump_compl(nil, 0, nil, forceit ? DUMPFLAG_COUNT : 0)
 
 	if buf_ml_line_count_r(curbuf) > 1 {
-		_ = ml_delete_r(buf_ml_line_count_r(curbuf))
+		_ = ml_delete(buf_ml_line_count_r(curbuf))
 	}
 	redraw_later(curwin, UPD_NOT_VALID_SP)
 }

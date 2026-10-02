@@ -66,6 +66,7 @@
 /// "col" is the column for the message; non-zero when in insert mode and
 /// 'showmode' is on.
 /// Careful: may trigger autocommands that reload the buffer.
+#pragma weak change_warning
 void change_warning(buf_T *buf, int col)
 {
   static const char *w_readonly = N_("W10: Warning: Changing a readonly file");
@@ -109,6 +110,7 @@ void change_warning(buf_T *buf, int col)
 /// mark the area of the display to be redrawn.
 ///
 /// Careful: may trigger autocommands that reload the buffer.
+#pragma weak changed
 void changed(buf_T *buf)
 {
   if (!buf->b_changed) {
@@ -148,6 +150,7 @@ void changed(buf_T *buf)
 
 /// Internal part of changed(), no user interaction.
 /// Also used for recovery.
+#pragma weak changed_internal
 void changed_internal(buf_T *buf)
 {
   bool was_changed = buf->b_changed;
@@ -224,6 +227,7 @@ static void changed_lines_invalidate_win(win_T *wp, linenr_T lnum, colnr_T col, 
 }
 
 /// Line changed_lines_invalidate_win(), but for all windows displaying a buffer.
+#pragma weak changed_lines_invalidate_buf
 void changed_lines_invalidate_buf(buf_T *buf, linenr_T lnum, colnr_T col, linenr_T lnume,
                                   linenr_T xtra)
 {
@@ -422,6 +426,7 @@ static void changed_common(buf_T *buf, linenr_T lnum, colnr_T col, linenr_T lnum
 /// - marks the buffer changed by calling changed()
 /// - invalidates cached values
 /// Careful: may trigger autocommands that reload the buffer.
+#pragma weak changed_bytes
 void changed_bytes(linenr_T lnum, colnr_T col)
 {
   changed_lines_redraw_buf(curbuf, lnum, lnum + 1, 0);
@@ -455,6 +460,7 @@ void changed_bytes(linenr_T lnum, colnr_T col)
 /// insert/delete bytes at column
 ///
 /// Like changed_bytes() but also adjust extmark for "new" bytes.
+#pragma weak inserted_bytes
 void inserted_bytes(linenr_T lnum, colnr_T start_col, int old_col, int new_col)
 {
   if (curbuf_splice_pending == 0) {
@@ -467,6 +473,7 @@ void inserted_bytes(linenr_T lnum, colnr_T start_col, int old_col, int new_col)
 /// Appended "count" lines below line "lnum" in the given buffer.
 /// Must be called AFTER the change and after mark_adjust().
 /// Takes care of marking the buffer to be redrawn and sets the changed flag.
+#pragma weak appended_lines_buf
 void appended_lines_buf(buf_T *buf, linenr_T lnum, linenr_T count)
 {
   changed_lines(buf, lnum + 1, 0, lnum + 1, count, true);
@@ -475,12 +482,14 @@ void appended_lines_buf(buf_T *buf, linenr_T lnum, linenr_T count)
 /// Appended "count" lines below line "lnum" in the current buffer.
 /// Must be called AFTER the change and after mark_adjust().
 /// Takes care of marking the buffer to be redrawn and sets the changed flag.
+#pragma weak appended_lines
 void appended_lines(linenr_T lnum, linenr_T count)
 {
   appended_lines_buf(curbuf, lnum, count);
 }
 
 /// Like appended_lines(), but adjust marks first.
+#pragma weak appended_lines_mark
 void appended_lines_mark(linenr_T lnum, int count)
 {
   mark_adjust(lnum + 1, (linenr_T)MAXLNUM, (linenr_T)count, 0, kExtmarkUndo);
@@ -490,6 +499,7 @@ void appended_lines_mark(linenr_T lnum, int count)
 /// Deleted "count" lines at line "lnum" in the given buffer.
 /// Must be called AFTER the change and after mark_adjust().
 /// Takes care of marking the buffer to be redrawn and sets the changed flag.
+#pragma weak deleted_lines_buf
 void deleted_lines_buf(buf_T *buf, linenr_T lnum, linenr_T count)
 {
   changed_lines(buf, lnum, 0, lnum + count, -count, true);
@@ -498,6 +508,7 @@ void deleted_lines_buf(buf_T *buf, linenr_T lnum, linenr_T count)
 /// Deleted "count" lines at line "lnum" in the current buffer.
 /// Must be called AFTER the change and after mark_adjust().
 /// Takes care of marking the buffer to be redrawn and sets the changed flag.
+#pragma weak deleted_lines
 void deleted_lines(linenr_T lnum, linenr_T count)
 {
   deleted_lines_buf(curbuf, lnum, count);
@@ -506,6 +517,7 @@ void deleted_lines(linenr_T lnum, linenr_T count)
 /// Like deleted_lines(), but adjust marks first.
 /// Make sure the cursor is on a valid line before calling, a GUI callback may
 /// be triggered to display the cursor.
+#pragma weak deleted_lines_mark
 void deleted_lines_mark(linenr_T lnum, int count)
 {
   bool made_empty = (count > 0) && curbuf->b_ml.ml_flags & ML_EMPTY;
@@ -524,6 +536,7 @@ void deleted_lines_mark(linenr_T lnum, int count)
 /// @param lnum first line with change
 /// @param lnume line below last changed line
 /// @param xtra number of extra lines (negative when deleting)
+#pragma weak changed_lines_redraw_buf
 void changed_lines_redraw_buf(buf_T *buf, linenr_T lnum, linenr_T lnume, linenr_T xtra)
 {
   // If lines have been deleted and there may be decorations in the buffer, ensure
@@ -571,6 +584,7 @@ void changed_lines_redraw_buf(buf_T *buf, linenr_T lnum, linenr_T lnume, linenr_
 /// @param do_buf_event  some callers like undo/redo call changed_lines() and
 /// then increment changedtick *again*. This flag allows these callers to send
 /// the nvim_buf_lines_event events after they're done modifying changedtick.
+#pragma weak changed_lines
 void changed_lines(buf_T *buf, linenr_T lnum, colnr_T col, linenr_T lnume, linenr_T xtra,
                    bool do_buf_event)
 {
@@ -606,6 +620,7 @@ void changed_lines(buf_T *buf, linenr_T lnum, colnr_T col, linenr_T lnume, linen
 /// When `ff` is true also reset 'fileformat'.
 /// When `always_inc_changedtick` is true b:changedtick is incremented even
 /// when the changed flag was off.
+#pragma weak unchanged
 void unchanged(buf_T *buf, bool ff, bool always_inc_changedtick)
 {
   if (buf->b_changed || (ff && file_ff_differs(buf, false))) {
@@ -629,6 +644,7 @@ void unchanged(buf_T *buf, bool ff, bool always_inc_changedtick)
 
 /// Save the current values of 'fileformat' and 'fileencoding', so that we know
 /// the file must be considered changed when the value is different.
+#pragma weak save_file_ff
 void save_file_ff(buf_T *buf)
 {
   buf->b_start_ffc = (unsigned char)(*buf->b_p_ff);
@@ -651,6 +667,7 @@ void save_file_ff(buf_T *buf)
 /// Also when 'endofline' was changed and 'fixeol' is not set.
 /// When "ignore_empty" is true don't consider a new, empty buffer to be
 /// changed.
+#pragma weak file_ff_differs
 bool file_ff_differs(buf_T *buf, bool ignore_empty)
   FUNC_ATTR_NONNULL_ALL FUNC_ATTR_WARN_UNUSED_RESULT
 {
@@ -682,6 +699,7 @@ bool file_ff_differs(buf_T *buf, bool ignore_empty)
 
 /// Insert string "p" at the cursor position.  Stops at a NUL byte.
 /// Handles Replace mode and multi-byte characters.
+#pragma weak ins_bytes
 void ins_bytes(char *p)
 {
   ins_bytes_len(p, strlen(p));
@@ -689,6 +707,7 @@ void ins_bytes(char *p)
 
 /// Insert string "p" with length "len" at the cursor position.
 /// Handles Replace mode and multi-byte characters.
+#pragma weak ins_bytes_len
 void ins_bytes_len(char *p, size_t len)
 {
   size_t n;
@@ -704,6 +723,7 @@ void ins_bytes_len(char *p, size_t len)
 /// Caller must have prepared for undo.
 /// For multi-byte characters we get the whole character, the caller must
 /// convert bytes to a character.
+#pragma weak ins_char
 void ins_char(int c)
 {
   char buf[MB_MAXCHAR + 1];
@@ -717,6 +737,7 @@ void ins_char(int c)
   ins_char_bytes(buf, n);
 }
 
+#pragma weak ins_char_bytes
 void ins_char_bytes(char *buf, size_t charlen)
 {
   // Break tabs if needed.
@@ -821,6 +842,7 @@ void ins_char_bytes(char *buf, size_t charlen)
 /// Insert a string at the cursor position.
 /// Note: Does NOT handle Replace mode.
 /// Caller must have prepared for undo.
+#pragma weak ins_str
 void ins_str(char *s, size_t slen)
 {
   linenr_T lnum = curwin->w_cursor.lnum;
@@ -851,6 +873,7 @@ void ins_str(char *s, size_t slen)
 // Caller must have prepared for undo.
 //
 // return FAIL for failure, OK otherwise
+#pragma weak del_char
 int del_char(bool fixpos)
 {
   // Make sure the cursor is at the start of a character.
@@ -862,6 +885,7 @@ int del_char(bool fixpos)
 }
 
 /// Like del_bytes(), but delete characters instead of bytes.
+#pragma weak del_chars
 int del_chars(int count, int fixpos)
 {
   int bytes = 0;
@@ -883,6 +907,7 @@ int del_chars(int count, int fixpos)
 /// @param  use_delcombine  'delcombine' option applies
 ///
 /// @return FAIL for failure, OK otherwise
+#pragma weak del_bytes
 int del_bytes(colnr_T count, bool fixpos_arg, bool use_delcombine)
 {
   linenr_T lnum = curwin->w_cursor.lnum;
@@ -986,6 +1011,7 @@ int del_bytes(colnr_T count, bool fixpos_arg, bool use_delcombine)
 /// @param dir  FORWARD or BACKWARD
 ///
 /// @return true on success, false on failure
+#pragma weak open_line
 bool open_line(int dir, int flags, int second_line_indent, bool *did_do_comment)
 {
   char *next_line = NULL;         // copy of the next line
@@ -1859,6 +1885,7 @@ theend:
 /// Delete from cursor to end of line.
 /// Caller must have prepared for undo.
 /// If "fixpos" is true fix the cursor position when done.
+#pragma weak truncate_line
 void truncate_line(int fixpos)
 {
   linenr_T lnum = curwin->w_cursor.lnum;
@@ -1880,6 +1907,7 @@ void truncate_line(int fixpos)
 
 /// Delete "nlines" lines at the cursor.
 /// Saves the lines for undo first if "undo" is true.
+#pragma weak del_lines
 void del_lines(linenr_T nlines, bool undo)
 {
   int n;
@@ -1923,6 +1951,7 @@ void del_lines(linenr_T nlines, bool undo)
 /// When "flags" is not NULL, it is set to point to the flags of the recognized comment leader.
 /// "backward" must be true for the "O" command.
 /// If "include_space" is set, include trailing whitespace while calculating the length.
+#pragma weak get_leader_len
 int get_leader_len(char *line, char **flags, bool backward, bool include_space)
 {
   int j;
@@ -2063,6 +2092,7 @@ int get_leader_len(char *line, char **flags, bool backward, bool include_space)
 ///
 /// When "flags" is not null, it is set to point to the flags describing the
 /// recognized comment leader.
+#pragma weak get_last_leader_offset
 int get_last_leader_offset(char *line, char **flags)
 {
   int result = -1;

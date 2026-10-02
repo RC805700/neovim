@@ -594,7 +594,7 @@ extmark_adjust :: proc "c" (buf: rawptr, line1: C.int, line2: C.int, amount: C.i
 	if curbuf_splice_pending_g != 0 {
 		return
 	}
-	start_byte := ml_find_line_or_offset_r(buf, line1, nil, true)
+	start_byte := ml_find_line_or_offset(buf, line1, nil, true)
 	old_byte: i64 = 0
 	new_byte: i64 = 0
 	old_row: C.int
@@ -611,7 +611,7 @@ extmark_adjust :: proc "c" (buf: rawptr, line1: C.int, line2: C.int, amount: C.i
 		new_row = amount
 	}
 	if new_row > 0 {
-		new_byte = i64(ml_find_line_or_offset_r(buf, line1 + new_row, nil, true) - start_byte)
+		new_byte = i64(ml_find_line_or_offset(buf, line1 + new_row, nil, true) - start_byte)
 	}
 	extmark_splice_impl(buf, line1 - 1, 0, i64(start_byte), old_row, 0, old_byte, new_row, 0, new_byte, op)
 }
@@ -620,7 +620,7 @@ extmark_adjust :: proc "c" (buf: rawptr, line1: C.int, line2: C.int, amount: C.i
 @(export)
 extmark_splice :: proc "c" (buf: rawptr, start_row: C.int, start_col: C.int, old_row: C.int, old_col: C.int, old_byte: i64, new_row: C.int, new_col: C.int, new_byte: i64, undo: C.int) {
 	context = runtime.default_context()
-	offset := ml_find_line_or_offset_r(buf, start_row + 1, nil, true)
+	offset := ml_find_line_or_offset(buf, start_row + 1, nil, true)
 	if offset < 0 && (^rawptr)(uintptr(buf) + uintptr(B_ML_CHUNKSIZE_OFF))^ == nil {
 		offset = 0
 	}

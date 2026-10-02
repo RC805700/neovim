@@ -85,6 +85,7 @@ static const char e_block_was_not_locked[] = N_("E293: Block was not locked");
 ///
 /// @return - The open memory file, on success.
 ///         - NULL, on failure (e.g. file does not exist).
+#pragma weak mf_open
 memfile_T *mf_open(char *fname, int flags)
 {
   memfile_T *mfp = xmalloc(sizeof(memfile_T));
@@ -154,6 +155,7 @@ memfile_T *mf_open(char *fname, int flags)
 ///
 /// @return OK    On success.
 ///         FAIL  If file could not be opened.
+#pragma weak mf_open_file
 int mf_open_file(memfile_T *mfp, char *fname)
 {
   if (mf_do_open(mfp, fname, O_RDWR | O_CREAT | O_EXCL)) {
@@ -167,6 +169,7 @@ int mf_open_file(memfile_T *mfp, char *fname)
 /// Close a memory file and optionally delete the associated file.
 ///
 /// @param del_file  Whether to delete associated file.
+#pragma weak mf_close
 void mf_close(memfile_T *mfp, bool del_file)
 {
   if (mfp == NULL) {                    // safety check
@@ -196,6 +199,7 @@ void mf_close(memfile_T *mfp, bool del_file)
 /// Close the swap file for a memfile. Used when 'swapfile' is reset.
 ///
 /// @param getlines  Whether to get all lines into memory.
+#pragma weak mf_close_file
 void mf_close_file(buf_T *buf, bool getlines)
 {
   memfile_T *mfp = buf->b_ml.ml_mfp;
@@ -223,6 +227,7 @@ void mf_close_file(buf_T *buf, bool getlines)
 
 /// Set new size for a memfile. Used when block 0 of a swapfile has been read
 /// and the size it indicates differs from what was guessed.
+#pragma weak mf_new_page_size
 void mf_new_page_size(memfile_T *mfp, unsigned new_size)
 {
   mfp->mf_page_size = new_size;
@@ -232,6 +237,7 @@ void mf_new_page_size(memfile_T *mfp, unsigned new_size)
 ///
 /// @param negative    Whether a negative block number is desired (data block).
 /// @param page_count  Desired number of pages.
+#pragma weak mf_new
 bhdr_T *mf_new(memfile_T *mfp, bool negative, unsigned page_count)
 {
   bhdr_T *hp = NULL;
@@ -281,6 +287,7 @@ bhdr_T *mf_new(memfile_T *mfp, bool negative, unsigned page_count)
 // Get existing block "nr" with "page_count" pages.
 //
 // Caller should first check a negative nr with mf_trans_del().
+#pragma weak mf_get
 bhdr_T *mf_get(memfile_T *mfp, blocknr_T nr, unsigned page_count)
 {
   // check block number exists
@@ -325,6 +332,7 @@ bhdr_T *mf_get(memfile_T *mfp, blocknr_T nr, unsigned page_count)
 ///
 /// @param dirty   Whether block must be written to file later.
 /// @param infile  Whether block should be in file (needed for recovery).
+#pragma weak mf_put
 void mf_put(memfile_T *mfp, bhdr_T *hp, bool dirty, bool infile)
 {
   unsigned flags = hp->bh_flags;
@@ -346,6 +354,7 @@ void mf_put(memfile_T *mfp, bhdr_T *hp, bool dirty, bool infile)
 }
 
 /// Signal block as no longer used (may put it in the free list).
+#pragma weak mf_free
 void mf_free(memfile_T *mfp, bhdr_T *hp)
 {
   xfree(hp->bh_data);           // free data
@@ -372,6 +381,7 @@ void mf_free(memfile_T *mfp, bhdr_T *hp)
 ///               - No file (nothing to do).
 ///               - Write error (probably full disk).
 ///         OK    Otherwise.
+#pragma weak mf_sync
 int mf_sync(memfile_T *mfp, int flags)
 {
   int got_int_save = got_int;
@@ -438,6 +448,7 @@ int mf_sync(memfile_T *mfp, int flags)
 
 /// Set dirty flag for all blocks in memory file with a positive block number.
 /// These are blocks that need to be written to a newly created swapfile.
+#pragma weak mf_set_dirty
 void mf_set_dirty(memfile_T *mfp)
 {
   bhdr_T *hp;
@@ -454,6 +465,7 @@ void mf_set_dirty(memfile_T *mfp)
 /// Used in case of out of memory
 ///
 /// @return  Whether any memory was released.
+#pragma weak mf_release_all
 bool mf_release_all(void)
 {
   bool retval = false;
@@ -694,6 +706,7 @@ static int mf_trans_add(memfile_T *mfp, bhdr_T *hp)
 ///
 /// @return  The positive new number  When found.
 ///          The old number           When not found.
+#pragma weak mf_trans_del
 blocknr_T mf_trans_del(memfile_T *mfp, blocknr_T old_nr)
 {
   blocknr_T *num = map_ref(int64_t, int64_t)(&mfp->mf_trans, old_nr, NULL);
@@ -711,6 +724,7 @@ blocknr_T mf_trans_del(memfile_T *mfp, blocknr_T old_nr)
 }
 
 /// Frees mf_fname and mf_ffname.
+#pragma weak mf_free_fnames
 void mf_free_fnames(memfile_T *mfp)
 {
   XFREE_CLEAR(mfp->mf_fname);
@@ -722,6 +736,7 @@ void mf_free_fnames(memfile_T *mfp)
 ///
 /// Only called when creating or renaming the swapfile. Either way it's a new
 /// name so we must work out the full path name.
+#pragma weak mf_set_fnames
 void mf_set_fnames(memfile_T *mfp, char *fname)
 {
   mfp->mf_fname = fname;
@@ -731,6 +746,7 @@ void mf_set_fnames(memfile_T *mfp, char *fname)
 /// Make name of memfile's swapfile a full path.
 ///
 /// Used before doing a :cd
+#pragma weak mf_fullname
 void mf_fullname(memfile_T *mfp)
 {
   if (mfp == NULL || mfp->mf_fname == NULL || mfp->mf_ffname == NULL) {
@@ -743,6 +759,7 @@ void mf_fullname(memfile_T *mfp)
 }
 
 /// Return true if there are any translations pending for memfile.
+#pragma weak mf_need_trans
 bool mf_need_trans(memfile_T *mfp)
 {
   return mfp->mf_fname != NULL && mfp->mf_neg_count > 0;

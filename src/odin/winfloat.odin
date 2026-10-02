@@ -293,7 +293,7 @@ win_config_float :: proc "c" (wp: rawptr, fconfig_in: WinConfig_Opaque) {
 				pos.lnum = lc
 				pos.col = (^C.int)(uintptr(wp) + W_CONFIG_OFF + 8)^
 				trow, tcol, tcolc, tcole: C.int
-				textpos2screenpos_r(parent, &pos, &trow, &tcol, &tcolc, &tcole, true)
+				textpos2screenpos(parent, &pos, &trow, &tcol, &tcolc, &tcole, true)
 				row += trow - 1
 				col += tcol - 1
 			}

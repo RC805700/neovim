@@ -56,10 +56,10 @@ conceal_check_cursor_line :: proc "c"() {
 
 	// Concealed line visibility toggled.
 	if decor_conceal_line_r(curwin, (^C.int)(uintptr(curwin) + W_CURSOR_OFF)^ - 1, true) {
-		changed_window_setting_r(curwin)
+		changed_window_setting(curwin)
 	}
 	// Recompute cursor column (e.g. starting Visual without concealing).
-	curs_columns_r(curwin, 1)
+	curs_columns(curwin, 1)
 }
 
 // File-private: conceal visibility cache (drawscreen.c:137).
@@ -103,7 +103,7 @@ setcursor :: proc "c"() {
 @(export)
 setcursor_mayforce :: proc "c"(wp: rawptr, force: bool) {
 	if force || redrawing() {
-		validate_cursor_r(wp)
+		validate_cursor(wp)
 
 		row := (^C.int)(uintptr(wp) + W_WROW_OFF)^
 		col := (^C.int)(uintptr(wp) + W_WCOL_OFF)^
@@ -708,7 +708,7 @@ show_cursor_info_later :: proc "c"(force: bool) {
 	}
 
 	// Only draw when something changed.
-	validate_virtcol_r(curwin)
+	validate_virtcol(curwin)
 	if force ||
 		(^C.int)(uintptr(curwin) + W_CURSOR_OFF)^ != (^C.int)(uintptr(curwin) + W_STL_CURSOR_OFF)^ ||
 		(^C.int)(uintptr(curwin) + W_CURSOR_OFF + 4)^ != (^C.int)(uintptr(curwin) + W_STL_CURSOR_OFF + 4)^ ||
@@ -1121,8 +1121,8 @@ screen_resize :: proc "c"(width_in: C.int, height_in: C.int) {
 	if starting != NO_SCREEN_O {
 		maketitle()
 
-		changed_line_abv_curs_r()
-		invalidate_botline_win_r(curwin)
+		changed_line_abv_curs()
+		invalidate_botline_win(curwin)
 
 		// Redraw when needed:
 		// - more prompt / external command: position cursor only.
@@ -1152,7 +1152,7 @@ screen_resize :: proc "c"(width_in: C.int, height_in: C.int) {
 					cmdline_pum_display_r(false)
 				}
 			} else {
-				update_topline_r(curwin)
+				update_topline(curwin)
 				if pum_drawn_r() {
 					// ins_compl_show_pum wants redraw first: suppress the
 					// nested update_screen() pum redraw at the old position.
@@ -1221,8 +1221,7 @@ foreign _ {
 	decor_providers_invoke_buf_r :: proc "c"(buf: rawptr) ---
 	@(link_name = "decor_providers_invoke_end")
 	decor_providers_invoke_end_r :: proc "c"() ---
-	@(link_name = "update_curswant")
-	update_curswant_r :: proc "c"() ---
+	// update_curswant now defined in move.odin — call directly.
 	@(link_name = "update_window_hl")
 	update_window_hl_r :: proc "c"(wp: rawptr, invalid: bool) ---
 	@(link_name = "syn_stack_apply_changes")
@@ -1612,7 +1611,7 @@ update_screen :: proc "c"() -> C.int {
 
 	if (^C.int)(uintptr(curwin) + W_REDR_TYPE_OFF)^ == UPD_INVERTED_F {
 		// Visual end needs w_curswant updated.
-		update_curswant_r()
+		update_curswant()
 	}
 
 	// Redraw the tab pages line if needed.
@@ -1825,8 +1824,7 @@ foreign _ {
 	syntax_check_changed_r :: proc "c"(lnum: C.int) -> bool ---
 	// plines_m_win now defined in plines.odin — call directly.
 	// win_may_fill now defined in plines.odin — call directly.
-	@(link_name = "plines_correct_topline")
-	plines_correct_topline_r :: proc "c"(wp: rawptr, lnum: C.int, nextp: ^C.int, limit_winheight: bool, foldedp: ^bool) -> C.int ---
+	// plines_correct_topline now defined in move.odin — call directly.
 	// getvcols now defined in plines.odin — call directly.
 }
 
@@ -1990,7 +1988,7 @@ win_update :: proc "c"(wp: rawptr) {
 	win := tp == curtab ? firstwin : (^rawptr)(uintptr(tp) + TP_FIRSTWIN_OFF)^
 	for win != nil {
 		if (^rawptr)(uintptr(win) + W_BUFFER_OFF)^ == buf && win_redraw_signcols_o(win) {
-			changed_line_abv_curs_win_r(win)
+			changed_line_abv_curs_win(win)
 			redraw_later(win, UPD_NOT_VALID)
 		}
 		win = (^rawptr)(uintptr(win) + W_NEXT_OFF)^
@@ -1999,17 +1997,17 @@ win_update :: proc "c"(wp: rawptr) {
 		(^C.int)(uintptr(buf) + B_SIGNCOLS_MAX_OFF)^
 
 	// w_virtcol validation may change the redraw type.
-	validate_virtcol_r(wp)
+	validate_virtcol(wp)
 	type_ = (^C.int)(uintptr(wp) + W_REDR_TYPE_OFF)^
 
 	init_search_hl(wp, transmute(rawptr)(&screen_search_hl_u8))
 
 	// Clamp skipcol to a valid tab stop.
 	if (^C.int)(uintptr(wp) + W_SKIPCOL_OFF)^ > 0 &&
-		(^C.int)(uintptr(wp) + W_VIEW_WIDTH_OFF)^ > win_col_off_r(wp) {
+		(^C.int)(uintptr(wp) + W_VIEW_WIDTH_OFF)^ > win_col_off(wp) {
 		w: C.int = 0
-		width1 := (^C.int)(uintptr(wp) + W_VIEW_WIDTH_OFF)^ - win_col_off_r(wp)
-		width2 := width1 + win_col_off2_r(wp)
+		width1 := (^C.int)(uintptr(wp) + W_VIEW_WIDTH_OFF)^ - win_col_off(wp)
+		width2 := width1 + win_col_off2(wp)
 		add := width1
 		for w < (^C.int)(uintptr(wp) + W_SKIPCOL_OFF)^ {
 			if w > 0 {
@@ -2035,7 +2033,7 @@ win_update :: proc "c"(wp: rawptr) {
 	// Force redraw when number-column width changes.
 	if (^C.int)(uintptr(wp) + W_NRWIDTH_VAL_OFF)^ != nrwidth_new {
 		type_ = UPD_NOT_VALID
-		changed_line_abv_curs_win_r(wp)
+		changed_line_abv_curs_win(wp)
 		(^C.int)(uintptr(wp) + W_NRWIDTH_VAL_OFF)^ = nrwidth_new
 	} else {
 		// First line needing display for changes; first line after.
@@ -2307,7 +2305,7 @@ win_update :: proc "c"(wp: rawptr) {
 
 					// Fix first entry for top filler when not updated below.
 					if win_may_fill(wp) && bot_start > 0 {
-						lines[0].wl_size = u16(plines_correct_topline_r(wp,
+						lines[0].wl_size = u16(plines_correct_topline(wp,
 							(^C.int)(uintptr(wp) + W_TOPLINE_OFF)^, nil, true, nil))
 					}
 				}
@@ -2662,7 +2660,7 @@ win_update :: proc "c"(wp: rawptr) {
 							new_rows += old_cline_height
 							j += 1
 						} else {
-							n := plines_correct_topline_r(wp, l, &l, true, nil)
+							n := plines_correct_topline(wp, l, &l, true, nil)
 							new_rows += n
 							if n > 0 { // concealed lines don't count
 								j += 1
@@ -2934,7 +2932,7 @@ win_update :: proc "c"(wp: rawptr) {
 			grid_line_fill(3, (^C.int)(uintptr(wp) + W_VIEW_WIDTH_OFF)^,
 				32, at_attr) // schar_from_ascii(' ')
 			grid_line_flush()
-			set_empty_rows_r(wp, srow)
+			set_empty_rows(wp, srow)
 			(^C.int)(uintptr(wp) + W_BOTLINE_OFF)^ = lnum
 		} else if (dy_flags_g & K_OPT_DY_LASTLINE_O) != 0 { // 'display' "lastline"
 			// Last line unfinished: "@@@" at the end ( "@@@@" if it would
@@ -2948,13 +2946,13 @@ win_update :: proc "c"(wp: rawptr) {
 				(^u32)(uintptr(wp) + W_P_FCS_CHARS_OFF + FCS_LASTLINE_O)^,
 				at_attr)
 			grid_line_flush()
-			set_empty_rows_r(wp, srow)
+			set_empty_rows(wp, srow)
 			(^C.int)(uintptr(wp) + W_BOTLINE_OFF)^ = lnum
 		} else {
 			win_draw_end(wp,
 				(^u32)(uintptr(wp) + W_P_FCS_CHARS_OFF + FCS_LASTLINE_O)^,
 				true, srow, (^C.int)(uintptr(wp) + W_VIEW_HEIGHT_OFF)^, HLF_AT_O)
-			set_empty_rows_r(wp, srow)
+			set_empty_rows(wp, srow)
 			(^C.int)(uintptr(wp) + W_BOTLINE_OFF)^ = lnum
 		}
 	} else {
@@ -3003,7 +3001,7 @@ win_update :: proc "c"(wp: rawptr) {
 			(^u32)(uintptr(wp) + W_P_FCS_CHARS_OFF + FCS_EOB_O)^,
 			false, max(lastline, row),
 			(^C.int)(uintptr(wp) + W_VIEW_HEIGHT_OFF)^, HLF_EOB_O)
-		set_empty_rows_r(wp, row)
+		set_empty_rows(wp, row)
 	}
 
 	if (^C.int)(uintptr(wp) + W_REDR_TYPE_OFF)^ >= UPD_REDRAW_TOP_O {
@@ -3037,13 +3035,13 @@ win_update :: proc "c"(wp: rawptr) {
 			!recursive_f {
 			recursive_f = true
 			(^C.int)(uintptr(curwin) + W_VALID_OFF)^ &= ~C.int(VALID_TOPLINE_O)
-			update_topline_r(curwin) // may invalidate w_botline again
+			update_topline(curwin) // may invalidate w_botline again
 			// New redraw from updated topline or reset skipcol.
 			if must_redraw != 0 {
 				// Don't update for buffer changes again.
 				mod_set := (^bool)(uintptr(curbuf) + B_MOD_SET_OFF)^
 				(^bool)(uintptr(curbuf) + B_MOD_SET_OFF)^ = false
-				curs_columns_r(curwin, 1)
+				curs_columns(curwin, 1)
 				win_update(curwin)
 				must_redraw = 0
 				(^bool)(uintptr(curbuf) + B_MOD_SET_OFF)^ = mod_set

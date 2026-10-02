@@ -159,8 +159,7 @@ foreign _ {
 // ── Foreign procs ────────────────────────────────────────────────────────────
 
 foreign _ {
-	@(link_name = "changed_window_setting")
-	changed_window_setting_r :: proc "c" (wp: rawptr) ---
+	// changed_window_setting now defined in move.odin — call directly.
 	@(link_name = "diff_lnum_win")
 	diff_lnum_win_r :: proc "c" (lnum: C.int, wp: rawptr) -> C.int ---
 	@(link_name = "diff_infold")
@@ -185,8 +184,7 @@ foreign _ {
 	@(link_name = "skip_comment")
 	skip_comment_r :: proc "c" (line: ^u8, process: bool, include_space: bool, is_comment: ^bool) -> ^u8 ---
 	// linewhite now defined in search.odin — reuse directly.
-	@(link_name = "ml_replace_buf")
-	ml_replace_buf_r :: proc "c" (buf: rawptr, lnum: C.int, line: ^u8, copy: bool, noalloc: bool) -> C.int ---
+	// ml_replace_buf now defined in memline.odin — call directly.
 	// xmemcpyz reused from os_env.odin's _xmemcpyz
 	// line_breakcheck reused from input.odin's line_breakcheck
 	@(link_name = "mb_adjust_cursor")
@@ -525,7 +523,7 @@ newFoldLevelWin :: proc "c" (wp: rawptr) {
 		}
 		w_set_bool(wp, W_FOLD_MANUAL, false)
 	}
-	changed_window_setting_r(wp)
+	changed_window_setting(wp)
 }
 
 /// Apply 'foldclose' to all folds that don't contain the cursor.
@@ -537,7 +535,7 @@ foldCheckClose :: proc "c" () {
 
 	checkupdate(curwin)
 	if checkCloseRec(w_ga(curwin, W_FOLDS), win_cursor_r(curwin).lnum, C.int(w_i64(curwin, W_P_FDL))) {
-		changed_window_setting_r(curwin)
+		changed_window_setting(curwin)
 	}
 }
 
@@ -691,7 +689,7 @@ foldCreate :: proc "c" (wp: rawptr, start_arg: Pos_T, end_arg: Pos_T) {
 		fp_ins.fd_flags = FD_CLOSED
 		fp_ins.fd_small = .kNone
 
-		changed_window_setting_r(wp)
+		changed_window_setting(wp)
 	}
 }
 
@@ -753,7 +751,7 @@ deleteFold :: proc "c" (wp: rawptr, start: C.int, end: C.int, recursive: C.int, 
 			}
 			did_one = true
 
-			changed_window_setting_r(wp)
+			changed_window_setting(wp)
 		}
 	}
 	if !did_one {
@@ -767,7 +765,7 @@ deleteFold :: proc "c" (wp: rawptr, start: C.int, end: C.int, recursive: C.int, 
 
 	if last_lnum > 0 {
 		buf := w_ptr_at(wp, W_BUFFER)
-		changed_lines_r(buf, first_lnum, 0, last_lnum, 0, false)
+		changed_lines(buf, first_lnum, 0, last_lnum, 0, false)
 
 		num_changed := i64(last_lnum - first_lnum)
 		buf_updates_send_changes(buf, first_lnum, num_changed, num_changed)
@@ -999,7 +997,7 @@ foldAdjustVisual :: proc "c" () {
 		return
 	}
 
-	endp.col = ml_get_len_r2(endp.lnum)
+	endp.col = ml_get_len(endp.lnum)
 	if endp.col > 0 && p_sel^ == 'o' {
 		endp.col -= 1
 	}
@@ -1206,7 +1204,7 @@ setManualFoldWin :: proc "c" (wp: rawptr, lnum_arg: C.int, opening: bool, recurs
 		}
 		w_set_bool(wp, W_FOLD_MANUAL, true)
 		if (done & DONE_ACTION) != 0 {
-			changed_window_setting_r(wp)
+			changed_window_setting(wp)
 		}
 		done |= DONE_FOLD
 	} else if donep == nil && wp == curwin {
@@ -1457,7 +1455,7 @@ foldCreateMarkers :: proc "c" (wp: rawptr, start: Pos_T, end: Pos_T) {
 	foldAddMarker(buf, start, w_str(wp, W_P_FMR), foldstartmarkerlen)
 	foldAddMarker(buf, end, foldendmarker, foldendmarkerlen)
 
-	changed_lines_r(buf, start.lnum, 0, end.lnum, 0, false)
+	changed_lines(buf, start.lnum, 0, end.lnum, 0, false)
 
 	num_changed := i64(1 + end.lnum - start.lnum)
 	buf_updates_send_changes(buf, start.lnum, num_changed, num_changed)
@@ -1494,7 +1492,7 @@ foldAddMarker :: proc "c" (buf: rawptr, pos: Pos_T, marker: ^u8, markerlen: C.si
 			transmute(rawptr)(tail), libc.strlen(transmute(cstring)(tail)) + 1)
 		added = C.size_t(markerlen) + libc.strlen(transmute(cstring)(cms)) - 2
 	}
-	ml_replace_buf_r(buf, lnum, newline, false, false)
+	ml_replace_buf(buf, lnum, newline, false, false)
 	if added != 0 {
 		extmark_splice_cols(buf, lnum - 1, C.int(line_len), 0, C.int(added), kExtmarkUndo)
 	}
@@ -1549,7 +1547,7 @@ foldDelMarker :: proc "c" (buf: rawptr, lnum: C.int, marker: ^u8, markerlen: C.s
 			libc.memcpy(newline, line, C.size_t(uintptr(p) - uintptr(line)))
 			libc.memcpy((^u8)(uintptr(newline) + (uintptr(p) - uintptr(line))), transmute(rawptr)((^u8)(uintptr(p)+uintptr(length))),
 				libc.strlen(transmute(cstring)((^u8)(uintptr(p)+uintptr(length)))) + 1)
-			ml_replace_buf_r(buf, lnum, newline, false, false)
+			ml_replace_buf(buf, lnum, newline, false, false)
 			extmark_splice_cols(buf, lnum - 1, C.int(uintptr(p) - uintptr(line)),
 				C.int(length), 0, kExtmarkUndo)
 		}
@@ -1941,7 +1939,7 @@ foldUpdateIEMS :: proc "c" (wp: rawptr, top_arg: C.int, bot_arg: C.int) {
 	foldRemove(wp, w_ga(wp, W_FOLDS), start, end)
 
 	if fold_changed && w_bool(wp, W_P_FEN) {
-		changed_window_setting_r(wp)
+		changed_window_setting(wp)
 	}
 
 	if end != bot {

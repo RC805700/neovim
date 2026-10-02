@@ -29,8 +29,7 @@ foreign _ {
 	@(link_name = "buf_collect_lines")
 	buf_collect_lines_e :: proc "c" (buf: rawptr, n: C.size_t, start: C.int, start_idx: C.int, replace_nl: bool, l: rawptr, lstate: rawptr, arena: rawptr) ---
 	// arena_array_e lives in cursor_shape.odin — reuse directly.
-	@(link_name = "ml_flush_deleted_bytes")
-	ml_flush_deleted_bytes_e :: proc "c" (buf: rawptr, codepoints: ^C.size_t, codeunits: ^C.size_t) -> C.size_t ---
+	// ml_flush_deleted_bytes is defined in memline.odin — call directly.
 	// cmdpreview_g lives in optionstr.odin — reuse directly.
 }
 
@@ -304,7 +303,7 @@ buf_updates_send_changes :: proc "c" (buf: rawptr, firstline: C.int, num_added: 
 	context = runtime.default_context()
 	codepoints: C.size_t = 0
 	codeunits: C.size_t = 0
-	deleted_bytes := ml_flush_deleted_bytes_e(buf, &codepoints, &codeunits)
+	deleted_bytes := ml_flush_deleted_bytes(buf, &codepoints, &codeunits)
 	if !buf_updates_active(buf) {
 		return
 	}

@@ -74,8 +74,7 @@ foreign _ {
 	char_avail_r :: proc "c" () -> bool ---
 	// line_breakcheck/fast_breakcheck are Odin exports in input.odin — call directly.
 
-	@(link_name = "inc")
-	incl_pos :: proc "c" (lp: ^Pos_T) -> C.int ---
+	// inc now defined in memline.odin — call directly.
 	// inc_cursor/dec_cursor — PORTED (cursor.odin).
 
 	@(link_name = "give_warning")
@@ -1166,8 +1165,7 @@ foreign _ {
 	find_word_start :: proc "c" (p: ^u8) -> ^u8 ---
 	@(link_name = "find_word_end")
 	find_word_end :: proc "c" (p: ^u8) -> ^u8 ---
-	@(link_name = "get_leader_len")
-	get_leader_len :: proc "c" (line: ^u8, flags: ^C.int, backward: bool, incomment: bool) -> C.int ---
+	// get_leader_len now defined in change.odin — call directly.
 
 	@(link_name = "vim_fgets")
 	vim_fgets :: proc "c" (buf: ^u8, size: C.int, fp: rawptr) -> C.int ---
@@ -1180,8 +1178,7 @@ foreign _ {
 
 	// prepare_tagpreview now defined in ex_cmds.odin — call directly.
 	// getfile now defined in ex_cmds.odin — call directly (cstring args).
-	@(link_name = "validate_cursor")
-	validate_cursor_r :: proc "c" (wp: rawptr) ---
+	// validate_cursor now defined in move.odin — call directly.
 
 	@(link_name = "msg_trunc")
 	msg_trunc_r :: proc "c" (s: ^u8, check: bool, hl_id: C.int) -> ^u8 ---
@@ -1467,9 +1464,9 @@ current_search :: proc "c"(count: C.int, forward: bool) -> C.int {
 	orig_pos := pos
 	if VIsual_active {
 		if forward {
-			_ = incl_pos(&pos)
+			_ = incl(&pos)
 		} else {
-			_ = decl_pos(&pos)
+			_ = decl(&pos)
 		}
 	}
 
@@ -1546,7 +1543,7 @@ current_search :: proc "c"(count: C.int, forward: bool) -> C.int {
 		if forward && ltoreq_pos(VIsual_g, win_cursor_r(curwin)^) {
 			inc_cursor()
 		} else if !forward && ltoreq_pos(win_cursor_r(curwin)^, VIsual_g) {
-			_ = incl_pos(&VIsual_g)
+			_ = incl(&VIsual_g)
 		}
 	}
 
@@ -2011,7 +2008,7 @@ do_search :: proc "c"(
 			c := spats[0].off.off
 			if c > 0 {
 				for ; c != 0; c -= 1 {
-					if decl_pos(&pos) == -1 {
+					if decl(&pos) == -1 {
 						break
 					}
 				}
@@ -2021,7 +2018,7 @@ do_search :: proc "c"(
 				}
 			} else {
 				for ; c != 0; c += 1 {
-					if incl_pos(&pos) == -1 {
+					if incl(&pos) == -1 {
 						break
 					}
 				}
@@ -2080,14 +2077,14 @@ do_search :: proc "c"(
 				if cc > 0 {
 					for cc > 0 {
 						cc -= 1
-						if incl_pos(&pos) == -1 {
+						if incl(&pos) == -1 {
 							break
 						}
 					}
 				} else {
 					for cc < 0 {
 						cc += 1
-						if decl_pos(&pos) == -1 {
+						if decl(&pos) == -1 {
 							break
 						}
 					}
@@ -2475,7 +2472,7 @@ pos := &fml_pos
 				}
 
 				linep = ml_get(pos.lnum)
-				pos.col = ml_get_len_r2(pos.lnum)
+				pos.col = ml_get_len(pos.lnum)
 				do_quotes = -1
 				line_breakcheck()
 
@@ -2634,7 +2631,7 @@ pos := &fml_pos
 				}
 				if pos.lnum > 1 {
 					pprev := ml_get(pos.lnum - 1)
-					if b_at(pprev, 0) != 0 && b_at(pprev, ml_get_len_r2(pos.lnum - 1) - 1) == '\\' {
+					if b_at(pprev, 0) != 0 && b_at(pprev, ml_get_len(pos.lnum - 1) - 1) == '\\' {
 						do_quotes = 1
 						if start_in_quotes == .kNone {
 							inquote = at_start != 0
@@ -3457,7 +3454,7 @@ find_pattern_in_path :: proc "c"(
 
 						if l_g_do_tagpreview != 0 &&
 						curwin != curwin_save && win_valid(curwin_save) {
-							validate_cursor_r(curwin)
+							validate_cursor(curwin)
 							redraw_later(curwin, UPD_VALID_S)
 							win_enter(curwin_save, true)
 						}
@@ -3651,7 +3648,7 @@ show_pat_in_path :: proc "c"(
 				break
 			}
 			line = ml_get(lnum^)
-			linelen = C.size_t(ml_get_len_r2(lnum^))
+			linelen = C.size_t(ml_get_len(lnum^))
 		}
 		msg_putchar('\n')
 	}

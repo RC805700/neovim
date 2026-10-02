@@ -952,10 +952,11 @@ not_exiting :: proc "c" (save_exiting: bool) {
 @(export)
 update_topline_cursor :: proc "c" () {
 	check_cursor(curwin)
-	update_topline_r(curwin)
+	update_topline(curwin)
 	if (^C.int)(uintptr(curwin) + W_P_WRAP_OFF)^ == 0 {
-		validate_cursor_r(curwin)
+		validate_cursor(curwin)
 	}
+	update_curswant()
 }
 
 // Expr-mapping lock test (ex_docmd.c public).
@@ -4887,8 +4888,7 @@ parse_cmdline :: proc "c" (cmdline: ^cstring, eap: rawptr, cmdinfo: rawptr, erro
 
 // —— Batch 20: ex_docmd.c splitview (export + weak) ——
 foreign _ {
-	@(link_name = "get_findfunc")
-	get_findfunc_e :: proc "c" () -> cstring ---
+	// get_findfunc now defined in option.odin — call directly.
 	@(link_name = "find_file_in_path")
 	find_file_in_path_e :: proc "c" (ptr: cstring, len: C.size_t, options: C.int, first: C.int, rel_fname: cstring, file_to_find: ^rawptr, search_ctx: ^rawptr) -> ^u8 ---
 }
@@ -4950,7 +4950,7 @@ ex_splitview :: proc "c" (eap: rawptr) {
 	}
 	if cmdidx == CMD_SFIND_O || cmdidx == CMD_TABFIND_O {
 		eap_arg := ([^]cstring)(uintptr(eap) + EXARG_ARG_OFF)[0]
-		if ([^]u8)(get_findfunc_e())[0] != 0 {
+		if ([^]u8)(get_findfunc())[0] != 0 {
 			cnt := ([^]C.int)(uintptr(eap) + EXARG_LINE2_OFF)[0]
 			if ([^]C.int)(uintptr(eap) + EXARG_ADDR_COUNT_OFF)[0] <= 0 {
 				cnt = 1
@@ -5594,10 +5594,7 @@ did_set_findfunc :: proc "c" (args: rawptr) -> cstring {
 foreign _ {
 	@(link_name = "ex_lua")
 	ex_lua_e :: proc "c" (eap: rawptr) ---
-	@(link_name = "goto_byte")
-	goto_byte_e :: proc "c" (cnt: C.int) ---
-	@(link_name = "ml_preserve")
-	ml_preserve_e :: proc "c" (buf: rawptr, message: bool, do_fsync: bool) ---
+	// ml_preserve now defined in memline.odin — call directly.
 }
 
 E191_S :: "E191: Argument must be a letter or forward/backward quote"
@@ -5642,14 +5639,14 @@ ex_equal :: proc "c" (eap: rawptr) {
 @(export)
 ex_goto :: proc "c" (eap: rawptr) {
 	context = runtime.default_context()
-	goto_byte_e(([^]C.int)(uintptr(eap) + EXARG_LINE2_OFF)[0])
+	goto_byte(([^]C.int)(uintptr(eap) + EXARG_LINE2_OFF)[0])
 }
 
 // :preserve (ex_docmd.c static → export).
 @(export)
 ex_preserve :: proc "c" (eap: rawptr) {
 	context = runtime.default_context()
-	ml_preserve_e(curbuf, true, true)
+	ml_preserve(curbuf, true, true)
 }
 
 // :mark/:k (ex_docmd.c static → export).
@@ -6196,11 +6193,11 @@ ex_read :: proc "c" (eap: rawptr) {
 				lnum = 1
 			}
 			if ([^]u8)(ml_get(lnum))[0] == 0 && u_savedel(lnum, 1) == OK_E {
-				ml_delete_r(lnum)
+				ml_delete(lnum)
 				if ([^]C.int)(uintptr(curwin) + W_CURSOR_OFF)[0] > 1 && ([^]C.int)(uintptr(curwin) + W_CURSOR_OFF)[0] >= lnum {
 					([^]C.int)(uintptr(curwin) + W_CURSOR_OFF)[0] -= 1
 				}
-				deleted_lines_mark_r(lnum, 1)
+				deleted_lines_mark(lnum, 1)
 			}
 		}
 		redraw_curbuf_later(UPD_VALID_O)
@@ -6349,8 +6346,8 @@ ex_redraw :: proc "c" (eap: rawptr) {
 	p := p_lz_g
 	RedrawingDisabled = 0
 	p_lz_g = 0
-	validate_cursor_r(curwin)
-	update_topline_r(curwin)
+	validate_cursor(curwin)
+	update_topline(curwin)
 	if ([^]C.int)(uintptr(eap) + EXARG_FORCEIT_OFF)[0] != 0 {
 		redraw_all_later(UPD_NOT_VALID)
 		redraw_cmdline_g = true
@@ -6451,11 +6448,11 @@ ex_folddo :: proc "c" (eap: rawptr) {
 	closed := ([^]C.int)(uintptr(eap) + EXARG_CMDIDX_OFF)[0] == CMD_FOLDDOCLOSED_O
 	for lnum := ([^]C.int)(uintptr(eap) + EXARG_LINE1_OFF)[0]; lnum <= ([^]C.int)(uintptr(eap) + EXARG_LINE2_OFF)[0]; lnum += 1 {
 		if hasFolding(curwin, lnum, nil, nil) == closed {
-			ml_setmarked_r(lnum)
+			ml_setmarked(lnum)
 		}
 	}
 	global_exe(([^]cstring)(uintptr(eap) + EXARG_ARG_OFF)[0])
-	ml_clearmarked_r()
+	ml_clearmarked()
 }
 
 // —— Batch 48: ex_docmd.c autocmd handlers (exports + unstatic) ——
@@ -6613,7 +6610,7 @@ ex_find :: proc "c" (eap: rawptr) {
 	}
 	fname: ^u8 = nil
 	arg := ([^]cstring)(uintptr(eap) + EXARG_ARG_OFF)[0]
-	if ([^]u8)(get_findfunc_e())[0] != 0 {
+	if ([^]u8)(get_findfunc())[0] != 0 {
 		cnt := ([^]C.int)(uintptr(eap) + EXARG_LINE2_OFF)[0]
 		if ([^]C.int)(uintptr(eap) + EXARG_ADDR_COUNT_OFF)[0] <= 0 {
 			cnt = 1
@@ -7287,7 +7284,7 @@ prepare_preview_window_o :: proc "c" () {
 back_to_current_window_o :: proc "c" (curwin_save: rawptr) {
 	context = runtime.default_context()
 	if curwin != curwin_save && win_valid(curwin_save) {
-		validate_cursor_r(curwin)
+		validate_cursor(curwin)
 		redraw_later(curwin, UPD_VALID_O)
 		win_enter(curwin_save, true)
 	}
@@ -7500,12 +7497,8 @@ ex_popup :: proc "c" (eap: rawptr) {
 foreign _ {
 	@(link_name = "get_vtopline")
 	get_vtopline_e :: proc "c" (wp: rawptr) -> C.int ---
-	@(link_name = "scrollup")
-	scrollup_e :: proc "c" (wp: rawptr, line_count: C.int, byfold: bool) -> bool ---
-	@(link_name = "scrolldown")
-	scrolldown_e :: proc "c" (wp: rawptr, line_count: C.int, byfold: C.int) -> bool ---
-	@(link_name = "cursor_correct")
-	cursor_correct_e :: proc "c" (wp: rawptr) ---
+	// scrollup/down now defined in move.odin — call directly (note: scrolldown byfold is C.int).
+	// cursor_correct now defined in move.odin — call directly.
 	@(link_name = "did_syncbind")
 	did_syncbind_g: bool
 	@(link_name = "load_colors")
@@ -7547,13 +7540,13 @@ ex_syncbind :: proc "c" (eap: rawptr) {
 		if (^bool)(uintptr(wp) + W_P_SCB_OFF)^ {
 			y := vtopline - get_vtopline_e(wp)
 			if y > 0 {
-				scrollup_e(wp, y, true)
+				scrollup(wp, y, true)
 			} else {
-				scrolldown_e(wp, -y, 1)
+				scrolldown(wp, -y, 1)
 			}
 			([^]C.int)(uintptr(wp) + W_SCBIND_POS_OFF)[0] = vtopline
 			redraw_later(wp, UPD_VALID_O)
-			cursor_correct_e(wp)
+			cursor_correct(wp)
 			([^]bool)(uintptr(wp) + W_REDR_STATUS_OFF)[0] = true
 		}
 		wp = (^rawptr)(uintptr(wp) + W_NEXT_OFF)^
@@ -7677,7 +7670,7 @@ ex_normal :: proc "c" (eap: rawptr) {
 				([^]C.int)(uintptr(curwin) + W_CURSOR_OFF)[0] = ([^]C.int)(uintptr(eap) + EXARG_LINE1_OFF)[0]
 				([^]C.int)(uintptr(eap) + EXARG_LINE1_OFF)[0] += 1
 				([^]C.int)(uintptr(curwin) + W_CURSOR_COL_OFF)[0] = 0
-				check_cursor_moved_e(curwin)
+				check_cursor_moved(curwin)
 			}
 			cmd_arg: cstring = ([^]cstring)(uintptr(eap) + EXARG_ARG_OFF)[0]
 			if arg != nil {
@@ -7827,15 +7820,14 @@ ex_setfiletype :: proc "c" (eap: rawptr) {
 
 // —— Batch 51: ex_docmd.c sleep/recover/uptime (exports + unstatic) ——
 foreign _ {
-	@(link_name = "cursor_valid")
-	cursor_valid_e :: proc "c" (wp: rawptr) -> C.int ---
+	// cursor_valid now defined in move.odin — call directly.
 }
 
 // :sleep (ex_docmd.c static → export).
 @(export)
 ex_sleep :: proc "c" (eap: rawptr) {
 	context = runtime.default_context()
-	if cursor_valid_e(curwin) != 0 {
+	if cursor_valid(curwin) != 0 {
 		setcursor_mayforce(curwin, true)
 	}
 	length := C.longlong(([^]C.int)(uintptr(eap) + EXARG_LINE2_OFF)[0])
@@ -7865,7 +7857,7 @@ ex_recover :: proc "c" (eap: rawptr) {
 	}
 	arg := ([^]cstring)(uintptr(eap) + EXARG_ARG_OFF)[0]
 	if !check_changed(curbuf, ccgd) && (([^]u8)(arg)[0] == 0 || setfname(curbuf, arg, nil, true) == OK_E) {
-		ml_recover_r(true)
+		ml_recover(true)
 	}
 	recoverymode = false
 }

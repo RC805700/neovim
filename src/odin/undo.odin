@@ -187,8 +187,7 @@ foreign _ {
 // ── Foreign procs ────────────────────────────────────────────────────────────
 
 foreign _ {
-	@(link_name = "change_warning")
-	change_warning_r :: proc "c" (buf: rawptr, col: C.int) ---
+	// change_warning now defined in change.odin — call directly.
 	@(link_name = "block_autocmds")
 	block_autocmds_r :: proc "c" () ---
 	@(link_name = "unblock_autocmds")
@@ -198,10 +197,8 @@ foreign _ {
 	@(link_name = "text_locked_msg")
 	text_locked_msg_r :: proc "c" () ---
 	// coladvance/check_cursor_lnum/check_cursor_col — PORTED (cursor.odin).
-	@(link_name = "changed")
-	changed_r :: proc "c" (buf: rawptr) ---
-	@(link_name = "unchanged")
-	unchanged_r :: proc "c" (buf: rawptr, ff: bool, always_inc_changedtick: bool) ---
+	// changed now defined in change.odin — call directly.
+	// unchanged now defined in change.odin — call directly.
 	// buf_updates_unload/changedtick are Odin exports (buffer_updates.odin).
 	// foldOpenCursor now defined in fold.odin — reuse directly.
 	@(link_name = "messaging")
@@ -224,8 +221,7 @@ foreign _ {
 	msg_start_r :: proc "c" () ---
 	@(link_name = "msg_end")
 	msg_end_r :: proc "c" () -> bool ---
-	@(link_name = "resolve_symlink")
-	resolve_symlink_r :: proc "c" (fname: cstring, buf: ^u8) -> C.int ---
+	// resolve_symlink now defined in memline.odin — call directly.
 	@(link_name = "path_tail")
 	path_tail_r :: proc "c" (fname: cstring) -> ^u8 ---
 	@(link_name = "concat_fnames")
@@ -240,11 +236,9 @@ foreign _ {
 	read_eintr_r :: proc "c" (fd: C.int, buf: rawptr, bufsize: C.size_t) -> C.ssize_t ---
 	@(link_name = "FullName_save")
 	FullName_save_r :: proc "c" (fname: cstring, force: bool) -> ^u8 ---
-	@(link_name = "file_ff_differs")
-	file_ff_differs_r :: proc "c" (buf: rawptr, ignore_empty: bool) -> bool ---
+	// file_ff_differs now defined in change.odin — call directly.
 	// extmark_apply_undo now defined in extmark.odin — call directly.
-	@(link_name = "ml_delete")
-	ml_delete_r :: proc "c" (lnum: C.int) -> C.int ---
+	// ml_delete now defined in memline.odin — call directly.
 	// reuse time.odin's os_localtime_r (posix.time_t == C.long on this ABI)
 }
 
@@ -434,7 +428,7 @@ u_savecommon :: proc "c" (buf: rawptr, top: C.int, bot: C.int, newbot: C.int, re
 
 		// warn for read-only file before making the change
 		if buf == curbuf {
-			change_warning_r(buf, 0)
+			change_warning(buf, 0)
 		}
 
 		if bot > ml_line_count_b(buf) + 1 {
@@ -697,7 +691,7 @@ u_get_undo_file_name :: proc "c" (buf_ffname: cstring, reading: bool) -> ^u8 {
 	}
 
 	fname_buf: [4096]u8
-	if resolve_symlink_r(ffname, &fname_buf[0]) == OK_R {
+	if resolve_symlink(ffname, &fname_buf[0]) == OK_R {
 		ffname = transmute(cstring)(&fname_buf[0])
 	}
 
@@ -1710,7 +1704,7 @@ u_doit :: proc "c" (startcount: C.int, quiet: bool, do_buf_event: bool) {
 	for count > 0 {
 		count -= 1
 		// Do the change warning now (may reload the buffer).
-		change_warning_r(curbuf, 0)
+		change_warning(curbuf, 0)
 
 		if undo_undoes {
 			if buf_curhead(curbuf) == nil { // first undo
@@ -1950,7 +1944,7 @@ undo_time :: proc "c" (step: C.int, sec: bool, file: bool, absolute: bool) {
 	if uhp != nil || at_zero {
 		// First go up the tree as much as needed.
 		for !got_int {
-			change_warning_r(curbuf, 0)
+			change_warning(curbuf, 0)
 
 			uhp = buf_curhead(curbuf)
 			if uhp == nil {
@@ -1974,7 +1968,7 @@ undo_time :: proc "c" (step: C.int, sec: bool, file: bool, absolute: bool) {
 		if target > 0 {
 			// Go down the tree (redo), branching off where needed.
 			for !got_int {
-				change_warning_r(curbuf, 0)
+				change_warning(curbuf, 0)
 
 				uhp = buf_curhead(curbuf)
 				if uhp == nil {
@@ -2091,7 +2085,7 @@ u_undoredo :: proc "c" (undo: bool, do_buf_event: bool) {
 			bot > ml_line_count_b(curbuf) + 1 {
 			unblock_autocmds_r()
 			iemsg_r(cstring("E438: u_undo: line numbers wrong"))
-			changed_r(curbuf)
+			changed(curbuf)
 			return
 		}
 
@@ -2140,7 +2134,7 @@ u_undoredo :: proc "c" (undo: bool, do_buf_event: bool) {
 				if ml_line_count_b(curbuf) == 1 {
 					empty_buffer = true
 				}
-				ml_delete_r(lnum)
+				ml_delete(lnum)
 				lnum -= 1
 			}
 		} else {
@@ -2156,9 +2150,9 @@ u_undoredo :: proc "c" (undo: bool, do_buf_event: bool) {
 			for i := C.int(0); i < newsize; i += 1 {
 				line := (^^u8)(uintptr(uep.ue_array) + uintptr(i) * size_of(^u8))^
 				if empty_buffer && lnum == 0 {
-					ml_replace_c(1, line, true)
+					ml_replace(1, line, true)
 				} else {
-					ml_append_flags_c(lnum, line, 0, 0)
+					ml_append_flags(lnum, line, 0, 0)
 				}
 				xfree(line)
 				lnum += 1
@@ -2178,7 +2172,7 @@ u_undoredo :: proc "c" (undo: bool, do_buf_event: bool) {
 		}
 
 		if oldsize > 0 || newsize > 0 {
-			changed_lines_r(curbuf, top + 1, 0, bot, newsize - oldsize, do_buf_event)
+			changed_lines(curbuf, top + 1, 0, bot, newsize - oldsize, do_buf_event)
 			if spell_check_window(curwin) && bot <= ml_line_count_b(curbuf) {
 				redrawWinline(curwin, bot)
 			}
@@ -2233,9 +2227,9 @@ u_undoredo :: proc "c" (undo: bool, do_buf_event: bool) {
 		buf_set_i32(curbuf, B_ML_FLAGS, buf_i32_at(curbuf, B_ML_FLAGS) | ML_EMPTY)
 	}
 	if (old_flags & UH_CHANGED) != 0 {
-		changed_r(curbuf)
+		changed(curbuf)
 	} else {
-		unchanged_r(curbuf, false, true)
+		unchanged(curbuf, false, true)
 	}
 
 	if do_buf_event {
@@ -2313,11 +2307,7 @@ uh_extmark_at :: #force_inline proc "c"(uhp: ^U_Header_T, i: C.int) -> ^ExtmarkU
 	return (^ExtmarkUndoObject)(uintptr(uhp.uh_extmark.items) + uintptr(i) * size_of(ExtmarkUndoObject))
 }
 
-// ml_append with flags: reuse register.odin's ml_append_c (flags==0 → newfile=false)
-ml_append_flags_c :: #force_inline proc "c"(lnum: C.int, line: ^u8, len: C.int, flags: C.int) -> C.int {
-	ok := ml_append_c(lnum, line, len, false)
-	return ok ? 1 : 0
-}
+// ml_append_flags now defined in memline.odin — call directly.
 
 /// If we deleted or added lines, report the number of lines changed.
 u_undo_end :: proc "c" (did_undo_arg: bool, absolute: bool, quiet: bool) {
@@ -2846,11 +2836,11 @@ u_undoline :: proc "c" () {
 
 	oldp := u_save_line(buf_i32_at(curbuf, B_U_LINE_LNUM))
 	line_ptr := (^u8)(buf_ptr_at(curbuf, B_U_LINE_PTR))
-	ml_replace_c(buf_i32_at(curbuf, B_U_LINE_LNUM), line_ptr, true)
+	ml_replace(buf_i32_at(curbuf, B_U_LINE_LNUM), line_ptr, true)
 	extmark_splice_cols(curbuf, buf_i32_at(curbuf, B_U_LINE_LNUM) - 1, 0,
 		C.int(libc.strlen(transmute(cstring)(oldp))),
 		C.int(libc.strlen(transmute(cstring)(line_ptr))), kExtmarkUndo)
-	changed_bytes_r(buf_i32_at(curbuf, B_U_LINE_LNUM), 0)
+	changed_bytes(buf_i32_at(curbuf, B_U_LINE_LNUM), 0)
 	xfree(line_ptr)
 	(^rawptr)(uintptr(curbuf) + B_U_LINE_PTR)^ = oldp
 
@@ -2867,7 +2857,7 @@ u_undoline :: proc "c" () {
 @(export)
 bufIsChanged :: proc "c" (buf: rawptr) -> bool {
 	return bt_prompt(buf) ? buf_bool_at(buf, B_MODIFIED_WAS_SET) :
-		(!bt_dontwrite(buf) && (buf_bool_at(buf, B_CHANGED) || file_ff_differs_r(buf, true)))
+		(!bt_dontwrite(buf) && (buf_bool_at(buf, B_CHANGED) || file_ff_differs(buf, true)))
 }
 
 @(export)

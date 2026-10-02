@@ -289,9 +289,7 @@ foreign _ {
 	// foldMarkAdjust now defined in fold.odin — reuse directly.
 	diff_mark_adjust :: proc "c" (buf: rawptr, line1, line2, amount, amount_after: C.int) ---
 
-	ml_get :: proc "c" (lnum: C.int) -> ^u8 ---
-	ml_get_buf :: proc "c" (buf: rawptr, lnum: C.int) -> ^u8 ---
-	ml_get_buf_len :: proc "c" (buf: rawptr, lnum: C.int) -> C.int ---
+	// ml_get/ml_get_buf/ml_get_buf_len now defined in memline.odin — call directly.
 
 	utf_ptr2char :: proc "c" (p_in: cstring) -> C.int ---
 	// ptr2cells/vim_isprintc are Odin exports (charset.odin) — call directly.
@@ -302,7 +300,7 @@ foreign _ {
 	msg_msg :: proc "c" (s: cstring, hl_id: C.int) -> bool ---
 	// check_cursor — PORTED (cursor.odin).
 	beginline :: proc "c" (flags: C.int) ---
-	set_topline :: proc "c" (wp: rawptr, lnum: C.int) ---
+	// set_topline now defined in move.odin — call directly.
 	// hasFolding now defined in fold.odin — reuse directly.
 	// linetabsize_eol now defined in plines.odin — call directly.
 

@@ -243,7 +243,7 @@ dialog_changed :: proc "c" (buf: rawptr, checkall: bool) {
 		if ret == VIM_YES_O {
 			handle_dialog_write_o(buf)
 		} else if ret == VIM_NO_O {
-			unchanged_r(buf, true, false)
+			unchanged(buf, true, false)
 		} else if ret == VIM_ALL_O {
 			dialog_write_all_o()
 		} else if ret == VIM_DISCARDALL_O {
@@ -254,7 +254,7 @@ dialog_changed :: proc "c" (buf: rawptr, checkall: bool) {
 		if ret == VIM_YES_O {
 			handle_dialog_write_o(buf)
 		} else if ret == VIM_NO_O {
-			unchanged_r(buf, true, false)
+			unchanged(buf, true, false)
 		}
 	}
 }
@@ -314,7 +314,7 @@ dialog_discard_all_o :: proc "c" () {
 	buf := firstbuf
 	for buf != nil {
 		next := (^rawptr)(uintptr(buf) + B_NEXT)^
-		unchanged_r(buf, true, false)
+		unchanged(buf, true, false)
 		buf = next
 	}
 }
@@ -701,7 +701,7 @@ ex_listdo :: proc "c" (eap_raw: rawptr) {
 				}
 			}
 			if cmdidx == CMD_windo_O && execute {
-				validate_cursor_r(curwin)
+				validate_cursor(curwin)
 				if (^bool)(uintptr(curwin) + W_P_SCB_OFF)^ {
 					do_check_scrollbind_r(true)
 				}

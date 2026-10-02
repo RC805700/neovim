@@ -155,8 +155,7 @@ foreign _ {
 	_empty_string_arr: [1]u8
 	// curbufIsChanged is an Odin proc in undo.odin — reuse directly.	@(link_name = "copy_string")
  	copy_string_o :: proc "c" (s: NvimString, arena: rawptr) -> NvimString ---
-	@(link_name = "changed_window_setting")
-	changed_window_setting_opt :: proc "c" (wp: rawptr) ---
+	// changed_window_setting now defined in move.odin — call directly.
 	@(link_name = "p_wmh")
 	p_wmh_opt: C.longlong
 	@(link_name = "p_wh")
@@ -1073,7 +1072,7 @@ check_redraw_o :: proc "c"(flags: C.uint32_t) {
 		if (flags & kOptFlagHLOnly) != 0 {
 			redraw_later(curwin, UPD_NOT_VALID_SP)
 		} else {
-			changed_window_setting_opt(curwin)
+			changed_window_setting(curwin)
 		}
 	}
 	if (flags & kOptFlagRedrBuf) != 0 {
@@ -1441,8 +1440,7 @@ foreign _ {
 	spell_check_sps_r :: proc "c" () -> C.int ---
 	@(link_name = "did_set_cedit")
 	did_set_cedit_r :: proc "c" (eap: rawptr) -> cstring ---
-	@(link_name = "did_set_breakat")
-	did_set_breakat_r :: proc "c" (eap: rawptr) -> cstring ---
+	// did_set_breakat now defined in optionstr.odin — call directly.
 	@(link_name = "highlight_changed")
 	highlight_changed_r :: proc "c" () ---
 	@(link_name = "check_opt_wim")
@@ -2601,7 +2599,7 @@ didset_options_o :: proc "c"() {
 	compile_cap_prog(win_s_r(curwin))
 	_ = did_set_spell_option()
 	_ = did_set_cedit_r(nil)
-	_ = did_set_breakat_r(nil)
+	_ = did_set_breakat(nil)
 	didset_window_options(curwin, true)
 }
 
@@ -3705,7 +3703,7 @@ check_redraw_for :: proc "c"(buf: rawptr, win: rawptr, flags: C.uint32_t) {
 		if (flags & kOptFlagHLOnly_S) != 0 {
 			redraw_later(win, UPD_NOT_VALID_S)
 		} else {
-			changed_window_setting_opt(win)
+			changed_window_setting(win)
 		}
 	}
 	if (flags & kOptFlagRedrBuf_S) != 0 {

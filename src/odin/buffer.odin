@@ -492,8 +492,7 @@ foreign _ {
 	// extmark_free_all now defined in extmark.odin — call directly.
 	@(link_name = "map_clear_mode")
 	map_clear_mode_r :: proc "c" (buf: rawptr, mode: C.int, local: bool, abbr: bool) ---
-	@(link_name = "buf_free_callbacks")
-	buf_free_callbacks_r :: proc "c" (buf: rawptr) ---
+	// buf_free_callbacks now defined in buffer_updates.odin — call directly.
 }
 
 // Set file_id for a buffer. Must always be called when b_fname is changed!
@@ -615,7 +614,7 @@ free_buffer_stuff_o :: proc "c"(buf: rawptr, free_flags: C.int) {
 		xfree(sf)
 		(^rawptr)(uintptr(buf) + B_START_FENC_OFF)^ = nil
 	}
-	buf_free_callbacks_r(buf)
+	buf_free_callbacks(buf)
 }
 
 // Initialize b:changedtick and changedtick_val attribute (C static inline).
@@ -936,7 +935,7 @@ buf_freeall :: proc "c"(buf: rawptr, flags: C.int) -> bool {
 		unblock_autocmds_r()
 	}
 	count := (^C.int)(uintptr(buf) + B_ML_LINE_COUNT_OFF)^
-	ml_close_sp(buf, true) // close and delete the memline/memfile
+	ml_close(buf, 1) // close and delete the memline/memfile
 	(^C.int)(uintptr(buf) + B_ML_LINE_COUNT_OFF)^ = 0 // no lines in buffer
 	// Ensure marks are adjusted for cleared buffer in case buffer not on
 	// disk: if it is reloaded the buffer will be empty.
@@ -1100,10 +1099,8 @@ DOBUF_WIPE_O :: 4
 foreign _ {
 	@(link_name = "FullName_save")
 	fullname_save_r :: proc "c" (fname: cstring, force: bool) -> cstring ---
-	@(link_name = "ml_setname")
-	ml_setname_r :: proc "c" (buf: rawptr) ---
-	@(link_name = "ml_timestamp")
-	ml_timestamp_r :: proc "c" (buf: rawptr) ---
+	// ml_setname now defined in memline.odin — call directly.
+	// ml_timestamp now defined in memline.odin — call directly.
 }
 
 // Find file in buffer list by name (must be for the current window).
@@ -1225,7 +1222,7 @@ buf_set_name :: proc "c"(fnum: C.int, name: cstring) {
 buf_name_changed :: proc "c"(buf: rawptr) {
 	// If the file name changed, also change the name of the swapfile.
 	if (^rawptr)(uintptr(buf) + B_ML_MFP_OFF)^ != nil {
-		ml_setname_r(buf)
+		ml_setname(buf)
 	}
 	if (^rawptr)(uintptr(curwin) + W_BUFFER_OFF)^ == buf {
 		check_arg_idx(curwin) // check file name for arg list
@@ -1233,7 +1230,7 @@ buf_name_changed :: proc "c"(buf: rawptr) {
 	maketitle() // set window title
 	status_redraw_all() // status lines need to be redrawn
 	fmarks_check_names(buf) // check named file marks
-	ml_timestamp_r(buf) // reset timestamp
+	ml_timestamp(buf) // reset timestamp
 }
 
 // ── Batch 10: set_curbuf + enter_buffer + do_buffer ──────────────────────────
@@ -1261,8 +1258,7 @@ foreign _ {
 	buf_check_timestamp_r :: proc "c" (buf: rawptr) -> C.int ---
 	@(link_name = "inindent")
 	inindent_r :: proc "c" (extra: C.int) -> bool ---
-	@(link_name = "scroll_cursor_halfway")
-	scroll_cursor_halfway_r :: proc "c" (wp: rawptr, atend: bool, prefer_above: bool) ---
+	// scroll_cursor_halfway now defined in move.odin — call directly.
 }
 
 // Wrapper around the (still C) do_buffer_ext engine.
@@ -1820,7 +1816,7 @@ enter_buffer_o :: proc "c"(buf: rawptr) {
 	// when autocmds didn't change it
 	if (^C.int)(uintptr(curwin) + W_TOPLINE_OFF)^ == 1 &&
 		!(^bool)(uintptr(curwin) + W_TOPLINE_WAS_SET_OFF)^ {
-		scroll_cursor_halfway_r(curwin, false, false) // redisplay at position
+		scroll_cursor_halfway(curwin, false, false) // redisplay at position
 	}
 	// Change directories when the 'acd' option is set.
 	do_autochdir()
@@ -1957,8 +1953,7 @@ foreign _ {
 	enter_cleanup_r :: proc "c" (csp: rawptr) ---
 	@(link_name = "leave_cleanup")
 	leave_cleanup_r :: proc "c" (csp: rawptr) ---
-	@(link_name = "ml_recover")
-	ml_recover_r :: proc "c" (checkext: bool) ---
+	// ml_recover now defined in memline.odin — call directly.
 	// do_modelines now defined below — call directly.
 	@(link_name = "swap_exists_action")
 	swap_exists_action_g: C.int
@@ -2044,7 +2039,7 @@ handle_swap_exists :: proc "c"(old_curbuf: ^Bufref_T) {
 		enter_cleanup_r(&cs[0])
 		// User selected Recover at ATTENTION prompt.
 		msg_scroll = 1
-		ml_recover_r(false)
+		ml_recover(false)
 		msg_puts(cstring("\n")) // don't overwrite the last message
 		cmdline_row = msg_row
 		do_modelines(0)
@@ -2159,10 +2154,8 @@ foreign _ {
 	aucmd_prepbuf_r :: proc "c" (aco: rawptr, buf: rawptr) ---
 	@(link_name = "aucmd_restbuf")
 	aucmd_restbuf_r :: proc "c" (aco: rawptr) ---
-	@(link_name = "ml_open")
-	ml_open_r :: proc "c" (buf: rawptr) -> C.int ---
-	@(link_name = "save_file_ff")
-	save_file_ff_r :: proc "c" (buf: rawptr) ---
+	// ml_open now defined in memline.odin — call directly.
+	// save_file_ff now defined in change.odin — call directly.
 	// get_local_additions — PORTED (help.odin).
 	@(link_name = "readonlymode")
 	readonlymode_g: bool
@@ -2196,13 +2189,13 @@ read_buffer_o :: proc "c"(read_stdin: bool, eap: rawptr, flags: C.int) -> C.int 
 		// Delete the binary lines.
 		line_count -= 1
 		for line_count >= 0 {
-			ml_delete_r(1)
+			ml_delete(1)
 			line_count -= 1
 		}
 	} else {
 		// Delete the converted lines.
 		for (^C.int)(uintptr(curbuf) + B_ML_LINE_COUNT_OFF)^ > line_count {
-			ml_delete_r(line_count)
+			ml_delete(line_count)
 		}
 	}
 	// Put the cursor on the first line.
@@ -2212,9 +2205,9 @@ read_buffer_o :: proc "c"(read_stdin: bool, eap: rawptr, flags: C.int) -> C.int 
 		// Set or reset 'modified' before executing autocommands, so that
 		// it can be changed there.
 		if !readonlymode_g && !buf_is_empty(curbuf) {
-			changed_r(curbuf)
+			changed(curbuf)
 		} else if retval != FAIL {
-			unchanged_r(curbuf, false, true)
+			unchanged(curbuf, false, true)
 		}
 		apply_autocmds_retval_r(EVENT_STDINREADPOST_O, nil, nil, false, curbuf, &retval)
 	}
@@ -2250,7 +2243,7 @@ open_buffer :: proc "c"(read_stdin: bool, eap: rawptr, flags_arg: C.int) -> C.in
 		((^C.int)(uintptr(curbuf) + B_FLAGS_OFF)^ & BF_NEVERLOADED_O) != 0 {
 		(^C.int)(uintptr(curbuf) + B_P_RO_OFF)^ = 1
 	}
-	if ml_open_r(curbuf) == FAIL {
+	if ml_open(curbuf) == FAIL {
 		// There MUST be a memfile, otherwise we can't do anything.
 		close_buffer(curwin, curbuf, 0, false, false, false)
 		curbuf = nil
@@ -2346,11 +2339,11 @@ open_buffer :: proc "c"(read_stdin: bool, eap: rawptr, flags_arg: C.int) -> C.in
 	if (got_int && vim_strchr_c(p_cpo, C.int(CPO_INTMOD_O)) != nil) ||
 		(^bool)(uintptr(curbuf) + B_MODIFIED_WAS_SET_OFF)^ ||
 		(aborting_r() && vim_strchr_c(p_cpo, C.int(CPO_INTMOD_O)) != nil) {
-		changed_r(curbuf)
+		changed(curbuf)
 	} else if retval != FAIL && !read_stdin && !read_fifo {
-		unchanged_r(curbuf, false, true)
+		unchanged(curbuf, false, true)
 	}
-	save_file_ff_r(curbuf) // keep this fileformat
+	save_file_ff(curbuf) // keep this fileformat
 	// Set last_changedtick to avoid triggering a TextChanged autocommand
 	// right after it was added.
 	tick := (^C.longlong)(uintptr(curbuf) + B_CHANGEDTICK_DI_OFF + 8)^
@@ -2651,8 +2644,7 @@ READ_DUMMY_O :: 0x10
 EXARG_SIZE_O :: 192 // sizeof(exarg_T), cc-probed
 
 foreign _ {
-	@(link_name = "deleted_lines_mark")
-	deleted_lines_mark_r :: proc "c" (lnum: C.int, count: C.int) ---
+	// deleted_lines_mark now defined in change.odin — call directly.
 	@(link_name = "prep_exarg")
 	prep_exarg_r :: proc "c" (eap: rawptr, buf: rawptr) ---
 	@(link_name = "qf_stack_get_bufnr")
@@ -2707,7 +2699,7 @@ tv_dict_is_watched_o :: proc "c"(d: rawptr) -> bool {
 @(export)
 buf_clear_file :: proc "c"(buf: rawptr) {
 	(^C.int)(uintptr(buf) + B_ML_LINE_COUNT_OFF)^ = 1
-	unchanged_r(buf, true, true)
+	unchanged(buf, true, true)
 	(^C.int)(uintptr(buf) + B_P_EOF_OFF)^ = 0
 	(^C.int)(uintptr(buf) + B_START_EOF_OFF)^ = 0
 	(^C.int)(uintptr(buf) + B_P_EOL_OFF)^ = 1
@@ -2724,9 +2716,9 @@ buf_clear :: proc "c"() {
 	line_count := (^C.int)(uintptr(curbuf) + B_ML_LINE_COUNT_OFF)^
 	extmark_free_all(curbuf) // delete any extmarks
 	for (^C.int)(uintptr(curbuf) + B_ML_FLAGS_OFF)^ & ML_EMPTY_O == 0 {
-		ml_delete_r(1)
+		ml_delete(1)
 	}
-	deleted_lines_mark_r(1, line_count) // prepare for display
+	deleted_lines_mark(1, line_count) // prepare for display
 }
 
 // Special buffer name, or NULL for a normal file name.
@@ -2799,7 +2791,7 @@ buf_contents_changed :: proc "c"(buf: rawptr) -> bool {
 	aucmd_prepbuf_r(&aco[0], newbuf)
 	// Don't trigger autocommands now (nasty side-effects like wiping).
 	block_autocmds_r()
-	if ml_open_r(curbuf) == OK &&
+	if ml_open(curbuf) == OK &&
 		readfile_r((^cstring)(uintptr(buf) + B_FFNAME)^,
 			(^cstring)(uintptr(buf) + B_FNAME)^,
 			0, 0, MAXLNUM, &ea[0], READ_NEW_O | READ_DUMMY_O, false) == OK {
@@ -3802,7 +3794,7 @@ fileinfo :: proc "c"(fullname: C.int, shorthelp: C.int, dont_truncate: bool) {
 			C.longlong(ml_count),
 			calc_percentage(i64((^C.int)(uintptr(curwin) + W_CURSOR_OFF)^),
 				i64(ml_count))))
-		validate_virtcol_r(curwin)
+		validate_virtcol(curwin)
 		bptr = (^u8)(uintptr(buffer) + uintptr(bufferlen))
 		vrem = C.size_t(C.int(IOSIZE_O)) - bufferlen
 		bufferlen += C.size_t(col_print(bptr, vrem,
@@ -4309,7 +4301,7 @@ chk_modeline_o :: proc "c"(lnum: C.int, flags: C.int) -> C.int {
 
 	prev: C.int = -1
 	s := ml_get(lnum)
-	line_end := (^u8)(uintptr(s) + uintptr(C.int(ml_get_len_r2(lnum))))
+	line_end := (^u8)(uintptr(s) + uintptr(C.int(ml_get_len(lnum))))
 	for ([^]u8)(s)[0] != 0 {
 		if prev == -1 || ascii_isspace_o(prev) {
 			if (prev != -1 &&

@@ -159,14 +159,14 @@ in_win_border_o :: proc "c" (wp: rawptr, vcol: C.int) -> bool {
 	if (^C.int)(uintptr(wp) + W_VIEW_WIDTH_OFF)^ == 0 {
 		return false
 	}
-	width1 := (^C.int)(uintptr(wp) + W_VIEW_WIDTH_OFF)^ - win_col_off_r(wp)
+	width1 := (^C.int)(uintptr(wp) + W_VIEW_WIDTH_OFF)^ - win_col_off(wp)
 	if C.int(vcol) < width1 - 1 {
 		return false
 	}
 	if C.int(vcol) == width1 - 1 {
 		return true
 	}
-	width2 := width1 + win_col_off2_r(wp)
+	width2 := width1 + win_col_off2(wp)
 	if width2 <= 0 {
 		return false
 	}
@@ -483,7 +483,7 @@ plines_win_nofold :: proc "c" (wp: rawptr, lnum: C.int) -> C.int {
 	if (^C.int)(uintptr(wp) + W_P_LIST_OFF)^ != 0 && ([^]u8)(rawptr(uintptr(wp) + W_P_LCS_CHARS_OFF))[0] != 0 {
 		col += 1
 	}
-	width := (^C.int)(uintptr(wp) + W_VIEW_WIDTH_OFF)^ - win_col_off_r(wp)
+	width := (^C.int)(uintptr(wp) + W_VIEW_WIDTH_OFF)^ - win_col_off(wp)
 	if width <= 0 {
 		return 32000
 	}
@@ -491,7 +491,7 @@ plines_win_nofold :: proc "c" (wp: rawptr, lnum: C.int) -> C.int {
 		return 1
 	}
 	col -= C.longlong(width)
-	width += win_col_off2_r(wp)
+	width += win_col_off2(wp)
 	lines := (col + C.longlong(width) - 1) / C.longlong(width) + 1
 	if lines > 0 && lines <= C.longlong(INT_MAX_O) {
 		return C.int(lines)
@@ -533,13 +533,13 @@ plines_win_col :: proc "c" (wp: rawptr, lnum: C.int, column_in: C.long) -> C.int
 	if ci.chr.value == TAB_O && (State & MODE_NORMAL_O) != 0 && csarg.use_tabstop {
 		col += win_charsize_o(cstype, col, ci.ptr, ci.chr.value, &csarg).width - 1
 	}
-	width := (^C.int)(uintptr(wp) + W_VIEW_WIDTH_OFF)^ - win_col_off_r(wp)
+	width := (^C.int)(uintptr(wp) + W_VIEW_WIDTH_OFF)^ - win_col_off(wp)
 	if width <= 0 {
 		return 9999
 	}
 	lines += 1
 	if col > width {
-		lines += (col - width) / (width + win_col_off2_r(wp)) + 1
+		lines += (col - width) / (width + win_col_off2(wp)) + 1
 	}
 	return lines
 }
@@ -616,8 +616,8 @@ charsize_regular :: proc "c" (csarg: ^CharsizeArg_O, cur: ^u8, vcol: C.int, cur_
 	sbr := get_showbreak_value(wp)
 	head := mb_added
 	if size > 0 && (^C.int)(uintptr(wp) + W_P_WRAP_OFF)^ != 0 && (([^]u8)(sbr)[0] != 0 || (^C.int)(uintptr(wp) + W_P_BRI_OFF)^ != 0) {
-		col_off_prev := win_col_off_r(wp)
-		width2 := (^C.int)(uintptr(wp) + W_VIEW_WIDTH_OFF)^ - col_off_prev + win_col_off2_r(wp)
+		col_off_prev := win_col_off(wp)
+		width2 := (^C.int)(uintptr(wp) + W_VIEW_WIDTH_OFF)^ - col_off_prev + win_col_off2(wp)
 		wcol := vcol + col_off_prev
 		max_head_vcol := csarg.max_head_vcol
 		added: C.int = 0
@@ -700,12 +700,12 @@ charsize_regular :: proc "c" (csarg: ^CharsizeArg_O, cur: ^u8, vcol: C.int, cur_
 	}
 	if need_lbr {
 		s := cur
-		numberextra := win_col_off_r(wp)
+		numberextra := win_col_off(wp)
 		col_adj := size - 1
 		colmax := C.int((^C.int)(uintptr(wp) + W_VIEW_WIDTH_OFF)^ - numberextra - col_adj)
 		if vcol >= colmax {
 			colmax += col_adj
-			n := colmax + win_col_off2_r(wp)
+			n := colmax + win_col_off2(wp)
 			if n > 0 {
 				colmax += ((vcol - colmax) / n + 1) * n - col_adj
 			}
@@ -799,8 +799,8 @@ plines_m_win_fill :: proc "c" (wp: rawptr, first: C.int, last: C.int) -> C.int {
 @(export)
 win_text_height :: proc "c" (wp: rawptr, start_lnum: C.int, start_vcol: C.longlong, end_lnum: ^C.int, end_vcol: ^C.longlong, fill: rawptr, max: C.longlong) -> C.longlong {
 	context = runtime.default_context()
-	width1 := (^C.int)(uintptr(wp) + W_VIEW_WIDTH_OFF)^ - win_col_off_r(wp)
-	width2 := width1 + win_col_off2_r(wp)
+	width1 := (^C.int)(uintptr(wp) + W_VIEW_WIDTH_OFF)^ - win_col_off(wp)
+	width2 := width1 + win_col_off2(wp)
 	if width1 < 0 {
 		width1 = 0
 	}
