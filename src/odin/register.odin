@@ -276,8 +276,7 @@ foreign _ {
 	@(link_name = "msgmore")
 	msgmore_r :: proc "c" (n: C.int) ---
 	// transchar is an Odin export (charset.odin) — call directly.
-	@(link_name = "adjust_cursor_eol")
-	adjust_cursor_eol_r :: proc "c" () ---
+	// adjust_cursor_eol now defined in ops.odin — call directly.
 	// decl now defined in memline.odin — call directly.
 
 	// u_save / u_save_cursor are now defined in undo.odin — reuse directly.
@@ -289,10 +288,7 @@ foreign _ {
 	@(link_name = "AppendCharToRedobuff")
 	AppendCharToRedobuff_r :: proc "c" (c: C.int) ---
 
-	@(link_name = "block_prep")
-	block_prep_r :: proc "c" (oap: rawptr, bdp: ^Block_Def, lnum: C.int, is_del: bool) ---
-	@(link_name = "charwise_block_prep")
-	charwise_block_prep_r :: proc "c" (start: Pos_T, end: Pos_T, bdp: ^Block_Def, lnum: C.int, inclusive: bool) ---
+	// block_prep/charwise_block_prep now defined in ops.odin — call directly.
 
 	// ml_append/ml_replace now defined in memline.odin — call directly.
 
@@ -339,8 +335,7 @@ foreign _ {
 	@(link_name = "utf_ptr2len_len")
 	utf_ptr2len_len_r :: proc "c" (p: cstring, size: C.int) -> C.int ---
 
-	@(link_name = "get_op_char")
-	get_op_char_r :: proc "c" (optype: C.int) -> C.int ---
+	// get_op_char now defined in ops.odin — call directly.
 
 	@(link_name = "ngettext")
 	ngettext_r :: proc "c" (msgid, msgid_plural: cstring, n: C.long) -> cstring ---
@@ -1313,7 +1308,7 @@ op_yank_reg :: proc "c" (oap: rawptr, message: bool, reg_arg: ^Yankreg_T, append
 	for lnum <= yankendlnum {
 		switch reg.y_type {
 		case kMTBlockWise:
-			block_prep_r(oap, &bd, lnum, false)
+			block_prep(oap, &bd, lnum, false)
 			yank_copy_line(reg, &bd, y_idx, oap_get_bool(oap, OAP_EXCL_TR_WS))
 
 		case kMTLineWise:
@@ -1321,7 +1316,7 @@ op_yank_reg :: proc "c" (oap: rawptr, message: bool, reg_arg: ^Yankreg_T, append
 				C.size_t(ml_get_len(lnum)))
 
 		case kMTCharWise:
-			charwise_block_prep_r(oap_get_pos(oap, OAP_START)^, oap_get_pos(oap, OAP_END)^,
+			charwise_block_prep(oap_get_pos(oap, OAP_START)^, oap_get_pos(oap, OAP_END)^,
 				&bd, lnum, oap_get_bool(oap, OAP_INCLUSIVE))
 			// make sure bd.textlen is not longer than the text
 			tmp := C.int(libc.strlen(transmute(cstring)(bd.textstart)))
@@ -1486,7 +1481,7 @@ do_autocmd_textyankpost :: proc "c" (oap: rawptr, reg: ^Yankreg_T) {
 		oap_get_bool(oap, OAP_INCLUSIVE) ? kBoolVarTrue : kBoolVarFalse)
 
 	// Kind of operation: yank, delete, change).
-	buf[0] = u8(get_op_char_r(oap_get_i32(oap, OAP_OP_TYPE)))
+	buf[0] = u8(get_op_char(oap_get_i32(oap, OAP_OP_TYPE)))
 	buf[1] = 0
 	tv_dict_add_str(dict, cstring("operator"), 8, transmute(cstring)(&buf[0]))
 
@@ -2448,7 +2443,7 @@ do_put :: proc "c" (regname: C.int, reg_arg: ^Yankreg_T, dir_arg: C.int, count_a
 	}
 
 	// If cursor is past EOL put it at the end.
-	adjust_cursor_eol_r()
+	adjust_cursor_eol()
 }
 
 kOptVeFlagAll_V :: 0x04

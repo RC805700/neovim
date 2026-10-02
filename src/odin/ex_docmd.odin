@@ -3342,8 +3342,7 @@ execute_cmd :: proc "c" (eap: rawptr, cmdinfo: rawptr, preview: bool) -> C.int {
 foreign _ {
 	@(link_name = "typebuf_typed")
 	typebuf_typed_e :: proc "c" () -> C.int ---
-	@(link_name = "clear_oparg")
-	clear_oparg_e :: proc "c" (oap: rawptr) ---
+	// clear_oparg now defined in ops.odin — call directly.
 	@(link_name = "normal_cmd")
 	normal_cmd_e :: proc "c" (oap: rawptr, toplevel: bool) ---
 }
@@ -3362,7 +3361,7 @@ exec_normal :: proc "c" (was_typed: bool, use_vpeekc: bool) {
 	context = runtime.default_context()
 	oa: [88]u8
 	c: C.int = 0
-	clear_oparg_e(rawptr(&oa[0]))
+	clear_oparg(rawptr(&oa[0]))
 	finish_op_g = false
 	for {
 		if stuff_empty_e() {
@@ -6147,7 +6146,7 @@ ex_join :: proc "c" (eap: rawptr) {
 		}
 		([^]C.int)(uintptr(eap) + EXARG_LINE2_OFF)[0] += 1
 	}
-	do_join_r(C.size_t(([^]C.int)(uintptr(eap) + EXARG_LINE2_OFF)[0] - ([^]C.int)(uintptr(eap) + EXARG_LINE1_OFF)[0] + 1), ([^]C.int)(uintptr(eap) + EXARG_FORCEIT_OFF)[0] == 0, true, true, true)
+	do_join(C.size_t(([^]C.int)(uintptr(eap) + EXARG_LINE2_OFF)[0] - ([^]C.int)(uintptr(eap) + EXARG_LINE1_OFF)[0] + 1), ([^]C.int)(uintptr(eap) + EXARG_FORCEIT_OFF)[0] == 0, true, true, true)
 	beginline(BL_WHITE | BL_FIX)
 	ex_may_print(eap)
 }
@@ -6582,10 +6581,7 @@ ex_script_ni :: proc "c" (eap: rawptr) {
 
 // —— Batch 43: ex_docmd.c find + operators (exports + unstatic) ——
 foreign _ {
-	@(link_name = "op_delete")
-	op_delete_e :: proc "c" (oap: rawptr) -> C.int ---
-	@(link_name = "op_shift")
-	op_shift_e :: proc "c" (oap: rawptr, curs_top: bool, amount: C.int) ---
+	// op_delete/op_shift now defined in ops.odin — call directly.
 }
 
 CMD_YANK_O :: 550
@@ -6648,7 +6644,7 @@ ex_find :: proc "c" (eap: rawptr) {
 ex_operators :: proc "c" (eap: rawptr) {
 	context = runtime.default_context()
 	oa: [88]u8
-	clear_oparg_e(rawptr(&oa[0]))
+	clear_oparg(rawptr(&oa[0]))
 	([^]C.int)(uintptr(rawptr(&oa[0])) + OA_REGNAME_OFF)[0] = ([^]C.int)(uintptr(eap) + EXARG_REGNAME_OFF)[0]
 	([^]C.int)(uintptr(rawptr(&oa[0])) + OA_START_OFF)[0] = ([^]C.int)(uintptr(eap) + EXARG_LINE1_OFF)[0]
 	([^]C.int)(uintptr(rawptr(&oa[0])) + OA_END_OFF)[0] = ([^]C.int)(uintptr(eap) + EXARG_LINE2_OFF)[0]
@@ -6666,7 +6662,7 @@ ex_operators :: proc "c" (eap: rawptr) {
 	}
 	if cmdidx == CMD_DELETE_O {
 		([^]C.int)(uintptr(rawptr(&oa[0])) + OA_OP_TYPE_OFF)[0] = OP_DELETE_O
-		op_delete_e(rawptr(&oa[0]))
+		op_delete(rawptr(&oa[0]))
 	} else if cmdidx == CMD_YANK_O {
 		([^]C.int)(uintptr(rawptr(&oa[0])) + OA_OP_TYPE_OFF)[0] = OP_YANK_O
 		op_yank(rawptr(&oa[0]), true)
@@ -6677,7 +6673,7 @@ ex_operators :: proc "c" (eap: rawptr) {
 		} else {
 			([^]C.int)(uintptr(rawptr(&oa[0])) + OA_OP_TYPE_OFF)[0] = OP_LSHIFT_O
 		}
-		op_shift_e(rawptr(&oa[0]), false, ([^]C.int)(uintptr(eap) + EXARG_AMOUNT_OFF)[0])
+		op_shift(rawptr(&oa[0]), false, ([^]C.int)(uintptr(eap) + EXARG_AMOUNT_OFF)[0])
 	}
 }
 

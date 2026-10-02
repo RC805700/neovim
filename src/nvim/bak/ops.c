@@ -123,6 +123,7 @@ static const char opchars[][3] = {
 
 /// Translate a command name into an operator type.
 /// Must only be called with a valid operator name!
+#pragma weak get_op_type
 int get_op_type(int char1, int char2)
 {
   int i;
@@ -159,12 +160,14 @@ int get_op_type(int char1, int char2)
 }
 
 /// @return  true if operator "op" always works on whole lines.
+#pragma weak op_on_lines
 int op_on_lines(int op)
 {
   return opchars[op][2] & OPF_LINES;
 }
 
 /// @return  true if operator "op" changes text.
+#pragma weak op_is_change
 int op_is_change(int op)
 {
   return opchars[op][2] & OPF_CHANGE;
@@ -173,18 +176,21 @@ int op_is_change(int op)
 /// Get first operator command character.
 ///
 /// @return  'g' or 'z' if there is another command character.
+#pragma weak get_op_char
 int get_op_char(int optype)
 {
   return opchars[optype][0];
 }
 
 /// Get second operator command character.
+#pragma weak get_extra_op_char
 int get_extra_op_char(int optype)
 {
   return opchars[optype][1];
 }
 
 /// handle a shift operation
+#pragma weak op_shift
 void op_shift(oparg_T *oap, bool curs_top, int amount)
 {
   int block_col = 0;
@@ -377,6 +383,7 @@ static int64_t get_new_vts_indent(bool left, bool round, int amount, int *vts_ar
 /// @param count               true if new indent is to be to a tabstop
 /// @param amount              number of shifts
 /// @param call_changed_bytes  call changed_bytes()
+#pragma weak shift_line
 void shift_line(bool left, bool round, int amount, int call_changed_bytes)
 {
   int64_t count;
@@ -711,6 +718,7 @@ static void block_insert(oparg_T *oap, const char *s, size_t slen, bool b_insert
 /// Handle a delete operation.
 ///
 /// @return  FAIL if undo failed, OK otherwise.
+#pragma weak op_delete
 int op_delete(oparg_T *oap)
 {
   linenr_T lnum;
@@ -1079,7 +1087,8 @@ static void replace_character(int c)
 }
 
 /// Replace a whole area with one character.
-static int op_replace(oparg_T *oap, int c)
+#pragma weak op_replace
+int op_replace(oparg_T *oap, int c)
 {
   int n;
   struct block_def bd;
@@ -1314,6 +1323,7 @@ static int op_replace(oparg_T *oap, int c)
 }
 
 /// Handle the (non-standard vi) tilde operator.  Also for "gu", "gU" and "g?".
+#pragma weak op_tilde
 void op_tilde(oparg_T *oap)
 {
   struct block_def bd;
@@ -1417,6 +1427,7 @@ static int swapchars(int op_type, pos_T *pos, int length)
 ///                 else swap case of character at 'pos'
 ///
 /// @return  true when something actually changed.
+#pragma weak swapchar
 bool swapchar(int op_type, pos_T *pos)
   FUNC_ATTR_NONNULL_ARG(2)
 {
@@ -1459,6 +1470,7 @@ bool swapchar(int op_type, pos_T *pos)
 }
 
 /// Insert and append operators for Visual mode.
+#pragma weak op_insert
 void op_insert(oparg_T *oap, int count1)
 {
   int pre_textlen = 0;
@@ -1669,6 +1681,7 @@ void op_insert(oparg_T *oap, int count1)
 /// handle a change operation
 ///
 /// @return  true if edit() returns because of a CTRL-O command
+#pragma weak op_change
 int op_change(oparg_T *oap)
 {
   int pre_textlen = 0;
@@ -1786,6 +1799,7 @@ int op_change(oparg_T *oap)
 
 /// When the cursor is on the NUL past the end of the line and it should not be
 /// there move it left.
+#pragma weak adjust_cursor_eol
 void adjust_cursor_eol(void)
 {
   unsigned cur_ve_flags = get_ve_flags(curwin);
@@ -1822,6 +1836,7 @@ void adjust_cursor_eol(void)
 /// @param include_space - whether to skip space following the comment leader
 /// @param[out] is_comment - whether the current line ends with an unclosed
 ///  comment.
+#pragma weak skip_comment
 char *skip_comment(char *line, bool process, bool include_space, bool *is_comment)
 {
   char *comment_flags = NULL;
@@ -1883,6 +1898,7 @@ char *skip_comment(char *line, bool process, bool include_space, bool *is_commen
 ///                           to set those marks.
 ///
 /// @return  FAIL for failure, OK otherwise
+#pragma weak do_join
 int do_join(size_t count, bool insert_space, bool save_undo, bool use_formatoptions, bool setmark)
 {
   char *curr = NULL;
@@ -2081,6 +2097,7 @@ theend:
 ///
 /// Reset 'linebreak' and take care of side effects.
 /// @return  the previous value, to be passed to restore_lbr().
+#pragma weak reset_lbr
 bool reset_lbr(void)
 {
   if (!curwin->w_p_lbr) {
@@ -2093,6 +2110,7 @@ bool reset_lbr(void)
 }
 
 /// Restore 'linebreak' and take care of side effects.
+#pragma weak restore_lbr
 void restore_lbr(bool lbr_saved)
 {
   if (curwin->w_p_lbr || !lbr_saved) {
@@ -2115,6 +2133,7 @@ void restore_lbr(bool lbr_saved)
 /// - textlen includes the first/last char to be wholly yanked
 /// - start/endspaces is the number of columns of the first/last yanked char
 ///   that are to be yanked.
+#pragma weak block_prep
 void block_prep(oparg_T *oap, struct block_def *bdp, linenr_T lnum, bool is_del)
 {
   int incr = 0;
@@ -2239,6 +2258,7 @@ void block_prep(oparg_T *oap, struct block_def *bdp, linenr_T lnum, bool is_del)
 }
 
 /// Get block text from "start" to "end"
+#pragma weak charwise_block_prep
 void charwise_block_prep(pos_T start, pos_T end, struct block_def *bdp, linenr_T lnum,
                          bool inclusive)
 {
@@ -2304,6 +2324,7 @@ void charwise_block_prep(pos_T start, pos_T end, struct block_def *bdp, linenr_T
 /// @param[in]  oap      Arguments of operator.
 /// @param[in]  Prenum1  Amount of addition or subtraction.
 /// @param[in]  g_cmd    Prefixed with `g`.
+#pragma weak op_addsub
 void op_addsub(oparg_T *oap, linenr_T Prenum1, bool g_cmd)
 {
   struct block_def bd;
@@ -2409,6 +2430,7 @@ void op_addsub(oparg_T *oap, linenr_T Prenum1, bool g_cmd)
 /// @param Prenum1 Amount of addition or subtraction.
 ///
 /// @return true if some character was changed.
+#pragma weak do_addsub
 bool do_addsub(int op_type, pos_T *pos, int length, linenr_T Prenum1)
 {
   int pre;  // 'X' or 'x': hex; '0': octal; 'B' or 'b': bin
@@ -2762,6 +2784,7 @@ theend:
   return did_change;
 }
 
+#pragma weak clear_oparg
 void clear_oparg(oparg_T *oap)
 {
   CLEAR_POINTER(oap);
@@ -2819,6 +2842,7 @@ static varnumber_T line_count_info(char *line, varnumber_T *wc, varnumber_T *cc,
 /// the *_count_cursor variables store running totals for the selection.)
 ///
 /// @param dict  when not NULL, store the info there instead of showing it.
+#pragma weak cursor_pos_info
 void cursor_pos_info(dict_T *dict)
 {
   char buf1[50];
@@ -3121,10 +3145,11 @@ static void op_colon(oparg_T *oap)
   // do_cmdline() does the rest
 }
 
-/// callback function for 'operatorfunc'
-static Callback opfunc_cb;
+/// callback function for 'operatorfunc' (moved to ops.odin; single copy).
+extern Callback opfunc_cb;
 
 /// Process the 'operatorfunc' option value.
+#pragma weak did_set_operatorfunc
 const char *did_set_operatorfunc(optset_T *args FUNC_ATTR_UNUSED)
 {
   if (option_set_callback_func(p_opfunc, &opfunc_cb) == FAIL) {
@@ -3142,6 +3167,7 @@ void free_operatorfunc_option(void)
 
 /// Mark the global 'operatorfunc' callback with "copyID" so that it is not
 /// garbage collected.
+#pragma weak set_ref_in_opfunc
 bool set_ref_in_opfunc(int copyID)
 {
   return set_ref_in_callback(&opfunc_cb, copyID, NULL, NULL);
@@ -3275,6 +3301,7 @@ static bool is_ex_cmdchar(cmdarg_T *cap)
 
 /// Handle an operator after Visual mode or when the movement is finished.
 /// "gui_yank" is true when yanking text for the clipboard.
+#pragma weak do_pending_operator
 void do_pending_operator(cmdarg_T *cap, int old_col, bool gui_yank)
 {
   oparg_T *oap = cap->oap;
@@ -3918,6 +3945,7 @@ void do_pending_operator(cmdarg_T *cap, int old_col, bool gui_yank)
 /// Get the byte count of buffer region. End-exclusive.
 ///
 /// @return number of bytes
+#pragma weak get_region_bytecount
 bcount_t get_region_bytecount(buf_T *buf, linenr_T start_lnum, linenr_T end_lnum, colnr_T start_col,
                               colnr_T end_col)
 {

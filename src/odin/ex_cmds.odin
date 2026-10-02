@@ -3617,11 +3617,7 @@ skip_substitute_o :: proc "c"(start: ^u8, delimiter: C.int) -> ^u8 {
 EXFLAG_PRINT_O :: 0x04
 EXARG_SKIP_OFF :: 72
 
-foreign _ {
-	@(link_name = "do_join")
-	do_join_r :: proc "c"(count: C.size_t, insert_space: bool, save_undo: bool, use_formatoptions: bool, setmark: bool) -> C.int ---
-	// ex_may_print now defined in ex_docmd.odin — call directly.
-}
+// NOTE: do_join now defined in ops.odin; ex_may_print now defined in ex_docmd.odin — call directly.
 
 // Recognize ":%s/\n//" as a join (much more efficient) (C static, plain).
 sub_joining_lines_o :: proc "c"(eap: rawptr, pat: ^NvimString, sub: cstring, cmd: cstring, save: bool, keeppatterns: bool) -> bool {
@@ -3654,7 +3650,7 @@ sub_joining_lines_o :: proc "c"(eap: rawptr, pat: ^NvimString, sub: cstring, cmd
 			((^C.int)(uintptr(eap) + EXARG_LINE2_OFF)^ <
 				(^C.int)(uintptr(curbuf) + B_ML_LINE_COUNT_OFF)^ ? 1 : 0)
 		if joined_lines_count > 1 {
-			do_join_r(C.size_t(joined_lines_count), false, true, false, true)
+			do_join(C.size_t(joined_lines_count), false, true, false, true)
 			sub_nsubs_sp = C.int(joined_lines_count) - 1
 			sub_nlines_sp = 1
 			do_sub_msg(false)

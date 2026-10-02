@@ -16454,19 +16454,13 @@ f_get :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 
 // —— Batch 27br: funcs.c getregion engine ——
 foreign _ {
-	@(link_name = "block_prep")
-	block_prep_e :: proc "c" (oap: rawptr, bdp: rawptr, lnum: C.int, is_del: bool) ---
-	@(link_name = "charwise_block_prep")
-	charwise_block_prep_e :: proc "c" (start: Pos_T, end: Pos_T, bdp: rawptr, lnum: C.int, inclusive: bool) ---
+	// block_prep/charwise_block_prep now defined in ops.odin — call directly.
 	@(link_name = "mb_prevptr")
 	mb_prevptr_e :: proc "c" (line: ^u8, p: ^u8) -> ^u8 ---
 	// ml_get_pos now defined in memline.odin — call directly.
 	@(link_name = "unadjust_for_sel_inner")
 	unadjust_for_sel_inner_e :: proc "c" (pp: ^Pos_T) -> bool ---
-	@(link_name = "reset_lbr")
-	reset_lbr_e :: proc "c" () -> bool ---
-	@(link_name = "restore_lbr")
-	restore_lbr_e :: proc "c" (lbr_saved: bool) ---
+	// reset_lbr/restore_lbr now defined in ops.odin — call directly.
 	@(link_name = "virtual_op")
 	virtual_op_g: TriState
 }
@@ -16627,10 +16621,10 @@ getregionpos_o :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, p1: ^Pos_T, p2
 		}
 	} else if region_type^ == kMTBlockWise {
 		sc1, ec1, sc2, ec2: C.int = 0, 0, 0, 0
-		lbr_saved := reset_lbr_e()
+		lbr_saved := reset_lbr()
 		getvvcol(curwin, (^Pos_T)(rawptr(p1)), &sc1, nil, &ec1, 0)
 		getvvcol(curwin, (^Pos_T)(rawptr(p2)), &sc2, nil, &ec2, 0)
-		restore_lbr_e(lbr_saved)
+		restore_lbr(lbr_saved)
 		(^C.int)(uintptr(oap) + OAP_MOTION_TYPE)^ = kMTBlockWise
 		(^bool)(uintptr(oap) + OAP_INCLUSIVE)^ = true
 		(^C.int)(uintptr(oap) + OAP_OP_TYPE)^ = OP_NOP_O
@@ -16692,13 +16686,13 @@ f_getregion :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 		akt := NvimString{}
 		if region_type == kMTBlockWise {
 			bd := Block_Def_O{}
-			block_prep_e(rawptr(&oa[0]), rawptr(&bd), lnum, false)
+			block_prep(rawptr(&oa[0]), transmute(^Block_Def)(rawptr(&bd)), lnum, false)
 			akt = block_def2str_o(&bd)
 		} else if region_type == kMTLineWise || (p1.lnum < lnum && lnum < p2.lnum) {
 			akt = transmute(NvimString)(cbuf_to_string_r(transmute(cstring)(ml_get(lnum)), C.size_t(ml_get_len(lnum))))
 		} else {
 			bd := Block_Def_O{}
-			charwise_block_prep_e(p1, p2, rawptr(&bd), lnum, inclusive)
+			charwise_block_prep(p1, p2, transmute(^Block_Def)(rawptr(&bd)), lnum, inclusive)
 			akt = block_def2str_o(&bd)
 		}
 		tv_list_append_allocated_string(rawptr(rettv.vval), transmute(^u8)(akt.data))
@@ -16744,9 +16738,9 @@ f_getregionpos :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) 
 		} else {
 			bd := Block_Def_O{}
 			if region_type == kMTBlockWise {
-				block_prep_e(rawptr(&oa[0]), rawptr(&bd), lnum, false)
+				block_prep(rawptr(&oa[0]), transmute(^Block_Def)(rawptr(&bd)), lnum, false)
 			} else {
-				charwise_block_prep_e(p1, p2, rawptr(&bd), lnum, inclusive)
+				charwise_block_prep(p1, p2, transmute(^Block_Def)(rawptr(&bd)), lnum, inclusive)
 			}
 			if bd.is_oneChar != 0 {
 				if region_type == kMTBlockWise {
@@ -18545,8 +18539,7 @@ foreign _ {
 	cmdline_pum_active_e :: proc "c" () -> bool ---
 	@(link_name = "windowsVersion")
 	windowsVersion_g: [20]u8
-	@(link_name = "cursor_pos_info")
-	cursor_pos_info_e :: proc "c" (dict: rawptr) ---
+	// cursor_pos_info now defined in ops.odin — call directly.
 }
 
 B_VISUAL_MODE_EVAL :: 1456
@@ -18588,7 +18581,7 @@ f_windowsversion :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr
 f_wordcount :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 	context = runtime.default_context()
 	tv_dict_alloc_ret(rettv)
-	cursor_pos_info_e(rawptr(rettv.vval))
+	cursor_pos_info(rawptr(rettv.vval))
 }
 
 // "perleval()" function.
@@ -28739,8 +28732,7 @@ foreign _ {
 	may_garbage_collect_g: bool
 	@(link_name = "set_ref_in_insexpand_funcs")
 	set_ref_in_insexpand_funcs_e :: proc "c" (copyID: C.int) -> bool ---
-	@(link_name = "set_ref_in_opfunc")
-	set_ref_in_opfunc_e :: proc "c" (copyID: C.int) -> bool ---
+	// set_ref_in_opfunc now defined in ops.odin — call directly.
 	@(link_name = "set_ref_in_tagfunc")
 	set_ref_in_tagfunc_e :: proc "c" (copyID: C.int) -> bool ---
 	// set_ref_in_findfunc now defined in ex_docmd.odin — call directly.
@@ -28861,7 +28853,7 @@ garbage_collect :: proc "c" (testing: bool) -> bool {
 		abort = set_ref_in_insexpand_funcs_e(copyID)
 	}
 	if !abort {
-		abort = set_ref_in_opfunc_e(copyID)
+		abort = set_ref_in_opfunc(copyID)
 	}
 	if !abort {
 		abort = set_ref_in_tagfunc_e(copyID)

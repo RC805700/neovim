@@ -181,8 +181,7 @@ foreign _ {
 	next_virt_text_chunk_r :: proc "c" (vt: Kvec_VT, pos: ^C.size_t, attr: ^C.int) -> ^u8 ---
 	@(link_name = "clear_virttext")
 	clear_virttext_r :: proc "c" (text: ^Kvec_VT) ---
-	@(link_name = "skip_comment")
-	skip_comment_r :: proc "c" (line: ^u8, process: bool, include_space: bool, is_comment: ^bool) -> ^u8 ---
+	// skip_comment now defined in ops.odin — call directly.
 	// linewhite now defined in search.odin — reuse directly.
 	// ml_replace_buf now defined in memline.odin — call directly.
 	// xmemcpyz reused from os_env.odin's _xmemcpyz
@@ -1477,7 +1476,7 @@ foldAddMarker :: proc "c" (buf: rawptr, pos: Pos_T, marker: ^u8, markerlen: C.si
 		return
 	}
 
-	skip_comment_r(line, false, false, &line_is_comment)
+	skip_comment(line, false, false, &line_is_comment)
 	newline := (^u8)(xmalloc(line_len + markerlen + libc.strlen(transmute(cstring)(cms)) + 1))
 	libc.memcpy(newline, line, line_len + 1)
 	if p == nil || line_is_comment {

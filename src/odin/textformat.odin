@@ -930,7 +930,7 @@ format_lines :: proc "c" (line_count: C.int, avoid_fex: bool) {
 					}
 				}
 				(^C.int)(uintptr(curwin) + W_CURSOR_OFF)^ -= 1
-				if do_join_r(2, true, false, false, false) == FAIL {
+				if do_join(2, true, false, false, false) == FAIL {
 					beep_flush_r2()
 					break
 				}
