@@ -1256,8 +1256,7 @@ foreign _ {
 	need_fileinfo_g: bool
 	@(link_name = "buf_check_timestamp")
 	buf_check_timestamp_r :: proc "c" (buf: rawptr) -> C.int ---
-	@(link_name = "inindent")
-	inindent_r :: proc "c" (extra: C.int) -> bool ---
+	// inindent now defined in indent.odin — call directly.
 	// scroll_cursor_halfway now defined in move.odin — call directly.
 }
 
@@ -1808,7 +1807,7 @@ enter_buffer_o :: proc "c"(buf: rawptr) {
 	}
 	// If autocommands did not change the cursor position, restore cursor
 	// lnum and possibly cursor col.
-	if (^C.int)(uintptr(curwin) + W_CURSOR_OFF)^ == 1 && inindent_r(0) {
+	if (^C.int)(uintptr(curwin) + W_CURSOR_OFF)^ == 1 && inindent(0) {
 		buflist_getfpos_o()
 	}
 	check_arg_idx(curwin) // check for valid arg_idx

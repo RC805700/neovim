@@ -1445,8 +1445,7 @@ foreign _ {
 	highlight_changed_r :: proc "c" () ---
 	@(link_name = "check_opt_wim")
 	check_opt_wim_r :: proc "c" () -> C.int ---
-	@(link_name = "tabstop_set")
-	tabstop_set_o :: proc "c" (val: ^u8, ret_list: ^^u8) -> bool ---
+	// tabstop_set now defined in indent.odin — call directly.
 	// get_special_key_name — PORTED (keycodes.odin).
 	// transchar is an Odin export (charset.odin) — call directly.
 	// find_special_key_in_table — PORTED (keycodes.odin).
@@ -2610,10 +2609,10 @@ didset_options2_o :: proc "c"() {
 	_ = check_opt_wim_r()
 	vsts_arr := transmute(^^u8)(uintptr(curbuf) + 10760)
 	xfree(vsts_arr^)
-	tabstop_set_o((^^u8)(uintptr(curbuf) + 10752)^, vsts_arr)
+	tabstop_set((^^u8)(uintptr(curbuf) + 10752)^, transmute(^^C.int)(vsts_arr))
 	vts_arr := transmute(^^u8)(uintptr(curbuf) + 10784)
 	xfree(vts_arr^)
-	tabstop_set_o((^^u8)(uintptr(curbuf) + 10776)^, vts_arr)
+	tabstop_set((^^u8)(uintptr(curbuf) + 10776)^, transmute(^^C.int)(vts_arr))
 }
 
 didset_options_all_o :: proc "c"() {
@@ -3329,8 +3328,7 @@ set_fileformat :: proc "c"(eol_style: C.int, opt_flags: C.int) {
 // ── winopt_T copy/clear/didset ───────────────────────────────────────────────
 
 foreign _ {
-	@(link_name = "briopt_check")
-	briopt_check_r :: proc "c" (briopt: ^u8, wp: rawptr) -> bool ---
+	// briopt_check now defined in indent.odin — call directly.
 	@(link_name = "free_operatorfunc_option")
 	free_operatorfunc_option :: proc "c" () ---
 	@(link_name = "free_tagfunc_option")
@@ -3422,7 +3420,7 @@ didset_window_options :: proc "c"(wp: rawptr, valid_cursor: bool) {
 		(^C.int)(uintptr(wp) + W_SKIPCOL_OFF)^ = 0
 	}
 	check_colorcolumn(nil, wp)
-	briopt_check_r(nil, wp)
+	briopt_check(nil, wp)
 	fill_culopt_flags(nil, wp)
 	set_chars_option(wp, (^^u8)(uintptr(wp) + 1208)^, kFillchars_S, true, nil, 0)
 	set_chars_option(wp, (^^u8)(uintptr(wp) + 1200)^, kListchars_S, true, nil, 0)
@@ -5380,7 +5378,7 @@ buf_copy_options :: proc "c"(buf: rawptr, flags: C.int) {
 			copy_opt_sctx(bp, 89)
 			if p_vsts_g != nil && p_vsts_g != empty_string_opt() {
 				vsts_arr: ^rawptr = (^rawptr)(uintptr(bp) + B_P_VSTS_ARRAY_OFF)
-				tabstop_set_o(p_vsts_g, (^^u8)(vsts_arr))
+				tabstop_set(p_vsts_g, transmute(^^C.int)(vsts_arr))
 			} else {
 				(^rawptr)(uintptr(bp) + B_P_VSTS_ARRAY_OFF)^ = nil
 			}
@@ -5490,7 +5488,7 @@ buf_copy_options :: proc "c"(buf: rawptr, flags: C.int) {
 				if p_vts_g != nil && b_at(p_vts_g, 0) != 0 &&
 				(^rawptr)(uintptr(bp) + B_P_VSTS_ARRAY_OFF)^ == nil {
 					vsts_arr2: ^rawptr = (^rawptr)(uintptr(bp) + B_P_VSTS_ARRAY_OFF)
-					tabstop_set_o(p_vts_g, (^^u8)(vsts_arr2))
+					tabstop_set(p_vsts_g, (transmute(^^C.int)(vsts_arr2)))
 				} else {
 					(^rawptr)(uintptr(bp) + B_P_VSTS_ARRAY_OFF)^ = nil
 				}
@@ -5505,7 +5503,7 @@ buf_copy_options :: proc "c"(buf: rawptr, flags: C.int) {
 				if p_vts_g != nil && b_at(p_vts_g, 0) != 0 &&
 				(^rawptr)(uintptr(bp) + B_P_VSTS_ARRAY_OFF)^ == nil {
 					vsts_arr3: ^rawptr = (^rawptr)(uintptr(bp) + B_P_VSTS_ARRAY_OFF)
-					tabstop_set_o(p_vts_g, (^^u8)(vsts_arr3))
+					tabstop_set(p_vsts_g, transmute(^^C.int)(vsts_arr3))
 				} else {
 					(^rawptr)(uintptr(bp) + B_P_VSTS_ARRAY_OFF)^ = nil
 				}

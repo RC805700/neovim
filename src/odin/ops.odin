@@ -330,7 +330,7 @@ shift_line :: proc "c" (left: bool, round: bool, amount: C.int, call_changed_byt
 		count = get_new_vts_indent_o(left, round, amount, vts_array)
 	}
 	if (State & VREPLACE_FLAG_O) != 0 {
-		change_indent_e(INDENT_SET_O, trim_to_int(count), false, call_changed_bytes != 0)
+		change_indent(INDENT_SET_O, trim_to_int(count), false, call_changed_bytes != 0)
 	} else {
 		sin := C.int(0)
 		if call_changed_bytes != 0 {
@@ -341,16 +341,14 @@ shift_line :: proc "c" (left: bool, round: bool, amount: C.int, call_changed_byt
 }
 
 foreign _ {
-	@(link_name = "tabstop_fromto")
-	tabstop_fromto_e :: proc "c" (start_col: C.int, end_col: C.int, ts_arg: C.int, vts: ^C.int, ntabs: ^C.int, nspcs: ^C.int) ---
+	// tabstop_fromto now defined in indent.odin — call directly.
 	@(link_name = "VIsual_select_reg")
 	VIsual_select_reg_g: C.int
 	@(link_name = "display_dollar")
 	display_dollar_e :: proc "c" (col_arg: C.int) ---
 	@(link_name = "get_sw_value_indent")
 	get_sw_value_indent_e :: proc "c" (buf: rawptr, left: bool) -> C.int ---
-	@(link_name = "fix_indent")
-	fix_indent_e :: proc "c" () ---
+	// fix_indent now defined in indent.odin — call directly.
 	@(link_name = "edit")
 	edit_e :: proc "c" (cmdchar: C.int, startln: bool, count: C.int) -> bool ---
 	@(link_name = "stuffnumReadbuff")
@@ -429,8 +427,7 @@ foreign _ {
 	clearopbeep_e :: proc "c" (oap: rawptr) ---
 	@(link_name = "may_clear_cmdline")
 	may_clear_cmdline_e :: proc "c" () ---
-	@(link_name = "op_reindent")
-	op_reindent_e :: proc "c" (oap: rawptr, how: Indenter_T) ---
+	// op_reindent now defined in indent.odin — call directly.
 	// vim_beep now defined in ui.odin — call directly.
 	@(link_name = "resel_VIsual_mode")
 	resel_VIsual_mode_g: C.int
@@ -763,7 +760,7 @@ shift_block_o :: proc "c" (oap: rawptr, amount: C.int) {
 		b_p_et := (^C.int)(uintptr(curbuf) + B_P_ET_OFF2)^
 		if b_p_et == 0 {
 			vts := (^C.int)((^rawptr)(uintptr(curbuf) + B_P_VTS_ARR_OFF)^)
-			tabstop_fromto_e(ws_vcol, ws_vcol + C.int(tot), ts_val, vts, &tabs, &spaces)
+			tabstop_fromto(ws_vcol, ws_vcol + C.int(tot), ts_val, vts, &tabs, &spaces)
 		} else {
 			spaces = C.int(tot)
 		}
@@ -1102,7 +1099,7 @@ op_shift :: proc "c" (oap: rawptr, curs_top: bool, amount: C.int) {
 			(^C.int)(uintptr(curwin) + W_CURSOR_OFF + 4)^ = 0
 		} else if motion_type == kMTBlockWise {
 			shift_block_o(oap, amount)
-		} else if first_char != '#' || !preprocs_left_r() {
+		} else if first_char != '#' || !preprocs_left() {
 			shift_line(op_type == OP_LSHIFT_O, p_sr_g != 0, amount, 0)
 		}
 		(^C.int)(uintptr(curwin) + W_CURSOR_OFF)^ += 1
@@ -1190,7 +1187,7 @@ op_delete :: proc "c" (oap: rawptr) -> C.int {
 			ptr = transmute(^u8)(rawptr(uintptr(ptr) + uintptr(incl)))
 		}
 		ptr = transmute(^u8)(skipwhite(transmute(cstring)(ptr)))
-		if ([^]u8)(ptr)[0] == 0 && inindent_r(0) {
+		if ([^]u8)(ptr)[0] == 0 && inindent(0) {
 			motion_type = kMTLineWise
 			(^C.int)(uintptr(oap) + OAP_MOTION_TYPE)^ = kMTLineWise
 		}
@@ -1653,7 +1650,7 @@ op_change :: proc "c" (oap: rawptr) -> C.int {
 		bd.textcol = (^C.int)(uintptr(curwin) + W_CURSOR_OFF + 4)^
 	}
 	if motion_type == kMTLineWise {
-		fix_indent_e()
+		fix_indent()
 	}
 	save_finish_op := finish_op_g
 	finish_op_g = false
@@ -3182,7 +3179,7 @@ do_pending_operator :: proc "c" (cap: rawptr, old_col: C.int, gui_yank: bool) {
 			(^C.int)(uintptr(oap) + OAP_LINE_COUNT)^ -= 1
 			line_count -= 1
 			(^Pos_T)(uintptr(oap) + OAP_END)^.lnum -= 1
-			if inindent_r(0) {
+			if inindent(0) {
 				motion_type = kMTLineWise
 				(^C.int)(uintptr(oap) + OAP_MOTION_TYPE)^ = kMTLineWise
 			} else {
@@ -3280,16 +3277,16 @@ do_pending_operator :: proc "c" (cap: rawptr, old_col: C.int, gui_yank: bool) {
 			if op_type == OP_INDENT_O && ([^]u8)(get_equalprg())[0] == 0 {
 				if (^C.int)(uintptr(curbuf) + B_P_LISP_OFF)^ != 0 {
 					if use_indentexpr_for_lisp() {
-						op_reindent_e(oap, get_expr_indent_e)
+						op_reindent(oap, get_expr_indent)
 					} else {
-						op_reindent_e(oap, get_lisp_indent_e)
+						op_reindent(oap, get_lisp_indent)
 					}
 				} else {
 					inde := (^u8)((^rawptr)(uintptr(curbuf) + B_P_INDE_OFF)^)
 					if inde != nil && ([^]u8)(inde)[0] != 0 {
-						op_reindent_e(oap, get_expr_indent_e)
+						op_reindent(oap, get_expr_indent)
 					} else {
-						op_reindent_e(oap, get_c_indent_e)
+						op_reindent(oap, get_c_indent_e)
 					}
 				}
 			} else {

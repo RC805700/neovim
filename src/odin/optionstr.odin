@@ -603,7 +603,7 @@ did_set_breakindentopt :: proc "c"(args: ^optset_T) -> cstring {
 	local_ptr := (^^u8)(uintptr(win) + W_P_BRIOPT_OFF)
 	use_win := transmute(rawptr)(varp) == transmute(rawptr)(local_ptr)
 
-	if !briopt_check_r(varp^, use_win ? win : nil) {
+	if !briopt_check(varp^, use_win ? win : nil) {
 		return cstring("E474: Invalid argument")
 	}
 
@@ -1168,7 +1168,7 @@ did_set_varsofttabstop_vartabstop_o :: proc "c"(buf: rawptr, varp_val: ^u8, arr_
 		return cstring("E474: Invalid argument")
 	}
 	oldarray := (^rawptr)(uintptr(buf) + arr_off)^
-	if tabstop_set_o(varp_val, (^^u8)(uintptr(buf) + arr_off)) {
+	if tabstop_set(varp_val, transmute(^^C.int)(uintptr(buf) + arr_off)) {
 		xfree(oldarray)
 	} else {
 		return cstring("E474: Invalid argument")

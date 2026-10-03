@@ -42,19 +42,14 @@ foreign _ {
 	end_comment_pending_g: C.int
 	@(link_name = "vr_lines_changed")
 	vr_lines_changed_g: C.int
-	may_do_si :: proc "c" () -> bool ---
-	indent_size_ts :: proc "c" (ptr: cstring, ts: C.longlong, vts: ^C.int) -> C.int ---
-	get_indent :: proc "c" () -> C.int ---
+	// may_do_si/copy_indent/set_indent now defined in indent.odin — call directly.
+	// indent_size_ts/get_indent/get_sw_value now defined in indent.odin — call directly.
 	cin_is_cinword :: proc "c" (line: cstring) -> bool ---
 	in_cinkeys :: proc "c" (keytyped: C.int, when_key: C.int, line_is_empty: bool) -> bool ---
 	check_linecomment :: proc "c" (line: cstring) -> C.int ---
-	get_lisp_indent :: proc "c" () -> C.int ---
-	fixthisline :: proc "c" (get_the_indent: proc "c" () -> C.int) ---
-	use_indentexpr_for_lisp :: proc "c" () -> bool ---
+	// get_lisp_indent/fixthisline/use_indentexpr_for_lisp now defined in indent.odin — call directly.
 	do_c_expr_indent :: proc "c" () ---
-	copy_indent :: proc "c" (size: C.int, src: ^u8) -> bool ---
-	set_indent :: proc "c" (size: C.int, flags: C.int) -> bool ---
-	get_sw_value :: proc "c" (buf: rawptr) -> C.int ---
+	// get_sw_value now defined in indent.odin — call directly.
 	truncate_spaces :: proc "c" (line: ^u8, len: C.size_t) ---
 	prompt_text :: proc "c" () -> ^u8 ---
 }

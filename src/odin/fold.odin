@@ -165,10 +165,7 @@ foreign _ {
 	@(link_name = "diff_infold")
 	diff_infold_r :: proc "c" (wp: rawptr, lnum: C.int) -> bool ---
 	// plines_win_nofold now defined in plines.odin — call directly.
-	@(link_name = "get_indent_buf")
-	get_indent_buf_r :: proc "c" (buf: rawptr, lnum: C.int) -> C.int ---
-	@(link_name = "get_sw_value")
-	get_sw_value_r :: proc "c" (buf: rawptr) -> C.int ---
+	// get_indent_buf/get_sw_value now defined in indent.odin — call directly.
 	@(link_name = "syn_get_foldlevel")
 	syn_get_foldlevel_r :: proc "c" (wp: rawptr, lnum: C.int) -> C.int ---
 	@(link_name = "parse_virt_text")
@@ -2464,7 +2461,7 @@ foldlevelIndent :: proc "c" (flp: ^Fline_T) {
 	if s^ == 0 || _vim_strchr(transmute(cstring)(w_str(flp.wp, W_P_FDI)), C.int(s^)) != nil {
 		flp.lvl = lnum == 1 || lnum == ml_line_count_b(buf) ? 0 : -1
 	} else {
-		flp.lvl = get_indent_buf_r(buf, lnum) / get_sw_value_r(buf)
+		flp.lvl = get_indent_buf(buf, lnum) / get_sw_value(buf)
 	}
 	flp.lvl = min(flp.lvl, C.int(max(0, w_i64(flp.wp, W_P_FDN))))
 }

@@ -9,18 +9,14 @@ import "base:runtime"
 foreign _ {
 	@(link_name = "get_nolist_virtcol")
 	get_nolist_virtcol_e :: proc "c" () -> C.int ---
-	@(link_name = "get_number_indent")
-	get_number_indent_e :: proc "c" (lnum: C.int) -> C.int ---
-	@(link_name = "get_lisp_indent")
-	get_lisp_indent_e :: proc "c" () -> C.int ---
-	@(link_name = "get_expr_indent")
-	get_expr_indent_e :: proc "c" () -> C.int ---
+	// get_number_indent now defined in indent.odin — call directly.
+	// get_lisp_indent now defined in indent.odin — call directly.
+	// get_expr_indent now defined in indent.odin — call directly.
 	@(link_name = "get_c_indent")
 	get_c_indent_e :: proc "c" () -> C.int ---
 	@(link_name = "cindent_on")
 	cindent_on_e :: proc "c" () -> C.int ---
-	@(link_name = "change_indent")
-	change_indent_e :: proc "c" (type: C.int, amount: C.int, round: bool, keep_zero: bool) -> bool ---
+	// change_indent now defined in indent.odin — call directly.
 	// del_bytes/ins_str/ins_bytes/del_char/open_line now defined in change.odin — call directly.
 	// (see above)
 	// (see above)
@@ -243,7 +239,7 @@ paragraph_start_o :: proc "c" (lnum: C.int) -> bool {
 	if has_format_option(FO_WHITE_PAR_O) && !ends_in_white_o(lnum - 1) {
 		return true
 	}
-	if has_format_option(FO_Q_NUMBER_O) && get_number_indent_e(lnum) > 0 {
+	if has_format_option(FO_Q_NUMBER_O) && get_number_indent(lnum) > 0 {
 		return true
 	}
 	if !same_leader_o(lnum - 1, leader_len, leader_flags, next_leader_len, next_leader_flags) {
@@ -536,18 +532,18 @@ internal_format :: proc "c" (textwidth: C.int, second_indent_in: C.int, flags: C
 		if first_line {
 			if (flags & INSCHAR_COM_LIST_O) == 0 {
 				if second_indent < 0 && has_format_option(FO_Q_NUMBER_O) {
-					second_indent = get_number_indent_e((^C.int)(uintptr(curwin) + W_CURSOR_OFF)^ - 1)
+					second_indent = get_number_indent((^C.int)(uintptr(curwin) + W_CURSOR_OFF)^ - 1)
 				}
 				if second_indent >= 0 {
 					if (State & VREPLACE_FLAG_O) != 0 {
-						change_indent_e(INDENT_SET_O, second_indent, false, true)
+						change_indent(INDENT_SET_O, second_indent, false, true)
 					} else if leader_len > 0 && second_indent - leader_len > 0 {
 						padding := second_indent - leader_len
 						for i: C.int = 0; i < padding; i += 1 {
 							ins_str(transmute(^u8)(cstring(" ")), 1)
 						}
 					} else {
-						set_indent_r(second_indent, SIN_CHANGED_O)
+						set_indent(second_indent, SIN_CHANGED_O)
 					}
 				}
 			}
@@ -821,7 +817,7 @@ format_lines :: proc "c" (line_count: C.int, avoid_fex: bool) {
 		} else {
 			next_is_not_par = fmt_check_par_o((^C.int)(uintptr(curwin) + W_CURSOR_OFF)^ + 1, &next_leader_len, &next_leader_flags, do_comments) != 0
 			if do_number_indent {
-				next_is_start_par = get_number_indent_e((^C.int)(uintptr(curwin) + W_CURSOR_OFF)^ + 1) > 0
+				next_is_start_par = get_number_indent((^C.int)(uintptr(curwin) + W_CURSOR_OFF)^ + 1) > 0
 			}
 		}
 		advance = true
@@ -837,16 +833,16 @@ format_lines :: proc "c" (line_count: C.int, avoid_fex: bool) {
 			if first_par_line && (do_second_indent || do_number_indent) && prev_is_end_par && (^C.int)(uintptr(curwin) + W_CURSOR_OFF)^ < (^C.int)(uintptr(curbuf) + B_ML_LINE_COUNT)^ {
 				if do_second_indent && ml_get_len((^C.int)(uintptr(curwin) + W_CURSOR_OFF)^ + 1) != 0 {
 					if leader_len == 0 && next_leader_len == 0 {
-						second_indent = get_indent_lnum_r((^C.int)(uintptr(curwin) + W_CURSOR_OFF)^ + 1)
+						second_indent = get_indent_lnum((^C.int)(uintptr(curwin) + W_CURSOR_OFF)^ + 1)
 					} else {
 						second_indent = next_leader_len
 						do_comments_list = 1
 					}
 				} else if do_number_indent {
 					if leader_len == 0 && next_leader_len == 0 {
-						second_indent = get_number_indent_e((^C.int)(uintptr(curwin) + W_CURSOR_OFF)^)
+						second_indent = get_number_indent((^C.int)(uintptr(curwin) + W_CURSOR_OFF)^)
 					} else {
-						second_indent = get_number_indent_e((^C.int)(uintptr(curwin) + W_CURSOR_OFF)^)
+						second_indent = get_number_indent((^C.int)(uintptr(curwin) + W_CURSOR_OFF)^)
 						do_comments_list = 1
 					}
 				}
@@ -860,21 +856,21 @@ format_lines :: proc "c" (line_count: C.int, avoid_fex: bool) {
 				if need_set_indent {
 					indent: C.int = 0
 					if (^C.int)(uintptr(curwin) + W_CURSOR_OFF)^ == first_line {
-						indent = get_indent_r()
+						indent = get_indent()
 					} else if (^C.int)(uintptr(curbuf) + B_P_LISP_OFF)^ != 0 {
-						indent = get_lisp_indent_e()
+						indent = get_lisp_indent()
 					} else {
 						if cindent_on_e() != 0 {
 							if ([^]u8)((^rawptr)(uintptr(curbuf) + B_P_INDE_OFF)^)[0] != 0 {
-								indent = get_expr_indent_e()
+								indent = get_expr_indent()
 							} else {
 								indent = get_c_indent_e()
 							}
 						} else {
-							indent = get_indent_r()
+							indent = get_indent()
 						}
 					}
-					set_indent_r(indent, SIN_CHANGED_O)
+					set_indent(indent, SIN_CHANGED_O)
 				}
 				State = MODE_NORMAL_O
 				coladvance(curwin, MAXCOL)

@@ -56,6 +56,7 @@
 /// "array" will be set, caller must free it if needed.
 ///
 /// @return  false for an error.
+#pragma weak tabstop_set
 bool tabstop_set(char *var, colnr_T **array)
 {
   int valcount = 1;
@@ -120,6 +121,7 @@ bool tabstop_set(char *var, colnr_T **array)
 /// Calculate the number of screen spaces a tab will occupy.
 /// If "vts" is set then the tab widths are taken from that array,
 /// otherwise the value of ts is used.
+#pragma weak tabstop_padding
 int tabstop_padding(colnr_T col, OptInt ts_arg, const colnr_T *vts)
   FUNC_ATTR_PURE
 {
@@ -154,6 +156,7 @@ int tabstop_padding(colnr_T col, OptInt ts_arg, const colnr_T *vts)
 /// column but is the column number to the left of the first non-whitespace
 /// character in the line.  If the shift is to the left (left == true), then
 /// return the size of the tab interval to the left of the column.
+#pragma weak tabstop_at
 int tabstop_at(colnr_T col, OptInt ts, const colnr_T *vts, bool left)
 {
   if (vts == NULL || vts[0] == 0) {
@@ -192,6 +195,7 @@ int tabstop_at(colnr_T col, OptInt ts, const colnr_T *vts, bool left)
 }
 
 /// Find the column on which a tab starts.
+#pragma weak tabstop_start
 colnr_T tabstop_start(colnr_T col, int ts, colnr_T *vts)
 {
   colnr_T tabcol = 0;
@@ -214,6 +218,7 @@ colnr_T tabstop_start(colnr_T col, int ts, colnr_T *vts)
 
 /// Find the number of tabs and spaces necessary to get from one column
 /// to another.
+#pragma weak tabstop_fromto
 void tabstop_fromto(colnr_T start_col, colnr_T end_col, int ts_arg, const colnr_T *vts, int *ntabs,
                     int *nspcs)
 {
@@ -301,6 +306,7 @@ static bool tabstop_eq(const colnr_T *ts1, const colnr_T *ts2)
 }
 
 /// Copy a tabstop array, allocating space for the new array.
+#pragma weak tabstop_copy
 int *tabstop_copy(const int *oldts)
 {
   if (oldts == 0) {
@@ -316,12 +322,14 @@ int *tabstop_copy(const int *oldts)
 }
 
 /// Return a count of the number of tabstops.
+#pragma weak tabstop_count
 int tabstop_count(colnr_T *ts)
 {
   return ts != NULL ? (int)ts[0] : 0;
 }
 
 /// Return the first tabstop, or 8 if there are no tabstops defined.
+#pragma weak tabstop_first
 int tabstop_first(colnr_T *ts)
 {
   return ts != NULL ? (int)ts[1] : 8;
@@ -329,6 +337,7 @@ int tabstop_first(colnr_T *ts)
 
 /// Return the effective shiftwidth value for current buffer, using the
 /// 'tabstop' value when 'shiftwidth' is zero.
+#pragma weak get_sw_value
 int get_sw_value(buf_T *buf)
 {
   int result = get_sw_value_col(buf, 0, false);
@@ -347,6 +356,7 @@ static int get_sw_value_pos(buf_T *buf, pos_T *pos, bool left)
 }
 
 /// Idem, using the first non-black in the current line.
+#pragma weak get_sw_value_indent
 int get_sw_value_indent(buf_T *buf, bool left)
 {
   pos_T pos = curwin->w_cursor;
@@ -356,6 +366,7 @@ int get_sw_value_indent(buf_T *buf, bool left)
 }
 
 /// Idem, using virtual column "col".
+#pragma weak get_sw_value_col
 int get_sw_value_col(buf_T *buf, colnr_T col, bool left)
 {
   return buf->b_p_sw ? (int)buf->b_p_sw
@@ -364,6 +375,7 @@ int get_sw_value_col(buf_T *buf, colnr_T col, bool left)
 
 /// Return the effective softtabstop value for the current buffer,
 /// using the shiftwidth  value when 'softtabstop' is negative.
+#pragma weak get_sts_value
 int get_sts_value(void)
 {
   int result = curbuf->b_p_sts < 0 ? get_sw_value(curbuf) : (int)curbuf->b_p_sts;
@@ -371,18 +383,21 @@ int get_sts_value(void)
 }
 
 /// Count the size (in window cells) of the indent in the current line.
+#pragma weak get_indent
 int get_indent(void)
 {
   return indent_size_ts(get_cursor_line_ptr(), curbuf->b_p_ts, curbuf->b_p_vts_array);
 }
 
 /// Count the size (in window cells) of the indent in line "lnum".
+#pragma weak get_indent_lnum
 int get_indent_lnum(linenr_T lnum)
 {
   return indent_size_ts(ml_get(lnum), curbuf->b_p_ts, curbuf->b_p_vts_array);
 }
 
 /// Count the size (in window cells) of the indent in line "lnum" of buffer "buf".
+#pragma weak get_indent_buf
 int get_indent_buf(buf_T *buf, linenr_T lnum)
 {
   return indent_size_ts(ml_get_buf(buf, lnum), buf->b_p_ts, buf->b_p_vts_array);
@@ -390,6 +405,7 @@ int get_indent_buf(buf_T *buf, linenr_T lnum)
 
 /// Compute the size of the indent (in window cells) in line "ptr",
 /// without tabstops (count tab as ^I or <09>).
+#pragma weak indent_size_no_ts
 int indent_size_no_ts(char const *ptr)
   FUNC_ATTR_NONNULL_ALL FUNC_ATTR_PURE
 {
@@ -410,6 +426,7 @@ int indent_size_no_ts(char const *ptr)
 
 /// Compute the size of the indent (in window cells) in line "ptr",
 /// using tabstops
+#pragma weak indent_size_ts
 int indent_size_ts(char const *ptr, OptInt ts, colnr_T *vts)
   FUNC_ATTR_NONNULL_ARG(1) FUNC_ATTR_PURE
 {
@@ -473,6 +490,7 @@ int indent_size_ts(char const *ptr, OptInt ts, colnr_T *vts)
 ///  @param size measured in spaces
 ///
 /// @return  true if the line was changed.
+#pragma weak set_indent
 bool set_indent(int size, int flags)
 {
   char *newline;
@@ -734,6 +752,7 @@ bool set_indent(int size, int flags)
 // Return the indent of the current line after a number.  Return -1 if no
 // number was found.  Used for 'n' in 'formatoptions': numbered list.
 // Since a pattern is used it can actually handle more than numbers.
+#pragma weak get_number_indent
 int get_number_indent(linenr_T lnum)
 {
   colnr_T col;
@@ -780,6 +799,7 @@ int get_number_indent(linenr_T lnum)
 /// @param wp      when NULL: only check "briopt"
 ///
 /// @return  FAIL for failure, OK otherwise.
+#pragma weak briopt_check
 bool briopt_check(char *briopt, win_T *wp)
 {
   int bri_shift = 0;
@@ -838,6 +858,7 @@ bool briopt_check(char *briopt, win_T *wp)
 // Return appropriate space number for breakindent, taking influencing
 // parameters into account. Window must be specified, since it is not
 // necessarily always the current one.
+#pragma weak get_breakindent_win
 int get_breakindent_win(win_T *wp, char *line)
   FUNC_ATTR_NONNULL_ALL
 {
@@ -965,6 +986,7 @@ int get_breakindent_win(win_T *wp, char *line)
 // non-blank in the line.
 // When extra == 1: Return true if the cursor is before the first non-blank in
 // the line.
+#pragma weak inindent
 bool inindent(int extra)
 {
   char *ptr;
@@ -981,6 +1003,7 @@ bool inindent(int extra)
 }
 
 /// Handle reindenting a block of lines.
+#pragma weak op_reindent
 void op_reindent(oparg_T *oap, Indenter how)
 {
   int i = 0;
@@ -1062,6 +1085,7 @@ void op_reindent(oparg_T *oap, Indenter how)
 }
 
 /// @return  true if lines starting with '#' should be left aligned.
+#pragma weak preprocs_left
 bool preprocs_left(void)
 {
   return ((curbuf->b_p_si && !curbuf->b_p_cin)
@@ -1070,6 +1094,7 @@ bool preprocs_left(void)
 }
 
 /// @return  true if the conditions are OK for smart indenting.
+#pragma weak may_do_si
 bool may_do_si(void)
 {
   return curbuf->b_p_si && !curbuf->b_p_cin && *curbuf->b_p_inde == NUL && !p_paste;
@@ -1077,6 +1102,7 @@ bool may_do_si(void)
 
 // Try to do some very smart auto-indenting.
 // Used when inserting a "normal" character.
+#pragma weak ins_try_si
 void ins_try_si(int c)
 {
   pos_T *pos;
@@ -1157,6 +1183,7 @@ void ins_try_si(int c)
 ///
 /// @param round               if true, round the indent to 'shiftwidth' (only with _INC and _Dec).
 /// @param call_changed_bytes  call changed_bytes()
+#pragma weak change_indent
 void change_indent(int type, int amount, int round, bool call_changed_bytes)
 {
   int insstart_less;                    // reduction for Insstart.col
@@ -1351,6 +1378,7 @@ void change_indent(int type, int amount, int round, bool call_changed_bytes)
 /// Leaves the cursor on the first non-blank in the line.
 ///
 /// @return true if the line was changed.
+#pragma weak copy_indent
 bool copy_indent(int size, char *src)
 {
   char *p = NULL;
@@ -1470,6 +1498,7 @@ static void emsg_text_too_long(void)
 }
 
 /// ":retab".
+#pragma weak ex_retab
 void ex_retab(exarg_T *eap)
 {
   bool got_tab = false;
@@ -1654,6 +1683,7 @@ void ex_retab(exarg_T *eap)
 }
 
 /// Get indent level from 'indentexpr'.
+#pragma weak get_expr_indent
 int get_expr_indent(void)
 {
   bool use_sandbox = was_set_insecurely(curwin, kOptIndentexpr, OPT_LOCAL);
@@ -1723,6 +1753,7 @@ int get_expr_indent(void)
 // All this messes up get_lisp_indent in some rare cases.
 // Update from Sergey Khorev:
 // I tried to fix the first two issues.
+#pragma weak get_lisp_indent
 int get_lisp_indent(void)
 {
   pos_T *pos;
@@ -1911,6 +1942,7 @@ static int lisp_match(char *p)
 /// surrounding lines. Fixing the cursor position seems really easy -- I'm very
 /// confused what all the part that handles Control-T is doing that I'm not.
 /// "get_the_indent" should be get_c_indent, get_expr_indent or get_lisp_indent.
+#pragma weak fixthisline
 void fixthisline(IndentGetter get_the_indent)
 {
   int amount = get_the_indent();
@@ -1927,6 +1959,7 @@ void fixthisline(IndentGetter get_the_indent)
 
 /// Return true if 'indentexpr' should be used for Lisp indenting.
 /// Caller may want to check 'autoindent'.
+#pragma weak use_indentexpr_for_lisp
 bool use_indentexpr_for_lisp(void)
 {
   return curbuf->b_p_lisp
@@ -1935,6 +1968,7 @@ bool use_indentexpr_for_lisp(void)
 }
 
 /// Fix indent for 'lisp' and 'cindent'.
+#pragma weak fix_indent
 void fix_indent(void)
 {
   if (p_paste) {
@@ -1952,6 +1986,7 @@ void fix_indent(void)
 }
 
 /// "indent()" function
+#pragma weak f_indent
 void f_indent(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 {
   const linenr_T lnum = tv_get_lnum(argvars);
@@ -1963,6 +1998,7 @@ void f_indent(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 }
 
 /// "lispindent(lnum)" function
+#pragma weak f_lispindent
 void f_lispindent(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 {
   const pos_T pos = curwin->w_cursor;

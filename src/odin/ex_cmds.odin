@@ -2657,8 +2657,7 @@ CMD_APPEND_O :: 0
 E144_S :: "E144: Non-numeric argument to :z"
 
 foreign _ {
-	@(link_name = "get_indent_lnum")
-	get_indent_lnum_r :: proc "c"(lnum: C.int) -> C.int ---
+	// get_indent_lnum now defined in indent.odin — call directly.
 	// appended_lines now defined in change.odin — call directly.
 	// p_window_g already in window.odin — reuse.
 }
@@ -2686,7 +2685,7 @@ ex_append :: proc "c"(eap: rawptr) {
 	// First autoindent comes from the line we start on.
 	if (^C.int)(uintptr(eap) + EXARG_CMDIDX_OFF)^ != CMD_CHANGE_O &&
 		(^C.int)(uintptr(curbuf) + B_P_AI_OFF)^ != 0 && lnum > 0 {
-		append_indent_f = get_indent_lnum_r(lnum)
+		append_indent_f = get_indent_lnum(lnum)
 	}
 
 	if (^C.int)(uintptr(eap) + EXARG_CMDIDX_OFF)^ != CMD_APPEND_O {
@@ -2711,7 +2710,7 @@ ex_append :: proc "c"(eap: rawptr) {
 				indent = append_indent_f
 				append_indent_f = -1
 			} else if lnum > 0 {
-				indent = get_indent_lnum_r(lnum)
+				indent = get_indent_lnum(lnum)
 			}
 		}
 		if ([^]u8)(transmute(^u8)(arg))[0] == '|' {
@@ -2850,7 +2849,7 @@ ex_change :: proc "c"(eap: rawptr) {
 	fi := (^C.int)(uintptr(eap) + EXARG_FORCEIT_OFF)^ != 0
 	ai := (^C.int)(uintptr(curbuf) + B_P_AI_OFF)^ != 0
 	if (fi && !ai) || (!fi && ai) {
-		append_indent_f = get_indent_lnum_r(line1)
+		append_indent_f = get_indent_lnum(line1)
 	}
 
 	lnum := line2
@@ -3304,7 +3303,7 @@ ex_align :: proc "c"(eap: rawptr) {
 		} else {
 			has_tab: C.int = 0 // avoid uninit warnings
 			len := linelen_o(cmdidx == CMD_RIGHT_O ? &has_tab : nil) -
-				get_indent_r()
+				get_indent()
 
 			if len <= 0 { // skip blank lines
 				lnum += 1
@@ -3319,12 +3318,12 @@ ex_align :: proc "c"(eap: rawptr) {
 				// Embedded TABs must not push text too far right.
 				if has_tab != 0 {
 					for new_indent > 0 {
-						set_indent_r(new_indent, 0)
+						set_indent(new_indent, 0)
 						if linelen_o(nil) <= width {
 							// Move right as far as possible, stop
 							// when too far.
 							for {
-								set_indent_r(new_indent + 1, 0)
+								set_indent(new_indent + 1, 0)
 								new_indent += 1
 								if linelen_o(nil) > width {
 									break
@@ -3339,7 +3338,7 @@ ex_align :: proc "c"(eap: rawptr) {
 			}
 		}
 		new_indent = max(new_indent, 0)
-		set_indent_r(new_indent, 0) // set indent
+		set_indent(new_indent, 0) // set indent
 		lnum += 1
 	}
 	changed_lines(curbuf, (^C.int)(uintptr(eap) + EXARG_LINE1_OFF)^, 0,

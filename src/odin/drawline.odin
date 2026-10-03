@@ -1723,7 +1723,7 @@ win_line :: proc "c"(wp: rawptr, lnum: C.int, startrow: C.int, endrow: C.int, co
 
 				if mb_c == '\t' && wlv.n_extra + wlv.col > view_width {
 					buf := (^rawptr)(uintptr(wp) + W_BUFFER_OFF)^
-					wlv.n_extra = tabstop_padding_r(wlv.vcol,
+					wlv.n_extra = tabstop_padding(wlv.vcol,
 						(^i64)(uintptr(buf) + B_P_TS_OFF)^,
 						transmute(^C.int)((^rawptr)(uintptr(buf) + B_P_VTS_ARR_OFF)^)) - 1
 				}
@@ -1774,7 +1774,7 @@ win_line :: proc "c"(wp: rawptr, lnum: C.int, startrow: C.int, endrow: C.int, co
 						vcol_adjusted = wlv.vcol - mb_charlen_r(cstring(sbr))
 					}
 					// Tab amount depends on current column.
-					tab_len = tabstop_padding_r(vcol_adjusted,
+					tab_len = tabstop_padding(vcol_adjusted,
 						(^i64)(uintptr((^rawptr)(uintptr(wp) + W_BUFFER_OFF)^) + B_P_TS_OFF)^,
 						transmute(^C.int)((^rawptr)(uintptr((^rawptr)(uintptr(wp) + W_BUFFER_OFF)^) + B_P_VTS_ARR_OFF)^)) - 1
 
@@ -3138,7 +3138,7 @@ draw_virt_text_item_o :: proc "c"(buf: rawptr, col: C.int, vt: Kvec_VT, hl_mode:
 			c_len := utfc_ptr2len(vsp_cstr_o(vsp))
 			cells: C.int
 			if vsp[0] == '\t' {
-				cells = tabstop_padding_r(vc, (^i64)(uintptr(buf) + B_P_TS_OFF)^,
+				cells = tabstop_padding(vc, (^i64)(uintptr(buf) + B_P_TS_OFF)^,
 					transmute(^C.int)((^rawptr)(uintptr(buf) + B_P_VTS_ARR_OFF)^))
 			} else {
 				cells = utf_ptr2cells_r(vsp_cstr_o(vsp))
@@ -3204,8 +3204,7 @@ FCS_DIFF_OFF :: 60 // fcs.diff
 HLF_DED_O :: 32
 
 foreign _ {
-	@(link_name = "get_breakindent_win")
-	get_breakindent_win_r :: proc "c"(wp: rawptr, line: ^u8) -> C.int ---
+	// get_breakindent_win now defined in indent.odin — call directly.
 }
 
 // Draw 'breakindent' for wrapped lines (plain, C-static).
@@ -3217,7 +3216,7 @@ handle_breakindent_o :: proc "c"(wp: rawptr, wlv: ^WinLineVars) {
 		if wlv.diff_hlf != 0 {
 			attr = win_hl_attr_o(wp, wlv.diff_hlf)
 		}
-		num := get_breakindent_win_r(wp,
+		num := get_breakindent_win(wp,
 			ml_get_buf((^rawptr)(uintptr(wp) + W_BUFFER_OFF)^, wlv.lnum))
 		if wlv.row == wlv.startrow {
 			num -= win_col_off2(wp)
@@ -3615,7 +3614,7 @@ line_putchar_o :: proc "c"(buf: rawptr, pp: ^^u8, dest: [^]u32, maxcells: C.int,
 	}
 
 	if pc[0] == '\t' {
-		cells = tabstop_padding_r(vcol, (^i64)(uintptr(buf) + B_P_TS_OFF)^,
+		cells = tabstop_padding(vcol, (^i64)(uintptr(buf) + B_P_TS_OFF)^,
 			transmute(^C.int)((^rawptr)(uintptr(buf) + B_P_VTS_ARR_OFF)^))
 		cells = min(cells, maxcells)
 	}

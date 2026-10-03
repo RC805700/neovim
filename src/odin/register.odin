@@ -302,18 +302,12 @@ foreign _ {
 	// buf_updates_send_changes is an Odin export (buffer_updates.odin).
 	// extmark_splice/splice_cols now defined in extmark.odin — call directly.
 
-	@(link_name = "get_indent")
-	get_indent_r :: proc "c" () -> C.int ---
-	@(link_name = "set_indent")
-	set_indent_r :: proc "c" (size: C.int, flags: C.int) -> bool ---
-	@(link_name = "preprocs_left")
-	preprocs_left_r :: proc "c" () -> bool ---
+	// get_indent/set_indent/preprocs_left now defined in indent.odin — call directly.
 
 	// getvcol/getvpos/coladvance_force/getviscol — PORTED (cursor.odin).
 	@(link_name = "win_chartabsize")
 	win_chartabsize_r :: proc "c" (wp: rawptr, p: ^u8, col: C.int) -> C.int ---
-	@(link_name = "tabstop_padding")
-	tabstop_padding_r :: proc "c" (col: C.int, ts: i64, vts: ^C.int) -> C.int ---
+	// tabstop_padding now defined in indent.odin — call directly.
 
 	@(link_name = "ins_compl_preinsert_effect")
 	ins_compl_preinsert_effect_r :: proc "c" () -> bool ---
@@ -1926,7 +1920,7 @@ do_put :: proc "c" (regname: C.int, reg_arg: ^Yankreg_T, dir_arg: C.int, count_a
 					viscol := getviscol()
 					ts := (^i64)(uintptr(curbuf) + B_P_TS)^
 					// Don't insert spaces when "p" on last pos of tab / "P" on first.
-					if (dir == FORWARD_DIR ? tabstop_padding_r(viscol, ts, (^C.int)(uintptr(curbuf) + B_P_VTS_ARRAY)) != 1 : cursor_pos().coladd > 0) {
+					if (dir == FORWARD_DIR ? tabstop_padding(viscol, C.longlong(ts), (^C.int)(uintptr(curbuf) + B_P_VTS_ARRAY)) != 1 : cursor_pos().coladd > 0) {
 						coladvance_force(viscol)
 					} else {
 						cursor_pos().coladd = 0
@@ -2234,7 +2228,7 @@ do_put :: proc "c" (regname: C.int, reg_arg: ^Yankreg_T, dir_arg: C.int, count_a
 					lendiff: C.int = 0
 
 					if (flags & PUT_FIXINDENT) != 0 {
-						orig_indent = get_indent_r()
+						orig_indent = get_indent()
 					}
 
 					cnt: C.int = 1
@@ -2281,21 +2275,21 @@ do_put :: proc "c" (regname: C.int, reg_arg: ^Yankreg_T, dir_arg: C.int, count_a
 								if cnt == count && i == y_size - 1 {
 									lendiff = ml_get_len(lnum)
 								}
-								if ptr^ == '#' && preprocs_left_r() {
+								if ptr^ == '#' && preprocs_left() {
 									indent = 0 // Leave # lines at start
 								} else if ptr^ == 0 {
 									indent = 0 // Ignore empty lines
 								} else if first_indent {
-									indent_diff = orig_indent - get_indent_r()
+									indent_diff = orig_indent - get_indent()
 									indent = orig_indent
 									first_indent = false
 								} else {
-									indent = get_indent_r() + indent_diff
+									indent = get_indent() + indent_diff
 									if indent < 0 {
 										indent = 0
 									}
 								}
-								set_indent_r(indent, SIN_NOMARK)
+								set_indent(indent, SIN_NOMARK)
 								cursor_pos()^ = old_pos
 								// remember how many chars were removed
 								if cnt == count && i == y_size - 1 {

@@ -15484,8 +15484,7 @@ f_shellescape :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 
 // —— Batch 27ai: funcs.c sha256 + shiftwidth ——
 foreign _ {
-	@(link_name = "get_sw_value_col")
-	get_sw_value_col_e :: proc "c" (buf: rawptr, col: C.int, left: bool) -> C.int ---
+	// get_sw_value_col now defined in indent.odin — call directly.
 }
 
 // "sha256()" function.
@@ -15519,10 +15518,10 @@ f_shiftwidth :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 		if col < 0 {
 			return
 		}
-		rettv.vval = transmute(rawptr)(C.longlong(get_sw_value_col_e(curbuf, col, false)))
+		rettv.vval = transmute(rawptr)(C.longlong(get_sw_value_col(curbuf, col, false)))
 		return
 	}
-	rettv.vval = transmute(rawptr)(C.longlong(get_sw_value_r(curbuf)))
+	rettv.vval = transmute(rawptr)(C.longlong(get_sw_value(curbuf)))
 }
 
 // —— Batch 27aj: funcs.c repeat ——

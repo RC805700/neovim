@@ -68,7 +68,7 @@ win_chartabsize :: proc "c" (wp: rawptr, p: ^u8, col: C.int) -> C.int {
 	context = runtime.default_context()
 	buf := (^rawptr)(uintptr(wp) + W_BUFFER_OFF)^
 	if ([^]u8)(p)[0] == TAB_O && ((^C.int)(uintptr(wp) + W_P_LIST_OFF)^ == 0 || (^u32)(uintptr(wp) + W_P_LCS_CHARS_OFF + LCS_TAB1_OFF)^ != 0) {
-		return tabstop_padding_r(col, (^i64)(uintptr(buf) + B_P_TS_OFF)^, transmute(^C.int)((^rawptr)(uintptr(buf) + B_P_VTS_ARR_OFF)^))
+		return tabstop_padding(col, (^i64)(uintptr(buf) + B_P_TS_OFF)^, transmute(^C.int)((^rawptr)(uintptr(buf) + B_P_VTS_ARR_OFF)^))
 	}
 	return ptr2cells(transmute(cstring)(p))
 }
@@ -120,7 +120,7 @@ charsize_fast_impl_o :: proc "c" (wp: rawptr, cur: ^u8, use_tabstop: bool, vcol:
 	context = runtime.default_context()
 	if cur_char == TAB_O && use_tabstop {
 		buf := (^rawptr)(uintptr(wp) + W_BUFFER_OFF)^
-		return CharSize_O{width = tabstop_padding_r(vcol, (^i64)(uintptr(buf) + B_P_TS_OFF)^, transmute(^C.int)((^rawptr)(uintptr(buf) + B_P_VTS_ARR_OFF)^))}
+		return CharSize_O{width = tabstop_padding(vcol, (^i64)(uintptr(buf) + B_P_TS_OFF)^, transmute(^C.int)((^rawptr)(uintptr(buf) + B_P_VTS_ARR_OFF)^))}
 	}
 	width: C.int
 	if cur_char < 0 {
@@ -146,7 +146,7 @@ charsize_fast :: proc "c" (csarg: ^CharsizeArg_O, cur: ^u8, vcol: C.int, cur_cha
 charsize_nowrap :: proc "c" (buf: rawptr, cur: ^u8, use_tabstop: bool, vcol: C.int, cur_char: C.int32_t) -> C.int {
 	context = runtime.default_context()
 	if cur_char == TAB_O && use_tabstop {
-		return tabstop_padding_r(vcol, (^i64)(uintptr(buf) + B_P_TS_OFF)^, transmute(^C.int)((^rawptr)(uintptr(buf) + B_P_VTS_ARR_OFF)^))
+		return tabstop_padding(vcol, (^i64)(uintptr(buf) + B_P_TS_OFF)^, transmute(^C.int)((^rawptr)(uintptr(buf) + B_P_VTS_ARR_OFF)^))
 	} else if cur_char < 0 {
 		return kInvalidByteCells_O
 	}
@@ -559,7 +559,7 @@ charsize_regular :: proc "c" (csarg: ^CharsizeArg_O, cur: ^u8, vcol: C.int, cur_
 	size: C.int
 	is_doublewidth := false
 	if use_tabstop {
-		size = tabstop_padding_r(vcol, (^i64)(uintptr(buf) + B_P_TS_OFF)^, transmute(^C.int)((^rawptr)(uintptr(buf) + B_P_VTS_ARR_OFF)^))
+		size = tabstop_padding(vcol, (^i64)(uintptr(buf) + B_P_TS_OFF)^, transmute(^C.int)((^rawptr)(uintptr(buf) + B_P_VTS_ARR_OFF)^))
 	} else if ([^]u8)(cur)[0] == 0 {
 		if has_lcs_eol {
 			size = 1
@@ -598,7 +598,7 @@ charsize_regular :: proc "c" (csarg: ^CharsizeArg_O, cur: ^u8, vcol: C.int, cur_
 							size += v.width
 							if use_tabstop {
 								size -= tab_size
-								tab_size = tabstop_padding_r(vcol + size, (^i64)(uintptr(buf) + B_P_TS_OFF)^, transmute(^C.int)((^rawptr)(uintptr(buf) + B_P_VTS_ARR_OFF)^))
+								tab_size = tabstop_padding(vcol + size, (^i64)(uintptr(buf) + B_P_TS_OFF)^, transmute(^C.int)((^rawptr)(uintptr(buf) + B_P_VTS_ARR_OFF)^))
 								size += tab_size
 							}
 						}
@@ -635,7 +635,7 @@ charsize_regular :: proc "c" (csarg: ^CharsizeArg_O, cur: ^u8, vcol: C.int, cur_
 					head_prev += vim_strsize(transmute(cstring)(sbr))
 				}
 				if (^C.int)(uintptr(wp) + W_P_BRI_OFF)^ != 0 {
-					head_prev += get_breakindent_win_r(wp, line)
+					head_prev += get_breakindent_win(wp, line)
 				}
 				csarg.indent_width = head_prev
 			}
@@ -659,7 +659,7 @@ charsize_regular :: proc "c" (csarg: ^CharsizeArg_O, cur: ^u8, vcol: C.int, cur_
 					head_mid += vim_strsize(transmute(cstring)(sbr))
 				}
 				if (^C.int)(uintptr(wp) + W_P_BRI_OFF)^ != 0 {
-					head_mid += get_breakindent_win_r(wp, line)
+					head_mid += get_breakindent_win(wp, line)
 				}
 				csarg.indent_width = head_mid
 			}
