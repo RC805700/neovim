@@ -76,7 +76,7 @@ win_col_off2 :: proc "c" (wp: rawptr) -> C.int {
 	if ([^]u8)(stc)[0] != 0 {
 		has_col = true
 	}
-	if has_col && vim_strchr(p_cpo, C.int(CPO_NUMCOL_O)) != nil {
+	if has_col && vim_strchr(transmute(cstring)(p_cpo), C.int(CPO_NUMCOL_O)) != nil {
 		stc_empty := C.int(0)
 		if ([^]u8)(stc)[0] == 0 {
 			stc_empty = 1

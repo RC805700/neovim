@@ -415,7 +415,7 @@ next_search_hl_o :: proc "c" (win: rawptr, search_hl: ^Match_T, shl: ^Match_T, l
 		}
 		if shl.lnum == 0 {
 			matchcol = 0
-		} else if _vim_strchr(transmute(cstring)(p_cpo), CPO_SEARCH) == nil || (shl.rm.endpos[0].lnum == 0 && shl.rm.endpos[0].col <= shl.rm.startpos[0].col) {
+		} else if vim_strchr(transmute(cstring)(p_cpo), CPO_SEARCH) == nil || (shl.rm.endpos[0].lnum == 0 && shl.rm.endpos[0].col <= shl.rm.startpos[0].col) {
 			matchcol = shl.rm.startpos[0].col
 			ml := ml_get_buf(shl.buf, lnum)
 			if ([^]u8)(ml)[matchcol] == 0 {

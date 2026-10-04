@@ -2334,9 +2334,9 @@ open_buffer :: proc "c"(read_stdin: bool, eap: rawptr, flags_arg: C.int) -> C.in
 	// Set/reset the Changed flag first, autocmds may change the buffer.
 	// When reading stdin the buffer always needs writing (unless readonly).
 	// When interrupted and 'cpoptions' contains 'i' set changed flag.
-	if (got_int && vim_strchr_c(p_cpo, C.int(CPO_INTMOD_O)) != nil) ||
+	if (got_int && vim_strchr(transmute(cstring)(p_cpo), C.int(CPO_INTMOD_O)) != nil) ||
 		(^bool)(uintptr(curbuf) + B_MODIFIED_WAS_SET_OFF)^ ||
-		(aborting_r() && vim_strchr_c(p_cpo, C.int(CPO_INTMOD_O)) != nil) {
+		(aborting_r() && vim_strchr(transmute(cstring)(p_cpo), C.int(CPO_INTMOD_O)) != nil) {
 		changed(curbuf)
 	} else if retval != FAIL && !read_stdin && !read_fifo {
 		unchanged(curbuf, false, true)
@@ -2883,7 +2883,7 @@ read_buffer_into :: proc "c"(buf: rawptr, start: C.int, end: C.int, sb: rawptr) 
 			len = 1
 			sb_push_o(SB, NUL)
 		} else {
-			s := vim_strchr((^u8)(uintptr(lp) + uintptr(written)), C.int(NL))
+			s := transmute(^u8)(vim_strchr(transmute(cstring)((^u8)(uintptr(lp) + uintptr(written))), C.int(NL)))
 			if s == nil {
 				len = lplen - written
 			} else {
@@ -3528,7 +3528,7 @@ buflist_list :: proc "c"(eap: rawptr) {
 
 	msg_ext_set_kind(cstring("list_cmd"))
 	arg := (^cstring)(uintptr(eap))^
-	if vim_strchr(transmute(^u8)(arg), 't') != nil {
+	if vim_strchr(transmute(cstring)(arg), 't') != nil {
 		ga_init(&buflist, 8, 50)
 		b := firstbuf
 		for b != nil {
@@ -3555,38 +3555,38 @@ buflist_list :: proc "c"(eap: rawptr) {
 		b_bl := (^C.int)(uintptr(buf) + B_P_BL_OFF)^
 		b_flags := (^C.int)(uintptr(buf) + B_FLAGS_OFF)^
 		skip := (b_bl == 0 && (^C.int)(uintptr(eap) + 76)^ == 0 &&
-				vim_strchr(transmute(^u8)(arg), 'u') == nil) ||
-			(vim_strchr(transmute(^u8)(arg), 'u') != nil && b_bl != 0)
+				vim_strchr(transmute(cstring)(arg), 'u') == nil) ||
+			(vim_strchr(transmute(cstring)(arg), 'u') != nil && b_bl != 0)
 		skip = skip ||
-			(vim_strchr(transmute(^u8)(arg), '+') != nil &&
+			(vim_strchr(transmute(cstring)(arg), '+') != nil &&
 				((b_flags & BF_READERR_O) != 0 || !bufIsChanged(buf)))
 		skip = skip ||
-			(vim_strchr(transmute(^u8)(arg), 'a') != nil &&
+			(vim_strchr(transmute(cstring)(arg), 'a') != nil &&
 				((^rawptr)(uintptr(buf) + B_ML_MFP_OFF)^ == nil ||
 					(^C.int)(uintptr(buf) + B_NWINDOWS_OFF)^ == 0))
 		skip = skip ||
-			(vim_strchr(transmute(^u8)(arg), 'h') != nil &&
+			(vim_strchr(transmute(cstring)(arg), 'h') != nil &&
 				((^rawptr)(uintptr(buf) + B_ML_MFP_OFF)^ == nil ||
 					(^C.int)(uintptr(buf) + B_NWINDOWS_OFF)^ != 0))
 		skip = skip ||
-			(vim_strchr(transmute(^u8)(arg), 'R') != nil &&
+			(vim_strchr(transmute(cstring)(arg), 'R') != nil &&
 				(!is_terminal || !job_running))
 		skip = skip ||
-			(vim_strchr(transmute(^u8)(arg), 'F') != nil &&
+			(vim_strchr(transmute(cstring)(arg), 'F') != nil &&
 				(!is_terminal || job_running))
 		skip = skip ||
-			(vim_strchr(transmute(^u8)(arg), '-') != nil &&
+			(vim_strchr(transmute(cstring)(arg), '-') != nil &&
 				(^C.int)(uintptr(buf) + B_P_MA_OFF)^ != 0)
 		skip = skip ||
-			(vim_strchr(transmute(^u8)(arg), '=') != nil &&
+			(vim_strchr(transmute(cstring)(arg), '=') != nil &&
 				(^C.int)(uintptr(buf) + B_P_RO_OFF)^ == 0)
 		skip = skip ||
-			(vim_strchr(transmute(^u8)(arg), 'x') != nil &&
+			(vim_strchr(transmute(cstring)(arg), 'x') != nil &&
 				(b_flags & BF_READERR_O) == 0)
 		skip = skip ||
-			(vim_strchr(transmute(^u8)(arg), '%') != nil && buf != curbuf)
+			(vim_strchr(transmute(cstring)(arg), '%') != nil && buf != curbuf)
 		skip = skip ||
-			(vim_strchr(transmute(^u8)(arg), '#') != nil &&
+			(vim_strchr(transmute(cstring)(arg), '#') != nil &&
 				(buf == curbuf ||
 					(^C.int)(uintptr(curwin) + W_ALT_FNUM)^ !=
 					(^C.int)(uintptr(buf) + B_FNUM_OFF)^))
@@ -3657,7 +3657,7 @@ buflist_list :: proc "c"(eap: rawptr) {
 						break
 					}
 				}
-				if vim_strchr(transmute(^u8)(arg), 't') != nil &&
+				if vim_strchr(transmute(cstring)(arg), 't') != nil &&
 					(^C.longlong)(uintptr(buf) + B_LAST_USED_OFF)^ != 0 {
 					undo_fmt_time(
 						([^]u8)((^u8)(uintptr(&IObuff[0]) + uintptr(len))),
@@ -4354,7 +4354,7 @@ chk_modeline_o :: proc "c"(lnum: C.int, flags: C.int) -> C.int {
 	s = (^u8)(uintptr(s) + 1)
 
 	line_len := C.size_t(uintptr(line_end) - uintptr(s))
-	linecopy := xstrnsave_c(cstring(s), line_len) // copy; it will change
+	linecopy := transmute(^u8)(xstrnsave(cstring(s), line_len)) // copy; it will change
 	s = linecopy
 	line_end = (^u8)(uintptr(s) + uintptr(line_len))
 

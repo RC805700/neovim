@@ -447,8 +447,8 @@ store_session_globals_o :: proc "c" (fd: ^libc.FILE) -> C.int {
 		vtype := (^C.int)(di)^
 		dikey := transmute(cstring)(rawptr(uintptr(di) + 17))
 		if (vtype == VAR_NUMBER || vtype == VAR_STRING) && var_flavour(dikey) == VAR_FLAVOUR_SESSION_O {
-			p := vim_strsave_escaped_c(transmute(^u8)(tv_get_string((^Typval_T)(di))), transmute(^u8)(cstring("\\\"\n\r")))
-			t := p
+			p := vim_strsave_escaped(tv_get_string((^Typval_T)(di)), cstring("\\\"\n\r"))
+			t := transmute(^u8)(p)
 			for ([^]u8)(t)[0] != 0 {
 				if ([^]u8)(t)[0] == '\n' {
 					([^]u8)(t)[0] = 'n'

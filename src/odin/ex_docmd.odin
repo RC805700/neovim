@@ -274,7 +274,7 @@ skip_colon_white_o :: proc "c" (p: cstring, skipleadingwhite: bool) -> cstring {
 skip_range :: proc "c" (cmd: cstring, ctx: ^C.int) -> cstring {
 	context = runtime.default_context()
 	p := cmd
-	for _vim_strchr(cstring(" \t0123456789.$%'/?-+,;\\"), C.int(([^]u8)(p)[0])) != nil {
+	for vim_strchr(cstring(" \t0123456789.$%'/?-+,;\\"), C.int(([^]u8)(p)[0])) != nil {
 		if ([^]u8)(p)[0] == '\\' {
 			if ([^]u8)(p)[1] == '?' || ([^]u8)(p)[1] == '/' || ([^]u8)(p)[1] == '&' {
 				p = transmute(cstring)(uintptr(rawptr(p)) + 1)
@@ -540,7 +540,7 @@ find_ex_command :: proc "c" (eap: rawptr, full: ^C.int) -> cstring {
 				p = transmute(cstring)(uintptr(rawptr(p)) + 1)
 			}
 		}
-		if p == cmd && vim_strchr(transmute(^u8)(cstring("@!=><&~#")), C.int(([^]u8)(p)[0])) != nil {
+		if p == cmd && vim_strchr(cstring("@!=><&~#"), C.int(([^]u8)(p)[0])) != nil {
 			p = transmute(cstring)(uintptr(rawptr(p)) + 1)
 		}
 		length := C.int(uintptr(rawptr(p)) - uintptr(rawptr(cmd)))
@@ -693,8 +693,7 @@ f_fullcommand :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 foreign _ {
 	@(link_name = "grep_internal")
 	grep_internal_e :: proc "c" (cmdidx: C.int) -> C.int ---
-	@(link_name = "del_trailing_spaces")
-	del_trailing_spaces_e :: proc "c" (ptr: ^u8) ---
+	// del_trailing_spaces now defined in strings.odin — call directly.
 }
 
 EX_CTRLV_O :: 8192
@@ -837,7 +836,7 @@ separate_nextcmd :: proc "c" (eap: rawptr) {
 				break
 			}
 		} else if ((([^]u8)(p)[0] == '"' && (argt & EX_NOTRLCOM_O) == 0 && (cmdidx != CMD_AT_O || p != transmute(^u8)(arg)) && (cmdidx != CMD_REDIR_O || p != transmute(^u8)(uintptr(rawptr(arg)) + 1) || ([^]u8)(uintptr(rawptr(p)) - 1)[0] != '@')) || (([^]u8)(p)[0] == '|' && cmdidx != CMD_APPEND_O && cmdidx != CMD_CHANGE_O && cmdidx != CMD_INSERT_O) || ([^]u8)(p)[0] == '\n') {
-			if ((vim_strchr(p_cpo, CPO_BAR_O) == nil || (argt & EX_CTRLV_O) == 0) && ([^]u8)(uintptr(rawptr(p)) - 1)[0] == '\\') {
+			if ((vim_strchr(transmute(cstring)(p_cpo), CPO_BAR_O) == nil || (argt & EX_CTRLV_O) == 0) && ([^]u8)(uintptr(rawptr(p)) - 1)[0] == '\\') {
 				pp := transmute(^u8)(uintptr(rawptr(p)) - 1)
 				libc.memmove(rawptr(pp), rawptr(p), libc.strlen(transmute(cstring)(p)) + 1)
 				p = pp
@@ -851,7 +850,7 @@ separate_nextcmd :: proc "c" (eap: rawptr) {
 		p = transmute(^u8)(uintptr(rawptr(p)) + uintptr(utfc_ptr2len(transmute(cstring)(p))))
 	}
 	if (argt & EX_NOTRLCOM_O) == 0 {
-		del_trailing_spaces_e(transmute(^u8)(arg))
+		del_trailing_spaces(transmute(^u8)(arg))
 	}
 }
 
@@ -1768,7 +1767,7 @@ expand_filename :: proc "c" (eap: rawptr, cmdlinep: ^cstring, errormsgp: ^cstrin
 			}
 			continue
 		}
-		if vim_strchr(transmute(^u8)(cstring("%#<")), C.int(([^]u8)(p)[0])) == nil {
+		if vim_strchr(cstring("%#<"), C.int(([^]u8)(p)[0])) == nil {
 			p = transmute(cstring)(uintptr(rawptr(p)) + 1)
 			continue
 		}
@@ -1782,7 +1781,7 @@ expand_filename :: proc "c" (eap: rawptr, cmdlinep: ^cstring, errormsgp: ^cstrin
 			p = transmute(cstring)(uintptr(rawptr(p)) + uintptr(srclen))
 			continue
 		}
-		if vim_strchr(repl, '$') != nil || vim_strchr(repl, '~') != nil {
+		if vim_strchr(transmute(cstring)(repl), '$') != nil || vim_strchr(transmute(cstring)(repl), '~') != nil {
 			l := repl
 			repl = transmute(^u8)(expand_env_save(transmute(cstring)(l)))
 			xfree(rawptr(l))
@@ -1793,19 +1792,19 @@ expand_filename :: proc "c" (eap: rawptr, cmdlinep: ^cstring, errormsgp: ^cstrin
 		if usefilter == 0 && escaped == 0 && cmdidx != CMD_BANG_O && cmdidx != CMD_GREP_O && cmdidx != CMD_GREPADD_O && cmdidx != CMD_LGREP_O && cmdidx != CMD_LGREPADD_O && cmdidx != CMD_LMAKE_O && cmdidx != CMD_MAKE_O && cmdidx != CMD_TERMINAL_O && (argt & EX_NOSPC_O) == 0 {
 			l := repl
 			for ([^]u8)(l)[0] != 0 {
-				if vim_strchr(escape_chars_g, C.int(([^]u8)(l)[0])) != nil {
-					nl := vim_strsave_escaped_c(repl, escape_chars_g)
+				if vim_strchr(transmute(cstring)(escape_chars_g), C.int(([^]u8)(l)[0])) != nil {
+					nl := vim_strsave_escaped(transmute(cstring)(repl), transmute(cstring)(escape_chars_g))
 					xfree(rawptr(repl))
-					repl = nl
+					repl = transmute(^u8)(nl)
 					break
 				}
 				l = transmute(^u8)(uintptr(l) + 1)
 			}
 		}
 		if (usefilter != 0 || cmdidx == CMD_BANG_O || cmdidx == CMD_TERMINAL_O) && libc.strpbrk(transmute(cstring)(repl), cstring("!")) != nil {
-			nl := vim_strsave_escaped_c(repl, transmute(^u8)(cstring("!")))
+			nl := vim_strsave_escaped(transmute(cstring)(repl), cstring("!"))
 			xfree(rawptr(repl))
-			repl = nl
+			repl = transmute(^u8)(nl)
 		}
 		p = repl_cmdline_o(eap, p, srclen, transmute(cstring)(repl), cmdlinep)
 		xfree(rawptr(repl))
@@ -1815,7 +1814,7 @@ expand_filename :: proc "c" (eap: rawptr, cmdlinep: ^cstring, errormsgp: ^cstrin
 	usefilter := (^C.int)(uintptr(eap) + EXARG_USEFILTER_OFF)^
 	if (argt & EX_NOSPC_O) != 0 && usefilter == 0 {
 		if has_wildcards {
-			if vim_strchr(transmute(^u8)(eap_arg), '$') != nil || vim_strchr(transmute(^u8)(eap_arg), '~') != nil {
+			if vim_strchr(transmute(cstring)(eap_arg), '$') != nil || vim_strchr(transmute(cstring)(eap_arg), '~') != nil {
 				expand_env_esc(eap_arg, transmute(cstring)(&name_buff[0]), MAXPATHL_O, cstring(" \t*?[{"), true, nil)
 				has_wildcards = path_has_wildcard(transmute(cstring)(&name_buff[0]))
 				p = transmute(cstring)(&name_buff[0])
@@ -2498,7 +2497,7 @@ get_flags_o :: proc "c" (eap: rawptr) {
 	context = runtime.default_context()
 	for {
 		arg := ([^]cstring)(uintptr(eap) + EXARG_ARG_OFF)[0]
-		if vim_strchr(transmute(^u8)(cstring("lp#")), C.int(([^]u8)(arg)[0])) == nil {
+		if vim_strchr(cstring("lp#"), C.int(([^]u8)(arg)[0])) == nil {
 			break
 		}
 		b := ([^]u8)(arg)[0]
@@ -2725,7 +2724,7 @@ parse_command_modifiers :: proc "c" (eap: rawptr, errormsg: ^cstring, cmod: rawp
 			}
 		}
 		if ([^]u8)(([^]cstring)(uintptr(eap) + EXARG_CMD_OFF)[0])[0] == '"' {
-			nx := vim_strchr(transmute(^u8)(([^]cstring)(uintptr(eap) + EXARG_CMD_OFF)[0]), '\n')
+			nx := transmute(^u8)(vim_strchr(transmute(cstring)(([^]cstring)(uintptr(eap) + EXARG_CMD_OFF)[0]), '\n'))
 			if nx != nil {
 				([^]rawptr)(uintptr(eap) + EXARG_NEXTCMD_OFF)[0] = rawptr(uintptr(nx) + 1)
 			}
@@ -5191,7 +5190,7 @@ post_chdir_o :: proc "c" (scope: C.int, trigger_dirchanged: bool) {
 		libc.abort()
 	}
 	last_chdir_reason_g = nil
-	shorten_fnames(vim_strchr(p_cpo, '~') == nil)
+	shorten_fnames(vim_strchr(transmute(cstring)(p_cpo), '~') == nil)
 	if trigger_dirchanged {
 		do_autocmd_dirchanged_r(transmute(cstring)(&cwd[0]), scope, CDCAUSE_MANUAL_O, false)
 	}
@@ -5374,8 +5373,7 @@ foreign _ {
 	estack_push_e :: proc "c" (etype: Etype, name: cstring, lnum: C.int) -> rawptr ---
 	@(link_name = "estack_pop")
 	estack_pop_e :: proc "c" () ---
-	@(link_name = "strrep")
-	strrep_e :: proc "c" (src: cstring, what: cstring, rep: cstring) -> ^u8 ---
+	// strrep now defined in strings.odin — call directly.
 	// msg_make now defined in message.odin — call directly.
 	@(link_name = "p_gp")
 	p_gp_g: ^u8
@@ -5466,7 +5464,7 @@ replace_makeprg :: proc "c" (eap: rawptr, arg_in: cstring, cmdlinep: ^cstring) -
 			}
 		}
 		arg = skipwhite(arg)
-		new_cmdline := strrep_e(transmute(cstring)(program), cstring("$*"), arg)
+		new_cmdline := transmute(^u8)(strrep(transmute(cstring)(program), cstring("$*"), arg))
 		if new_cmdline == nil {
 			plen := libc.strlen(transmute(cstring)(program))
 			alen := libc.strlen(arg)
@@ -6172,7 +6170,7 @@ ex_read :: proc "c" (eap: rawptr) {
 		}
 		i = readfile_r(transmute(cstring)((^rawptr)(uintptr(curbuf) + B_FFNAME)^), transmute(cstring)((^rawptr)(uintptr(curbuf) + B_FNAME)^), ([^]C.int)(uintptr(eap) + EXARG_LINE2_OFF)[0], 0, MAXLNUM, eap, 0, false)
 	} else {
-		if vim_strchr_c(p_cpo, C.int(CPO_ALTREAD_O)) != nil {
+		if vim_strchr(transmute(cstring)(p_cpo), C.int(CPO_ALTREAD_O)) != nil {
 			setaltfname(arg, arg, 1)
 		}
 		i = readfile_r(arg, nil, ([^]C.int)(uintptr(eap) + EXARG_LINE2_OFF)[0], 0, MAXLNUM, eap, 0, false)
@@ -6222,7 +6220,7 @@ ex_at :: proc "c" (eap: rawptr) {
 		c = '@'
 	}
 	addcr: C.int = 0
-	if vim_strchr_c(p_cpo, C.int(CPO_EXECBUF_O)) != nil {
+	if vim_strchr(transmute(cstring)(p_cpo), C.int(CPO_EXECBUF_O)) != nil {
 		addcr = 1
 	}
 	if do_execreg(c, 1, addcr, true) == FAIL_E {
@@ -8040,7 +8038,7 @@ ex_restart :: proc "c" (eap: rawptr) {
 				quit_cmd_copy: ^u8 = nil
 				qc_final := qc2
 				if (cmdmod_cmod_flags & CMOD_CONFIRM_O) != 0 {
-					quit_cmd_copy = concat_str_c(cstring("confirm "), qc2)
+					quit_cmd_copy = transmute(^u8)(concat_str(cstring("confirm "), qc2))
 					qc_final = transmute(cstring)(quit_cmd_copy)
 				}
 				nvim_command_e(NvimString{data = qc_final, size = C.size_t(libc.strlen(qc_final))}, &err)

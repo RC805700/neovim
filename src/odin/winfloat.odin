@@ -146,7 +146,7 @@ win_set_minimal_style :: proc "c" (wp: rawptr) {
 		if old^ == 0 {
 			(^rawptr)(uintptr(wp) + W_P_FCS_OFF_O)^ = rawptr(xstrdup(transmute(^u8)(cstring("eob: "))))
 		} else {
-			(^rawptr)(uintptr(wp) + W_P_FCS_OFF_O)^ = rawptr(concat_str_c(transmute(cstring)(old), cstring(",eob: ")))
+			(^rawptr)(uintptr(wp) + W_P_FCS_OFF_O)^ = rawptr(concat_str(transmute(cstring)(old), cstring(",eob: ")))
 		}
 		free_string_option(old)
 	}
@@ -154,7 +154,7 @@ win_set_minimal_style :: proc "c" (wp: rawptr) {
 	if old^ == 0 {
 		(^rawptr)(uintptr(wp) + W_P_WINHL_OFF)^ = rawptr(xstrdup(transmute(^u8)(cstring("EndOfBuffer:"))))
 	} else {
-		(^rawptr)(uintptr(wp) + W_P_WINHL_OFF)^ = rawptr(concat_str_c(transmute(cstring)(old), cstring(",EndOfBuffer:")))
+		(^rawptr)(uintptr(wp) + W_P_WINHL_OFF)^ = rawptr(concat_str(transmute(cstring)(old), cstring(",EndOfBuffer:")))
 	}
 	free_string_option(old)
 	parse_winhl_opt((^u8)((^rawptr)(uintptr(wp) + W_P_WINHL_OFF)^), wp)

@@ -282,7 +282,7 @@ did_set_str_generic :: proc "c"(args: ^optset_T) -> cstring {
 
 did_set_option_listflag :: proc "c"(val: ^u8, flags: ^u8, errbuf: ^u8, errbuflen: C.size_t) -> cstring {
 	for s := val; b_at(s, 0) != 0; s = (^u8)(uintptr(s) + 1) {
-		if _vim_strchr(transmute(cstring)(flags), C.int(b_at(s, 0))) == nil {
+		if vim_strchr(transmute(cstring)(flags), C.int(b_at(s, 0))) == nil {
 			return transmute(cstring)(illegal_char(errbuf, errbuflen, C.int(b_at(s, 0))))
 		}
 	}
@@ -823,8 +823,8 @@ did_set_keymodel :: proc "c"(args: ^optset_T) -> cstring {
 	if errmsg != nil {
 		return errmsg
 	}
-	km_stopsel_g = _vim_strchr(transmute(cstring)(p_km_g), 'o') != nil
-	km_startsel_g = _vim_strchr(transmute(cstring)(p_km_g), 'a') != nil
+	km_stopsel_g = vim_strchr(transmute(cstring)(p_km_g), 'o') != nil
+	km_startsel_g = vim_strchr(transmute(cstring)(p_km_g), 'a') != nil
 	return nil
 }
 
@@ -1199,7 +1199,7 @@ did_set_vartabstop :: proc "c"(args: ^optset_T) -> cstring {
 did_set_titleiconstring_o :: proc "c"(args: ^optset_T, flagval: C.int) -> cstring {
 	varp := (^^u8)(args.os_varp)
 	// NULL => statusline syntax
-	if _vim_strchr(transmute(cstring)(varp^), '%') != nil &&
+	if vim_strchr(transmute(cstring)(varp^), '%') != nil &&
 	check_stl_option(varp^) == nil {
 		stl_syntax_g |= flagval
 	} else {
@@ -1370,7 +1370,7 @@ did_set_comments :: proc "c"(args: ^optset_T) -> cstring {
 	errmsg: cstring = nil
 	for b_at(s, 0) != 0 {
 		for b_at(s, 0) != 0 && b_at(s, 0) != ':' {
-			if _vim_strchr(cstring(COM_ALL_S), C.int(b_at(s, 0))) == nil &&
+			if vim_strchr(cstring(COM_ALL_S), C.int(b_at(s, 0))) == nil &&
 			!is_digit_o(b_at(s, 0)) && b_at(s, 0) != '-' {
 				errmsg = transmute(cstring)(illegal_char(args.os_errbuf, args.os_errbuflen,
 					C.int(b_at(s, 0))))
@@ -1658,7 +1658,7 @@ did_set_mousescroll :: proc "c"(args: ^optset_T) -> cstring {
 	string := p_mousescroll_g
 
 	for {
-		end := _vim_strchr(transmute(cstring)(string), ',')
+		end := vim_strchr(transmute(cstring)(string), ',')
 		end_u8 := transmute(^u8)(end)
 		length: uintptr = end != nil ? uintptr(end_u8) - uintptr(string) :
 			uintptr(libc.strlen(transmute(cstring)(string)))
@@ -1805,7 +1805,7 @@ did_set_foldignore :: proc "c"(args: ^optset_T) -> cstring {
 did_set_foldmarker :: proc "c"(args: ^optset_T) -> cstring {
 	win := args.os_win
 	varp := (^^u8)(args.os_varp)
-	p := _vim_strchr(transmute(cstring)(varp^), ',')
+	p := vim_strchr(transmute(cstring)(varp^), ',')
 
 	if p == nil {
 		return cstring(E536_S)
@@ -2012,17 +2012,17 @@ did_set_complete :: proc "c"(args: ^optset_T) -> cstring {
 		}
 		buf_ptr^ = 0
 
-		if _vim_strchr(cstring(".wbuksid]tUfFo"), C.int(buffer[0])) == nil {
+		if vim_strchr(cstring(".wbuksid]tUfFo"), C.int(buffer[0])) == nil {
 			return transmute(cstring)(illegal_char(args.os_errbuf, args.os_errbuflen,
 				C.int(buffer[0])))
 		}
 
-		if _vim_strchr(cstring("ksF"), C.int(buffer[0])) == nil && buffer[1] != 0 &&
+		if vim_strchr(cstring("ksF"), C.int(buffer[0])) == nil && buffer[1] != 0 &&
 		buffer[1] != '^' {
 			char_before = buffer[0]
 		} else {
 			// Test for a number after '^'
-			t := _vim_strchr(transmute(cstring)(&buffer[0]), '^')
+			t := vim_strchr(transmute(cstring)(&buffer[0]), '^')
 			if t != nil {
 				tu := transmute(^u8)(t)
 				tu^ = 0 // *t = NUL
@@ -2068,7 +2068,7 @@ did_set_shada :: proc "c"(args: ^optset_T) -> cstring {
 	s := p_shada_g
 	for b_at(s, 0) != 0 {
 		// Check it's a valid character
-		if _vim_strchr(cstring("!\"%'/:<@cfhnrs"), C.int(b_at(s, 0))) == nil {
+		if vim_strchr(cstring("!\"%'/:<@cfhnrs"), C.int(b_at(s, 0))) == nil {
 			return transmute(cstring)(illegal_char(errbuf, errbuflen, C.int(b_at(s, 0))))
 		}
 		if b_at(s, 0) == 'n' { // name is always last one
@@ -2192,7 +2192,7 @@ check_stl_option :: proc "c"(s_in: ^u8) -> cstring {
 			groupdepth += 1
 			continue
 		}
-		if _vim_strchr(cstring(STL_ALL_S), C.int(b_at(s, 0))) == nil {
+		if vim_strchr(cstring(STL_ALL_S), C.int(b_at(s, 0))) == nil {
 			return transmute(cstring)(illegal_char(&stl_check_errbuf[0], 80,
 				C.int(b_at(s, 0))))
 		}
@@ -2421,7 +2421,7 @@ did_set_encoding :: proc "c"(args: ^optset_T) -> cstring {
 			return cstring(E21_S)
 		}
 
-		if _vim_strchr(transmute(cstring)(varp^), ',') != nil {
+		if vim_strchr(transmute(cstring)(varp^), ',') != nil {
 			// No comma allowed in 'fileencoding'; catches confusing it
 			// with 'fileencodings'.
 			return cstring("E474: Invalid argument")
@@ -2631,11 +2631,11 @@ matches: ^rawptr) -> C.int {
 	}
 
 	for flag := flags; b_at(flag, 0) != 0; flag = (^u8)(uintptr(flag) + 1) {
-		if append && _vim_strchr(transmute(cstring)(option_val), C.int(b_at(flag, 0))) != nil {
+		if append && vim_strchr(transmute(cstring)(option_val), C.int(b_at(flag, 0))) != nil {
 			continue
 		}
 
-		if _vim_strchr(transmute(cstring)(cmdline_val), C.int(b_at(flag, 0))) == nil {
+		if vim_strchr(transmute(cstring)(cmdline_val), C.int(b_at(flag, 0))) == nil {
 			if include_orig_val && b_at(option_val, 1) == 0 &&
 			b_at(flag, 0) == b_at(option_val, 0) {
 				// This value is already used as the first choice as it's the

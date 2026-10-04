@@ -1946,7 +1946,7 @@ win_line :: proc "c"(wp: rawptr, lnum: C.int, startrow: C.int, endrow: C.int, co
 				((syntax_flags & HL_CONCEAL_O) != 0 || has_match_conc > 0 ||
 					decor_conceal > 0) &&
 				!(lnum_in_visual_area &&
-					vim_strchr_c(transmute(^u8)((^rawptr)(uintptr(wp) + W_P_COCU_OFF)^), 'v') == nil) {
+					vim_strchr(transmute(cstring)((^rawptr)(uintptr(wp) + W_P_COCU_OFF)^), 'v') == nil) {
 				syntax_conceal := (syntax_flags & HL_CONCEAL_O) != 0
 				wlv.char_attr = conceal_attr
 				if ((prev_syntax_id != syntax_seqnr && syntax_conceal) ||
@@ -2542,7 +2542,7 @@ win_line :: proc "c"(wp: rawptr, lnum: C.int, startrow: C.int, endrow: C.int, co
 				if wlv.filler_todo <= 0 {
 					wlv.need_showbreak = true
 				}
-				if statuscol.draw && vim_strchr_c(transmute(^u8)(p_cpo), CPO_NUMCOL_O) != nil &&
+				if statuscol.draw && vim_strchr(transmute(cstring)(p_cpo), CPO_NUMCOL_O) != nil &&
 					wlv.row > startrow + wlv.filler_lines {
 					statuscol.draw = false // no status column with "n" in 'cpo'
 				}
@@ -3773,7 +3773,7 @@ get_line_number_attr_o :: proc "c"(wp: rawptr, wlv: ^WinLineVars) -> C.int {
 
 // Display the absolute/relative line number (plain, C-static).
 draw_lnum_col_o :: proc "c"(wp: rawptr, wlv: ^WinLineVars) {
-	has_cpo_n := vim_strchr_c(transmute(^u8)(p_cpo), CPO_NUMCOL_O) != nil
+	has_cpo_n := vim_strchr(transmute(cstring)(p_cpo), CPO_NUMCOL_O) != nil
 
 	if ((^C.int)(uintptr(wp) + W_P_NU_OFF)^ != 0 ||
 		(^C.int)(uintptr(wp) + W_P_RNU_OFF)^ != 0) &&

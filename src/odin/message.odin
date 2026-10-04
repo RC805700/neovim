@@ -38,8 +38,7 @@ foreign _ {
 	// redirecting: use ex_docmd.odin's redirecting_e — call directly.
 	// redir_write_o (below) is used directly — no shim needed.
 	// str2special: see export below — call directly.
-	@(link_name = "vim_vsnprintf")
-	vim_vsnprintf_e :: proc "c" (str: ^u8, str_m: C.size_t, fmt: cstring, ap: ^libc.va_list) -> C.int ---
+	// vim_vsnprintf now defined in strings.odin — call directly.
 	@(link_name = "siemsg")
 	siemsg_call_e :: proc "c" (s: cstring, #c_vararg args: ..any) ---
 }
@@ -547,7 +546,7 @@ msg_source :: proc "c" (hl_id: C.int) {
 
 emsg_not_now_o :: proc "c" () -> bool {
 	context = runtime.default_context()
-	if ((emsg_off > 0 && vim_strchr(p_debug_g, 'm') == nil && vim_strchr(p_debug_g, 't') == nil) || emsg_skip > 0) {
+	if ((emsg_off > 0 && vim_strchr(transmute(cstring)(p_debug_g), 'm') == nil && vim_strchr(transmute(cstring)(p_debug_g), 't') == nil) || emsg_skip > 0) {
 		return true
 	}
 	return false
@@ -563,7 +562,7 @@ emsg_multiline :: proc "c" (s: cstring, kind: cstring, hl_id: C.int, multiline: 
 	called_emsg += 1
 	severe := emsg_severe_g
 	emsg_severe_g = false
-	if emsg_off == 0 || vim_strchr(p_debug_g, 't') != nil {
+	if emsg_off == 0 || vim_strchr(transmute(cstring)(p_debug_g), 't') != nil {
 		if cause_errthrow_e(s, multiline, is_multihl_g > 1, severe, &ignore) {
 			if !ignore {
 				did_emsg_flag += 1
@@ -712,7 +711,7 @@ hl_msg_free :: proc "c" (hlmsg: HlMessage_O) {
 @(export)
 smsg_v :: proc "c" (hl_id: C.int, s: cstring, ap: ^libc.va_list) -> C.int {
 	context = runtime.default_context()
-	vim_vsnprintf_e(&IObuff[0], C.size_t(IOSIZE_O), s, ap)
+	vim_vsnprintf(&IObuff[0], C.size_t(IOSIZE_O), s, ap)
 	if msg(transmute(cstring)(&IObuff[0]), hl_id) {
 		return 1
 	}
@@ -722,7 +721,7 @@ smsg_v :: proc "c" (hl_id: C.int, s: cstring, ap: ^libc.va_list) -> C.int {
 @(export)
 smsg_keep_v :: proc "c" (hl_id: C.int, s: cstring, ap: ^libc.va_list) -> C.int {
 	context = runtime.default_context()
-	vim_vsnprintf_e(&IObuff[0], C.size_t(IOSIZE_O), s, ap)
+	vim_vsnprintf(&IObuff[0], C.size_t(IOSIZE_O), s, ap)
 	if msg_keep(transmute(cstring)(&IObuff[0]), hl_id, true, false) {
 		return 1
 	}
@@ -731,7 +730,7 @@ smsg_keep_v :: proc "c" (hl_id: C.int, s: cstring, ap: ^libc.va_list) -> C.int {
 
 semsgv_o :: proc "c" (fmt: cstring, ap: ^libc.va_list) -> bool {
 	context = runtime.default_context()
-	vim_vsnprintf_e(&IObuff[0], C.size_t(IOSIZE_O), fmt, ap)
+	vim_vsnprintf(&IObuff[0], C.size_t(IOSIZE_O), fmt, ap)
 	return emsg(transmute(cstring)(&IObuff[0]))
 }
 
@@ -749,7 +748,7 @@ semsg_multiline_v :: proc "c" (kind: cstring, fmt: cstring, ap: ^libc.va_list) -
 	if emsg_not_now_o() {
 		return true
 	}
-	vim_vsnprintf_e(&semsg_multiline_buf_g[0], 8192, fmt, ap)
+	vim_vsnprintf(&semsg_multiline_buf_g[0], 8192, fmt, ap)
 	return emsg_multiline(transmute(cstring)(&semsg_multiline_buf_g[0]), kind, HLF_E_O, true)
 }
 
@@ -772,7 +771,7 @@ msg_semsg_event_o :: proc "c" (argv: ^rawptr) {
 @(export)
 msg_schedule_semsg_v :: proc "c" (fmt: cstring, ap: ^libc.va_list) {
 	context = runtime.default_context()
-	vim_vsnprintf_e(&IObuff[0], C.size_t(IOSIZE_O), fmt, ap)
+	vim_vsnprintf(&IObuff[0], C.size_t(IOSIZE_O), fmt, ap)
 	s := xstrdup(&IObuff[0])
 	loop_schedule_deferred(&main_loop, event_create(msg_semsg_event_o, rawptr(s)))
 }
@@ -787,7 +786,7 @@ msg_semsg_multiline_event_o :: proc "c" (argv: ^rawptr) {
 @(export)
 msg_schedule_semsg_multiline_v :: proc "c" (fmt: cstring, ap: ^libc.va_list) {
 	context = runtime.default_context()
-	vim_vsnprintf_e(&IObuff[0], C.size_t(IOSIZE_O), fmt, ap)
+	vim_vsnprintf(&IObuff[0], C.size_t(IOSIZE_O), fmt, ap)
 	s := xstrdup(&IObuff[0])
 	loop_schedule_deferred(&main_loop, event_create(msg_semsg_multiline_event_o, rawptr(s)))
 }
@@ -1822,7 +1821,7 @@ give_warning :: proc "c" (message: cstring, hl: bool, hist: bool) {
 @(export)
 swmsg_v :: proc "c" (hl: bool, fmt: cstring, ap: ^libc.va_list) {
 	context = runtime.default_context()
-	vim_vsnprintf_e(&IObuff[0], C.size_t(IOSIZE_O), fmt, ap)
+	vim_vsnprintf(&IObuff[0], C.size_t(IOSIZE_O), fmt, ap)
 	give_warning(transmute(cstring)(&IObuff[0]), hl, true)
 }
 
@@ -3349,7 +3348,7 @@ wait_return :: proc "c" (redraw: C.int) {
 			os_breakcheck()
 			if c == K_LEFTMOUSE_O || c == K_MIDDLEMOUSE_O || c == K_RIGHTMOUSE_O || c == K_X1MOUSE_O || c == K_X2MOUSE_O {
 				jump_to_mouse_e(MOUSE_SETPOS_O, nil, 0)
-			} else if vim_strchr(transmute(^u8)(cstring("\r\n ")), c) == nil && c != 3 && c != 'q' {
+			} else if vim_strchr(cstring("\r\n "), c) == nil && c != 3 && c != 'q' {
 				ins_char_typebuf_e(vgetc_char_g, vgetc_mod_mask_g, true)
 				do_redraw_g = true
 			}

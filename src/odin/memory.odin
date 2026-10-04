@@ -41,6 +41,9 @@ foreign _ {
   @(link_name = "preserve_exit")
   preserve_exit :: proc "c" (errmsg: cstring) ---
   backtrace :: proc "c" (buffer: [^]rawptr, size: c.int) -> c.int ---
+  // Defined by main.c.o (EXTERN in memory.h); C copy is authoritative
+  // (new compiler emits @(export) globals strong — would clash).
+  arena_alloc_count: c.size_t
 }
 
 known_wrappers: []cstring = {
@@ -460,8 +463,6 @@ REUSE_MAX_O :: 4
 // Moved memory.c state (single live copies).
 arena_reuse_blk_g: rawptr = nil
 arena_reuse_blk_count_g: c.size_t = 0
-@(export)
-arena_alloc_count: c.size_t = 0
 
 // Arena block header (memory_defs.h): single prev link.
 Consumed_Blk_O :: struct {

@@ -185,8 +185,7 @@ foreign _ {
 	// line_breakcheck reused from input.odin's line_breakcheck
 	@(link_name = "mb_adjust_cursor")
 	mb_adjust_cursor_r :: proc "c" () ---
-	@(link_name = "vim_strchr")
-	vim_strchr_c :: proc "c" (s: ^u8, c: C.int) -> ^u8 ---
+	// vim_strchr now defined in strings.odin — call directly.
 }
 
 // ── Field accessors ──────────────────────────────────────────────────────────
@@ -2458,7 +2457,7 @@ foldlevelIndent :: proc "c" (flp: ^Fline_T) {
 	buf := w_ptr_at(flp.wp, W_BUFFER)
 	s := (^u8)(skipwhite(transmute(cstring)(ml_get_buf(buf, lnum))))
 
-	if s^ == 0 || _vim_strchr(transmute(cstring)(w_str(flp.wp, W_P_FDI)), C.int(s^)) != nil {
+	if s^ == 0 || vim_strchr(transmute(cstring)(w_str(flp.wp, W_P_FDI)), C.int(s^)) != nil {
 		flp.lvl = lnum == 1 || lnum == ml_line_count_b(buf) ? 0 : -1
 	} else {
 		flp.lvl = get_indent_buf(buf, lnum) / get_sw_value(buf)
@@ -2541,7 +2540,7 @@ foldlevelExpr :: proc "c" (flp: ^Fline_T) {
 
 parseMarker :: proc "c" (wp: rawptr) {
 	fmr := w_str(wp, W_P_FMR)
-	foldendmarker = vim_strchr_c(fmr, ',')
+	foldendmarker = transmute(^u8)(vim_strchr(transmute(cstring)(fmr), ','))
 	foldstartmarkerlen = C.size_t(uintptr(foldendmarker) - uintptr(fmr))
 	foldendmarker = (^u8)(uintptr(foldendmarker) + 1)
 	foldendmarkerlen = libc.strlen(transmute(cstring)(foldendmarker))

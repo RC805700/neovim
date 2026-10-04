@@ -54,8 +54,7 @@ foreign _ {
 	@(link_name = "vim_regfree")
 	vim_regfree :: proc "c" (prog: rawptr) ---
 	// add_to_history — PORTED to Odin (cmdhist.odin) — call directly.
-	@(link_name = "reverse_text")
-	reverse_text_r :: proc "c" (s: cstring) -> ^u8 ---
+	// reverse_text now defined in strings.odin — call directly.
 	// buf_get_changedtick is a C static inline — see buf_changedtick_inline below.
 
 	@(link_name = "mb_isupper")
@@ -95,8 +94,7 @@ foreign _ {
 
 	// profile_setlimit/passed_limit — PORTED (profile.odin).
 
-	@(link_name = "xstrnsave")
-	xstrnsave_c :: proc "c" (s: cstring, len: C.size_t) -> ^u8 ---
+	// xstrnsave now defined in strings.odin — call directly.
 }
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -372,9 +370,9 @@ search_regcomp :: proc "c"(
 
 	xfree(mr_pattern)
 	if curwin != nil && w_p_rl_r(curwin) != 0 && b_at(w_p_rlc_r(curwin), 0) == 's' {
-		mr_pattern = reverse_text_r(transmute(cstring)(pat))
+		mr_pattern = transmute(^u8)(reverse_text(transmute(cstring)(pat)))
 	} else {
-		mr_pattern = xstrnsave_c(transmute(cstring)(pat), patlen)
+		mr_pattern = transmute(^u8)(xstrnsave(transmute(cstring)(pat), patlen))
 	}
 	mr_patternlen = patlen
 
@@ -407,7 +405,7 @@ save_re_pat :: proc "c"(idx: C.int, pat: ^u8, patlen: C.size_t, magic: C.int) {
 		return
 	}
 	free_spat(&spats[idx])
-	spats[idx].pat = xstrnsave_c(transmute(cstring)(pat), patlen)
+	spats[idx].pat = transmute(^u8)(xstrnsave(transmute(cstring)(pat), patlen))
 	spats[idx].patlen = patlen
 	spats[idx].magic = magic != 0
 	spats[idx].no_scs = no_smartcase
@@ -431,7 +429,7 @@ save_search_patterns :: proc "c"() {
 	for i := 0; i < 2; i += 1 {
 		saved_spats[i] = spats[i]
 		if spats[i].pat != nil {
-			saved_spats[i].pat = xstrnsave_c(transmute(cstring)(spats[i].pat), spats[i].patlen)
+			saved_spats[i].pat = transmute(^u8)(xstrnsave(transmute(cstring)(spats[i].pat), spats[i].patlen))
 			saved_spats[i].patlen = spats[i].patlen
 		}
 	}
@@ -439,7 +437,7 @@ save_search_patterns :: proc "c"() {
 		saved_mr_pattern = nil
 		saved_mr_patternlen = 0
 	} else {
-		saved_mr_pattern = xstrnsave_c(transmute(cstring)(mr_pattern), mr_patternlen)
+		saved_mr_pattern = transmute(^u8)(xstrnsave(transmute(cstring)(mr_pattern), mr_patternlen))
 		saved_mr_patternlen = mr_patternlen
 	}
 	saved_spats_last_idx = last_idx
@@ -485,7 +483,7 @@ save_last_search_pattern :: proc "c"() {
 	}
 	saved_last_search_spat = spats[RE_SEARCH]
 	if spats[RE_SEARCH].pat != nil {
-		saved_last_search_spat.pat = xstrnsave_c(transmute(cstring)(spats[RE_SEARCH].pat), spats[RE_SEARCH].patlen)
+		saved_last_search_spat.pat = transmute(^u8)(xstrnsave(transmute(cstring)(spats[RE_SEARCH].pat), spats[RE_SEARCH].patlen))
 		saved_last_search_spat.patlen = spats[RE_SEARCH].patlen
 	}
 	saved_last_idx = last_idx
@@ -650,7 +648,7 @@ set_last_search_pat :: proc "c"(s: cstring, idx: C.int, magic: C.int, setlast: b
 		spats[idx].patlen = 0
 	} else {
 		spats[idx].patlen = libc.strlen(s)
-		spats[idx].pat = xstrnsave_c(s, spats[idx].patlen)
+		spats[idx].pat = transmute(^u8)(xstrnsave(s, spats[idx].patlen))
 	}
 	spats[idx].timestamp = os_time()
 	spats[idx].additional_data = nil
@@ -671,7 +669,7 @@ set_last_search_pat :: proc "c"(s: cstring, idx: C.int, magic: C.int, setlast: b
 			saved_spats[idx].pat = nil
 			saved_spats[idx].patlen = 0
 		} else {
-			saved_spats[idx].pat = xstrnsave_c(transmute(cstring)(spats[idx].pat), spats[idx].patlen)
+			saved_spats[idx].pat = transmute(^u8)(xstrnsave(transmute(cstring)(spats[idx].pat), spats[idx].patlen))
 			saved_spats[idx].patlen = spats[idx].patlen
 		}
 		saved_spats_last_idx = last_idx
@@ -846,7 +844,7 @@ searchit :: proc "c"(
 		return 0 // FAIL
 	}
 
-	search_from_match_end := _vim_strchr(transmute(cstring)(p_cpo), CPO_SEARCH) != nil
+	search_from_match_end := vim_strchr(transmute(cstring)(p_cpo), CPO_SEARCH) != nil
 
 	// find the string
 	for { // loop for count
@@ -1260,7 +1258,7 @@ searchc :: proc "c"(cap: ^Cmdarg_T, t_cmd_in: bool) -> C.int {
 		t_cmd = last_t_cmd
 		c = C.int(lastc[0])
 
-		if _vim_strchr(transmute(cstring)(p_cpo), CPO_SCOLON) == nil && count == 1 && t_cmd {
+		if vim_strchr(transmute(cstring)(p_cpo), CPO_SCOLON) == nil && count == 1 && t_cmd {
 			stop = false
 		}
 	}
@@ -1705,7 +1703,7 @@ update_search_stat :: proc "c"(
 		}
 		if done_search {
 			xfree(us_lastpat)
-			us_lastpat = xstrnsave_c(transmute(cstring)(spats[last_idx].pat), spats[last_idx].patlen)
+			us_lastpat = transmute(^u8)(xstrnsave(transmute(cstring)(spats[last_idx].pat), spats[last_idx].patlen))
 			us_lastpatlen = spats[last_idx].patlen
 			us_chgtick = C.int(buf_changedtick_inline(curbuf))
 			us_lbuf = curbuf
@@ -1806,7 +1804,7 @@ do_search :: proc "c"(
 
 	searchcmdlen = 0
 
-	if spats[0].off.line && _vim_strchr(transmute(cstring)(p_cpo), CPO_LINEOFF) != nil {
+	if spats[0].off.line && vim_strchr(transmute(cstring)(p_cpo), CPO_LINEOFF) != nil {
 		spats[0].off.line = false
 		spats[0].off.off = 0
 	}
@@ -1954,7 +1952,7 @@ do_search :: proc "c"(
 				}
 
 				if w_p_rl_r(curwin) != 0 && b_at(w_p_rlc_r(curwin), 0) == 's' {
-					r := reverse_text_r(transmute(cstring)(msgbuf))
+					r := transmute(^u8)(reverse_text(transmute(cstring)(msgbuf)))
 					xfree(msgbuf)
 					msgbuf = r
 					msgbuflen = libc.strlen(transmute(cstring)(msgbuf))
@@ -2255,8 +2253,8 @@ pos := &fml_pos
 	pos.coladd = 0
 	linep := ml_get(pos.lnum)
 
-	cpo_match := _vim_strchr(transmute(cstring)(p_cpo), CPO_MATCH) != nil
-	cpo_bsl := _vim_strchr(transmute(cstring)(p_cpo), CPO_MATCHBSL) != nil
+	cpo_match := vim_strchr(transmute(cstring)(p_cpo), CPO_MATCH) != nil
+	cpo_bsl := vim_strchr(transmute(cstring)(p_cpo), CPO_MATCHBSL) != nil
 
 	if (flags & FM_BACKWARD) != 0 {
 		dir = C.int(Direction.BACKWARD)
@@ -2413,7 +2411,7 @@ pos := &fml_pos
 		}
 	}
 
-	if w_p_rl_r(curwin) != 0 && _vim_strchr(cstring("()[]{}<>"), initc) != nil {
+	if w_p_rl_r(curwin) != 0 && vim_strchr(cstring("()[]{}<>"), initc) != nil {
 		backwards = !backwards
 	}
 
@@ -2538,7 +2536,7 @@ pos := &fml_pos
 				} else if raw_string {
 					if b_at(linep, pos.col - 1) == 'R' &&
 					b_at(linep, pos.col) == '"' &&
-					_vim_strchr(transmute(cstring)(^u8)(uintptr(linep) + uintptr(pos.col) + 1), '(') != nil {
+					vim_strchr(transmute(cstring)(^u8)(uintptr(linep) + uintptr(pos.col) + 1), '(') != nil {
 						endp := curwin == nil ? &match_pos : &win_cursor_r(curwin)^
 						if count > 0 {
 							endp = &match_pos
@@ -2677,7 +2675,7 @@ pos := &fml_pos
 			fallthrough
 		case:
 			if buf_p_lisp_r(curbuf) != 0 &&
-			(_vim_strchr(cstring("(){}[]"), cc) != nil) &&
+			(vim_strchr(cstring("(){}[]"), cc) != nil) &&
 			pos.col > 1 &&
 			check_prevcol(linep, pos.col, '\\', nil) &&
 			check_prevcol(linep, pos.col - 1, '#', nil) {
@@ -2797,7 +2795,7 @@ showmatch :: proc "c"(c: C.int) {
 	ui_flush()
 	dollar_vcol = save_dollar_vcol
 
-	if _vim_strchr(transmute(cstring)(p_cpo), CPO_SHOWMATCH) != nil {
+	if vim_strchr(transmute(cstring)(p_cpo), CPO_SHOWMATCH) != nil {
 		os_delay(C.ulonglong(p_mat)*100 + 8, true)
 	} else if !char_avail_r() {
 		os_delay(C.ulonglong(p_mat)*100 + 9, false)
@@ -2941,7 +2939,7 @@ f_searchcount :: proc "c"(argvars: ^Typval, rettv: ^Typval, fptr: rawptr) {
 		}
 		xfree(spats[last_idx].pat)
 		spats[last_idx].patlen = libc.strlen(transmute(cstring)(pattern))
-		spats[last_idx].pat = xstrnsave_c(transmute(cstring)(pattern), spats[last_idx].patlen)
+		spats[last_idx].pat = transmute(^u8)(xstrnsave(transmute(cstring)(pattern), spats[last_idx].patlen))
 	}
 	if spats[last_idx].pat == nil || b_at(spats[last_idx].pat, 0) == 0 {
 		restore_last_search_pattern()

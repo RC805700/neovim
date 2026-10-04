@@ -489,7 +489,7 @@ vim_beep :: proc "c" (val: C.uint) {
 			}
 		}
 	}
-	if vim_strchr_c(p_debug_g, C.int('e')) != nil {
+	if vim_strchr(transmute(cstring)(p_debug_g), C.int('e')) != nil {
 		msg_source(26)
 		msg(_t(cstring("Beep!")), 26)
 	}
@@ -765,7 +765,7 @@ ui_mouse_has :: proc "c" (mode: C.int) -> bool {
 	for p[i] != 0 {
 		c := p[i]
 		if c == 'a' {
-			if vim_strchr_c(transmute(^u8)(cstring("nvich")), mode) != nil {
+			if vim_strchr(cstring("nvich"), mode) != nil {
 				return true
 			}
 		} else if c == 'h' {

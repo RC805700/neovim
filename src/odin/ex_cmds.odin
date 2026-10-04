@@ -1811,8 +1811,8 @@ do_move :: proc "c"(line1: C.int, line2: C.int, dest: C.int) -> C.int {
 	extra: C.int = 0 // lines added before line1
 	l := line1
 	for l <= line2 {
-		str := xstrnsave_c(cstring(ml_get(l + extra)),
-			C.size_t(ml_get_len(l + extra)))
+		str := transmute(^u8)(xstrnsave(cstring(ml_get(l + extra)),
+			C.size_t(ml_get_len(l + extra))))
 		ml_append(dest + l - line1, str, 0, false)
 		xfree(transmute(rawptr)(str))
 		if dest < line1 {
@@ -1956,8 +1956,8 @@ ex_copy :: proc "c"(line1_in: C.int, line2_in: C.int, n: C.int) {
 	(^C.int)(uintptr(curwin) + W_CURSOR_OFF)^ = n
 	for line1 <= line2 {
 		// Copy: the line is unlocked within ml_append().
-		p := xstrnsave_c(cstring(ml_get(line1)),
-			C.size_t(ml_get_len(line1)))
+		p := transmute(^u8)(xstrnsave(cstring(ml_get(line1)),
+			C.size_t(ml_get_len(line1))))
 		ml_append((^C.int)(uintptr(curwin) + W_CURSOR_OFF)^, p, 0, false)
 		xfree(transmute(rawptr)(p))
 
@@ -2292,7 +2292,7 @@ do_filter_o :: proc "c"(line1: C.int, line2: C.int, eap: rawptr, cmd: ^u8, do_in
 
 					if do_in {
 						if (cmdmod_cmod_flags & CMOD_KEEPMARKS_O) != 0 ||
-							vim_strchr_c(p_cpo, C.int('R')) == nil {
+							vim_strchr(transmute(cstring)(p_cpo), C.int('R')) == nil {
 							// TODO(bfredl): extmarks inactive here. Columns
 							// mismatch: assume end-of-line changes.
 							if read_linecount >= linecount {
@@ -2500,8 +2500,8 @@ do_bang :: proc "c"(addr_count: C.int, eap: rawptr, forceit: bool, do_in: bool, 
 			done = true
 		} else {
 			// Reescape %/# so redo doesn't substitute the buffer name.
-			cmd_esc := vim_strsave_escaped_c(prevcmd_f,
-				transmute(^u8)(cstring("%#")))
+			cmd_esc := vim_strsave_escaped(transmute(cstring)(prevcmd_f),
+				cstring("%#"))
 			AppendToRedobuffLit_r(cstring(cmd_esc), -1)
 			xfree(transmute(rawptr)(cmd_esc))
 			AppendToRedobuff_r(cstring("\n"))
@@ -2723,7 +2723,7 @@ ex_append :: proc "c"(eap: rawptr) {
 					break
 				}
 				nc := (^u8)(nextcmd)
-				p = vim_strchr(nc, C.int('\n'))
+				p = transmute(^u8)(vim_strchr(transmute(cstring)(nc), C.int('\n')))
 				if p == nil {
 					p = (^u8)(uintptr(nc) + uintptr(libc.strlen(cstring(nc))))
 				}
@@ -3122,7 +3122,7 @@ ex_global :: proc "c"(eap: rawptr) {
 	// "\&" the previous substitute pattern.
 	if ([^]u8)(cmd)[0] == '\\' {
 		cmd = (^u8)(uintptr(cmd) + 1)
-		if vim_strchr(transmute(^u8)(cstring("/?&")),
+		if vim_strchr(cstring("/?&"),
 			C.int(([^]u8)(cmd)[0])) == nil {
 			emsg(cstring(E10_S))
 			return
@@ -3242,7 +3242,7 @@ linelen_o :: proc "c"(has_tab: ^C.int) -> C.int {
 	([^]u8)(last)[0] = 0
 	len := linetabsize_col(0, line) // line length
 	if has_tab != nil { // embedded TAB check
-		has_tab^ = vim_strchr(first, C.int('\t')) != nil ? 1 : 0
+		has_tab^ = vim_strchr(transmute(cstring)(first), C.int('\t')) != nil ? 1 : 0
 	}
 	([^]u8)(last)[0] = savec
 
@@ -3945,7 +3945,7 @@ do_sub_o :: proc "c"(eap: rawptr, timeout: proftime_T, cmdpreview_ns: C.int, cmd
 	// New pattern and substitution.
 	if ([^]u8)((^u8)((^rawptr)(uintptr(eap) + EXARG_CMD_OFF)^))[0] == 's' &&
 		([^]u8)(cmd)[0] != 0 && !ascii_iswhite(([^]u8)(cmd)[0]) &&
-		vim_strchr(transmute(^u8)(cstring("0123456789cegriIp|\"")),
+		vim_strchr(cstring("0123456789cegriIp|\""),
 			C.int(([^]u8)(cmd)[0])) == nil {
 		// No alphanumeric separator.
 		if check_regexp_delim_o(C.int(([^]u8)(cmd)[0])) == FAIL {
@@ -3956,7 +3956,7 @@ do_sub_o :: proc "c"(eap: rawptr, timeout: proftime_T, cmdpreview_ns: C.int, cmd
 		// pattern (almost like //sub/r); "\&sub&" the substitute one.
 		if ([^]u8)(cmd)[0] == '\\' {
 			cmd = (^u8)(uintptr(cmd) + 1)
-			if vim_strchr(transmute(^u8)(cstring("/?&")),
+			if vim_strchr(cstring("/?&"),
 				C.int(([^]u8)(cmd)[0])) == nil {
 				emsg(cstring(E10_S))
 				return 0
@@ -4240,7 +4240,7 @@ sub_engine_o :: proc "c"(eap: rawptr, timeout: proftime_T, cmdpreview_ns: C.int,
 					}
 
 					// 'cpoptions' "u": no undo sync while asking.
-					if vim_strchr_c(p_cpo, C.int('u')) != nil {
+					if vim_strchr(transmute(cstring)(p_cpo), C.int('u')) != nil {
 						no_u_sync += 1
 					}
 
@@ -4314,7 +4314,7 @@ sub_engine_o :: proc "c"(eap: rawptr, timeout: proftime_T, cmdpreview_ns: C.int,
 										C.size_t(ml_get_len(lnum))))
 								rest_ptr := (^u8)(uintptr(transmute(^u8)(sub_firstline.data)) + uintptr(copycol))
 								rest_size := sub_firstline.size - C.size_t(copycol)
-								new_data := concat_str_r(cstring(transmute(^u8)(new_start.data)), cstring(rest_ptr))
+								new_data := concat_str(cstring(transmute(^u8)(new_start.data)), cstring(rest_ptr))
 								new_line := NvimString{data = cstring(new_data), size = new_start.size + rest_size}
 
 								// Cursor relative to line end (earlier
@@ -4393,7 +4393,7 @@ sub_engine_o :: proc "c"(eap: rawptr, timeout: proftime_T, cmdpreview_ns: C.int,
 					}
 					State = save_State
 					setmouse()
-					if vim_strchr_c(p_cpo, C.int('u')) != nil {
+					if vim_strchr(transmute(cstring)(p_cpo), C.int('u')) != nil {
 						no_u_sync -= 1
 					}
 
@@ -5013,7 +5013,7 @@ check_overwrite :: proc "c"(eap: rawptr, buf: rawptr, fname: cstring, ffname: cs
 		(!bt_nofilename(buf) &&
 			((bflags & BF_NOTEDITED_O) != 0 ||
 				((bflags & BF_NEW_O) != 0 &&
-					vim_strchr_c(p_cpo, CPO_OVERNEW_O) == nil) ||
+					vim_strchr(transmute(cstring)(p_cpo), CPO_OVERNEW_O) == nil) ||
 				(bflags & BF_READERR_O) != 0))
 	if needs_check && p_wa_g == 0 && os_path_exists(ffname) {
 		forceit := (^C.int)(uintptr(eap) + EXARG_FORCEIT_OFF)^
@@ -5116,7 +5116,7 @@ do_write :: proc "c"(eap: rawptr) -> C.int {
 
 	// A new file goes into the alternate-file list.
 	if !done && other {
-		if vim_strchr_c(p_cpo, CPO_ALTWRITE_O) != nil ||
+		if vim_strchr(transmute(cstring)(p_cpo), CPO_ALTWRITE_O) != nil ||
 			(^C.int)(uintptr(eap) + EXARG_CMDIDX_OFF)^ == CMD_SAVEAS_O {
 			alt_buf = setaltfname(cstring(ffname), cstring(fname), 1)
 		} else {

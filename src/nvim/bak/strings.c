@@ -70,6 +70,7 @@ static const char typename_float[] = "float";
 /// Copy up to `len` bytes of `string` into newly allocated memory and
 /// terminate with a NUL. The allocated memory always has size `len + 1`, even
 /// when `string` is shorter.
+#pragma weak xstrnsave
 char *xstrnsave(const char *string, size_t len)
   FUNC_ATTR_NONNULL_RET FUNC_ATTR_MALLOC FUNC_ATTR_NONNULL_ALL
 {
@@ -78,6 +79,7 @@ char *xstrnsave(const char *string, size_t len)
 
 // Same as vim_strsave(), but any characters found in esc_chars are preceded
 // by a backslash.
+#pragma weak vim_strsave_escaped
 char *vim_strsave_escaped(const char *string, const char *esc_chars)
   FUNC_ATTR_NONNULL_RET FUNC_ATTR_MALLOC FUNC_ATTR_NONNULL_ALL
 {
@@ -87,6 +89,7 @@ char *vim_strsave_escaped(const char *string, const char *esc_chars)
 // Same as vim_strsave_escaped(), but when "bsl" is true also escape
 // characters where rem_backslash() would remove the backslash.
 // Escape the characters with "cc".
+#pragma weak vim_strsave_escaped_ext
 char *vim_strsave_escaped_ext(const char *string, const char *esc_chars, char cc, bool bsl)
   FUNC_ATTR_NONNULL_RET FUNC_ATTR_MALLOC FUNC_ATTR_NONNULL_ALL
 {
@@ -137,6 +140,7 @@ char *vim_strsave_escaped_ext(const char *string, const char *esc_chars, char cc
 /// @param[in]  length  Length of the string to copy.
 ///
 /// @return [allocated] Copy of the string.
+#pragma weak vim_strnsave_unquoted
 char *vim_strnsave_unquoted(const char *const string, const size_t length)
   FUNC_ATTR_MALLOC FUNC_ATTR_WARN_UNUSED_RESULT FUNC_ATTR_NONNULL_ALL
   FUNC_ATTR_NONNULL_RET
@@ -183,6 +187,7 @@ char *vim_strnsave_unquoted(const char *const string, const size_t length)
 /// When "do_newline" is false do not escape newline unless it is csh shell.
 ///
 /// @return  the result in allocated memory.
+#pragma weak vim_strsave_shellescape
 char *vim_strsave_shellescape(const char *string, bool do_special, bool do_newline)
   FUNC_ATTR_NONNULL_RET FUNC_ATTR_MALLOC FUNC_ATTR_NONNULL_ALL
 {
@@ -297,6 +302,7 @@ char *vim_strsave_shellescape(const char *string, bool do_special, bool do_newli
 
 // Like vim_strsave(), but make all characters uppercase.
 // This uses ASCII lower-to-upper case translation, language independent.
+#pragma weak vim_strsave_up
 char *vim_strsave_up(const char *string)
   FUNC_ATTR_NONNULL_RET FUNC_ATTR_MALLOC FUNC_ATTR_NONNULL_ALL
 {
@@ -307,6 +313,7 @@ char *vim_strsave_up(const char *string)
 
 /// Like xstrnsave(), but make all characters uppercase.
 /// This uses ASCII lower-to-upper case translation, language independent.
+#pragma weak vim_strnsave_up
 char *vim_strnsave_up(const char *string, size_t len)
   FUNC_ATTR_NONNULL_RET FUNC_ATTR_MALLOC FUNC_ATTR_NONNULL_ALL
 {
@@ -316,6 +323,7 @@ char *vim_strnsave_up(const char *string, size_t len)
 }
 
 // ASCII lower-to-upper case translation, language independent.
+#pragma weak vim_strup
 void vim_strup(char *p)
   FUNC_ATTR_NONNULL_ALL
 {
@@ -326,6 +334,7 @@ void vim_strup(char *p)
 }
 
 // strcpy plus vim_strup.
+#pragma weak vim_strcpy_up
 void vim_strcpy_up(char *restrict dst, const char *restrict src)
   FUNC_ATTR_NONNULL_ALL
 {
@@ -337,6 +346,7 @@ void vim_strcpy_up(char *restrict dst, const char *restrict src)
 }
 
 // strncpy (NUL-terminated) plus vim_strup.
+#pragma weak vim_strncpy_up
 void vim_strncpy_up(char *restrict dst, const char *restrict src, size_t n)
   FUNC_ATTR_NONNULL_ALL
 {
@@ -348,6 +358,7 @@ void vim_strncpy_up(char *restrict dst, const char *restrict src, size_t n)
 }
 
 // memcpy (does not NUL-terminate) plus vim_strup.
+#pragma weak vim_memcpy_up
 void vim_memcpy_up(char *restrict dst, const char *restrict src, size_t n)
   FUNC_ATTR_NONNULL_ALL
 {
@@ -362,6 +373,7 @@ void vim_memcpy_up(char *restrict dst, const char *restrict src, size_t n)
 /// In the worst case, the uppercased form needs `strlen(src) * MB_MAXBYTES` bytes plus NUL.
 ///
 /// @return number of bytes written to `dst`, not including the NUL terminator.
+#pragma weak mb_strup_buf
 size_t mb_strup_buf(const char *src, char *dst)
   FUNC_ATTR_NONNULL_ALL
 {
@@ -384,6 +396,7 @@ size_t mb_strup_buf(const char *src, char *dst)
 /// @param[in]  upper If true make uppercase, otherwise lowercase
 ///
 /// @return [allocated] upper-cased string.
+#pragma weak strcase_save
 char *strcase_save(const char *const orig, bool upper)
   FUNC_ATTR_NONNULL_RET FUNC_ATTR_MALLOC FUNC_ATTR_NONNULL_ALL
 {
@@ -426,6 +439,7 @@ char *strcase_save(const char *const orig, bool upper)
 }
 
 // delete spaces at the end of a string
+#pragma weak del_trailing_spaces
 void del_trailing_spaces(char *ptr)
   FUNC_ATTR_NONNULL_ALL
 {
@@ -485,6 +499,7 @@ int vim_strnicmp(const char *s1, const char *s2, size_t len)
 #endif
 
 /// Case-insensitive `strequal`.
+#pragma weak striequal
 bool striequal(const char *a, const char *b)
   FUNC_ATTR_PURE FUNC_ATTR_WARN_UNUSED_RESULT
 {
@@ -494,6 +509,7 @@ bool striequal(const char *a, const char *b)
 /// Compare two ASCII strings, for length "len", ignoring case, ignoring locale.
 ///
 /// @return 0 for match, < 0 for smaller, > 0 for bigger
+#pragma weak vim_strnicmp_asc
 int vim_strnicmp_asc(const char *s1, const char *s2, size_t len)
   FUNC_ATTR_PURE FUNC_ATTR_WARN_UNUSED_RESULT
 {
@@ -521,6 +537,7 @@ int vim_strnicmp_asc(const char *s1, const char *s2, size_t len)
 /// @return Pointer to the first byte of the found character in string or NULL
 ///         if it was not found or character is invalid. NUL character is never
 ///         found, use `strlen()` instead.
+#pragma weak vim_strchr
 char *vim_strchr(const char *const string, const int c)
   FUNC_ATTR_NONNULL_ALL FUNC_ATTR_PURE FUNC_ATTR_WARN_UNUSED_RESULT
 {
@@ -546,6 +563,7 @@ static int sort_compare(const void *s1, const void *s2)
   return strcmp(*(char **)s1, *(char **)s2);
 }
 
+#pragma weak sort_strings
 void sort_strings(char **files, int count)
 {
   qsort((void *)files, (size_t)count, sizeof(char *), sort_compare);
@@ -553,6 +571,7 @@ void sort_strings(char **files, int count)
 
 // Return true if string "s" contains a non-ASCII character (128 or higher).
 // When "s" is NULL false is returned.
+#pragma weak has_non_ascii
 bool has_non_ascii(const char *s)
   FUNC_ATTR_PURE
 {
@@ -568,6 +587,7 @@ bool has_non_ascii(const char *s)
 
 /// Return true if string "s" contains a non-ASCII character (128 or higher).
 /// When "s" is NULL false is returned.
+#pragma weak has_non_ascii_len
 bool has_non_ascii_len(const char *const s, const size_t len)
   FUNC_ATTR_PURE
 {
@@ -582,6 +602,7 @@ bool has_non_ascii_len(const char *const s, const size_t len)
 }
 
 /// Concatenate two strings and return the result in allocated memory.
+#pragma weak concat_str
 char *concat_str(const char *restrict str1, const char *restrict str2)
   FUNC_ATTR_NONNULL_RET FUNC_ATTR_MALLOC FUNC_ATTR_NONNULL_ALL
 {
@@ -759,6 +780,7 @@ static float_T tv_float(typval_T *const tvs, int *const idxp)
 /// Append a formatted value to the string
 ///
 /// @see vim_vsnprintf_typval().
+#pragma weak vim_snprintf_add
 int vim_snprintf_add(char *str, size_t str_m, const char *fmt, ...)
   FUNC_ATTR_PRINTF(3, 4)
 {
@@ -785,6 +807,7 @@ int vim_snprintf_add(char *str, size_t str_m, const char *fmt, ...)
 ///
 /// @return Number of bytes excluding NUL byte that would be written to the
 ///         string if str_m was greater or equal to the return value.
+#pragma weak vim_snprintf
 int vim_snprintf(char *str, size_t str_m, const char *fmt, ...)
   FUNC_ATTR_PRINTF(3, 4)
 {
@@ -818,6 +841,7 @@ static const char *infinity_str(bool positive, char fmt_spec, int force_sign,
 /// This means that you cannot rely on it's return value for the destination
 /// length because the destination may be shorter than the source. This function
 /// guarantees the returned length will never be greater than the destination length.
+#pragma weak vim_snprintf_safelen
 size_t vim_snprintf_safelen(char *str, size_t str_m, const char *fmt, ...)
 {
   va_list ap;
@@ -838,6 +862,7 @@ size_t vim_snprintf_safelen(char *str, size_t str_m, const char *fmt, ...)
   return ((size_t)str_l >= str_m) ? str_m - 1 : (size_t)str_l;
 }
 
+#pragma weak vim_vsnprintf
 int vim_vsnprintf(char *str, size_t str_m, const char *fmt, va_list ap)
 {
   return vim_vsnprintf_typval(str, str_m, fmt, ap, NULL);
@@ -1470,6 +1495,7 @@ static void skip_to_arg(const char **ap_types, va_list ap_start, va_list *ap, in
 ///
 /// @return Number of bytes excluding NUL byte that would be written to the
 ///         string if str_m was greater or equal to the return value.
+#pragma weak vim_vsnprintf_typval
 int vim_vsnprintf_typval(char *str, size_t str_m, const char *fmt, va_list ap_start,
                          typval_T *const tvs)
 {
@@ -2319,80 +2345,13 @@ error:
   return (int)str_l;
 }
 
-int kv_do_printf(StringBuilder *str, const char *fmt, ...)
-  FUNC_ATTR_PRINTF(2, 3)
-{
-  size_t remaining = str->capacity - str->size;
-
-  va_list ap;
-  va_start(ap, fmt);
-  int printed = vsnprintf(str->items ? str->items + str->size : NULL, remaining, fmt, ap);
-  va_end(ap);
-
-  if (printed < 0) {
-    return -1;
-  }
-
-  // printed string didn't fit, resize and try again
-  if ((size_t)printed >= remaining) {
-    kv_ensure_space(*str, (size_t)printed + 1);  // include space for NUL terminator at the end
-    assert(str->items != NULL);
-    va_start(ap, fmt);
-    printed = vsnprintf(str->items + str->size, str->capacity - str->size, fmt, ap);
-    va_end(ap);
-    if (printed < 0) {
-      return -1;
-    }
-  }
-
-  str->size += (size_t)printed;
-  return printed;
-}
-
-String arena_printf(Arena *arena, const char *fmt, ...)
-  FUNC_ATTR_PRINTF(2, 3)
-{
-  size_t remaining = 0;
-  char *buf = NULL;
-  if (arena) {
-    if (!arena->cur_blk) {
-      arena_alloc_block(arena);
-    }
-
-    // happy case, we can fit the printed string in the rest of the current
-    // block (one pass):
-    remaining = arena->size - arena->pos;
-    buf = arena->cur_blk + arena->pos;
-  }
-
-  va_list ap;
-  va_start(ap, fmt);
-  int printed = vsnprintf(buf, remaining, fmt, ap);
-  va_end(ap);
-
-  if (printed < 0) {
-    return (String)STRING_INIT;
-  }
-
-  // printed string didn't fit, allocate and try again
-  if ((size_t)printed >= remaining) {
-    buf = arena_alloc(arena, (size_t)printed + 1, false);
-    va_start(ap, fmt);
-    printed = vsnprintf(buf, (size_t)printed + 1, fmt, ap);
-    va_end(ap);
-    if (printed < 0) {
-      return (String)STRING_INIT;
-    }
-  } else {
-    arena->pos += (size_t)printed + 1;
-  }
-
-  return cbuf_as_string(buf, (size_t)printed);
-}
+extern int kv_do_printf_v(StringBuilder *str, const char *fmt, va_list ap);
+extern String arena_printf_v(Arena *arena, const char *fmt, va_list ap);
 
 /// Reverse text into allocated memory.
 ///
 /// @return  the allocated string.
+#pragma weak reverse_text
 char *reverse_text(char *s)
   FUNC_ATTR_NONNULL_ALL FUNC_ATTR_NONNULL_RET
 {
@@ -2416,6 +2375,7 @@ char *reverse_text(char *s)
 /// @param[in] rep  Substring to replace with
 ///
 /// @return [allocated] Copy of the string.
+#pragma weak strrep
 char *strrep(const char *src, const char *what, const char *rep)
 {
   const char *pos = src;
@@ -2503,18 +2463,21 @@ static void byteidx_common(typval_T *argvars, typval_T *rettv, bool comp)
 }
 
 /// "byteidx()" function
+#pragma weak f_byteidx
 void f_byteidx(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 {
   byteidx_common(argvars, rettv, false);
 }
 
 /// "byteidxcomp()" function
+#pragma weak f_byteidxcomp
 void f_byteidxcomp(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 {
   byteidx_common(argvars, rettv, true);
 }
 
 /// "charidx()" function
+#pragma weak f_charidx
 void f_charidx(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 {
   rettv->vval.v_number = -1;
@@ -2575,6 +2538,7 @@ void f_charidx(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 }
 
 /// "str2list()" function
+#pragma weak f_str2list
 void f_str2list(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 {
   tv_list_alloc_ret(rettv, kListLenUnknown);
@@ -2586,6 +2550,7 @@ void f_str2list(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 }
 
 /// "str2nr()" function
+#pragma weak f_str2nr
 void f_str2nr(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 {
   int base = 10;
@@ -2629,6 +2594,7 @@ void f_str2nr(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 }
 
 /// "strgetchar()" function
+#pragma weak f_strgetchar
 void f_strgetchar(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 {
   rettv->vval.v_number = -1;
@@ -2657,6 +2623,7 @@ void f_strgetchar(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 }
 
 /// "stridx()" function
+#pragma weak f_stridx
 void f_stridx(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 {
   rettv->vval.v_number = -1;
@@ -2689,6 +2656,7 @@ void f_stridx(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 }
 
 /// "string()" function
+#pragma weak f_string
 void f_string(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 {
   rettv->v_type = VAR_STRING;
@@ -2696,6 +2664,7 @@ void f_string(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 }
 
 /// "strlen()" function
+#pragma weak f_strlen
 void f_strlen(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 {
   rettv->vval.v_number = (varnumber_T)strlen(tv_get_string(&argvars[0]));
@@ -2716,12 +2685,14 @@ static void strchar_common(typval_T *argvars, typval_T *rettv, bool skipcc)
 }
 
 /// "strcharlen()" function
+#pragma weak f_strcharlen
 void f_strcharlen(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 {
   strchar_common(argvars, rettv, true);
 }
 
 /// "strchars()" function
+#pragma weak f_strchars
 void f_strchars(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 {
   varnumber_T skipcc = false;
@@ -2742,6 +2713,7 @@ void f_strchars(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 }
 
 /// "strutf16len()" function
+#pragma weak f_strutf16len
 void f_strutf16len(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 {
   rettv->vval.v_number = -1;
@@ -2772,6 +2744,7 @@ void f_strutf16len(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 }
 
 /// "strdisplaywidth()" function
+#pragma weak f_strdisplaywidth
 void f_strdisplaywidth(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 {
   const char *const s = tv_get_string(&argvars[0]);
@@ -2785,6 +2758,7 @@ void f_strdisplaywidth(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 }
 
 /// "strwidth()" function
+#pragma weak f_strwidth
 void f_strwidth(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 {
   const char *const s = tv_get_string(&argvars[0]);
@@ -2793,6 +2767,7 @@ void f_strwidth(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 }
 
 /// "strcharpart()" function
+#pragma weak f_strcharpart
 void f_strcharpart(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 {
   const char *const p = tv_get_string(&argvars[0]);
@@ -2868,6 +2843,7 @@ void f_strcharpart(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 }
 
 /// "strpart()" function
+#pragma weak f_strpart
 void f_strpart(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 {
   bool error = false;
@@ -2914,6 +2890,7 @@ void f_strpart(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 }
 
 /// "strridx()" function
+#pragma weak f_strridx
 void f_strridx(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 {
   char buf[NUMBUFLEN];
@@ -2957,6 +2934,7 @@ void f_strridx(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 }
 
 /// "strtrans()" function
+#pragma weak f_strtrans
 void f_strtrans(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 {
   rettv->v_type = VAR_STRING;
@@ -2967,6 +2945,7 @@ void f_strtrans(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 ///
 /// Converts a byte or character offset in a string to the corresponding UTF-16
 /// code unit offset.
+#pragma weak f_utf16idx
 void f_utf16idx(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 {
   rettv->vval.v_number = -1;
@@ -3029,6 +3008,7 @@ void f_utf16idx(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 }
 
 /// "tolower(string)" function
+#pragma weak f_tolower
 void f_tolower(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 {
   rettv->v_type = VAR_STRING;
@@ -3036,6 +3016,7 @@ void f_tolower(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 }
 
 /// "toupper(string)" function
+#pragma weak f_toupper
 void f_toupper(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 {
   rettv->v_type = VAR_STRING;
@@ -3043,6 +3024,7 @@ void f_toupper(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 }
 
 /// "tr(string, fromstr, tostr)" function
+#pragma weak f_tr
 void f_tr(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 {
   char buf[NUMBUFLEN];
@@ -3122,6 +3104,7 @@ error:
 }
 
 /// "trim({expr})" function
+#pragma weak f_trim
 void f_trim(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 {
   char buf1[NUMBUFLEN];
@@ -3211,6 +3194,7 @@ void f_trim(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 }
 
 /// compare two keyvalue_T structs by case sensitive value
+#pragma weak cmp_keyvalue_value
 int cmp_keyvalue_value(const void *a, const void *b)
 {
   keyvalue_T *kv1 = (keyvalue_T *)a;
@@ -3220,6 +3204,7 @@ int cmp_keyvalue_value(const void *a, const void *b)
 }
 
 /// compare two keyvalue_T structs by value with length
+#pragma weak cmp_keyvalue_value_n
 int cmp_keyvalue_value_n(const void *a, const void *b)
 {
   keyvalue_T *kv1 = (keyvalue_T *)a;
@@ -3229,6 +3214,7 @@ int cmp_keyvalue_value_n(const void *a, const void *b)
 }
 
 /// compare two keyvalue_T structs by case insensitive value
+#pragma weak cmp_keyvalue_value_i
 int cmp_keyvalue_value_i(const void *a, const void *b)
 {
   keyvalue_T *kv1 = (keyvalue_T *)a;
@@ -3238,6 +3224,7 @@ int cmp_keyvalue_value_i(const void *a, const void *b)
 }
 
 /// compare two keyvalue_T structs by case insensitive value with length
+#pragma weak cmp_keyvalue_value_ni
 int cmp_keyvalue_value_ni(const void *a, const void *b)
 {
   keyvalue_T *kv1 = (keyvalue_T *)a;

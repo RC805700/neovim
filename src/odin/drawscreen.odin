@@ -146,7 +146,7 @@ conceal_cursor_line :: proc "c"(wp: rawptr) -> bool {
 	} else {
 		return false
 	}
-	return vim_strchr_c(transmute(^u8)((^rawptr)(uintptr(wp) + W_P_COCU_OFF)^), C.int(c)) != nil
+	return vim_strchr(transmute(cstring)((^rawptr)(uintptr(wp) + W_P_COCU_OFF)^), C.int(c)) != nil
 }
 
 // Whether cursorline draws in a special way (both lines need redraw on move).
@@ -560,7 +560,7 @@ win_draw_end :: proc "c"(wp: rawptr, c1: u32, draw_margin: bool, startrow: C.int
 			// Number column.
 			if ((^C.int)(uintptr(wp) + W_P_NU_OFF)^ != 0 ||
 				(^C.int)(uintptr(wp) + W_P_RNU_OFF)^ != 0) &&
-				vim_strchr_c(p_cpo, CPO_NUMCOL_O) == nil {
+				vim_strchr(transmute(cstring)(p_cpo), CPO_NUMCOL_O) == nil {
 				width := number_width(wp) + 1
 				n = grid_line_fill(n, min(view_width, n + width),
 					32, win_hl_attr_o(wp, HLF_N_O))

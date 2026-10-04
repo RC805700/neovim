@@ -182,8 +182,8 @@ parse_shape_opt :: proc "c" (what: C.int) -> cstring {
 		}
 		modep := p_guicursor_g
 		for modep != nil && ([^]u8)(modep)[0] != 0 {
-			colonp := vim_strchr(modep, ':')
-			commap := vim_strchr(modep, ',')
+			colonp := transmute(^u8)(vim_strchr(transmute(cstring)(modep), ':'))
+			commap := transmute(^u8)(vim_strchr(transmute(cstring)(modep), ','))
 			if colonp == nil || (commap != nil && uintptr(commap) < uintptr(colonp)) {
 				return cstring(E545_S)
 			}
@@ -269,7 +269,7 @@ parse_shape_opt :: proc "c" (what: C.int) -> cstring {
 						}
 						p = ([^]u8)(uintptr(p) + 5)
 					} else {
-						endp := vim_strchr(p, '-')
+						endp := transmute(^u8)(vim_strchr(transmute(cstring)(p), '-'))
 						if commap == nil {
 							if endp == nil {
 								endp = ([^]u8)(uintptr(p) + uintptr(libc.strlen(transmute(cstring)(p))))
@@ -277,7 +277,7 @@ parse_shape_opt :: proc "c" (what: C.int) -> cstring {
 						} else if endp == nil || uintptr(endp) > uintptr(commap) {
 							endp = commap
 						}
-						slashp := vim_strchr(p, '/')
+						slashp := transmute(^u8)(vim_strchr(transmute(cstring)(p), '/'))
 						if slashp != nil && uintptr(slashp) < uintptr(endp) {
 							i = syn_check_group_c(p, C.size_t(uintptr(slashp) - uintptr(p)))
 							p = ([^]u8)(uintptr(slashp) + 1)

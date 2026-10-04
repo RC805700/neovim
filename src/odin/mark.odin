@@ -235,9 +235,7 @@ fmark_at :: #force_inline proc "c"(base: rawptr, off: uintptr, i: C.int) -> ^Fma
 
 // ── Globals ──────────────────────────────────────────────────────────────────
 
-// Global marks A-Z, 0-9 (referenced by shada.c)
-@(export)
-namedfm: [NGLOBALMARKS]Xfmark_T
+// Global marks A-Z, 0-9 are C-owned (see foreign decl above; referenced by shada.c)
 
 @(private="file")
 fms_static: Fmark_T // pos_to_mark static
@@ -273,6 +271,9 @@ foreign _ {
 	utfc_ptr2len :: proc "c" (p: cstring) -> C.int ---
 	@(link_name = "utf_head_off")
 	utf_head_off :: proc "c" (base_in: cstring, p_in: cstring) -> C.int ---
+	// Defined by main.c.o (EXTERN in mark.h); C copy is authoritative
+	// (new compiler emits @(export) globals strong — would clash).
+	namedfm: [36]Xfmark_T
 	// NOTE: e_* error strings are defined below as Odin literals (C's are
 	// `const char[]` arrays — linking them as cstring globals would load array
 	// CONTENT as a pointer).
@@ -1299,7 +1300,7 @@ show_one_mark :: proc "c"(c: C.int, arg: ^u8, p: ^Pos_T, name_arg: ^u8, current:
 
 @(private="file")
 vim_strchr_safe :: proc "c"(s: ^u8, c: C.int) -> ^u8 {
-	return transmute(^u8)(_vim_strchr(transmute(cstring)(s), c))
+	return transmute(^u8)(vim_strchr(transmute(cstring)(s), c))
 }
 
 // ":delmarks[!] [marks]"

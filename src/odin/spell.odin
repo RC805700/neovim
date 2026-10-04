@@ -588,7 +588,7 @@ spell_iswordp :: proc "c"(p_in: ^u8, wp: rawptr) -> bool {
 		c := utf_ptr2char(transmute(cstring)(p))
 		if (c < 256 ? (^bool)(uintptr(sb) + SB_SPELL_ISMW_OFF + uintptr(c))^ :
 		((^^u8)(uintptr(sb) + SB_SPELL_ISMW_MB_OFF)^ != nil &&
-		_vim_strchr(transmute(cstring)((^^u8)(uintptr(sb) + SB_SPELL_ISMW_MB_OFF)^), c) != nil)) {
+		vim_strchr(transmute(cstring)((^^u8)(uintptr(sb) + SB_SPELL_ISMW_MB_OFF)^), c) != nil)) {
 			s = (^u8)(uintptr(p) + uintptr(l))
 		}
 	}
@@ -631,7 +631,7 @@ spell_iswordp_w :: proc "c"(p: ^C.int, wp: rawptr) -> bool {
 		in_mw = (^bool)(uintptr(sb) + SB_SPELL_ISMW_OFF + uintptr(p^))^
 	} else {
 		mb := (^^u8)(uintptr(sb) + SB_SPELL_ISMW_MB_OFF)^
-		in_mw = mb != nil && _vim_strchr(transmute(cstring)(mb), p^) != nil
+		in_mw = mb != nil && vim_strchr(transmute(cstring)(mb), p^) != nil
 	}
 	if in_mw {
 		s = (^C.int)(uintptr(p) + size_of(C.int))
@@ -1346,7 +1346,7 @@ match_compoundrule :: proc "c"(slang: ^Slang_T, compflags: ^u8) -> bool {
 		}
 
 		// Skip to next "/", where next pattern starts.
-		q := _vim_strchr(transmute(cstring)(p), '/')
+		q := vim_strchr(transmute(cstring)(p), '/')
 		if q == nil {
 			break
 		}
@@ -1555,7 +1555,7 @@ foreign _ {
 @(export)
 init_syl_tab :: proc "c"(slang: ^Slang_T) -> C.int {
 	ga_init(&slang.sl_syl_items, size_of(Syl_Item_T), 4)
-	p := _vim_strchr(transmute(cstring)(slang.sl_syllable), '/')
+	p := vim_strchr(transmute(cstring)(slang.sl_syllable), '/')
 	for p != nil {
 		q := transmute(^u8)(p)
 		b_set(q, 0, 0)
@@ -1564,7 +1564,7 @@ init_syl_tab :: proc "c"(slang: ^Slang_T) -> C.int {
 			break
 		}
 		s := q
-		p2 := _vim_strchr(transmute(cstring)(q), '/')
+		p2 := vim_strchr(transmute(cstring)(q), '/')
 		l: C.int
 		if p2 == nil {
 			l = C.int(libc.strlen(transmute(cstring)(s)))
@@ -1620,7 +1620,7 @@ count_syllables :: proc "c"(slang: ^Slang_T, word: ^u8) -> C.int {
 			// No recognized syllable item; at least a syllable char then?
 			c := utf_ptr2char(transmute(cstring)(p))
 			len = utfc_ptr2len(transmute(cstring)(p))
-			if _vim_strchr(transmute(cstring)(slang.sl_syllable), c) == nil {
+			if vim_strchr(transmute(cstring)(slang.sl_syllable), c) == nil {
 				skip = false // No, search for next syllable
 			} else if !skip {
 				cnt += 1 // Yes, count it
@@ -1894,7 +1894,7 @@ no_spell_checking :: proc "c"(wp: rawptr) -> bool {
 @(export)
 spell_cat_line :: proc "c"(buf: ^u8, line: ^u8, maxlen: C.int) {
 	p := transmute(^u8)(skipwhite(transmute(cstring)(line)))
-	for _vim_strchr(cstring("*#/\"\t"), C.int(b_at(p, 0))) != nil {
+	for vim_strchr(cstring("*#/\"\t"), C.int(b_at(p, 0))) != nil {
 		p = transmute(^u8)(skipwhite(transmute(cstring)(^u8)(uintptr(p) + 1)))
 	}
 
@@ -1934,7 +1934,7 @@ use_midword :: proc "c"(lp: ^Slang_T, wp: rawptr) {
 		} else {
 			old := (^^u8)(uintptr(sb) + SB_SPELL_ISMW_MB_OFF)^
 			n := libc.strlen(transmute(cstring)(old))
-			bp := xstrnsave_c(transmute(cstring)(old), C.size_t(n) + C.size_t(l))
+			bp := transmute(^u8)(xstrnsave(transmute(cstring)(old), C.size_t(n) + C.size_t(l)))
 			xfree(old)
 			(^^u8)(uintptr(sb) + SB_SPELL_ISMW_MB_OFF)^ = bp
 			xmemcpyz_sp((^u8)(uintptr(bp) + uintptr(n)), p, C.size_t(l))
@@ -2034,7 +2034,7 @@ parse_spelllang :: proc "c"(wp: rawptr) -> ^u8 {
 			filename = true
 
 			// Locate a region and remove it from the file name.
-			tailp := _vim_strchr(path_tail(transmute(cstring)(&lang[0])), '_')
+			tailp := vim_strchr(path_tail(transmute(cstring)(&lang[0])), '_')
 			p := tailp == nil ? nil : transmute(^u8)(tailp)
 			if p != nil && ascii_isalpha_sp(b_at(p, 1)) && ascii_isalpha_sp(b_at(p, 2)) &&
 			!ascii_isalpha_sp(b_at(p, 3)) {
@@ -2172,7 +2172,7 @@ parse_spelllang :: proc "c"(wp: rawptr) -> ^u8 {
 				libc.strcpy(&lang[0], "internal wordlist")
 			} else {
 				libc.strncpy(&lang[0], path_tail(transmute(cstring)(&spf_name[0])), MAXWLEN + 1)
-				pp := _vim_strchr(transmute(cstring)(&lang[0]), '.')
+				pp := vim_strchr(transmute(cstring)(&lang[0]), '.')
 				if pp != nil {
 					b_set(transmute(^u8)(pp), 0, 0)
 				}
@@ -2313,8 +2313,7 @@ DECOR_STATE_SPELL_OFF :: 320
 
 foreign _ {
 	// decor_state: typed mirror DecorState_O in drawline.odin (Batch 9).
-	@(link_name = "concat_str")
-	concat_str_r :: proc "c" (s1: cstring, s2: cstring) -> ^u8 ---
+	// concat_str now defined in strings.odin — call directly.
 }
 
 // decor_state address via the typed mirror (drawline.odin).
@@ -2561,7 +2560,7 @@ check_need_cap :: proc "c"(wp: rawptr, lnum: C.int, col: C.int) -> bool {
 				need_cap = true
 			} else {
 				// Append a space in place of the line break.
-				line_copy = concat_str_r(transmute(cstring)(line), " ")
+				line_copy = transmute(^u8)(concat_str(transmute(cstring)(line), " "))
 				line = line_copy
 				endcol = C.int(libc.strlen(transmute(cstring)(line)))
 			}
@@ -3030,7 +3029,7 @@ spell_soundfold_wsal :: proc "c"(slang: ^Slang_T, inword: ^u8, res: ^u8) {
 					// replace string
 					ws = sal_at(smp, n).sm_to_w
 					sb4 := sal_at(smp, n).sm_rules
-					p0 = _vim_strchr(transmute(cstring)(sb4), '<') != nil ? 1 : 0
+					p0 = vim_strchr(transmute(cstring)(sb4), '<') != nil ? 1 : 0
 					if p0 == 1 && z == 0 {
 						// rule with '<' is used
 						if reslen > 0 && ws != nil && ws^ != 0 &&
@@ -3292,7 +3291,7 @@ compile_cap_prog :: proc "c"(synblock: rawptr) -> cstring {
 		sb_cap_prog_set(synblock, nil)
 	} else {
 		// Prepend ^ so we only match at one column
-		re := concat_str_r("^", transmute(cstring)(spc))
+		re := transmute(^u8)(concat_str("^", transmute(cstring)(spc)))
 		sb_cap_prog_set(synblock, vim_regcomp(transmute(cstring)(re), RE_MAGIC))
 		xfree(re)
 		if sb_cap_prog_r(synblock) == nil {

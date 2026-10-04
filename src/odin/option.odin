@@ -248,7 +248,7 @@ valid_name :: proc "c"(val: cstring, allowed: cstring) -> bool {
 	for b_at(s, 0) != 0 {
 		c := C.int(b_at(s, 0))
 		isalnum := (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')
-		if !isalnum && _vim_strchr(allowed, c) == nil {
+		if !isalnum && vim_strchr(allowed, c) == nil {
 			return false
 		}
 		s = (^u8)(uintptr(s) + 1)
@@ -263,11 +263,11 @@ shortmess :: proc "c"(x: C.int) -> bool {
 	if p_shm == nil {
 		return false
 	}
-	if _vim_strchr(transmute(cstring)(p_shm), x) != nil {
+	if vim_strchr(transmute(cstring)(p_shm), x) != nil {
 		return true
 	}
-	if _vim_strchr(transmute(cstring)(p_shm), 'a') != nil &&
-	_vim_strchr(cstring(SHM_ALL_ABBREVIATIONS), x) != nil {
+	if vim_strchr(transmute(cstring)(p_shm), 'a') != nil &&
+	vim_strchr(cstring(SHM_ALL_ABBREVIATIONS), x) != nil {
 		return true
 	}
 	return false
@@ -296,9 +296,9 @@ copy_option_part :: proc "c"(option: ^^u8, buf: ^u8, maxlen: C.size_t, sep_chars
 		len += 1
 		p = (^u8)(uintptr(p) + 1)
 	}
-	for b_at(p, 0) != 0 && _vim_strchr(sep_chars, C.int(b_at(p, 0))) == nil {
+	for b_at(p, 0) != 0 && vim_strchr(sep_chars, C.int(b_at(p, 0))) == nil {
 		// Skip backslash before a separator character and space.
-		if b_at(p, 0) == '\\' && _vim_strchr(sep_chars, C.int(b_at(p, 1))) != nil {
+		if b_at(p, 0) == '\\' && vim_strchr(sep_chars, C.int(b_at(p, 1))) != nil {
 			p = (^u8)(uintptr(p) + 1)
 		}
 		if len < maxlen - 1 {
@@ -1632,7 +1632,7 @@ find_key_item :: proc "c"(src: ^u8, key: ^u8, keylen: C.ssize_t, itemlenp: ^C.ss
 	for b_at(p, 0) != 0 {
 		if (p == src || b_at(p, -1) == ',') &&
 		libc.memcmp(p, key, C.size_t(keylen)) == 0 {
-			end := _vim_strchr(transmute(cstring)(p), ',')
+			end := vim_strchr(transmute(cstring)(p), ',')
 			endp: ^u8
 			if end == nil { endp = (^u8)(uintptr(p) + uintptr(libc.strlen(transmute(cstring)(p)))) } else { endp = transmute(^u8)(end) }
 			itemlenp^ = C.ssize_t(uintptr(endp) - uintptr(p))
@@ -1697,8 +1697,8 @@ prepend_item :: proc "c"(str: ^u8, item: ^u8, item_len: C.ssize_t) {
 }
 
 stropt_handle_keymatch :: proc "c"(origval: cstring, newval: ^u8, op: C.int, flags: C.uint32_t) -> bool {
-	if _vim_strchr(transmute(cstring)(newval), ':') == nil &&
-	_vim_strchr(transmute(cstring)(newval), ',') == nil {
+	if vim_strchr(transmute(cstring)(newval), ':') == nil &&
+	vim_strchr(transmute(cstring)(newval), ',') == nil {
 		return false
 	}
 
@@ -1708,12 +1708,12 @@ stropt_handle_keymatch :: proc "c"(origval: cstring, newval: ^u8, op: C.int, fla
 
 	item_start := newval_copy
 	for true {
-		p := _vim_strchr(transmute(cstring)(item_start), ',')
+		p := vim_strchr(transmute(cstring)(item_start), ',')
 		item_len: C.ssize_t = p == nil ? C.ssize_t(libc.strlen(transmute(cstring)(item_start))) :
 		C.ssize_t(uintptr(transmute(^u8)(p)) - uintptr(item_start))
 
 		if item_len > 0 {
-			colon := _vim_strchr(transmute(cstring)(item_start), ':')
+			colon := vim_strchr(transmute(cstring)(item_start), ':')
 			if colon != nil && uintptr(transmute(^u8)(colon)) < uintptr(item_start) + uintptr(item_len) {
 				keylen := C.ssize_t(uintptr(transmute(^u8)(colon)) - uintptr(item_start)) + 1
 
@@ -1779,14 +1779,14 @@ stropt_remove_dupflags :: proc "c"(newval: ^u8, flags: C.uint32_t) {
 	for b_at(transmute(^u8)(s), 0) != 0 {
 		if (flags & kOptFlagOneComma) != 0 {
 			if b_at(transmute(^u8)(s), 0) != ',' && b_at(transmute(^u8)(s), 1) == ',' &&
-			_vim_strchr(transmute(cstring)(^u8)(s+2), C.int(b_at(transmute(^u8)(s), 0))) != nil {
+			vim_strchr(transmute(cstring)(^u8)(s+2), C.int(b_at(transmute(^u8)(s), 0))) != nil {
 				libc.memmove(transmute(rawptr)(s), (^u8)(s+2),
 					libc.strlen(transmute(cstring)(^u8)(s+2)) + 1)
 				continue
 			}
 		} else {
 			if ((flags & kOptFlagComma) == 0 || b_at(transmute(^u8)(s), 0) != ',') &&
-			_vim_strchr(transmute(cstring)(^u8)(s+1), C.int(b_at(transmute(^u8)(s), 0))) != nil {
+			vim_strchr(transmute(cstring)(^u8)(s+1), C.int(b_at(transmute(^u8)(s), 0))) != nil {
 				libc.memmove(transmute(rawptr)(s), transmute(rawptr)(s+1),
 					libc.strlen(transmute(cstring)(^u8)(s+1)) + 1)
 				continue
@@ -2453,7 +2453,7 @@ do_one_set_option_o :: proc "c"(
 		return
 	}
 
-	if _vim_strchr(cstring("?=:!&<"), C.int(nextchar)) != nil {
+	if vim_strchr(cstring("?=:!&<"), C.int(nextchar)) != nil {
 		argp^ = p
 		if nextchar == '&' && b_at(argp^, 1) == 'v' && b_at(argp^, 2) == 'i' {
 			if b_at(argp^, 3) == 'm' { // "opt&vim"
@@ -2462,7 +2462,7 @@ do_one_set_option_o :: proc "c"(
 				argp^ = (^u8)(uintptr(argp^) + 2)
 			}
 		}
-		if _vim_strchr(cstring("?!&<"), C.int(nextchar)) != nil &&
+		if vim_strchr(cstring("?!&<"), C.int(nextchar)) != nil &&
 		b_at(argp^, 1) != 0 && !ascii_iswhite_sp(b_at(argp^, 1)) {
 			errmsg^ = cstring("E488: Trailing characters")
 			return
@@ -2470,7 +2470,7 @@ do_one_set_option_o :: proc "c"(
 	}
 
 	if nextchar == '?' ||
-	(prefix == 1 && _vim_strchr(cstring("=:&<"), C.int(nextchar)) == nil &&
+	(prefix == 1 && vim_strchr(cstring("=:&<"), C.int(nextchar)) == nil &&
 	!option_has_type(opt_idx, kOptValTypeBoolean)) {
 		// print value
 		if did_show^ {
@@ -2505,17 +2505,17 @@ do_one_set_option_o :: proc "c"(
 	}
 
 	if option_has_type(opt_idx, kOptValTypeBoolean) {
-		if _vim_strchr(cstring("=:"), C.int(nextchar)) != nil {
+		if vim_strchr(cstring("=:"), C.int(nextchar)) != nil {
 			errmsg^ = cstring("E474: Invalid argument")
 			return
 		}
-		if _vim_strchr(cstring("?!&<"), C.int(nextchar)) == nil && nextchar != 0 &&
+		if vim_strchr(cstring("?!&<"), C.int(nextchar)) == nil && nextchar != 0 &&
 		!ascii_iswhite_sp(afterchar) {
 			errmsg^ = cstring("E488: Trailing characters")
 			return
 		}
 	} else {
-		if _vim_strchr(cstring("=:&<"), C.int(nextchar)) == nil {
+		if vim_strchr(cstring("=:&<"), C.int(nextchar)) == nil {
 			errmsg^ = cstring("E474: Invalid argument")
 			return
 		}
@@ -2834,7 +2834,7 @@ put_set_o :: proc "c"(fd: ^libc.FILE, cmd: cstring, opt_idx: C.int, varp: rawptr
 				buf = (^u8)(xmalloc_sp(size))
 				home_replace(nil, transmute(cstring)(value_str), transmute(cstring)(buf), size, false)
 				if size >= 4096 && (flags & kOptFlagComma) != 0 &&
-				_vim_strchr(transmute(cstring)(value_str), ',') != nil {
+				vim_strchr(transmute(cstring)(value_str), ',') != nil {
 					part = (^u8)(xmalloc_sp(size))
 					if put_eol(transmute(^libc.FILE)(fd)) == 0 {
 						xfree(buf); xfree(part); return 0
@@ -3156,7 +3156,7 @@ can_bs :: proc "c"(what: C.int) -> bool {
 	if b_at(p_bs_g, 0) == '2' {
 		return what != BS_NOSTOP_S
 	}
-	return _vim_strchr(transmute(cstring)(p_bs_g), what) != nil
+	return vim_strchr(transmute(cstring)(p_bs_g), what) != nil
 }
 
 B_BKC_FLAGS_OFF :: 10128
@@ -3926,8 +3926,7 @@ foreign _ {
 	p_cdpath_opt: ^u8
 	@(link_name = "p_vdir")
 	p_vdir_opt: ^u8
-	@(link_name = "vim_strsave_escaped")
-	vim_strsave_escaped_c :: proc "c" (s: ^u8, esc: ^u8) -> ^u8 ---
+	// vim_strsave_escaped now defined in strings.odin — call directly.
 	@(link_name = "vim_regexec")
 	vim_regexec_o2 :: proc "c" (rmp: rawptr, line: ^u8, col: C.int) -> C.int ---
 	@(link_name = "cmdline_fuzzy_complete")
@@ -4214,7 +4213,7 @@ KEY2TERMCAP1 :: #force_inline proc "c"(x: C.int) -> C.int {
 @(export)
 escape_option_str_cmdline :: proc "c"(var_str: ^u8) -> ^u8 {
 	// A backslash is required before some characters; reverse of do_set().
-	return vim_strsave_escaped_c(var_str, escape_chars_g)
+	return transmute(^u8)(vim_strsave_escaped(transmute(cstring)(var_str), transmute(cstring)(escape_chars_g)))
 }
 
 match_str_c :: #force_inline proc "c"(str: ^u8, regmatch: rawptr, matches: rawptr,
@@ -4436,13 +4435,13 @@ ExpandSettingSubtract :: proc "c"(xp: rawptr, regmatch: rawptr, numMatches: ^C.i
 
 		for {
 			item := next_val
-			comma_c := _vim_strchr(transmute(cstring)(next_val), ',')
+			comma_c := vim_strchr(transmute(cstring)(next_val), ',')
 			comma: ^u8 = nil
 			if comma_c != nil {
 				comma = transmute(^u8)(comma_c)
 			}
 			for comma != nil && comma != next_val && b_at(p_minus_1(comma), 0) == '\\' {
-				next_c := _vim_strchr(transmute(cstring)((^u8)(uintptr(comma) + 1)), ',')
+				next_c := vim_strchr(transmute(cstring)((^u8)(uintptr(comma) + 1)), ',')
 				if next_c == nil {
 					comma = nil
 				} else {
@@ -4727,10 +4726,7 @@ is_ascii_digit :: #force_inline proc "c"(b: u8) -> bool {
 }
 
 foreign _ {
-	@(link_name = "sort_strings")
-	sort_strings_c :: proc "c" (files: rawptr, count: C.int) ---
-	@(link_name = "concat_str")
-	concat_str_c :: proc "c" (str1: cstring, str2: cstring) -> ^u8 ---
+	// sort_strings/concat_str now defined in strings.odin — call directly.
 }
 
 kObjectTypeNil_S :: 0
@@ -5007,9 +5003,9 @@ object_as_optval_for :: proc "c"(opt_idx: C.int, o: Api_Object, op: C.int, error
 				}
 			} else if v.t == kObjectTypeString_S {
 				vs := (^NvimString)(uintptr(&kv.value) + OBJ_DATA_OFF)^
-				kv_str := concat_str_c(transmute(cstring)(kv.key.data), ":")
-				ga_append_str(&ga, concat_str_c(transmute(cstring)(kv_str), transmute(cstring)(vs.data)))
-				xfree(kv_str)
+				kv_str := concat_str(transmute(cstring)(kv.key.data), ":")
+				ga_append_str(&ga, transmute(^u8)(concat_str(transmute(cstring)(kv_str), transmute(cstring)(vs.data))))
+				xfree(rawptr(kv_str))
 			} else {
 				error^ = true
 				ga_deep_clear_ptr(&ga)
@@ -5018,7 +5014,7 @@ object_as_optval_for :: proc "c"(opt_idx: C.int, o: Api_Object, op: C.int, error
 			di += 1
 		}
 		if ga.ga_len > 0 && (is_map || is_comma) {
-			sort_strings_c(ga.ga_data, ga.ga_len)
+			sort_strings(transmute(^rawptr)(ga.ga_data), ga.ga_len)
 		}
 		{
 		sep := cstring(",")
@@ -5032,7 +5028,7 @@ object_as_optval_for :: proc "c"(opt_idx: C.int, o: Api_Object, op: C.int, error
 
 	// `:set-=` on a "key:value" list matches by "key:".
 	if op == OP_REMOVING_FOR && is_map && libc.strchr(transmute(cstring)(str), ':') == nil {
-		with_colon := concat_str_c(transmute(cstring)(str), ":")
+		with_colon := transmute(^u8)(concat_str(transmute(cstring)(str), ":"))
 		xfree(str)
 		str = with_colon
 	}
@@ -5283,11 +5279,11 @@ buf_copy_options :: proc "c"(buf: rawptr, flags: C.int) {
 	did_isk := false
 
 	if p_cpo != nil {
-		if (_vim_strchr(transmute(cstring)(p_cpo), CPO_BUFOPTGLOB_S) == nil ||
+		if (vim_strchr(transmute(cstring)(p_cpo), CPO_BUFOPTGLOB_S) == nil ||
 		(flags & BCO_ENTER_S) == 0) &&
 		((^bool)(uintptr(buf) + B_P_INITIALIZED_OFF)^ ||
 		((flags & BCO_ENTER_S) == 0 &&
-		_vim_strchr(transmute(cstring)(p_cpo), CPO_BUFOPT_S) != nil)) {
+		vim_strchr(transmute(cstring)(p_cpo), CPO_BUFOPT_S) != nil)) {
 			should_copy = false
 		}
 

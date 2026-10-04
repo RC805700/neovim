@@ -259,7 +259,7 @@ get_histtype_o :: proc "c" (name: cstring, len: C.size_t, return_default: bool) 
 			return i
 		}
 	}
-	if vim_strchr(&hist_chars_g[0], C.int(([^]u8)(rawptr(name))[0])) != nil && len == 1 {
+	if vim_strchr(transmute(cstring)(&hist_chars_g[0]), C.int(([^]u8)(rawptr(name))[0])) != nil && len == 1 {
 		return hist_char2type(C.int(([^]u8)(rawptr(name))[0]))
 	}
 	return HIST_INVALID
@@ -299,7 +299,7 @@ add_to_history :: proc "c" (histype: C.int, new_entry: cstring, new_entrylen: C.
 	}
 	hisptr := &history_g[histype][hisidx_g[histype]]
 	hist_free_entry_o(hisptr)
-	hisptr.hisstr = transmute(cstring)(xstrnsave_c(new_entry, new_entrylen + 2))
+	hisptr.hisstr = transmute(cstring)(xstrnsave(new_entry, new_entrylen + 2))
 	hisptr.timestamp = os_time()
 	hisptr.additional_data = nil
 	([^]u8)(rawptr(hisptr.hisstr))[new_entrylen + 1] = u8(sep)
@@ -524,9 +524,9 @@ f_histget :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 		}
 		idx = calc_hist_idx_o(type_, idx)
 		if idx < 0 {
-			rettv.vval = transmute(rawptr)(xstrnsave_c(cstring(""), 0))
+			rettv.vval = transmute(rawptr)(xstrnsave(cstring(""), 0))
 		} else {
-			rettv.vval = transmute(rawptr)(xstrnsave_c(history_g[type_][idx].hisstr, history_g[type_][idx].hisstrlen))
+			rettv.vval = transmute(rawptr)(xstrnsave(history_g[type_][idx].hisstr, history_g[type_][idx].hisstrlen))
 		}
 	}
 	rettv.v_type = VAR_STRING
@@ -565,7 +565,7 @@ ex_history :: proc "c" (eap: rawptr) {
 	}
 	end := transmute(^u8)(arg)
 	if !(ascii_isdigit(([^]u8)(end)[0]) || ([^]u8)(end)[0] == '-' || ([^]u8)(end)[0] == ',') {
-		for ascii_isalpha_o(([^]u8)(end)[0]) || vim_strchr(&hist_chars_g[0], C.int(([^]u8)(end)[0])) != nil {
+		for ascii_isalpha_o(([^]u8)(end)[0]) || vim_strchr(transmute(cstring)(&hist_chars_g[0]), C.int(([^]u8)(end)[0])) != nil {
 			end = (^u8)(uintptr(end) + 1)
 		}
 		histype1 = get_histtype_o(transmute(cstring)(arg), C.size_t(uintptr(end) - uintptr(rawptr(arg))), false)

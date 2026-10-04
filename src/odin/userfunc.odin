@@ -59,7 +59,7 @@ emsg_funcname :: proc "c" (errmsg: cstring, name: cstring) {
 	p := name
 	nb := ([^]u8)(name)
 	if nb[0] == 0x80 && nb[1] != 0 && nb[2] != 0 {
-		p = transmute(cstring)(concat_str_c(cstring("<SNR>"), transmute(cstring)(uintptr(nb) + 3)))
+		p = transmute(cstring)(concat_str(cstring("<SNR>"), transmute(cstring)(uintptr(nb) + 3)))
 	}
 	semsg(errmsg, p)
 	if rawptr(p) != rawptr(name) {
@@ -1018,7 +1018,7 @@ call_simple_func :: proc "c" (funcname: cstring, len: C.size_t, rettv: ^Typval_T
 	ret: C.int = FAIL_E
 	rettv.v_type = VAR_NUMBER
 	rettv.vval = transmute(rawptr)(C.longlong(0))
-	name := xstrnsave_c(funcname, len)
+	name := xstrnsave(funcname, len)
 	error: C.int = FCERR_NONE_O
 	tofree: rawptr = nil
 	fname_buf: [FLEN_FIXED_O + 1]u8
@@ -2981,7 +2981,7 @@ get_return_cmd :: proc "c" (rettv: rawptr) -> cstring {
 		IObufflen = C.size_t(IOSIZE_O) - 1
 	}
 	xfree(tofree)
-	return transmute(cstring)(xstrnsave_c(transmute(cstring)(&IObuff[0]), IObufflen))
+	return transmute(cstring)(xstrnsave(transmute(cstring)(&IObuff[0]), IObufflen))
 }
 
 // ":return [expr]".
@@ -3071,12 +3071,12 @@ get_function_body_o :: proc "c" (eap: rawptr, newlines: ^Garray, line_arg_in: cs
 		arg: cstring
 		if line_arg != nil {
 			theline = line_arg
-			np := vim_strchr_c(transmute(^u8)(theline), '\n')
+			np := vim_strchr(transmute(cstring)(theline), '\n')
 			if np == nil {
 				line_arg = transmute(cstring)(rawptr(uintptr(transmute(rawptr)(line_arg)) + uintptr(libc.strlen(line_arg))))
 			} else {
-				([^]u8)(np)[0] = 0
-				line_arg = transmute(cstring)(rawptr(uintptr(transmute(rawptr)(np)) + 1))
+				([^]u8)(transmute(^u8)(np))[0] = 0
+				line_arg = transmute(cstring)(rawptr(uintptr(transmute(^u8)(np)) + 1))
 			}
 		} else {
 			xfree(rawptr(line_to_free^))
@@ -3775,7 +3775,7 @@ ex_function :: proc "c" (eap: rawptr) {
 	}
 	p := eap_arg
 	name := save_function_name(&p, skip, TFN_NO_AUTOLOAD_O, rawptr(&fudi[0]))
-	paren := vim_strchr_c(transmute(^u8)(p), '(') != nil
+	paren := vim_strchr(transmute(cstring)(p), '(') != nil
 	if name == nil && ((^rawptr)(uintptr(&fudi[0]) + FD_DICT_OFF_O)^ == nil || !paren) && !skip {
 		if !aborting_r() {
 			if (^rawptr)(uintptr(&fudi[0]) + FD_NEWKEY_OFF_O)^ != nil {
@@ -3801,8 +3801,8 @@ ex_function :: proc "c" (eap: rawptr) {
 			goto_ret_free(stage, &fp, free_fp, &newargs, &default_args, &newlines, &line_to_free, rawptr(&fudi[0]), &name, saved_did_emsg, show_block, eap)
 			return
 		}
-		if vim_strchr_c(transmute(^u8)(p), '(') != nil {
-			p = transmute(cstring)(vim_strchr_c(transmute(^u8)(p), '('))
+		if vim_strchr(transmute(cstring)(p), '(') != nil {
+			p = vim_strchr(transmute(cstring)(p), '(')
 		}
 	}
 	p = skipwhite(transmute(cstring)(rawptr(uintptr(transmute(rawptr)(p)) + 1)))
@@ -3825,7 +3825,7 @@ ex_function :: proc "c" (eap: rawptr) {
 				name_base := arg
 			if arg != transmute(cstring)((^rawptr)(uintptr(&fudi[0]) + FD_NEWKEY_OFF_O)^) {
 				if ([^]u8)(arg)[0] == 0x80 {
-					nb := vim_strchr_c(transmute(^u8)(arg), '_')
+					nb := vim_strchr(transmute(cstring)(arg), '_')
 					if nb == nil {
 						name_base = transmute(cstring)(rawptr(uintptr(transmute(rawptr)(arg)) + 3))
 					} else {
@@ -4001,11 +4001,11 @@ ex_function :: proc "c" (eap: rawptr) {
 		name = transmute(cstring)(xmemdupz_o2(&numbuf[0], namelen))
 	}
 	if fp == nil {
-		if (^rawptr)(uintptr(&fudi[0]) + FD_DICT_OFF_O)^ == nil && vim_strchr_c(transmute(^u8)(name), '#') != nil {
+		if (^rawptr)(uintptr(&fudi[0]) + FD_DICT_OFF_O)^ == nil && vim_strchr(transmute(cstring)(name), '#') != nil {
 			j := FAIL_E
 			if sourcing_name_str_o() != nil {
 				scriptname := autoload_name_e(name, C.size_t(libc.strlen(name)))
-				sl := vim_strchr_c(transmute(^u8)(scriptname), '/')
+				sl := transmute(^u8)(vim_strchr(transmute(cstring)(scriptname), '/'))
 				if sl != nil {
 					plen := C.int(libc.strlen(transmute(cstring)(sl)))
 					snm := sourcing_name_str_o()

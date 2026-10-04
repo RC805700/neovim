@@ -208,8 +208,7 @@ foreign _ {
 	// verbose_leave now defined in message.odin — call directly.
 	// verb_msg now defined in message.odin — call directly.
 	// iemsg now defined in message.odin — call directly.
-	@(link_name = "sort_strings")
-	sort_strings_r :: proc "c" (files: ^^u8, count: C.int) ---
+	// sort_strings now defined in strings.odin — call directly.
 	// msg_start/end now defined in message.odin — call directly.
 	// resolve_symlink now defined in memline.odin — call directly.
 	@(link_name = "path_tail")
@@ -1619,7 +1618,7 @@ u_undo :: proc "c" (count_arg: C.int) -> bool {
 		count = 1
 	}
 
-	if _vim_strchr(transmute(cstring)(p_cpo), C.int(CPO_UNDO_CH)) == nil {
+	if vim_strchr(transmute(cstring)(p_cpo), C.int(CPO_UNDO_CH)) == nil {
 		undo_undoes = true
 	} else {
 		undo_undoes = !undo_undoes
@@ -1632,7 +1631,7 @@ CPO_UNDO_CH :: 'u'
 
 @(export)
 u_redo :: proc "c" (count: C.int) {
-	if _vim_strchr(transmute(cstring)(p_cpo), C.int(CPO_UNDO_CH)) == nil {
+	if vim_strchr(transmute(cstring)(p_cpo), C.int(CPO_UNDO_CH)) == nil {
 		undo_undoes = false
 	}
 	u_doit(count, false, true)
@@ -2489,7 +2488,7 @@ ex_undolist :: proc "c" (eap: rawptr) {
 	if ga_lines.n == 0 {
 		msg(_t(cstring("Nothing to undo")), 0)
 	} else {
-		sort_strings_r((^^u8)(ga_lines.items), C.int(ga_lines.n))
+		sort_strings(transmute(^rawptr)((^^u8)(ga_lines.items)), C.int(ga_lines.n))
 
 		msg_start()
 		msg_puts_hl(_t(cstring("number changes  when               saved")), HLF_T_U, false)

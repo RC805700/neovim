@@ -90,7 +90,7 @@ ga_grow :: proc "c" (gap: ^Garray, n: C.int) {
 ga_remove_duplicate_strings :: proc "c" (gap: ^Garray) {
 	context = runtime.default_context()
 	fnames := ([^]cstring)(gap.ga_data)
-	sort_strings_c(rawptr(gap.ga_data), gap.ga_len)
+	sort_strings(transmute(^rawptr)(gap.ga_data), gap.ga_len)
 	for i := gap.ga_len - 1; i > 0; i -= 1 {
 		if path_fnamecmp_r(fnames[uintptr(i) - 1], fnames[uintptr(i)]) == 0 {
 			xfree(rawptr(fnames[uintptr(i)]))

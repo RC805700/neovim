@@ -250,8 +250,7 @@ foreign _ {
 	@(link_name = "mb_string2cells")
 	mb_string2cells_s :: proc "c" (s: cstring) -> C.size_t ---
 	// vim_strsave_escape_ks/vim_unescape_ks — PORTED (keycodes.odin).
-	@(link_name = "vim_strsave_escaped_ext")
-	vim_strsave_escaped_ext_r :: proc "c" (string: cstring, esc_chars: cstring, cc: u8, bsl: bool) -> ^u8 ---
+	// vim_strsave_escaped_ext now defined in strings.odin — call directly.
 
 	// ui_has now defined in ui.odin — call directly.
 	@(link_name = "get_recorded")
@@ -519,7 +518,7 @@ get_expr_line_src :: proc "c" () -> ^u8 {
 @(export)
 valid_yank_reg :: proc "c" (regname: C.int, writing: bool) -> bool {
 	if (regname > 0 && ascii_isalnum_c(regname)) ||
-		(!writing && _vim_strchr(cstring("/#.%:="), regname) != nil) ||
+		(!writing && vim_strchr(cstring("/#.%:="), regname) != nil) ||
 		regname == '"' ||
 		regname == '-' ||
 		regname == '_' ||
@@ -919,7 +918,7 @@ do_execreg :: proc "c" (regname_arg: C.int, colon: C.int, addcr: C.int, silent: 
 		new_last_cmdline = nil
 		// Escape all control characters with a CTRL-V
 		esc_arr := [31]u8{1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31}
-		p := vim_strsave_escaped_ext_r(transmute(cstring)(last_cmdline), transmute(cstring)(&esc_arr[0]), Ctrl_V, false)
+		p := transmute(^u8)(vim_strsave_escaped_ext(transmute(cstring)(last_cmdline), transmute(cstring)(&esc_arr[0]), Ctrl_V, false))
 		// When in Visual mode "'<,'>" will be prepended; remove it.
 		if VIsual_active && libc.strncmp(transmute(cstring)(p), cstring("'<,'>"), 5) == 0 {
 			retval = put_in_typebuf((^u8)(uintptr(p) + 5), true, true, silent)
@@ -1340,7 +1339,7 @@ op_yank_reg :: proc "c" (oap: rawptr, message: bool, reg_arg: ^Yankreg_T, append
 		}
 
 		// Concatenate last line of old with first line of new, unless Vi compat.
-		if curr.y_type == kMTCharWise && _vim_strchr(transmute(cstring)(p_cpo), '>') == nil {
+		if curr.y_type == kMTCharWise && vim_strchr(transmute(cstring)(p_cpo), '>') == nil {
 			pnew := (^u8)(xmalloc(curr.y_array[curr.y_size - 1].size + reg.y_array[0].size + 1))
 			j -= 1
 			last := &curr.y_array[j]
@@ -1772,7 +1771,7 @@ do_put :: proc "c" (regname: C.int, reg_arg: ^Yankreg_T, dir_arg: C.int, count_a
 						y_array[y_size].data = ptr
 					}
 					y_size += 1
-					tmp := transmute(^u8)(_vim_strchr(transmute(cstring)(ptr), 10))
+					tmp := transmute(^u8)(vim_strchr(transmute(cstring)(ptr), 10))
 					if tmp == nil {
 						if y_array != nil {
 							y_array[y_size - 1].size = ptrlen
@@ -2492,7 +2491,7 @@ ex_display :: proc "c" (eap: rawptr) {
 	i: C.int = -1
 	for i < NUM_REGISTERS && !got_int {
 		name = get_register_name(i)
-		if arg != nil && _vim_strchr(transmute(cstring)((^u8)(arg)), name) == nil {
+		if arg != nil && vim_strchr(transmute(cstring)((^u8)(arg)), name) == nil {
 			i += 1
 			continue // did not ask for this register
 		}
@@ -2571,7 +2570,7 @@ ex_display :: proc "c" (eap: rawptr) {
 	// display last inserted text
 	insert := get_last_insert_r()
 	if insert.data != nil &&
-		(arg == nil || _vim_strchr(transmute(cstring)((^u8)(arg)), '.') != nil) &&
+		(arg == nil || vim_strchr(transmute(cstring)((^u8)(arg)), '.') != nil) &&
 		!got_int &&
 		!message_filtered(transmute(cstring)(insert.data)) {
 		msg_puts(cstring("\n  c  \".   "))
@@ -2579,7 +2578,7 @@ ex_display :: proc "c" (eap: rawptr) {
 	}
 
 	// display last command line
-	if last_cmdline != nil && (arg == nil || _vim_strchr(transmute(cstring)((^u8)(arg)), ':') != nil) &&
+	if last_cmdline != nil && (arg == nil || vim_strchr(transmute(cstring)((^u8)(arg)), ':') != nil) &&
 		!got_int && !message_filtered(transmute(cstring)(last_cmdline)) {
 		msg_puts(cstring("\n  c  \":   "))
 		dis_msg(last_cmdline, false)
@@ -2588,14 +2587,14 @@ ex_display :: proc "c" (eap: rawptr) {
 	// display current file name
 	fname := (^u8)(buf_read_ptr(curbuf, B_FNAME))
 	if fname != nil &&
-		(arg == nil || _vim_strchr(transmute(cstring)((^u8)(arg)), '%') != nil) &&
+		(arg == nil || vim_strchr(transmute(cstring)((^u8)(arg)), '%') != nil) &&
 		!got_int && !message_filtered(transmute(cstring)(fname)) {
 		msg_puts(cstring("\n  c  \"%   "))
 		dis_msg(fname, false)
 	}
 
 	// display alternate file name
-	if (arg == nil || _vim_strchr(transmute(cstring)((^u8)(arg)), '#') != nil) && !got_int {
+	if (arg == nil || vim_strchr(transmute(cstring)((^u8)(arg)), '#') != nil) && !got_int {
 		aname: ^u8
 		dummy: C.int
 
@@ -2607,14 +2606,14 @@ ex_display :: proc "c" (eap: rawptr) {
 
 	// display last search pattern
 	if last_search_pat() != nil &&
-		(arg == nil || _vim_strchr(transmute(cstring)((^u8)(arg)), '/') != nil) &&
+		(arg == nil || vim_strchr(transmute(cstring)((^u8)(arg)), '/') != nil) &&
 		!got_int && !message_filtered(transmute(cstring)(last_search_pat())) {
 		msg_puts(cstring("\n  c  \"/   "))
 		dis_msg(last_search_pat(), false)
 	}
 
 	// display last used expression
-	if expr_line != nil && (arg == nil || _vim_strchr(transmute(cstring)((^u8)(arg)), '=') != nil) &&
+	if expr_line != nil && (arg == nil || vim_strchr(transmute(cstring)((^u8)(arg)), '=') != nil) &&
 		!got_int && !message_filtered(transmute(cstring)(expr_line)) {
 		msg_puts(cstring("\n  c  \"=   "))
 		dis_msg(expr_line, false)

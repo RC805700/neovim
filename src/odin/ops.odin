@@ -1197,7 +1197,7 @@ op_delete :: proc "c" (oap: rawptr) -> C.int {
 		if virtual_op_g != TriState.kFalse {
 			only_marks = true
 		} else {
-			if vim_strchr(p_cpo, C.int(CPO_EMPTYREGION_O)) != nil {
+			if vim_strchr(transmute(cstring)(p_cpo), C.int(CPO_EMPTYREGION_O)) != nil {
 				beep_flush_r()
 			}
 			return OK
@@ -1329,7 +1329,7 @@ op_delete :: proc "c" (oap: rawptr) -> C.int {
 				if u_save_cursor() == 0 {
 					return FAIL
 				}
-				if vim_strchr(p_cpo, C.int(CPO_DOLLAR_O)) != nil && op_type == OP_CHANGE_O && end_lnum == (^C.int)(uintptr(curwin) + W_CURSOR_OFF)^ && !is_visual {
+				if vim_strchr(transmute(cstring)(p_cpo), C.int(CPO_DOLLAR_O)) != nil && op_type == OP_CHANGE_O && end_lnum == (^C.int)(uintptr(curwin) + W_CURSOR_OFF)^ && !is_visual {
 					dadj := C.int(0)
 					if !inclusive {
 						dadj = 1
@@ -1996,12 +1996,12 @@ do_addsub :: proc "c" (op_type: C.int, pos: ^Pos_T, length_in: C.int, Prenum1: C
 	save_coladd: C.int = 0
 	length := length_in
 	nf := (^u8)((^rawptr)(uintptr(curbuf) + B_P_NF_OFF)^)
-	do_hex := vim_strchr(nf, 'x') != nil
-	do_oct := vim_strchr(nf, 'o') != nil
-	do_bin := vim_strchr(nf, 'b') != nil
-	do_alpha := vim_strchr(nf, 'p') != nil
-	do_unsigned := vim_strchr(nf, 'u') != nil
-	do_blank := vim_strchr(nf, 'k') != nil
+	do_hex := vim_strchr(transmute(cstring)(nf), 'x') != nil
+	do_oct := vim_strchr(transmute(cstring)(nf), 'o') != nil
+	do_bin := vim_strchr(transmute(cstring)(nf), 'b') != nil
+	do_alpha := vim_strchr(transmute(cstring)(nf), 'p') != nil
+	do_unsigned := vim_strchr(transmute(cstring)(nf), 'u') != nil
+	do_blank := vim_strchr(transmute(cstring)(nf), 'k') != nil
 	if virtual_active(curwin) {
 		save_coladd = pos.coladd
 		pos.coladd = 0
@@ -2871,7 +2871,7 @@ do_join :: proc "c" (count: C.size_t, insert_space: bool, save_undo: bool, use_f
 		curbuf_splice_pending_g -= 1
 		(^C.int)(uintptr(curbuf) + B_DELETED_BYTES2_OFF)^ = 0
 		join_col := col
-		if vim_strchr(p_cpo, C.int(CPO_JOINCOL_O)) != nil {
+		if vim_strchr(transmute(cstring)(p_cpo), C.int(CPO_JOINCOL_O)) != nil {
 			join_col = currsize
 		}
 		(^C.int)(uintptr(curwin) + W_CURSOR_OFF + 4)^ = join_col
@@ -2903,7 +2903,7 @@ do_pending_operator :: proc "c" (cap: rawptr, old_col: C.int, gui_yank: bool) {
 		empty_region_error := false
 		restart_edit_save: C.int = 0
 		include_line_break := false
-		redo_yank := vim_strchr(p_cpo, C.int(CPO_YANK_O)) != nil && !gui_yank
+		redo_yank := vim_strchr(transmute(cstring)(p_cpo), C.int(CPO_YANK_O)) != nil && !gui_yank
 		reset_lbr()
 		(^bool)(uintptr(oap) + OAP_IS_VISUAL)^ = VIsual_active
 		motion_force := (^C.int)(uintptr(oap) + OAP_MOTION_FORCE_O)^
@@ -2935,7 +2935,7 @@ do_pending_operator :: proc "c" (cap: rawptr, old_col: C.int, gui_yank: bool) {
 		if (redo_yank || op_type != OP_YANK_O) && ((!VIsual_active || motion_force != 0) || ((is_ex_cmdchar_o(cap) || cmdchar == K_LUA_O) && op_type != OP_COLON_O)) && cmdchar != 'D' && op_type != OP_FOLD_O && op_type != OP_FOLDOPEN_O && op_type != OP_FOLDOPENREC_O && op_type != OP_FOLDCLOSE_O && op_type != OP_FOLDCLOSEREC_O && op_type != OP_FOLDDEL_O && op_type != OP_FOLDDELREC_O {
 			prep_redo_e((^C.int)(uintptr(oap) + OAP_REGNAME)^, count0, get_op_char(op_type), get_extra_op_char(op_type), motion_force, cmdchar, nchar)
 			if cmdchar == '/' || cmdchar == '?' {
-				if vim_strchr(p_cpo, C.int(CPO_REDO_O)) == nil {
+				if vim_strchr(transmute(cstring)(p_cpo), C.int(CPO_REDO_O)) == nil {
 					append_to_redobuff_lit_e(transmute(cstring)((^rawptr)(uintptr(cap) + CAP_SEARCHBUF_O)^), -1)
 				}
 				append_to_redobuff_e(cstring("\n"))
@@ -3165,7 +3165,7 @@ do_pending_operator :: proc "c" (cap: rawptr, old_col: C.int, gui_yank: bool) {
 			}
 		}
 		(^bool)(uintptr(oap) + OAP_EMPTY_O)^ = empt
-		if empt && vim_strchr(p_cpo, C.int(CPO_EMPTYREGION_O)) != nil {
+		if empt && vim_strchr(transmute(cstring)(p_cpo), C.int(CPO_EMPTYREGION_O)) != nil {
 			empty_region_error = true
 		}
 		is_visual := (^bool)(uintptr(oap) + OAP_IS_VISUAL)^
@@ -3267,7 +3267,7 @@ do_pending_operator :: proc "c" (cap: rawptr, old_col: C.int, gui_yank: bool) {
 				}
 			}
 		case OP_FILTER_O:
-			if vim_strchr(p_cpo, C.int(CPO_FILTER_O)) != nil {
+			if vim_strchr(transmute(cstring)(p_cpo), C.int(CPO_FILTER_O)) != nil {
 				append_to_redobuff_e(cstring("!\r"))
 			} else {
 				bangredo_g = true

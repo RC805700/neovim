@@ -145,10 +145,8 @@ foreign _ {
 	// backslash_halve is an Odin export (charset.odin) — call directly.
 	@(link_name = "add_pathsep")
 	add_pathsep :: proc "c" (p: ^u8) -> bool ---
-	@(link_name = "vim_strsave_escaped_ext")
-	vim_strsave_escaped_ext :: proc "c" (string: cstring, esc_chars: cstring, cc: u8, bsl: bool) -> cstring ---
-	@(link_name = "vim_strnsave_unquoted")
-	vim_strnsave_unquoted :: proc "c" (string: ^u8, length: c.size_t) -> cstring ---
+	// vim_strsave_escaped_ext now defined in strings.odin — call directly.
+	// vim_strnsave_unquoted now defined in strings.odin — call directly.
 	@(link_name = "vim_snprintf")
 	vim_snprintf :: proc "c" (str: ^u8, str_m: c.size_t, fmt: cstring, #c_vararg args: ..any) -> c.int ---
 
@@ -166,8 +164,7 @@ foreign _ {
 	os_strerror :: proc "c" (err: c.int) -> cstring ---
 
 	// memory (link to C x* allocators)
-	@(link_name = "vim_strchr")
-	vim_strchr :: proc "c" (s: ^u8, c: c.int) -> ^u8 ---
+	// vim_strchr now defined in strings.odin — call directly.
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -198,7 +195,7 @@ have_wildcard :: proc(num: c.int, file: ^^u8) -> bool {
 have_dollars :: proc(num: c.int, file: ^^u8) -> bool {
 	context = runtime.default_context()
 	for i := c.int(0); i < num; i += 1 {
-		if vim_strchr(([^]^u8)(file)[i], c.int('$')) != nil {
+		if vim_strchr(transmute(cstring)(([^]^u8)(file)[i]), c.int('$')) != nil {
 			return true
 		}
 	}
@@ -313,7 +310,7 @@ os_expand_wildcards :: proc "c" (num_pat: c.int, pat: ^^u8, num_file: ^c.int, fi
 
 	if secure != 0 {
 		for i = 0; i < num_pat; i += 1 {
-			if vim_strchr(([^]^u8)(pat)[i], c.int('`')) != nil && check_secure() {
+			if vim_strchr(transmute(cstring)(([^]^u8)(pat)[i]), c.int('`')) != nil && check_secure() {
 				return FAIL
 			}
 		}
@@ -388,7 +385,7 @@ os_expand_wildcards :: proc "c" (num_pat: c.int, pat: ^^u8, num_file: ^c.int, fi
 		len += 1
 		j = 0
 		for ([^]u8)(([^]^u8)(pat)[i])[j] != 0 {
-			if vim_strchr((^u8)(transmute(^u8)(cstring(SHELL_SPECIAL))), c.int(u8(([^]u8)(([^]^u8)(pat)[i])[j]))) != nil {
+			if vim_strchr(cstring(SHELL_SPECIAL), c.int(u8(([^]u8)(([^]^u8)(pat)[i])[j]))) != nil {
 				len += 1
 			}
 			len += 1
@@ -462,12 +459,12 @@ os_expand_wildcards :: proc "c" (num_pat: c.int, pat: ^^u8, num_file: ^c.int, fi
 				if ([^]u8)(([^]^u8)(pat)[i])[j] == '`' {
 					intick = !intick
 				} else if ([^]u8)(([^]^u8)(pat)[i])[j] == '\\' && ([^]u8)(([^]^u8)(pat)[i])[j+1] != 0 {
-					if intick || vim_strchr((^u8)(transmute(^u8)(cstring(SHELL_SPECIAL))), c.int(u8(([^]u8)(([^]^u8)(pat)[i])[j+1]))) != nil || ([^]u8)(([^]^u8)(pat)[i])[j+1] == '`' {
+					if intick || vim_strchr(cstring(SHELL_SPECIAL), c.int(u8(([^]u8)(([^]^u8)(pat)[i])[j+1]))) != nil || ([^]u8)(([^]^u8)(pat)[i])[j+1] == '`' {
 						p^ = u8('\\')
 						p = (^u8)(uintptr(p) + 1)
 					}
 					j += 1
-				} else if !intick && ((flags & EW_KEEPDOLLAR) == 0 || ([^]u8)(([^]^u8)(pat)[i])[j] != '$') && vim_strchr((^u8)(transmute(^u8)(cstring(SHELL_SPECIAL))), c.int(u8(([^]u8)(([^]^u8)(pat)[i])[j]))) != nil {
+				} else if !intick && ((flags & EW_KEEPDOLLAR) == 0 || ([^]u8)(([^]^u8)(pat)[i])[j] != '$') && vim_strchr(cstring(SHELL_SPECIAL), c.int(u8(([^]u8)(([^]^u8)(pat)[i])[j]))) != nil {
 					p^ = u8('\\')
 					p = (^u8)(uintptr(p) + 1)
 				}
@@ -1194,7 +1191,7 @@ tokenize :: proc(str: cstring, argv: ^^u8) -> c.size_t {
 	for p^ != 0 {
 		len := word_length(p)
 		if argv != nil {
-			([^]^u8)(argv)[argc] = transmute(^u8)(vim_strnsave_unquoted(p, len))
+			([^]^u8)(argv)[argc] = transmute(^u8)(vim_strnsave_unquoted(transmute(cstring)(p), len))
 		}
 		argc += 1
 		p = transmute(^u8)(skipwhite(transmute(cstring)((^u8)(uintptr(p) + uintptr(len)))))

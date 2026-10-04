@@ -2494,7 +2494,7 @@ findswapname :: proc "c" (buf: rawptr, dirp: ^^u8, old_fname: cstring, found_exi
 					}
 					linux.close(linux.Fd(fd))
 				}
-				if !differ && ((^C.int)(uintptr(buf) + B_FLAGS_OFF_O)^ & BF_RECOVERED_O) == 0 && vim_strchr(p_shm, C.int('A')) == nil {
+				if !differ && ((^C.int)(uintptr(buf) + B_FLAGS_OFF_O)^ & BF_RECOVERED_O) == 0 && vim_strchr(transmute(cstring)(p_shm), C.int('A')) == nil {
 					choice: C.int = ML_SEA_NONE_O
 					if os_path_exists(transmute(cstring)(buf_fname)) && swapfile_unchanged_o(transmute(cstring)(fname)) {
 						choice = ML_SEA_DELETE_O
@@ -3067,7 +3067,7 @@ ml_recover :: proc "c" (checkext: bool) {
 		fname = cstring("")
 	}
 	flen := C.int(libc.strlen(fname))
-	if checkext && flen >= 4 && mb_strnicmp_e(transmute(cstring)(rawptr(uintptr(transmute(rawptr)(fname)) + uintptr(flen) - 4)), cstring(".s"), 2) == 0 && vim_strchr(transmute(^u8)(cstring("abcdefghijklmnopqrstuvw")), C.int(tolower_asc_o(([^]u8)(transmute(rawptr)(fname))[uintptr(flen) - 2]))) != nil && ASCII_ISALPHA(([^]u8)(transmute(rawptr)(fname))[uintptr(flen) - 1]) {
+	if checkext && flen >= 4 && mb_strnicmp_e(transmute(cstring)(rawptr(uintptr(transmute(rawptr)(fname)) + uintptr(flen) - 4)), cstring(".s"), 2) == 0 && vim_strchr(cstring("abcdefghijklmnopqrstuvw"), C.int(tolower_asc_o(([^]u8)(transmute(rawptr)(fname))[uintptr(flen) - 2]))) != nil && ASCII_ISALPHA(([^]u8)(transmute(rawptr)(fname))[uintptr(flen) - 1]) {
 		directly = true
 		fname_used = xstrdup(transmute(^u8)(fname))
 	} else {
@@ -3227,7 +3227,7 @@ ml_recover :: proc "c" (checkext: bool) {
 		for fp != rawptr(uintptr(b0p) + B0_FNAME_AT_O) && ([^]u8)(rawptr(uintptr(fp) - 1))[0] != 0 {
 			fp = rawptr(uintptr(fp) - 1)
 		}
-		b0_fenc = xstrnsave_c(transmute(cstring)(fp), C.size_t(uintptr(b0p) + B0_FNAME_AT_O + uintptr(fnsize) - uintptr(fp)))
+		b0_fenc = transmute(^u8)(xstrnsave(transmute(cstring)(fp), C.size_t(uintptr(b0p) + B0_FNAME_AT_O + uintptr(fnsize) - uintptr(fp))))
 	}
 	mf_put(mfp, hp, false, false)
 	hp = nil
@@ -3437,7 +3437,7 @@ ml_recover :: proc "c" (checkext: bool) {
 	} else {
 		idx = 1
 		for idx <= lnum {
-			p := xstrnsave_c(transmute(cstring)(ml_get(idx)), C.size_t(ml_get_len(idx)))
+			p := xstrnsave(transmute(cstring)(ml_get(idx)), C.size_t(ml_get_len(idx)))
 			i := libc.strcmp(transmute(cstring)(p), transmute(cstring)(ml_get(idx + lnum)))
 			xfree(rawptr(p))
 			if i != 0 {

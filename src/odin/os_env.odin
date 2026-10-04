@@ -162,10 +162,7 @@ foreign _ {
 	// path / charset helpers (vim_isIDc/vim_isfilec are Odin exports in charset.odin)
 	@(link_name = "vim_ispathsep")
 	_vim_ispathsep :: proc(c: c.int) -> bool ---
-	@(link_name = "vim_strchr")
-	_vim_strchr :: proc(s: cstring, c: c.int) -> cstring ---
-	@(link_name = "vim_strsave_escaped")
-	_vim_strsave_escaped :: proc(s: cstring, esc: cstring) -> cstring ---
+	// vim_strchr/striequal/vim_strsave_escaped now defined in strings.odin — call directly.
 	// skipwhite is an Odin export (charset.odin) — call directly.
 	@(link_name = "after_pathsep")
 	_after_pathsep :: proc(b: cstring, p: cstring) -> c.int ---
@@ -184,8 +181,6 @@ foreign _ {
 	@(link_name = "path_is_absolute")
 	_path_is_absolute :: proc(fname: cstring) -> bool ---
 	// internal_error now defined in message.odin — call directly.
-	@(link_name = "striequal")
-	_striequal :: proc(a: cstring, b: cstring) -> bool ---
 
 	@(link_name = "strcasecmp")
 	_strcasecmp :: proc(a: cstring, b: cstring) -> c.int ---
@@ -317,13 +312,13 @@ init_homedir :: proc "c" () {
 	}
 
 	if var != nil && ([^]u8)(var)[0] == '%' {
-		p := _vim_strchr(cstring(rawptr(uintptr(rawptr(var)) + 1)), '%')
+		p := vim_strchr(cstring(rawptr(uintptr(rawptr(var)) + 1)), '%')
 		if p != nil {
 			buf: [MAXPATHL]u8
 			libc.strncpy(&buf[0], cstring(rawptr(uintptr(rawptr(var)) + 1)), c.size_t(uintptr(rawptr(p)) - uintptr(rawptr(var)) - 1))
 			exp := os_getenv(cstring(&buf[0]))
 			if exp != nil && ([^]u8)(exp)[0] != 0 {
-				var = _vim_strsave_escaped(exp, cstring(nil))
+				var = vim_strsave_escaped(exp, cstring(nil))
 			}
 			xfree(rawptr(exp))
 		}
@@ -446,7 +441,7 @@ expand_env_esc :: proc "c" (srcp: cstring, dst: cstring, dstlenp: c.int, esc_cha
 					var = uintptr(rawptr(vim_getenv(cstring(rawptr(d)))))
 					mustfree = true
 				}
-			} else if ([^]u8)(s)[1] == 0 || _vim_ispathsep(c.int(([^]u8)(s)[1])) || _vim_strchr(", \t\n", c.int(([^]u8)(s)[1])) != nil {
+			} else if ([^]u8)(s)[1] == 0 || _vim_ispathsep(c.int(([^]u8)(s)[1])) || vim_strchr(", \t\n", c.int(([^]u8)(s)[1])) != nil {
 				var = _uptr(homedir)
 				tail = s + 1
 			} else {
@@ -472,7 +467,7 @@ expand_env_esc :: proc "c" (srcp: cstring, dst: cstring, dstlenp: c.int, esc_cha
 			}
 
 			if esc_chars != nil && var != 0 && libc.strpbrk(cstring(rawptr(var)), esc_chars) != nil {
-				p := _vim_strsave_escaped(cstring(rawptr(var)), esc_chars)
+				p := vim_strsave_escaped(cstring(rawptr(var)), esc_chars)
 				if mustfree {
 					xfree(rawptr(var))
 				}
@@ -687,14 +682,14 @@ os_shell_is_cmdexe :: proc "c" (sh: cstring) -> bool {
 	if ([^]u8)(sh)[0] == 0 {
 		return false
 	}
-	if _striequal(sh, "$COMSPEC") {
+	if striequal(sh, "$COMSPEC") {
 		comspec := os_getenv_noalloc("COMSPEC")
-		return _striequal("cmd.exe", _path_tail(comspec))
+		return striequal("cmd.exe", _path_tail(comspec))
 	}
-	if _striequal(sh, "cmd.exe") || _striequal(sh, "cmd") {
+	if striequal(sh, "cmd.exe") || striequal(sh, "cmd") {
 		return true
 	}
-	return _striequal("cmd.exe", _path_tail(sh))
+	return striequal("cmd.exe", _path_tail(sh))
 }
 
 @(export)
@@ -721,7 +716,7 @@ os_getenvname_at_index :: proc "c" (index: c.size_t) -> cstring {
 		}
 	}
 	str := ([^]cstring)(uintptr(rawptr(environ)) + uintptr(index))[0]
-	end := _vim_strchr(str, '=')
+	end := vim_strchr(str, '=')
 	if end == nil {
 		return nil
 	}
@@ -737,7 +732,7 @@ vim_env_iter :: proc "c" (delim: u8, val: cstring, iter: rawptr, dir: ^cstring, 
 		varval = val
 	}
 	([^]cstring)(dir)[0] = varval
-	dirend := _vim_strchr(varval, c.int(delim))
+	dirend := vim_strchr(varval, c.int(delim))
 	if dirend == nil {
 		([^]c.size_t)(len)[0] = libc.strlen(varval)
 		return nil
@@ -828,7 +823,7 @@ vim_getenv :: proc "c" (name: cstring) -> cstring {
 	}
 
 	if vim_path == nil {
-		if p_hf != nil && _vim_strchr(p_hf, '$') == nil {
+		if p_hf != nil && vim_strchr(p_hf, '$') == nil {
 			vim_path = p_hf
 		}
 

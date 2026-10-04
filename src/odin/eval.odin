@@ -161,7 +161,7 @@ tv_op_string_o :: proc "c" (tv1: ^Typval_T, tv2: ^Typval_T, op: cstring) -> C.in
 		return OK_E
 	}
 	tvs := tv_get_string(tv1)
-	s := concat_str_c(tvs, s2)
+	s := concat_str(tvs, s2)
 	tv_clear(tv1)
 	tv1.v_type = VAR_STRING
 	tv1.vval = transmute(rawptr)(s)
@@ -174,7 +174,7 @@ tv_op_nr_or_string_o :: proc "c" (tv1: ^Typval_T, tv2: ^Typval_T, op: cstring) -
 	if tv2.v_type == VAR_LIST {
 		return FAIL_E
 	}
-	if vim_strchr_c(transmute(^u8)(cstring("+-*/%")), C.int(op_first(op))) != nil {
+	if vim_strchr(transmute(cstring)(cstring("+-*/%")), C.int(op_first(op))) != nil {
 		return tv_op_number_o(tv1, tv2, op)
 	}
 	return tv_op_string_o(tv1, tv2, op)
@@ -243,8 +243,7 @@ eexe_mod_op :: proc "c" (tv1: ^Typval_T, tv2: ^Typval_T, op: cstring) -> C.int {
 
 // —— Batch 3: eval/deprecated.c ——
 foreign _ {
-	@(link_name = "reverse_text")
-	reverse_text_e :: proc "c" (s: ^u8) -> ^u8 ---
+	// reverse_text now defined in strings.odin — call directly.
 	// channel_job_start/create_event/close now defined in channel.odin — call directly.
 }
 
@@ -509,7 +508,7 @@ f_reverse :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 		rettv.v_type = VAR_STRING
 		s := (^u8)(a0.vval)
 		if s != nil {
-			rettv.vval = transmute(rawptr)(reverse_text_e(s))
+			rettv.vval = transmute(rawptr)(transmute(^u8)(reverse_text(transmute(cstring)(s))))
 		} else {
 			rettv.vval = nil
 		}
@@ -1503,7 +1502,7 @@ get_buffer_lines_o :: proc "c" (buf: rawptr, start: C.int, end: C.int, retlist: 
 		rettv.v_type = VAR_STRING
 		count := (^C.int)(uintptr(buf) + B_ML_LINE_COUNT_OFF)^
 		if start >= 1 && start <= count {
-			rettv.vval = transmute(rawptr)(xstrnsave_c(transmute(cstring)(ml_get_buf(buf, start)), C.size_t(ml_get_buf_len(buf, start))))
+			rettv.vval = transmute(rawptr)(xstrnsave(transmute(cstring)(ml_get_buf(buf, start)), C.size_t(ml_get_buf_len(buf, start))))
 		} else {
 			rettv.vval = nil
 		}
@@ -2083,7 +2082,7 @@ f_prompt_setprompt :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawp
 			extmark_splice_cols(buf, prompt_lno - 1, 0, old_line_len, new_prompt_len, KEXTMARK_NO_UNDO_O)
 			cursor_col = new_prompt_len
 		} else {
-			new_line := concat_str_c(transmute(cstring)(new_prompt), transmute(cstring)(rawptr(uintptr(old_line) + uintptr(prompt_col))))
+			new_line := transmute(^u8)(concat_str(transmute(cstring)(new_prompt), transmute(cstring)(rawptr(uintptr(old_line) + uintptr(prompt_col)))))
 			if ml_replace_buf(buf, prompt_lno, new_line, false, false) != OK_R {
 				xfree(transmute(rawptr)(new_line))
 			}
@@ -2128,7 +2127,7 @@ f_prompt_appendbuf :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawp
 			if l != nil && tv_list_len_o(l) > 0 {
 				li := (^rawptr)(l)^
 				str := tv_get_string(transmute(^Typval_T)(uintptr(li) + 16))
-				new_str := concat_str_c(text, str)
+				new_str := concat_str(text, str)
 				item := transmute(^Typval_T)(uintptr(li) + 16)
 				tv_clear(item)
 				item.v_type = VAR_STRING
@@ -2137,7 +2136,7 @@ f_prompt_appendbuf :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawp
 			}
 		} else if lines.v_type == VAR_STRING {
 			str := tv_get_string(lines)
-			new_str := concat_str_c(text, str)
+			new_str := concat_str(text, str)
 			tv_clear(lines)
 			lines.v_type = VAR_STRING
 			lines.vval = transmute(rawptr)(new_str)
@@ -3671,12 +3670,12 @@ f_mkdir :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 			}
 		}
 		arg2 := tv_get_string(a1)
-		defer_del = vim_strchr_c(transmute(^u8)(arg2), C.int('D')) != nil
-		defer_rec = vim_strchr_c(transmute(^u8)(arg2), C.int('R')) != nil
+		defer_del = vim_strchr(transmute(cstring)(arg2), C.int('D')) != nil
+		defer_rec = vim_strchr(transmute(cstring)(arg2), C.int('R')) != nil
 		if (defer_del || defer_rec) && !can_add_defer() {
 			return
 		}
-		if vim_strchr_c(transmute(^u8)(arg2), C.int('p')) != nil {
+		if vim_strchr(transmute(cstring)(arg2), C.int('p')) != nil {
 			failed_dir: cstring = nil
 			cr: cstring = nil
 			created_out: ^cstring = nil
@@ -4477,7 +4476,7 @@ f_resolve :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 				cpy = remain
 				qm := ([^]u8)(uintptr(q) - 1)
 				if remain != nil {
-					remain = ([^]u8)(concat_str_c(cstring(rawptr(uintptr(q) - 1)), cstring(rawptr(remain))))
+					remain = ([^]u8)(concat_str(cstring(rawptr(uintptr(q) - 1)), cstring(rawptr(remain))))
 				} else {
 					remain = ([^]u8)(xstrdup_o(&qm[0]))
 				}
@@ -4528,7 +4527,7 @@ f_resolve :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 	}
 	if !_vim_ispathsep(C.int(p[0])) {
 		if is_relative_to_current && p[0] != 0 && !(p[0] == '.' && (p[1] == 0 || _vim_ispathsep(C.int(p[1])) || (p[1] == '.' && (p[2] == 0 || _vim_ispathsep(C.int(p[2])))))) {
-			cpy = ([^]u8)(concat_str_c(cstring("./"), cstring(rawptr(p))))
+			cpy = ([^]u8)(concat_str(cstring("./"), cstring(rawptr(p))))
 			xfree(rawptr(p))
 			p = cpy
 		} else if !is_relative_to_current {
@@ -9594,11 +9593,11 @@ heredoc_get :: proc "c" (eap: rawptr, cmd: cstring, script_get: bool) -> rawptr 
 	heredoc_in_string := false
 	line_arg: cstring = nil
 	c := cmd
-	nl_ptr := vim_strchr_c(transmute(^u8)(c), '\n')
+	nl_ptr := vim_strchr(transmute(cstring)(c), '\n')
 	if nl_ptr != nil {
 		heredoc_in_string = true
-		line_arg = transmute(cstring)(rawptr(uintptr(transmute(rawptr)(nl_ptr)) + 1))
-		([^]u8)(nl_ptr)[0] = 0
+		line_arg = transmute(cstring)(rawptr(uintptr(transmute(^u8)(nl_ptr)) + 1))
+		([^]u8)(transmute(^u8)(nl_ptr))[0] = 0
 	} else if (^rawptr)(uintptr(eap) + 168)^ == nil {
 		emsg(cstring(E991_S))
 		return nil
@@ -9657,12 +9656,12 @@ heredoc_get :: proc "c" (eap: rawptr, cmd: cstring, script_get: bool) -> rawptr 
 				break
 			}
 			theline = line_arg
-			next_line := vim_strchr_c(transmute(^u8)(theline), '\n')
+			next_line := vim_strchr(transmute(cstring)(theline), '\n')
 			if next_line == nil {
 				line_arg = transmute(cstring)(rawptr(uintptr(transmute(rawptr)(line_arg)) + uintptr(libc.strlen(line_arg))))
 			} else {
-				([^]u8)(next_line)[0] = 0
-				line_arg = transmute(cstring)(rawptr(uintptr(transmute(rawptr)(next_line)) + 1))
+				([^]u8)(transmute(^u8)(next_line))[0] = 0
+				line_arg = transmute(cstring)(rawptr(uintptr(transmute(^u8)(next_line)) + 1))
 			}
 		} else {
 			xfree(rawptr(theline))
@@ -10671,7 +10670,7 @@ ex_let_one_o :: proc "c" (arg: cstring, tv: ^Typval_T, copy: bool, is_const: boo
 		lv: [96]u8
 		p := get_lval(arg, rawptr(tv), rawptr(&lv[0]), false, false, 0, FNE_CHECK_START_O)
 		if p != nil && (^rawptr)(uintptr(&lv[0]) + LL_NAME_OFF_O)^ != nil {
-			if endchars != nil && vim_strchr_c(transmute(^u8)(endchars), C.int(([^]u8)(skipwhite(p))[0])) == nil {
+			if endchars != nil && vim_strchr(transmute(cstring)(endchars), C.int(([^]u8)(skipwhite(p))[0])) == nil {
 				emsg(cstring(E18_S))
 			} else {
 				set_var_lval(rawptr(&lv[0]), p, tv, copy, is_const, op)
@@ -11631,7 +11630,7 @@ var_wrong_func_name :: proc "c" (name: cstring, new_var: bool) -> bool {
 		first = ([^]u8)(transmute(rawptr)(uintptr(transmute(rawptr)(name)) + 2))[0]
 	}
 	upper := first >= 'A' && first <= 'Z'
-	if !allow_scope && !upper && vim_strchr_c(transmute(^u8)(name), '#') == nil {
+	if !allow_scope && !upper && vim_strchr(transmute(cstring)(name), '#') == nil {
 		semsg(cstring(E704_S), name)
 		return true
 	}
@@ -12071,7 +12070,7 @@ ex_let_env_o :: proc "c" (arg: cstring, tv: ^Typval_T, is_const: bool, endchars:
 		is_arith := opch == '+' || opch == '-' || opch == '*' || opch == '/' || opch == '%'
 		if op != nil && is_arith {
 			semsg(cstring(E_LETWRONG_S), op)
-		} else if endchars != nil && vim_strchr_c(transmute(^u8)(endchars), C.int(([^]u8)(skipwhite(arg1))[0])) == nil {
+		} else if endchars != nil && vim_strchr(transmute(cstring)(endchars), C.int(([^]u8)(skipwhite(arg1))[0])) == nil {
 			emsg(cstring(E18_S))
 		} else if !check_secure() {
 			tofree: rawptr = nil
@@ -12081,7 +12080,7 @@ ex_let_env_o :: proc "c" (arg: cstring, tv: ^Typval_T, is_const: bool, endchars:
 			if p != nil && op != nil && ([^]u8)(op)[0] == '.' {
 				s := vim_getenv(name)
 				if s != nil {
-					tofree = rawptr(concat_str_c(s, p))
+					tofree = rawptr(concat_str(s, p))
 					p = transmute(cstring)(tofree)
 					xfree(rawptr(s))
 				}
@@ -12109,7 +12108,7 @@ ex_let_option_o :: proc "c" (arg: cstring, tv: ^Typval_T, is_const: bool, endcha
 	opt_flags: C.int = 0
 	arg1 := arg
 	p := find_option_var_end(&arg1, &opt_idx, &opt_flags)
-	if p == nil || (endchars != nil && vim_strchr_c(transmute(^u8)(endchars), C.int(([^]u8)(skipwhite(p))[0])) == nil) {
+	if p == nil || (endchars != nil && vim_strchr(transmute(cstring)(endchars), C.int(([^]u8)(skipwhite(p))[0])) == nil) {
 		emsg(cstring(E18_S))
 		return nil
 	}
@@ -12167,7 +12166,7 @@ ex_let_option_o :: proc "c" (arg: cstring, tv: ^Typval_T, is_const: bool, endcha
 					new_data := (^rawptr)(&newval.data)^
 					if cur_data != nil && new_data != nil {
 						old := newval
-						cc := concat_str_c(transmute(cstring)(cur_data), transmute(cstring)(new_data))
+						cc := transmute(^u8)(concat_str(transmute(cstring)(cur_data), transmute(cstring)(new_data)))
 						newval = str_optval(cc, C.size_t(libc.strlen(transmute(cstring)(cc))))
 						optval_free(old)
 					}
@@ -12202,7 +12201,7 @@ ex_let_register_o :: proc "c" (arg: cstring, tv: ^Typval_T, is_const: bool, endc
 	is_arith := opch == '+' || opch == '-' || opch == '*' || opch == '/' || opch == '%'
 	if op != nil && is_arith {
 		semsg(cstring(E_LETWRONG_S), op)
-	} else if endchars != nil && vim_strchr_c(transmute(^u8)(endchars), C.int(([^]u8)(skipwhite(transmute(cstring)(rawptr(uintptr(transmute(rawptr)(arg1)) + 1))))[0])) == nil {
+	} else if endchars != nil && vim_strchr(transmute(cstring)(endchars), C.int(([^]u8)(skipwhite(transmute(cstring)(rawptr(uintptr(transmute(rawptr)(arg1)) + 1))))[0])) == nil {
 		emsg(cstring(E18_S))
 	} else {
 		ptofree: rawptr = nil
@@ -12214,7 +12213,7 @@ ex_let_register_o :: proc "c" (arg: cstring, tv: ^Typval_T, is_const: bool, endc
 			}
 			s := transmute(cstring)(get_reg_contents(regch, kGRegExprSrc))
 			if s != nil {
-				ptofree = rawptr(concat_str_c(s, p))
+				ptofree = rawptr(concat_str(s, p))
 				p = transmute(cstring)(ptofree)
 				xfree(rawptr(s))
 			}
@@ -12533,7 +12532,7 @@ f_copy :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 f_escape :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 	context = runtime.default_context()
 	buf: [65]u8
-	rettv.vval = transmute(rawptr)(vim_strsave_escaped_c(transmute(^u8)(tv_get_string((^Typval_T)(uintptr(argvars)))), transmute(^u8)(tv_get_string_buf((^Typval_T)(uintptr(argvars) + 16), &buf[0]))))
+	rettv.vval = transmute(rawptr)(vim_strsave_escaped(tv_get_string((^Typval_T)(uintptr(argvars))), tv_get_string_buf((^Typval_T)(uintptr(argvars) + 16), &buf[0])))
 	rettv.v_type = VAR_STRING
 }
 
@@ -14708,7 +14707,7 @@ foreign _ {
 // Conditionally append a state char (C-static in funcs.c).
 may_add_state_char_o :: proc "c" (gap: ^Garray, include: cstring, ch: u8) {
 	context = runtime.default_context()
-	if include == nil || _vim_strchr(include, C.int(ch)) != nil {
+	if include == nil || vim_strchr(include, C.int(ch)) != nil {
 		ga_append(gap, ch)
 	}
 }
@@ -15402,8 +15401,7 @@ f_reg_recorded :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) 
 // —— Batch 27ah: funcs.c reltime trio + shellescape ——
 foreign _ {
 	// profile_sub/msg/signed — PORTED (profile.odin).
-	@(link_name = "vim_strsave_shellescape")
-	vim_strsave_shellescape_e :: proc "c" (str: cstring, do_special: bool, do_newline: bool) -> ^u8 ---
+	// vim_strsave_shellescape now defined in strings.odin — call directly.
 }
 
 // List-to-proftime conversion (C-static in funcs.c).
@@ -15475,7 +15473,7 @@ f_reltimefloat :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) 
 f_shellescape :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 	context = runtime.default_context()
 	do_special := non_zero_arg_o((^Typval_T)(uintptr(argvars) + 16))
-	rettv.vval = transmute(rawptr)(vim_strsave_shellescape_e(tv_get_string((^Typval_T)(uintptr(argvars))), do_special, do_special))
+	rettv.vval = transmute(rawptr)(vim_strsave_shellescape(tv_get_string((^Typval_T)(uintptr(argvars))), do_special, do_special))
 	rettv.v_type = VAR_STRING
 }
 
@@ -18613,7 +18611,7 @@ common_function_o :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, is_funcref:
 		s = tv_get_string((^Typval_T)(uintptr(argvars)))
 		use_string = true
 	}
-	if ((use_string && _vim_strchr(s, C.int(u8('#'))) == nil) || is_funcref) {
+	if ((use_string && vim_strchr(s, C.int(u8('#'))) == nil) || is_funcref) {
 		name = s
 		trans_name = save_function_name(&name, false, TFN_INT_O | TFN_QUIET_O | TFN_NO_AUTOLOAD_O | TFN_NO_DEREF_O, nil)
 		if name != nil && ([^]u8)(name)[0] != 0 {
@@ -19157,10 +19155,7 @@ f_json_encode :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 }
 
 // —— Batch 27bx: funcs.c printf ——
-foreign _ {
-	@(link_name = "vim_vsnprintf_typval")
-	vim_vsnprintf_typval_e :: proc "c" (str: ^u8, str_m: C.size_t, fmt: cstring, ap: rawptr, tvs: ^Typval_T) -> C.int ---
-}
+// vim_vsnprintf_typval now defined in strings.odin — call directly.
 
 // "printf()" function (va_list bypassed with zeroed dummy, same as C static).
 @(export)
@@ -19173,11 +19168,11 @@ f_printf :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 	buf: [65]u8
 	fmt := tv_get_string_buf((^Typval_T)(uintptr(argvars)), &buf[0])
 	dummy: [24]u8
-	length := vim_vsnprintf_typval_e(nil, 0, fmt, rawptr(&dummy[0]), (^Typval_T)(uintptr(argvars) + 16))
+	length := vim_vsnprintf_typval(nil, 0, fmt, transmute(^libc.va_list)(&dummy[0]), (^Typval_T)(uintptr(argvars) + 16))
 	if did_emsg_flag == 0 {
 		s := (^u8)(xmalloc(C.size_t(length) + 1))
 		rettv.vval = transmute(rawptr)(s)
-		vim_vsnprintf_typval_e(s, C.size_t(length) + 1, fmt, rawptr(&dummy[0]), (^Typval_T)(uintptr(argvars) + 16))
+		vim_vsnprintf_typval(s, C.size_t(length) + 1, fmt, transmute(^libc.va_list)(&dummy[0]), (^Typval_T)(uintptr(argvars) + 16))
 	}
 	did_emsg_flag |= saved_did_emsg
 }
@@ -23899,10 +23894,10 @@ eval_method_o :: proc "c" (arg: ^cstring, rettv: ^Typval_T, evalarg: rawptr, ver
 		ret = FAIL_E
 	} else {
 		arg^ = skipwhite(arg^)
-		paren := vim_strchr_c(transmute(^u8)(arg^), C.int('('))
+		paren := vim_strchr(transmute(cstring)(arg^), C.int('('))
 		if ([^]u8)(arg^)[0] != '(' && lua_funcname == nil && alias == nil && paren != nil {
 			arg^ = name
-			([^]u8)(paren)[0] = 0
+			([^]u8)(transmute(^u8)(paren))[0] = 0
 			ref := Typval_T{v_type = VAR_UNKNOWN, v_lock = VAR_UNLOCKED}
 			if eval7_o(arg, &ref, evalarg, false) == FAIL_E {
 				arg^ = transmute(cstring)(uintptr(rawptr(name)) + uintptr(length))
@@ -24307,7 +24302,7 @@ set_context_for_expression :: proc "c" (xp: ^expand_T, arg: cstring, cmdidx: C.i
 			xp.xp_context = EXPAND_EXPRESSION_O
 		} else if c == '#' && xp.xp_context == EXPAND_EXPRESSION_O {
 			break
-		} else if (c == '<' || c == '#') && xp.xp_context == EXPAND_FUNCTIONS_O && vim_strchr_c(transmute(^u8)(xp.xp_pattern), C.int('(')) == nil {
+		} else if (c == '<' || c == '#') && xp.xp_context == EXPAND_FUNCTIONS_O && vim_strchr(transmute(cstring)(xp.xp_pattern), C.int('(')) == nil {
 			break
 		} else if cmdidx != CMD_LET_O || got_eq {
 			if c == '"' {
@@ -24695,7 +24690,7 @@ do_string_sub :: proc "c" (str: cstring, length: C.size_t, pat: cstring, sub: cs
 		str_out = str
 		length_out = length
 	}
-	ret := transmute(cstring)(xstrnsave_c(str_out, length_out))
+	ret := transmute(cstring)(xstrnsave(str_out, length_out))
 	ga_clear(&ga)
 	if p_cpo == empty_string_opt() {
 		p_cpo = save_cpo
@@ -26712,7 +26707,7 @@ eval_concat_str_o :: proc "c" (tv1: ^Typval_T, tv2: ^Typval_T) -> C.int {
 	if grow_string_tv(tv1, s2) == OK_E {
 		return OK_E
 	}
-	p := concat_str_c(s1, s2)
+	p := concat_str(s1, s2)
 	tv_clear(tv1)
 	tv1.v_type = VAR_STRING
 	tv1.vval = transmute(rawptr)(p)
@@ -28340,7 +28335,7 @@ modify_fname :: proc "c" (src: ^u8, tilde_file: bool, usedlen: ^C.size_t, fnamep
 				}
 			}
 			if os_isdir(transmute(cstring)(fnamep^)) {
-				fp3 := xstrnsave_c(transmute(cstring)(fnamep^), libc.strlen(transmute(cstring)(fnamep^)) + 2)
+				fp3 := xstrnsave(transmute(cstring)(fnamep^), libc.strlen(transmute(cstring)(fnamep^)) + 2)
 				xfree(bufp^)
 				bufp^ = rawptr(fp3)
 				fnamep^ = rawptr(fp3)
@@ -28497,11 +28492,11 @@ modify_fname :: proc "c" (src: ^u8, tilde_file: bool, usedlen: ^C.size_t, fnamep
 			sep := C.int(([^]u8)(s)[0])
 			s = transmute(cstring)(uintptr(rawptr(s)) + 1)
 			if sep != 0 {
-				p := _vim_strchr(s, sep)
+				p := vim_strchr(s, sep)
 				if p != nil {
 					pat := xmemdupz_o2(transmute(^u8)(s), C.size_t(uintptr(rawptr(p)) - uintptr(rawptr(s))))
 					s = transmute(cstring)(uintptr(rawptr(p)) + 1)
-					p = _vim_strchr(s, sep)
+					p = vim_strchr(s, sep)
 					if p != nil {
 						sub := xmemdupz_o2(transmute(^u8)(s), C.size_t(uintptr(rawptr(p)) - uintptr(rawptr(s))))
 						str := xmemdupz_o2(transmute(^u8)(fnamep^), fnamelen^)
@@ -28530,7 +28525,7 @@ modify_fname :: proc "c" (src: ^u8, tilde_file: bool, usedlen: ^C.size_t, fnamep
 		if c2 != 0 {
 			([^]u8)(transmute(cstring)(fnamep^))[fnamelen^] = 0
 		}
-		p2 := vim_strsave_shellescape_e(transmute(cstring)(fnamep^), false, false)
+		p2 := vim_strsave_shellescape(transmute(cstring)(fnamep^), false, false)
 		if c2 != 0 {
 			([^]u8)(transmute(cstring)(fnamep^))[fnamelen^] = c2
 		}
@@ -28976,9 +28971,9 @@ prompt_get_input :: proc "c" (buf: rawptr) -> cstring {
 	full_text := xstrdup_o(text)
 	i := lnum_start + 1
 	for i <= lnum_last {
-		half_text := concat_str_c(transmute(cstring)(full_text), cstring("\n"))
+		half_text := concat_str(transmute(cstring)(full_text), cstring("\n"))
 		xfree(rawptr(full_text))
-		full_text = transmute(^u8)(concat_str_c(transmute(cstring)(half_text), transmute(cstring)(ml_get_buf(buf, i))))
+		full_text = transmute(^u8)(concat_str(transmute(cstring)(half_text), transmute(cstring)(ml_get_buf(buf, i))))
 		xfree(rawptr(half_text))
 		i += 1
 	}

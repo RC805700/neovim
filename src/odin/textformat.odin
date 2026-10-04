@@ -99,7 +99,7 @@ has_format_option :: proc "c" (x: C.int) -> bool {
 		return false
 	}
 	fo := (^rawptr)(uintptr(curbuf) + B_P_FO_OFF)^
-	return _vim_strchr(transmute(cstring)(fo), x) != nil
+	return vim_strchr(transmute(cstring)(fo), x) != nil
 }
 
 // White char that can start a line break (not composing-double).
@@ -193,7 +193,7 @@ same_leader_o :: proc "c" (lnum: C.int, leader1_len: C.int, leader1_flags: ^u8, 
 			p = (^u8)(uintptr(p) + 1)
 		}
 	}
-	line1 := xstrnsave_c(transmute(cstring)(ml_get(lnum)), C.size_t(ml_get_len(lnum)))
+	line1 := xstrnsave(transmute(cstring)(ml_get(lnum)), C.size_t(ml_get_len(lnum)))
 	for ascii_iswhite(([^]u8)(line1)[idx1]) {
 		idx1 += 1
 	}
@@ -495,7 +495,7 @@ internal_format :: proc "c" (textwidth: C.int, second_indent_in: C.int, flags: C
 			startcol = 0
 		}
 		if (State & VREPLACE_FLAG_O) != 0 {
-			saved_text = xstrnsave_c(transmute(cstring)(get_cursor_pos_ptr()), C.size_t(get_cursor_pos_len()))
+			saved_text = transmute(^u8)(xstrnsave(transmute(cstring)(get_cursor_pos_ptr()), C.size_t(get_cursor_pos_len())))
 			(^C.int)(uintptr(curwin) + W_CURSOR_OFF + 4)^ = orig_col
 			([^]u8)(saved_text)[startcol] = 0
 			if !fo_white_par {
@@ -636,7 +636,7 @@ auto_format :: proc "c" (trailblank: bool, prev_line: bool) {
 		linep := get_cursor_line_ptr()
 		len := get_cursor_line_len()
 		if (^C.int)(uintptr(curwin) + W_CURSOR_OFF + 4)^ == len {
-			plinep := xstrnsave_c(transmute(cstring)(linep), C.size_t(len) + 2)
+			plinep := transmute(^u8)(xstrnsave(transmute(cstring)(linep), C.size_t(len) + 2))
 			([^]u8)(plinep)[len] = ' '
 			([^]u8)(plinep)[len + 1] = 0
 			ml_replace((^C.int)(uintptr(curwin) + W_CURSOR_OFF)^, plinep, false)

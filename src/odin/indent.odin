@@ -868,7 +868,7 @@ change_indent :: proc "c" (type: C.int, amount: C.int, round: bool, call_changed
 	orig_col: C.int = 0
 	orig_line: ^u8 = nil
 	if (State & VREPLACE_FLAG_O) != 0 {
-		orig_line = xstrnsave_c(transmute(cstring)(get_cursor_line_ptr()), C.size_t(get_cursor_line_len()))
+		orig_line = transmute(^u8)(xstrnsave(transmute(cstring)(get_cursor_line_ptr()), C.size_t(get_cursor_line_len())))
 		orig_col = (^C.int)(uintptr(curwin) + W_CURSOR_OFF + 4)^
 	}
 	save_p_list := (^C.int)(uintptr(curwin) + W_P_LIST_OFF)^
@@ -980,14 +980,14 @@ change_indent :: proc "c" (type: C.int, amount: C.int, round: bool, call_changed
 		}
 	}
 	if (State & VREPLACE_FLAG_O) != 0 {
-		new_line := xstrnsave_c(transmute(cstring)(get_cursor_line_ptr()), C.size_t(get_cursor_line_len()))
+		new_line := xstrnsave(transmute(cstring)(get_cursor_line_ptr()), C.size_t(get_cursor_line_len()))
 		([^]u8)(new_line)[uintptr((^C.int)(uintptr(curwin) + W_CURSOR_OFF + 4)^)] = 0
 		new_col := (^C.int)(uintptr(curwin) + W_CURSOR_OFF + 4)^
 		ml_replace((^C.int)(uintptr(curwin) + W_CURSOR_OFF)^, orig_line, false)
 		(^C.int)(uintptr(curwin) + W_CURSOR_OFF + 4)^ = orig_col
 		curbuf_splice_pending_g += 1
 		backspace_until_column_e(0)
-		ins_bytes(new_line)
+		ins_bytes(transmute(^u8)(new_line))
 		xfree(rawptr(new_line))
 		curbuf_splice_pending_g -= 1
 		delta := orig_col - new_col
@@ -1365,7 +1365,7 @@ get_expr_indent :: proc "c" () -> C.int {
 	(^bool)(uintptr(curwin) + W_SET_CURSWANT_OFF)^ = save_set_curswant
 	check_cursor(curwin)
 	State = save_State
-	if did_throw_g && (vim_strchr(p_debug_g, 't') == nil || trylevel_g == 0) {
+	if did_throw_g && (vim_strchr(transmute(cstring)(p_debug_g), 't') == nil || trylevel_g == 0) {
 		handle_did_throw()
 		did_throw_g = false
 	}

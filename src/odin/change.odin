@@ -236,7 +236,7 @@ changed_bytes :: proc "c" (lnum: C.int, col: C.int) {
 	changed_lines_redraw_buf(curbuf, lnum, lnum + 1, 0)
 	changed_common(curbuf, lnum, col, lnum + 1, 0)
 	ml := (^Memline_O)(uintptr(curbuf) + 8)
-	if spell_check_window(curwin) && lnum < ml.line_count && vim_strchr(p_cpo, C.int(CPO_DOLLAR_O)) == nil {
+	if spell_check_window(curwin) && lnum < ml.line_count && vim_strchr(transmute(cstring)(p_cpo), C.int(CPO_DOLLAR_O)) == nil {
 		redrawWinline(curwin, lnum + 1)
 	}
 	buf_updates_send_changes(curbuf, lnum, 1, 1)
@@ -640,7 +640,7 @@ ins_char_bytes :: proc "c" (buf: ^u8, charlen: C.size_t) {
 	if (State & REPLACE_FLAG) != 0 {
 		if (State & VREPLACE_FLAG_O) != 0 {
 			old_list := (^C.int)(uintptr(curwin) + W_P_LIST_OFF)^
-			if old_list != 0 && vim_strchr(p_cpo, C.int(CPO_LISTWM_O)) == nil {
+			if old_list != 0 && vim_strchr(transmute(cstring)(p_cpo), C.int(CPO_LISTWM_O)) == nil {
 				(^C.int)(uintptr(curwin) + W_P_LIST_OFF)^ = 0
 			}
 			vcol: C.int = 0
@@ -816,7 +816,7 @@ truncate_line :: proc "c" (fixpos: C.int) {
 	if col == 0 {
 		newp = xstrdup(transmute(^u8)(cstring("")))
 	} else {
-		newp = xstrnsave_c(transmute(cstring)(old_line), C.size_t(col))
+		newp = transmute(^u8)(xstrnsave(transmute(cstring)(old_line), C.size_t(col)))
 	}
 	deleted := ml_get_len(lnum) - col
 	ml_replace(lnum, newp, false)
@@ -879,19 +879,19 @@ get_leader_len :: proc "c" (line_in: ^u8, flags: ^^u8, backward: bool, include_s
 			prev_list := list
 			copy_option_part(&list, transmute(^u8)(&part_buf[0]), COM_MAX_LEN_O, cstring(","))
 			pb := ([^]u8)(transmute(rawptr)(&part_buf[0]))
-			string = vim_strchr(transmute(^u8)(&part_buf[0]), C.int(':'))
+			string = transmute(^u8)(vim_strchr(transmute(cstring)(&part_buf[0]), C.int(':')))
 			if string == nil {
 				continue
 			}
 			([^]u8)(string)[0] = 0
 			string = transmute(^u8)(rawptr(uintptr(string) + 1))
-			if middle_match_len != 0 && vim_strchr(transmute(^u8)(&part_buf[0]), C.int(COM_MIDDLE_O)) == nil && vim_strchr(transmute(^u8)(&part_buf[0]), C.int(COM_END_O)) == nil {
+			if middle_match_len != 0 && vim_strchr(transmute(cstring)(&part_buf[0]), C.int(COM_MIDDLE_O)) == nil && vim_strchr(transmute(cstring)(&part_buf[0]), C.int(COM_END_O)) == nil {
 				break
 			}
-			if got_com && vim_strchr(transmute(^u8)(&part_buf[0]), C.int(COM_NEST_O)) == nil {
+			if got_com && vim_strchr(transmute(cstring)(&part_buf[0]), C.int(COM_NEST_O)) == nil {
 				continue
 			}
-			if backward && vim_strchr(transmute(^u8)(&part_buf[0]), C.int(COM_NOBACK_O)) != nil {
+			if backward && vim_strchr(transmute(cstring)(&part_buf[0]), C.int(COM_NOBACK_O)) != nil {
 				continue
 			}
 			sb := ([^]u8)(string)
@@ -912,10 +912,10 @@ get_leader_len :: proc "c" (line_in: ^u8, flags: ^^u8, backward: bool, include_s
 			if sb[uintptr(j)] != 0 {
 				continue
 			}
-			if vim_strchr(transmute(^u8)(&part_buf[0]), C.int(COM_BLANK_O)) != nil && !ascii_iswhite(line[uintptr(i) + uintptr(j)]) && line[uintptr(i) + uintptr(j)] != 0 {
+			if vim_strchr(transmute(cstring)(&part_buf[0]), C.int(COM_BLANK_O)) != nil && !ascii_iswhite(line[uintptr(i) + uintptr(j)]) && line[uintptr(i) + uintptr(j)] != 0 {
 				continue
 			}
-			if vim_strchr(transmute(^u8)(&part_buf[0]), C.int(COM_MIDDLE_O)) != nil {
+			if vim_strchr(transmute(cstring)(&part_buf[0]), C.int(COM_MIDDLE_O)) != nil {
 				if middle_match_len == 0 {
 					middle_match_len = j
 					saved_flags = prev_list
@@ -949,7 +949,7 @@ get_leader_len :: proc "c" (line_in: ^u8, flags: ^^u8, backward: bool, include_s
 			result = i
 		}
 		got_com = true
-		if vim_strchr(transmute(^u8)(&part_buf[0]), C.int(COM_NEST_O)) == nil {
+		if vim_strchr(transmute(cstring)(&part_buf[0]), C.int(COM_NEST_O)) == nil {
 			break
 		}
 	}
@@ -973,7 +973,7 @@ get_last_leader_offset :: proc "c" (line_in: ^u8, flags: ^^u8) -> C.int {
 		for (([^]u8)(list))[0] != 0 {
 			flags_save := list
 			copy_option_part(&list, transmute(^u8)(&part_buf[0]), COM_MAX_LEN_O, cstring(","))
-			string := vim_strchr(transmute(^u8)(&part_buf[0]), C.int(':'))
+			string := transmute(^u8)(vim_strchr(transmute(cstring)(&part_buf[0]), C.int(':')))
 			if string == nil {
 				continue
 			}
@@ -999,10 +999,10 @@ get_last_leader_offset :: proc "c" (line_in: ^u8, flags: ^^u8) -> C.int {
 			if sb[uintptr(j)] != 0 {
 				continue
 			}
-			if vim_strchr(transmute(^u8)(&part_buf[0]), C.int(COM_BLANK_O)) != nil && !ascii_iswhite(line[uintptr(i) + uintptr(j)]) && line[uintptr(i) + uintptr(j)] != 0 {
+			if vim_strchr(transmute(cstring)(&part_buf[0]), C.int(COM_BLANK_O)) != nil && !ascii_iswhite(line[uintptr(i) + uintptr(j)]) && line[uintptr(i) + uintptr(j)] != 0 {
 				continue
 			}
-			if vim_strchr(transmute(^u8)(&part_buf[0]), C.int(COM_MIDDLE_O)) != nil {
+			if vim_strchr(transmute(cstring)(&part_buf[0]), C.int(COM_MIDDLE_O)) != nil {
 				k: C.int = 0
 				for k <= i && ascii_iswhite(line[uintptr(k)]) {
 					k += 1
@@ -1021,7 +1021,7 @@ get_last_leader_offset :: proc "c" (line_in: ^u8, flags: ^^u8) -> C.int {
 		if found_one {
 			part_buf2: [COM_MAX_LEN_O]u8
 			result = i
-			if vim_strchr(transmute(^u8)(&part_buf[0]), C.int(COM_NEST_O)) != nil {
+			if vim_strchr(transmute(cstring)(&part_buf[0]), C.int(COM_NEST_O)) != nil {
 				i -= 1
 				continue
 			}
@@ -1039,7 +1039,7 @@ get_last_leader_offset :: proc "c" (line_in: ^u8, flags: ^^u8) -> C.int {
 				if flags_save == com_flags {
 					continue
 				}
-				string := vim_strchr(transmute(^u8)(&part_buf2[0]), C.int(':'))
+				string := transmute(^u8)(vim_strchr(transmute(cstring)(&part_buf2[0]), C.int(':')))
 				string = transmute(^u8)(rawptr(uintptr(string) + 1))
 				sb = ([^]u8)(string)
 				for ascii_iswhite(sb[0]) {
@@ -1101,10 +1101,10 @@ open_line :: proc "c" (dir: C.int, flags: C.int, second_line_indent: C.int, did_
 	saved_pi := (^C.int)(uintptr(curbuf) + B_P_PI_OFF)^
 	lnum := (^C.int)(uintptr(curwin) + W_CURSOR_OFF)^
 	mincol := (^C.int)(uintptr(curwin) + W_CURSOR_OFF + 4)^ + 1
-	saved_line := xstrnsave_c(transmute(cstring)(get_cursor_line_ptr()), C.size_t(get_cursor_line_len()))
+	saved_line := transmute(^u8)(xstrnsave(transmute(cstring)(get_cursor_line_ptr()), C.size_t(get_cursor_line_len())))
 	if (State & VREPLACE_FLAG_O) != 0 {
 		if (^C.int)(uintptr(curwin) + W_CURSOR_OFF)^ < orig_line_count_g {
-			next_line = xstrnsave_c(transmute(cstring)(ml_get((^C.int)(uintptr(curwin) + W_CURSOR_OFF)^ + 1)), C.size_t(ml_get_len((^C.int)(uintptr(curwin) + W_CURSOR_OFF)^ + 1)))
+			next_line = transmute(^u8)(xstrnsave(transmute(cstring)(ml_get((^C.int)(uintptr(curwin) + W_CURSOR_OFF)^ + 1)), C.size_t(ml_get_len((^C.int)(uintptr(curwin) + W_CURSOR_OFF)^ + 1))))
 		} else {
 			next_line = xstrdup(transmute(^u8)(cstring("")))
 		}
@@ -1556,7 +1556,7 @@ open_line :: proc "c" (dir: C.int, flags: C.int, second_line_indent: C.int, did_
 					newindent += off
 				}
 				for off > 0 && lead_len > 0 && ([^]u8)(leader)[uintptr(lead_len) - 1] == ' ' {
-					if vim_strchr(transmute(^u8)(skipwhite(transmute(cstring)(leader))), C.int('\t')) != nil {
+					if vim_strchr(transmute(cstring)(skipwhite(transmute(cstring)(leader))), C.int('\t')) != nil {
 						break
 					}
 					lead_len -= 1
@@ -1662,7 +1662,7 @@ open_line :: proc "c" (dir: C.int, flags: C.int, second_line_indent: C.int, did_
 					libc.memmove(rawptr(prompt_line), rawptr(uintptr(prompt_line) + uintptr(prompt_len)), C.size_t(C.int(libc.strlen(transmute(cstring)(prompt_line))) - prompt_len + 1))
 					cmdmod_cmod_flags = cmdmod_cmod_flags | CMOD_LOCKMARKS_O
 					ml_replace((^C.int)(uintptr(curwin) + W_CURSOR_OFF)^, prompt_line, true)
-					prompt_moved = concat_str_c(transmute(cstring)(prompt), transmute(cstring)(p_extra))
+					prompt_moved = transmute(^u8)(concat_str(transmute(cstring)(prompt), transmute(cstring)(p_extra)))
 					p_extra = prompt_moved
 				}
 			}
@@ -1779,7 +1779,7 @@ open_line :: proc "c" (dir: C.int, flags: C.int, second_line_indent: C.int, did_
 			State = vreplace_mode
 		}
 		if (State & VREPLACE_FLAG_O) != 0 {
-			p_extra = xstrnsave_c(transmute(cstring)(get_cursor_line_ptr()), C.size_t(get_cursor_line_len()))
+			p_extra = transmute(^u8)(xstrnsave(transmute(cstring)(get_cursor_line_ptr()), C.size_t(get_cursor_line_len())))
 			ml_replace((^C.int)(uintptr(curwin) + W_CURSOR_OFF)^, next_line, false)
 			(^C.int)(uintptr(curwin) + W_CURSOR_OFF + 4)^ = 0
 			(^C.int)(uintptr(curwin) + W_CURSOR_OFF + 8)^ = 0

@@ -442,14 +442,14 @@ helptags_one_o :: proc "c" (dir: ^u8, ext: cstring, tagfname: cstring, add_help_
 		in_example := false
 		for vim_fgets(&IObuff[0], IOSIZE_O, fd) == 0 && !got_int {
 			if in_example {
-				if vim_strchr(&SPC_TAB_NL_CR_O[0], C.int(([^]u8)(&IObuff[0])[0])) != nil {
+				if vim_strchr(transmute(cstring)(&SPC_TAB_NL_CR_O[0]), C.int(([^]u8)(&IObuff[0])[0])) != nil {
 					continue
 				}
 				in_example = false
 			}
-			p1 := vim_strchr(&IObuff[0], '*')
+			p1 := transmute(^u8)(vim_strchr(transmute(cstring)(&IObuff[0]), '*'))
 			for p1 != nil {
-				p2 := vim_strchr((^u8)(uintptr(p1) + 1), '*')
+				p2 := transmute(^u8)(vim_strchr(transmute(cstring)((^u8)(uintptr(p1) + 1)), '*'))
 				if p2 != nil && uintptr(p2) > uintptr(p1) + 1 {
 					s = (^u8)(uintptr(p1) + 1)
 					for uintptr(s) < uintptr(p2) {
@@ -459,7 +459,7 @@ helptags_one_o :: proc "c" (dir: ^u8, ext: cstring, tagfname: cstring, add_help_
 						}
 						s = (^u8)(uintptr(s) + 1)
 					}
-					if s == p2 && (p1 == &IObuff[0] || ([^]u8)((^u8)(uintptr(p1) - 1))[0] == ' ' || ([^]u8)((^u8)(uintptr(p1) - 1))[0] == '\t') && (vim_strchr(&SPC_TAB_NL_CR_O[0], C.int(([^]u8)((^u8)(uintptr(s) + 1))[0])) != nil || ([^]u8)((^u8)(uintptr(s) + 1))[0] == 0) {
+					if s == p2 && (p1 == &IObuff[0] || ([^]u8)((^u8)(uintptr(p1) - 1))[0] == ' ' || ([^]u8)((^u8)(uintptr(p1) - 1))[0] == '\t') && (vim_strchr(transmute(cstring)(&SPC_TAB_NL_CR_O[0]), C.int(([^]u8)((^u8)(uintptr(s) + 1))[0])) != nil || ([^]u8)((^u8)(uintptr(s) + 1))[0] == 0) {
 						([^]u8)(p2)[0] = 0
 						p1 = (^u8)(uintptr(p1) + 1)
 						s_len := C.size_t(uintptr(p2) - uintptr(p1)) + libc.strlen(transmute(cstring)(short)) + 2
@@ -468,7 +468,7 @@ helptags_one_o :: proc "c" (dir: ^u8, ext: cstring, tagfname: cstring, add_help_
 						([^]rawptr)(ga.ga_data)[uintptr(ga.ga_len)] = rawptr(s)
 						ga.ga_len += 1
 						libc.snprintf(s, s_len, cstring("%s\t%s"), transmute(cstring)(p1), transmute(cstring)(short))
-						p2 = vim_strchr((^u8)(uintptr(p2) + 1), '*')
+						p2 = transmute(^u8)(vim_strchr(transmute(cstring)((^u8)(uintptr(p2) + 1)), '*'))
 					}
 				}
 				p1 = p2
@@ -489,7 +489,7 @@ helptags_one_o :: proc "c" (dir: ^u8, ext: cstring, tagfname: cstring, add_help_
 	}
 	freewild_e(filecount, files)
 	if !got_int && ga.ga_data != nil {
-		sort_strings_c(rawptr(ga.ga_data), ga.ga_len)
+		sort_strings(transmute(^rawptr)(ga.ga_data), ga.ga_len)
 		for i: C.int = 1; i < ga.ga_len; i += 1 {
 			p1 := transmute(^u8)(([^]rawptr)(ga.ga_data)[uintptr(i) - 1])
 			p2 := transmute(^u8)(([^]rawptr)(ga.ga_data)[uintptr(i)])

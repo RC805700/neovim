@@ -606,7 +606,7 @@ replace_termcodes :: proc "c" (from: cstring, from_len: C.size_t, bufp: ^cstring
 	context = runtime.default_context()
 	dlen: C.size_t = 0
 	end := (^u8)(uintptr(rawptr(from)) + uintptr(from_len) - 1)
-	do_backslash := vim_strchr(transmute(^u8)(cpo_val), C.int(CPO_BSLASH)) == nil
+	do_backslash := vim_strchr(transmute(cstring)(cpo_val), C.int(CPO_BSLASH)) == nil
 	do_special := (flags & REPTERM_NO_SPECIAL) == 0
 	allocated := bufp^ == nil
 	buf_len := from_len * 6 + 1
