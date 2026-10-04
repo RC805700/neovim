@@ -441,7 +441,7 @@ set_cmd_dflall_range :: proc "c" (eap: rawptr) {
 			(^C.int)(uintptr(eap) + EXARG_LINE2_OFF)^ = 1
 		}
 	} else if addr_type == ADDR_NONE_O || addr_type == ADDR_UNSIGNED_O || addr_type == ADDR_QUICKFIX_O {
-		iemsg_r(cstring("INTERNAL: Cannot use EX_DFLALL with ADDR_NONE, ADDR_UNSIGNED or ADDR_QUICKFIX"))
+		iemsg(cstring("INTERNAL: Cannot use EX_DFLALL with ADDR_NONE, ADDR_UNSIGNED or ADDR_QUICKFIX"))
 	}
 }
 
@@ -2203,7 +2203,7 @@ verify_command :: proc "c" (cmd: cstring) {
 	}
 	a: C.int = HLF_E_O
 	for s in smile_art_g {
-		msg_msg(s, a)
+		msg(s, a)
 	}
 }
 
@@ -2952,8 +2952,7 @@ foreign _ {
 	opcount_g: C.int
 	@(link_name = "force_restart_edit")
 	force_restart_edit_g: bool
-	@(link_name = "redirecting")
-	redirecting_e :: proc "c" () -> C.int ---
+	// redirecting now defined in message.odin — call directly.
 }
 
 SST_MSGSCROLL_OFF :: 0
@@ -3036,7 +3035,7 @@ undo_cmdmod :: proc "c" (cmod: rawptr) {
 			emsg_silent = 0
 		}
 		msg_scroll = ([^]C.int)(uintptr(cmod) + CMOD_SAVE_MSG_SCROLL_OFF)[0]
-		if redirecting_e() != 0 {
+		if redirecting() != 0 {
 			msg_col = 0
 		}
 		(^C.int)(uintptr(cmod) + CMOD_SAVE_MSG_SILENT_OFF)^ = 0
@@ -3477,7 +3476,7 @@ store_loop_line_o :: proc "c" (gap: ^Garray, line: ^u8) {
 msg_verbose_cmd_o :: proc "c" (lnum: C.int, cmd: ^u8) {
 	context = runtime.default_context()
 	no_wait_return += 1
-	verbose_enter_scroll_e()
+	verbose_enter_scroll()
 	if lnum == 0 {
 		smsg(0, cstring("Executing: %s"), transmute(cstring)(cmd))
 	} else {
@@ -3486,7 +3485,7 @@ msg_verbose_cmd_o :: proc "c" (lnum: C.int, cmd: ^u8) {
 	if msg_silent == 0 {
 		msg_puts(cstring("\n"))
 	}
-	verbose_leave_scroll_e()
+	verbose_leave_scroll()
 	no_wait_return -= 1
 }
 
@@ -3907,7 +3906,7 @@ do_cmdline :: proc "c" (cmdline: cstring, fgetline: LineGetter, cookie: rawptr, 
 			msg_didany_g = false
 		} else if need_wait_return_g {
 			msg_didout_g = msg_didout_g || msg_didout_before_start
-			wait_return_r(0)
+			wait_return(0)
 		}
 	}
 	if did_block {
@@ -4485,7 +4484,7 @@ ex_print :: proc "c" (eap: rawptr) {
 		for line <= ([^]C.int)(uintptr(eap) + EXARG_LINE2_OFF)[0] && !got_int {
 			os_breakcheck()
 			cmdidx := ([^]C.int)(uintptr(eap) + EXARG_CMDIDX_OFF)[0]
-			flags := ([^]C.int)(uintptr(eap) + EXARG_ARGT_OFF)[0]
+			flags := ([^]C.int)(uintptr(eap) + EXARG_FLAGS_OFF)[0]
 			print_line(line, cmdidx == CMD_NUMBER_O || cmdidx == CMD_POUND_O || (flags & EXFLAG_NR_O) != 0, cmdidx == CMD_LIST_O || (flags & EXFLAG_LIST_O) != 0, line == ([^]C.int)(uintptr(eap) + EXARG_LINE1_OFF)[0])
 			line += 1
 		}
@@ -5311,7 +5310,7 @@ check_more_o :: proc "c" (message: bool, forceit: bool) -> C.int {
 					fmt = cstring(E173_ONE_S)
 				}
 				libc.snprintf(transmute([^]u8)(&buff[0]), 1000, fmt, n)
-				if vim_dialog_yesno_r(VIM_QUESTION_O, nil, transmute(cstring)(&buff[0]), 1) == VIM_YES_O {
+				if vim_dialog_yesno(VIM_QUESTION_O, nil, transmute(cstring)(&buff[0]), 1) == VIM_YES_O {
 					return OK_E
 				}
 				return FAIL_E
@@ -5377,8 +5376,7 @@ foreign _ {
 	estack_pop_e :: proc "c" () ---
 	@(link_name = "strrep")
 	strrep_e :: proc "c" (src: cstring, what: cstring, rep: cstring) -> ^u8 ---
-	@(link_name = "msg_make")
-	msg_make_e :: proc "c" (arg: cstring) ---
+	// msg_make now defined in message.odin — call directly.
 	@(link_name = "p_gp")
 	p_gp_g: ^u8
 	@(link_name = "p_mp")
@@ -5423,7 +5421,7 @@ handle_did_throw :: proc "c" () {
 	}
 	for messages != nil {
 		next := (^rawptr)(uintptr(messages) + MSGLIST_NEXT_OFF)^
-		emsg_multiline_e(transmute(cstring)((^rawptr)(uintptr(messages) + MSGLIST_MSG_OFF)^), cstring("emsg"), HLF_E_O, (^bool)(uintptr(messages) + MSGLIST_MULTILINE_OFF)^)
+		emsg_multiline(transmute(cstring)((^rawptr)(uintptr(messages) + MSGLIST_MSG_OFF)^), cstring("emsg"), HLF_E_O, (^bool)(uintptr(messages) + MSGLIST_MULTILINE_OFF)^)
 		xfree((^rawptr)(uintptr(messages) + MSGLIST_MSG_OFF)^)
 		xfree((^rawptr)(uintptr(messages) + MSGLIST_SFILE_OFF)^)
 		xfree(messages)
@@ -5478,7 +5476,7 @@ replace_makeprg :: proc "c" (eap: rawptr, arg_in: cstring, cmdlinep: ^cstring) -
 			sp[0] = ' '
 			libc.memmove(rawptr(uintptr(sp) + 1), rawptr(arg), uint(alen + 1))
 		}
-		msg_make_e(arg)
+		msg_make(arg)
 		xfree(rawptr(([^]cstring)(cmdlinep)[0]))
 		([^]cstring)(cmdlinep)[0] = transmute(cstring)(new_cmdline)
 		arg = transmute(cstring)(new_cmdline)
@@ -5614,7 +5612,7 @@ ex_pwd :: proc "c" (eap: rawptr) {
 			}
 			smsg(0, cstring("[%s] %s"), context_s, transmute(cstring)(&name_buff[0]))
 		} else {
-			msg_msg(transmute(cstring)(&name_buff[0]), 0)
+			msg(transmute(cstring)(&name_buff[0]), 0)
 		}
 	} else {
 		emsg(cstring(E187_S))
@@ -5688,7 +5686,7 @@ do_exmode :: proc "c" () {
 	save_msg_scroll := msg_scroll
 	RedrawingDisabled += 1
 	no_wait_return += 1
-	msg_msg(cstring("Entering Ex mode.  Type \"visual\" to go to Normal mode."), 0)
+	msg(cstring("Entering Ex mode.  Type \"visual\" to go to Normal mode."), 0)
 	for exmode_active {
 		if ex_normal_busy_g > 0 && typebuf.tb_len == 0 {
 			exmode_active = false
@@ -5709,7 +5707,7 @@ do_exmode :: proc "c" () {
 				emsg(cstring(E749_S))
 			} else {
 				if ex_pressedreturn {
-					msg_scroll_flush_e()
+					msg_scroll_flush()
 					msg_row = prev_msg_row
 					if prev_msg_row == Rows - 1 {
 						msg_row -= 1
@@ -5717,7 +5715,7 @@ do_exmode :: proc "c" () {
 				}
 				msg_col = 0
 				print_line_no_prefix(([^]C.int)(uintptr(curwin) + W_CURSOR_OFF)[0], false, false)
-				msg_clr_eos_r()
+				msg_clr_eos()
 			}
 		} else if ex_pressedreturn && !ex_no_reprint_g {
 			if ([^]C.int)(uintptr(curbuf) + B_ML_FLAGS_OFF)[0] & ML_EMPTY_O != 0 {
@@ -7476,9 +7474,9 @@ ex_swapname :: proc "c" (eap: rawptr) {
 	context = runtime.default_context()
 	mfp := (^rawptr)(uintptr(curbuf) + B_ML_MFP_OFF)^
 	if mfp == nil || (^rawptr)(uintptr(mfp))^ == nil {
-		msg_msg(cstring("No swap file"), 0)
+		msg(cstring("No swap file"), 0)
 	} else {
-		msg_msg(transmute(cstring)((^rawptr)(uintptr(mfp))^), 0)
+		msg(transmute(cstring)((^rawptr)(uintptr(mfp))^), 0)
 	}
 }
 
@@ -7572,10 +7570,10 @@ ex_colorscheme :: proc "c" (eap: rawptr) {
 		xfree(rawptr(expr))
 		msg_ext_set_kind(cstring("list_cmd"))
 		if p != nil {
-			msg_msg(p, 0)
+			msg(p, 0)
 			xfree(rawptr(p))
 		} else {
-			msg_msg(cstring("default"), 0)
+			msg(cstring("default"), 0)
 		}
 	} else if load_colors_e(arg) == FAIL_E {
 		semsg(cstring(E185_S), arg)
@@ -7588,7 +7586,7 @@ ex_highlight :: proc "c" (eap: rawptr) {
 	context = runtime.default_context()
 	arg := ([^]cstring)(uintptr(eap) + EXARG_ARG_OFF)[0]
 	if ([^]u8)(arg)[0] == 0 && ([^]u8)(([^]cstring)(uintptr(eap) + EXARG_CMD_OFF)[0])[2] == '!' {
-		msg_msg(cstring("Greetings, Vim user!"), 0)
+		msg(cstring("Greetings, Vim user!"), 0)
 	}
 	do_highlight_e(arg, ([^]C.int)(uintptr(eap) + EXARG_FORCEIT_OFF)[0] != 0, false)
 }
@@ -8178,7 +8176,7 @@ ex_tabclose :: proc "c" (eap: rawptr) {
 ex_tabonly :: proc "c" (eap: rawptr) {
 	context = runtime.default_context()
 	if (^rawptr)(uintptr(first_tabpage) + TP_NEXT_OFF)^ == nil {
-		msg_msg(cstring("Already only one tab page"), 0)
+		msg(cstring("Already only one tab page"), 0)
 		return
 	}
 	if window_layout_locked(CMD_TABONLY_O) {

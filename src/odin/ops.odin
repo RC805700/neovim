@@ -95,7 +95,7 @@ get_op_type :: proc "c" (char1: C.int, char2: C.int) -> C.int {
 			break
 		}
 		if i == C.int(len(opchars_g)) - 1 {
-			_internal_error(cstring("get_op_type()"))
+			internal_error(cstring("get_op_type()"))
 			break
 		}
 		i += 1
@@ -1126,7 +1126,7 @@ op_shift :: proc "c" (oap: rawptr, curs_top: bool, amount: C.int) {
 		msg_plural := ngettext_r(cstring("%ld lines %sed %d time"), cstring("%ld lines %sed %d times"), C.long(amount))
 		msg := ngettext_r(msg_single, msg_plural, C.long(line_count))
 		vim_snprintf(&IObuff[0], C.size_t(IOSIZE_O), msg, i64(line_count), op, C.int(amount))
-		msg_keep_r(transmute(cstring)(&IObuff[0]), 0, true, false)
+		msg_keep(transmute(cstring)(&IObuff[0]), 0, true, false)
 	}
 	if (cmdmod_cmod_flags & CMOD_LOCKMARKS) == 0 {
 		(^Pos_T)(uintptr(curbuf) + B_OP_START)^ = (^Pos_T)(uintptr(oap) + OAP_START)^
@@ -1385,7 +1385,7 @@ op_delete :: proc "c" (oap: rawptr) -> C.int {
 				auto_format(false, true)
 			}
 		}
-		msgmore_r((^C.int)(uintptr(curbuf) + B_ML_LINE_COUNT_OFF)^ - old_lcount)
+		msgmore((^C.int)(uintptr(curbuf) + B_ML_LINE_COUNT_OFF)^ - old_lcount)
 	}
 	if (cmdmod_cmod_flags & CMOD_LOCKMARKS) == 0 {
 		if motion_type == kMTBlockWise {
@@ -2568,7 +2568,7 @@ cursor_pos_info :: proc "c" (dict: rawptr) {
 	ml := (^Memline_O)(uintptr(curbuf) + 8)
 	if (ml.flags & ML_EMPTY_O) != 0 {
 		if dict == nil {
-			msg_e(cstring("--No lines in buffer--"), 0)
+			msg(cstring("--No lines in buffer--"), 0)
 			return
 		}
 	} else {
@@ -2710,7 +2710,7 @@ cursor_pos_info :: proc "c" (dict: rawptr) {
 				msg_start()
 				msg_scroll = 1
 			}
-			msg_e(transmute(cstring)(&IObuff[0]), 0)
+			msg(transmute(cstring)(&IObuff[0]), 0)
 			p_shm = save_shm
 		}
 	}

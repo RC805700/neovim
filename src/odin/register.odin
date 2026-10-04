@@ -271,10 +271,8 @@ foreign _ {
 	@(link_name = "cmdline_paste_str")
 	cmdline_paste_str_r :: proc "c" (s: cstring, literally: bool) ---
 
-	@(link_name = "emsg_invreg")
-	emsg_invreg_r :: proc "c" (name: C.int) ---
-	@(link_name = "msgmore")
-	msgmore_r :: proc "c" (n: C.int) ---
+	// emsg_invreg now defined in message.odin — call directly.
+	// msgmore now defined in message.odin — call directly.
 	// transchar is an Odin export (charset.odin) — call directly.
 	// adjust_cursor_eol now defined in ops.odin — call directly.
 	// decl now defined in memline.odin — call directly.
@@ -777,7 +775,7 @@ do_record :: proc "c" (c: C.int) -> C.int {
 		if p_ch == 0 || ui_has(kUIMessages) {
 			showmode()
 		} else {
-			msg_msg(cstring(""), 0)
+			msg(cstring(""), 0)
 		}
 		if p == nil {
 			retval = FAIL_R
@@ -902,7 +900,7 @@ do_execreg :: proc "c" (regname_arg: C.int, colon: C.int, addcr: C.int, silent: 
 	}
 	// check for valid regname
 	if regname == '%' || regname == '#' || !valid_yank_reg(regname, false) {
-		emsg_invreg_r(regname)
+		emsg_invreg(regname)
 		return FAIL_R
 	}
 	execreg_lastc = regname
@@ -1395,7 +1393,7 @@ op_yank_reg :: proc "c" (oap: rawptr, message: bool, reg_arg: ^Yankreg_T, append
 			}
 			mbuf: [256]u8
 			libc.snprintf(&mbuf[0], size_of(mbuf), _t(fmt), C.long(yanklines), &namebuf[0])
-			msg_msg(transmute(cstring)(&mbuf[0]), 0)
+			msg(transmute(cstring)(&mbuf[0]), 0)
 		}
 	}
 
@@ -2397,7 +2395,7 @@ do_put :: proc "c" (regname: C.int, reg_arg: ^Yankreg_T, dir_arg: C.int, count_a
 				}
 			}
 
-			msgmore_r(nr_lines)
+			msgmore(nr_lines)
 			set_i32_off(curwin, W_SET_CURSWANT, 1)
 
 			// Make sure cursor is not after the NUL.
@@ -2457,10 +2455,10 @@ dis_msg :: proc "c"(p_arg: ^u8, skip_esc: bool) {
 		n -= cell
 		l := utfc_ptr2len(transmute(cstring)(p))
 		if l > 1 {
-			msg_outtrans_len_r(transmute(cstring)(p), l, 0, false)
+			msg_outtrans_len(transmute(cstring)(p), l, 0, false)
 			p = (^u8)(uintptr(p) + uintptr(l))
 		} else {
-			msg_outtrans_len_r(transmute(cstring)(p), 1, 0, false)
+			msg_outtrans_len(transmute(cstring)(p), 1, 0, false)
 			p = (^u8)(uintptr(p) + 1)
 		}
 	}
@@ -2468,10 +2466,8 @@ dis_msg :: proc "c"(p_arg: ^u8, skip_esc: bool) {
 }
 
 foreign _ {
-	@(link_name = "msg_outtrans_len")
-	msg_outtrans_len_r :: proc "c" (msgstr: cstring, len: C.int, hl_id: C.int, hist: bool) ---
-	@(link_name = "msg_puts_hl")
-	msg_puts_hl_r :: proc "c" (s: cstring, hl_id: C.int, hist: bool) ---
+	// msg_outtrans_len now defined in message.odin — call directly.
+	// msg_puts_hl now defined in message.odin — call directly.
 	@(link_name = "get_last_insert")
 	get_last_insert_r :: proc "c" () -> Str16 ---
 	@(link_name = "mb_tolower")
@@ -2547,7 +2543,7 @@ ex_display :: proc "c" (eap: rawptr) {
 				n := Columns - 11
 				for j: C.size_t = 0; j < yb.y_size && n > 1; j += 1 {
 					if j > 0 {
-						msg_puts_hl_r(cstring("^J"), hl_id, false)
+						msg_puts_hl(cstring("^J"), hl_id, false)
 						n -= 2
 					}
 					p := yb.y_array[j].data
@@ -2558,13 +2554,13 @@ ex_display :: proc "c" (eap: rawptr) {
 						}
 						n -= cl
 						clen := C.int(utfc_ptr2len(transmute(cstring)(p)))
-						msg_outtrans_len_r(transmute(cstring)(p), clen, 0, false)
+						msg_outtrans_len(transmute(cstring)(p), clen, 0, false)
 						p = (^u8)(uintptr(p) + uintptr(clen - 1))
 						p = (^u8)(uintptr(p) + 1)
 					}
 				}
 				if n > 1 && yb.y_type == kMTLineWise {
-					msg_puts_hl_r(cstring("^J"), hl_id, false)
+					msg_puts_hl(cstring("^J"), hl_id, false)
 				}
 			}
 			os_breakcheck()
@@ -2753,7 +2749,7 @@ get_reg_contents :: proc "c" (regname_arg: C.int, flags: C.int) -> rawptr {
 @(private="file")
 init_write_reg :: proc "c"(name: C.int, old_y_previous: ^^Yankreg_T, must_append: bool) -> ^Yankreg_T {
 	if !valid_yank_reg(name, true) { // check for valid reg name
-		emsg_invreg_r(name)
+		emsg_invreg(name)
 		return nil
 	}
 

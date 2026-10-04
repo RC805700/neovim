@@ -101,14 +101,14 @@ change_warning :: proc "c" (buf: rawptr, col: C.int) {
 		if msg_row == Rows - 1 {
 			msg_col = col
 		}
-		msg_source_e(HLF_W_O)
+		msg_source(HLF_W_O)
 		msg_ext_set_kind(cstring("wmsg"))
-		msg_puts_hl_s(cstring(W_READONLY_S), HLF_W_O, true)
+		msg_puts_hl(cstring(W_READONLY_S), HLF_W_O, true)
 		set_vim_var_string(VV_WARNINGMSG_O, cstring(W_READONLY_S), -1)
-		msg_clr_eos_r()
+		msg_clr_eos()
 		msg_end()
 		if msg_silent == 0 && !silent_mode && ui_active() != 0 {
-			msg_delay_r(1002, true)
+			msg_delay(1002, true)
 		}
 		(^bool)(uintptr(buf) + B_DID_WARN)^ = true
 		redraw_cmdline_g = false
@@ -129,7 +129,7 @@ changed :: proc "c" (buf: rawptr) {
 			need_wait_return_g = false
 			ml_open_file(buf)
 			if need_wait_return_g && emsg_silent == 0 && !in_assert_fails_g && !ui_has(K_UIMESSAGES_O) {
-				msg_delay_r(2002, true)
+				msg_delay(2002, true)
 				wait_return(1)
 				msg_scroll = save_msg_scroll
 			} else {

@@ -92,16 +92,20 @@ enum {
   DLG_HOTKEY_CHAR = '&',
 };
 
-static int confirm_msg_used = false;            // displaying confirm_msg
+// confirm_msg_used/buttons moved to Odin (message.odin single copy).
+extern int confirm_msg_used;            // displaying confirm_msg
 #include "message.c.generated.h"
-static char *confirm_msg = NULL;            // ":confirm" message
-static char *confirm_buttons;               // ":confirm" buttons sent to cmdline as prompt
+// confirm_msg moved to Odin (message.odin single copy).
+extern char *confirm_msg;            // ":confirm" message
+// confirm_buttons moved to Odin (message.odin single copy).
+extern char *confirm_buttons;               // ":confirm" buttons sent to cmdline as prompt
 
 MessageHistoryEntry *msg_hist_last = NULL;          // Last message (extern for unittest)
 static MessageHistoryEntry *msg_hist_first = NULL;  // First message
 static MessageHistoryEntry *msg_hist_temp = NULL;   // First potentially temporary message
 static int msg_hist_len = 0;
-static int msg_hist_max = 500;  // The default max value is 500
+// msg_hist_max moved to Odin (message.odin single copy).
+extern int msg_hist_max;  // The default max value is 500
 
 // args in 'messagesopt' option
 #define MESSAGES_OPT_HIT_ENTER "hit-enter"
@@ -112,14 +116,18 @@ static int msg_hist_max = 500;  // The default max value is 500
 #define PROGRESS_TARGET_CMD          0x01
 
 // The default is "hit-enter,history:500,progress:c"
-static int msg_flags = kOptMoptFlagHitEnter | kOptMoptFlagHistory | kOptMoptFlagProgress;
-static int msg_wait = 0;
-static int progress_msg_target = PROGRESS_TARGET_CMD;
+// msg_flags/msg_wait moved to Odin (message.odin single copy).
+extern int msg_flags;
+extern int msg_wait;
+// progress_msg_target moved to Odin (message.odin single copy).
+extern int progress_msg_target;
 
-static FILE *verbose_fd = NULL;
-static bool verbose_did_open = false;
+// verbose_fd/did_open moved to Odin (message.odin single copy).
+extern FILE *verbose_fd;
+extern bool verbose_did_open;
 
-static bool keep_msg_more = false;    // keep_msg was set by msgmore()
+// keep_msg_more moved to Odin (message.odin single copy).
+extern bool keep_msg_more;    // keep_msg was set by msgmore()
 
 // When writing messages to the screen, there are many different situations.
 // A number of variables is used to remember the current state:
@@ -156,22 +164,27 @@ static bool keep_msg_more = false;    // keep_msg was set by msgmore()
 //                  This is an allocated string or NULL when not used.
 
 // Extended msg state, currently used for external UIs with ext_messages
-static const char *msg_ext_kind = NULL;
-static const char *msg_ext_trigger = NULL;
-static MsgID msg_ext_id = { .type = kObjectTypeInteger, .data.integer = 1 };
-static Array *msg_ext_chunks = NULL;
-static garray_T msg_ext_last_chunk = GA_INIT(sizeof(char), 40);
-static sattr_T msg_ext_last_attr = -1;
-static int msg_ext_last_hl_id;
+// msg_ext_kind/trigger/id/history/append moved to Odin (message.odin single copy).
+extern const char *msg_ext_kind;
+extern const char *msg_ext_trigger;
+extern MsgID msg_ext_id;
+// msg_ext_chunks/last_chunk/last_attr/last_hl_id moved to Odin (message.odin single copy).
+extern Array *msg_ext_chunks;
+extern garray_T msg_ext_last_chunk;
+extern sattr_T msg_ext_last_attr;
+extern int msg_ext_last_hl_id;
 
-static bool msg_ext_history = false;  ///< message was added to history
-static bool msg_ext_append = false;  ///< message appended to previous message line
+extern bool msg_ext_history;  ///< message was added to history
+extern bool msg_ext_append;  ///< message appended to previous message line
 
-static int msg_grid_pos_at_flush = 0;
+// msg_grid_pos_at_flush moved to Odin (message.odin Batch-1 global).
+extern int msg_grid_pos_at_flush;
 
-static int64_t msg_id_next = 1;           ///< message id to be allocated to next message
+// msg_id_next moved to Odin (message.odin single copy).
+extern int64_t msg_id_next;           ///< message id to be allocated to next message
 
 /// Returns true if the given integer message-id was previously generated.
+#pragma weak msg_id_exists
 bool msg_id_exists(int64_t id)
 {
   return id > 0 && id < msg_id_next;
@@ -187,6 +200,7 @@ static void ui_ext_msg_set_pos(int row, bool scrolled)
   msg_grid.pending_comp_index_update = false;
 }
 
+#pragma weak msg_grid_set_pos
 void msg_grid_set_pos(int row, bool scrolled)
 {
   if (!msg_grid.throttled) {
@@ -199,11 +213,13 @@ void msg_grid_set_pos(int row, bool scrolled)
   }
 }
 
+#pragma weak msg_use_grid
 bool msg_use_grid(void)
 {
   return default_grid.chars && !ui_has(kUIMessages);
 }
 
+#pragma weak msg_grid_validate
 void msg_grid_validate(void)
 {
   grid_assign_handle(&msg_grid);
@@ -256,6 +272,7 @@ void msg_grid_validate(void)
 }
 
 /// Like msg() but keep it silent when 'verbosefile' is set.
+#pragma weak verb_msg
 int verb_msg(const char *s)
 {
   verbose_enter();
@@ -269,6 +286,7 @@ int verb_msg(const char *s)
 /// When terminal not initialized (yet) printf("%s", ..) is used.
 ///
 /// @return  true if wait_return() not called
+#pragma weak msg
 bool msg(const char *s, const int hl_id)
   FUNC_ATTR_NONNULL_ARG(1)
 {
@@ -276,6 +294,7 @@ bool msg(const char *s, const int hl_id)
 }
 
 /// Similar to msg_outtrans_len, but support newlines and tabs.
+#pragma weak msg_multiline
 void msg_multiline(String str, int hl_id, bool check_int, bool hist, bool *need_clear)
   FUNC_ATTR_NONNULL_ALL
 {
@@ -363,6 +382,7 @@ static bool format_progress_message(HlMessage *hl_msg, MessageData *msg_data)
 /// @param history Whether to add message to history
 /// @param err Whether to print message as an error
 /// @param msg_data Progress-message data
+#pragma weak msg_multihl
 MsgID msg_multihl(MsgID id, HlMessage hl_msg, const char *kind, bool history, bool err,
                   MessageData *msg_data, bool *needs_msg_clear)
 {
@@ -427,6 +447,7 @@ MsgID msg_multihl(MsgID id, HlMessage hl_msg, const char *kind, bool history, bo
 }
 
 /// @param keep set keep_msg if it doesn't scroll
+#pragma weak msg_keep
 bool msg_keep(const char *s, int hl_id, bool keep, bool multiline)
   FUNC_ATTR_NONNULL_ALL
 {
@@ -504,6 +525,7 @@ bool msg_keep(const char *s, int hl_id, bool keep, bool multiline)
 /// @return  an allocated string or NULL when no truncating is done.
 ///
 /// @param force  always truncate
+#pragma weak msg_strtrunc
 char *msg_strtrunc(const char *s, int force)
 {
   char *buf = NULL;
@@ -534,6 +556,7 @@ char *msg_strtrunc(const char *s, int force)
 
 /// Truncate a string "s" to "buf" with cell width "room".
 /// "s" and "buf" may be equal.
+#pragma weak trunc_string
 void trunc_string(const char *s, char *buf, int room_in, int buflen)
 {
   int room = room_in - 3;  // "..." takes 3 chars
@@ -616,6 +639,31 @@ void trunc_string(const char *s, char *buf, int room_in, int buflen)
   }
 }
 
+// --- Odin port shims: history list lives here until cutover ---
+static bool do_clear_hist_temp;
+void nvim_odin_redir_write(const char *s, ptrdiff_t maxlen) { redir_write(s, maxlen); }
+void nvim_odin_verbose_fputs(const char *s) { if (verbose_fd != NULL) { fputs(s, verbose_fd); } }
+void nvim_odin_verbose_putc(int c) { if (verbose_fd != NULL) { putc(c, verbose_fd); } }
+MessageHistoryEntry *nvim_odin_hist_first(void) { return msg_hist_first; }
+void nvim_odin_hist_first_set(MessageHistoryEntry *e) { msg_hist_first = e; }
+MessageHistoryEntry *nvim_odin_hist_temp(void) { return msg_hist_temp; }
+void nvim_odin_hist_temp_set(MessageHistoryEntry *e) { msg_hist_temp = e; }
+MessageHistoryEntry *nvim_odin_hist_last(void) { return msg_hist_last; }
+void nvim_odin_hist_last_set(MessageHistoryEntry *e) { msg_hist_last = e; }
+int nvim_odin_hist_len(void) { return msg_hist_len; }
+void nvim_odin_hist_len_set(int n) { msg_hist_len = n; }
+bool nvim_odin_do_clear_hist_temp(void) { return do_clear_hist_temp; }
+void nvim_odin_do_clear_hist_temp_set(bool v) { do_clear_hist_temp = v; }
+
+// Odin implementations (message.odin) — C keeps ABI trampolines only.
+extern int smsg_v(int hl_id, const char *s, va_list ap);
+extern int smsg_keep_v(int hl_id, const char *s, va_list ap);
+extern bool semsg_v(const char *fmt, va_list ap);
+extern bool semsg_multiline_v(const char *kind, const char *fmt, va_list ap);
+extern void siemsg_v(const char *s, va_list ap);
+extern void msg_schedule_semsg_v(const char *fmt, va_list ap);
+extern void msg_schedule_semsg_multiline_v(const char *fmt, va_list ap);
+
 /// Shows a printf-style message with highlight id.
 ///
 /// Note: Caller must check the resulting string is shorter than IOSIZE!!!
@@ -630,9 +678,9 @@ int smsg(int hl_id, const char *s, ...)
   va_list arglist;
 
   va_start(arglist, s);
-  vim_vsnprintf(IObuff, IOSIZE, s, arglist);
+  int ret = smsg_v(hl_id, s, arglist);
   va_end(arglist);
-  return msg(IObuff, hl_id);
+  return ret;
 }
 
 int smsg_keep(int hl_id, const char *s, ...)
@@ -641,9 +689,9 @@ int smsg_keep(int hl_id, const char *s, ...)
   va_list arglist;
 
   va_start(arglist, s);
-  vim_vsnprintf(IObuff, IOSIZE, s, arglist);
+  int ret = smsg_keep_v(hl_id, s, arglist);
   va_end(arglist);
-  return msg_keep(IObuff, hl_id, true, false);
+  return ret;
 }
 
 // Remember the last sourcing name/lnum used in an error message, so that it
@@ -653,6 +701,7 @@ static char *last_sourcing_name = NULL;
 
 /// Reset the last used sourcing name/lnum.  Makes sure it is displayed again
 /// for the next error message;
+#pragma weak reset_last_sourcing
 void reset_last_sourcing(void)
 {
   XFREE_CLEAR(last_sourcing_name);
@@ -720,6 +769,7 @@ static char *get_emsg_lnum(void)
 /// Display name and line number for the source of an error.
 /// Remember the file name and line number, so that for the next error the info
 /// is only displayed if it changed.
+#pragma weak msg_source
 void msg_source(int hl_id)
 {
   static bool recursive = false;
@@ -773,6 +823,7 @@ static int emsg_not_now(void)
   return false;
 }
 
+#pragma weak emsg_multiline
 bool emsg_multiline(const char *s, const char *kind, int hl_id, bool multiline)
 {
   bool ignore = false;
@@ -897,11 +948,13 @@ bool emsg_multiline(const char *s, const char *kind, int hl_id, bool multiline)
 /// When terminal not initialized (yet) fprintf(stderr, "%s", ..) is used.
 ///
 /// @return true if wait_return() not called
+#pragma weak emsg
 bool emsg(const char *s)
 {
   return emsg_multiline(s, "emsg", HLF_E, false);
 }
 
+#pragma weak emsg_invreg
 void emsg_invreg(int name)
 {
   semsg(_("E354: Invalid register name: '%s'"), transchar_buf(NULL, name));
@@ -917,7 +970,7 @@ bool semsg(const char *const fmt, ...)
 
   va_list ap;
   va_start(ap, fmt);
-  ret = semsgv(fmt, ap);
+  ret = semsg_v(fmt, ap);
   va_end(ap);
 
   return ret;
@@ -930,16 +983,9 @@ bool semsg_multiline(const char *kind, const char *const fmt, ...)
   bool ret;
   va_list ap;
 
-  static char errbuf[MULTILINE_BUFSIZE];
-  if (emsg_not_now()) {
-    return true;
-  }
-
   va_start(ap, fmt);
-  vim_vsnprintf(errbuf, sizeof(errbuf), fmt, ap);
+  ret = semsg_multiline_v(kind, fmt, ap);
   va_end(ap);
-
-  ret = emsg_multiline(errbuf, kind, HLF_E, true);
 
   return ret;
 }
@@ -960,6 +1006,7 @@ static bool semsgv(const char *fmt, va_list ap)
 /// Same as emsg(...), but abort on error when ABORT_ON_INTERNAL_ERROR is
 /// defined. It is used for internal errors only, so that they can be
 /// detected when fuzzing vim.
+#pragma weak iemsg
 void iemsg(const char *s)
 {
   if (emsg_not_now()) {
@@ -986,7 +1033,7 @@ void siemsg(const char *s, ...)
 
   va_list ap;
   va_start(ap, s);
-  semsgv(s, ap);
+  siemsg_v(s, ap);
   va_end(ap);
 #ifdef ABORT_ON_INTERNAL_ERROR
   msg_putchar('\n');  // avoid overwriting the error message
@@ -996,6 +1043,7 @@ void siemsg(const char *s, ...)
 }
 
 /// Give an "Internal error" message.
+#pragma weak internal_error
 void internal_error(const char *where)
 {
   siemsg(_(e_intern2), where);
@@ -1013,11 +1061,8 @@ void msg_schedule_semsg(const char *const fmt, ...)
 {
   va_list ap;
   va_start(ap, fmt);
-  vim_vsnprintf(IObuff, IOSIZE, fmt, ap);
+  msg_schedule_semsg_v(fmt, ap);
   va_end(ap);
-
-  char *s = xstrdup(IObuff);
-  loop_schedule_deferred(&main_loop, event_create(msg_semsg_event, s));
 }
 
 static void msg_semsg_multiline_event(void **argv)
@@ -1031,11 +1076,8 @@ void msg_schedule_semsg_multiline(const char *const fmt, ...)
 {
   va_list ap;
   va_start(ap, fmt);
-  vim_vsnprintf(IObuff, IOSIZE, fmt, ap);
+  msg_schedule_semsg_multiline_v(fmt, ap);
   va_end(ap);
-
-  char *s = xstrdup(IObuff);
-  loop_schedule_deferred(&main_loop, event_create(msg_semsg_multiline_event, s));
 }
 
 /// Like msg(), but truncate to a single line if p_shm contains 't', or when
@@ -1043,6 +1085,7 @@ void msg_schedule_semsg_multiline(const char *const fmt, ...)
 /// Careful: The string may be changed by msg_may_trunc()!
 ///
 /// @return  a pointer to the printed message, if wait_return() not called.
+#pragma weak msg_trunc
 char *msg_trunc(char *s, bool force, int hl_id)
 {
   // Add message to history before truncating.
@@ -1065,6 +1108,7 @@ char *msg_trunc(char *s, bool force, int hl_id)
 /// @return  a pointer to where the truncated message starts.
 ///
 /// @note: May change the message by replacing a character with '<'.
+#pragma weak msg_may_trunc
 char *msg_may_trunc(bool force, char *s)
 {
   if (ui_has(kUIMessages)) {
@@ -1095,6 +1139,7 @@ char *msg_may_trunc(bool force, char *s)
   return s;
 }
 
+#pragma weak msg_progress
 char *msg_progress(char *s, char *id, char *status, int hl_id, bool hist, bool trunc)
 {
   if (hist && (!trunc || ui_has(kUIMessages))) {
@@ -1118,6 +1163,7 @@ char *msg_progress(char *s, char *id, char *status, int hl_id, bool hist, bool t
   return s;
 }
 
+#pragma weak hl_msg_free
 void hl_msg_free(HlMessage hl_msg)
 {
   for (size_t i = 0; i < kv_size(hl_msg); i++) {
@@ -1152,6 +1198,7 @@ static void msg_hist_add(const char *s, int len, int hl_id)
 
 static bool do_clear_hist_temp = true;
 
+#pragma weak do_autocmd_progress
 void do_autocmd_progress(MsgID msg_id, HlMessage msg, MessageData *msg_data)
 {
   if (!has_event(EVENT_PROGRESS)) {
@@ -1247,6 +1294,7 @@ static void msg_hist_free_msg(MessageHistoryEntry *entry)
 }
 
 /// Delete oldest messages from the history until there are "keep" messages.
+#pragma weak msg_hist_clear
 void msg_hist_clear(int keep)
 {
   while (msg_hist_len > keep || (keep == 0 && msg_hist_first != NULL)) {
@@ -1255,6 +1303,7 @@ void msg_hist_clear(int keep)
   }
 }
 
+#pragma weak msg_hist_clear_temp
 void msg_hist_clear_temp(void)
 {
   while (msg_hist_temp != NULL) {
@@ -1266,6 +1315,7 @@ void msg_hist_clear_temp(void)
   }
 }
 
+#pragma weak messagesopt_changed
 int messagesopt_changed(void)
 {
   int messages_flags_new = 0;
@@ -1338,6 +1388,7 @@ int messagesopt_changed(void)
 }
 
 /// :messages command implementation
+#pragma weak ex_messages
 void ex_messages(exarg_T *eap)
   FUNC_ATTR_NONNULL_ALL
 {
@@ -1390,6 +1441,7 @@ void ex_messages(exarg_T *eap)
 
 /// Call this after prompting the user.  This will avoid a hit-return message
 /// and a delay.
+#pragma weak msg_end_prompt
 void msg_end_prompt(void)
 {
   need_wait_return = false;
@@ -1405,6 +1457,7 @@ void msg_end_prompt(void)
 /// @param redraw  if true, redraw the entire screen UPD_NOT_VALID
 ///                if false, do a normal redraw
 ///                if -1, don't redraw at all
+#pragma weak wait_return
 void wait_return(int redraw)
 {
   int c;
@@ -1627,6 +1680,7 @@ static void hit_return_msg(bool newline_sb)
 }
 
 /// Set "keep_msg" to "s".  Free the old value and check for NULL pointer.
+#pragma weak set_keep_msg
 void set_keep_msg(const char *s, int hl_id)
 {
   // Kept message is not cleared and re-emitted with ext_messages: #20416.
@@ -1645,6 +1699,7 @@ void set_keep_msg(const char *s, int hl_id)
 }
 
 /// Return true if printing messages should currently be done.
+#pragma weak messaging
 bool messaging(void)
 {
   // TODO(bfredl): with general support for "async" messages with p_ch,
@@ -1652,6 +1707,7 @@ bool messaging(void)
   return !(p_lz && char_avail() && !KeyTyped) && (p_ch > 0 || ui_has(kUIMessages));
 }
 
+#pragma weak msgmore
 void msgmore(int n)
 {
   int pn;
@@ -1690,7 +1746,9 @@ void msgmore(int n)
   }
 }
 
-static int redir_col = 0;  // Message column used in redir_write().
+// redir_col moved to Odin (message.odin single copy).
+extern int redir_col;  // Message column used in redir_write().
+#pragma weak msg_ext_set_kind
 void msg_ext_set_kind(const char *msg_kind)
 {
   // Don't change the label of an existing batch:
@@ -1712,12 +1770,14 @@ void msg_ext_set_kind(const char *msg_kind)
   }
 }
 
+#pragma weak msg_ext_set_append
 void msg_ext_set_append(bool append)
 {
   msg_ext_ui_flush();
   msg_ext_append = append;
 }
 
+#pragma weak msg_ext_set_trigger
 void msg_ext_set_trigger(const char *trigger)
 {
   msg_ext_ui_flush();
@@ -1725,6 +1785,7 @@ void msg_ext_set_trigger(const char *trigger)
 }
 
 // Should be executed at all callsites emitting non-internal messages.
+#pragma weak msg_ext_no_fast
 void msg_ext_no_fast(void)
 {
   msg_ext_ui_flush();
@@ -1732,6 +1793,7 @@ void msg_ext_no_fast(void)
 }
 
 /// Prepare for outputting characters in the command line.
+#pragma weak msg_start
 void msg_start(void)
 {
   bool did_return = false;
@@ -1792,17 +1854,20 @@ void msg_start(void)
 }
 
 /// Note that the current msg position is where messages start.
+#pragma weak msg_starthere
 void msg_starthere(void)
 {
   lines_left = cmdline_row;
   msg_didany = false;
 }
 
+#pragma weak msg_putchar
 void msg_putchar(int c)
 {
   msg_putchar_hl(c, 0);
 }
 
+#pragma weak msg_putchar_hl
 void msg_putchar_hl(int c, int hl_id)
 {
   char buf[MB_MAXCHAR + 1];
@@ -1818,6 +1883,7 @@ void msg_putchar_hl(int c, int hl_id)
   msg_puts_hl(buf, hl_id, false);
 }
 
+#pragma weak msg_outnum
 void msg_outnum(int n)
 {
   char buf[20];
@@ -1826,6 +1892,7 @@ void msg_outnum(int n)
   msg_puts(buf);
 }
 
+#pragma weak msg_home_replace
 void msg_home_replace(const char *fname)
 {
   msg_home_replace_hl(fname, 0);
@@ -1842,6 +1909,7 @@ static void msg_home_replace_hl(const char *fname, int hl_id)
 /// if "len" is -1, output up to a NUL character. Use highlight "hl_id".
 ///
 /// @return  the number of characters it takes on the screen.
+#pragma weak msg_outtrans
 int msg_outtrans(const char *str, int hl_id, bool hist)
 {
   return msg_outtrans_len(str, (int)strlen(str), hl_id, hist);
@@ -1851,6 +1919,7 @@ int msg_outtrans(const char *str, int hl_id, bool hist)
 /// Handles multi-byte characters.
 ///
 /// @return  pointer to the next character.
+#pragma weak msg_outtrans_one
 const char *msg_outtrans_one(const char *p, int hl_id, bool hist)
 {
   int l;
@@ -1863,6 +1932,7 @@ const char *msg_outtrans_one(const char *p, int hl_id, bool hist)
   return p + 1;
 }
 
+#pragma weak msg_outtrans_len
 int msg_outtrans_len(const char *msgstr, int len, int hl_id, bool hist)
 {
   int retval = 0;
@@ -1936,6 +2006,7 @@ int msg_outtrans_len(const char *msgstr, int len, int hl_id, bool hist)
   return retval;
 }
 
+#pragma weak msg_make
 void msg_make(const char *arg)
 {
   int i;
@@ -1971,6 +2042,7 @@ void msg_make(const char *arg)
 ///
 /// @param from  true for LHS of a mapping
 /// @param maxlen  screen columns, 0 for unlimited
+#pragma weak msg_outtrans_special
 int msg_outtrans_special(const char *strstart, bool from, int maxlen)
 {
   if (strstart == NULL) {
@@ -2015,6 +2087,7 @@ int msg_outtrans_special(const char *strstart, bool from, int maxlen)
 ///                             kTrue: Convert `|` into `<Bar>`, `\` into `<Bslash>`.
 ///
 /// @return [allocated] Converted string.
+#pragma weak str2special_save
 char *str2special_save(const char *const str, const bool replace_spaces,
                        const TriState replace_others)
   FUNC_ATTR_NONNULL_ALL FUNC_ATTR_WARN_UNUSED_RESULT FUNC_ATTR_MALLOC
@@ -2042,6 +2115,7 @@ char *str2special_save(const char *const str, const bool replace_spaces,
 ///                             kTrue: Convert `|` into `<Bar>`, `\` into `<Bslash>`.
 ///
 /// @return [allocated] Converted string.
+#pragma weak str2special_arena
 char *str2special_arena(const char *const str, const bool replace_spaces,
                         const TriState replace_others, Arena *const arena)
   FUNC_ATTR_NONNULL_ALL FUNC_ATTR_WARN_UNUSED_RESULT FUNC_ATTR_MALLOC
@@ -2078,6 +2152,7 @@ char *str2special_arena(const char *const str, const bool replace_spaces,
 ///         same, so save converted string somewhere before running str2special
 ///         for the second time.
 ///         On illegal byte return a string with only that byte.
+#pragma weak str2special
 const char *str2special(const char **const sp, const bool replace_spaces,
                         const TriState replace_others)
   FUNC_ATTR_NONNULL_ALL FUNC_ATTR_WARN_UNUSED_RESULT FUNC_ATTR_NONNULL_RET
@@ -2147,6 +2222,7 @@ const char *str2special(const char **const sp, const bool replace_spaces,
 /// @param[in]  str  String to convert.
 /// @param[out]  buf  Buffer to save results to.
 /// @param[in]  len  Buffer length.
+#pragma weak str2specialbuf
 void str2specialbuf(const char *sp, char *buf, size_t len)
   FUNC_ATTR_NONNULL_ALL
 {
@@ -2164,6 +2240,7 @@ void str2specialbuf(const char *sp, char *buf, size_t len)
 }
 
 /// print line for :print or :list command
+#pragma weak msg_prt_line
 void msg_prt_line(const char *s, bool list)
 {
   schar_T sc;
@@ -2337,11 +2414,13 @@ void msg_prt_line(const char *s, bool list)
 
 /// Output a string to the screen at position msg_row, msg_col.
 /// Update msg_row and msg_col for the next message.
+#pragma weak msg_puts
 void msg_puts(const char *s)
 {
   msg_puts_hl(s, 0, false);
 }
 
+#pragma weak msg_puts_title
 void msg_puts_title(const char *s)
 {
   s += (ui_has(kUIMessages) && *s == '\n');
@@ -2351,6 +2430,7 @@ void msg_puts_title(const char *s)
 /// Show a message in such a way that it always fits in the line.  Cut out a
 /// part in the middle and replace it with "..." when necessary.
 /// Does not handle multi-byte characters!
+#pragma weak msg_outtrans_long
 void msg_outtrans_long(const char *longstr, int hl_id)
 {
   int len = (int)strlen(longstr);
@@ -2365,6 +2445,7 @@ void msg_outtrans_long(const char *longstr, int hl_id)
 }
 
 /// Basic function for writing a message with highlight id.
+#pragma weak msg_puts_hl
 void msg_puts_hl(const char *const s, const int hl_id, const bool hist)
 {
   msg_puts_len(s, -1, hl_id, hist);
@@ -2375,6 +2456,7 @@ void msg_puts_hl(const char *const s, const int hl_id, const bool hist)
 /// @param[in]  str  NUL-terminated message string.
 /// @param[in]  len  Length of the string or -1.
 /// @param[in]  hl_id  Highlight id.
+#pragma weak msg_puts_len
 void msg_puts_len(const char *const str, const ptrdiff_t len, int hl_id, bool hist)
   FUNC_ATTR_NONNULL_ALL
 {
@@ -2613,6 +2695,7 @@ static void msg_puts_display(const char *str, int maxlen, int hl_id, int recurse
   msg_check();
 }
 
+#pragma weak msg_line_flush
 void msg_line_flush(void)
 {
   if (cmdmsg_rl) {
@@ -2621,6 +2704,7 @@ void msg_line_flush(void)
   grid_line_flush_if_valid_row();
 }
 
+#pragma weak msg_cursor_goto
 void msg_cursor_goto(int row, int col)
 {
   if (cmdmsg_rl) {
@@ -2632,6 +2716,7 @@ void msg_cursor_goto(int row, int col)
 
 /// @return  true when ":filter pattern" was used and "msg" does not match
 ///          "pattern".
+#pragma weak message_filtered
 bool message_filtered(const char *msg)
 {
   if (cmdmod.cmod_filter_regmatch.regprog == NULL) {
@@ -2643,17 +2728,20 @@ bool message_filtered(const char *msg)
 }
 
 /// including horizontal separator
+#pragma weak msg_scrollsize
 int msg_scrollsize(void)
 {
   return msg_scrolled + (int)p_ch + ((p_ch > 0 || msg_scrolled > 1) ? 1 : 0);
 }
 
+#pragma weak msg_do_throttle
 bool msg_do_throttle(void)
 {
   return msg_use_grid() && !(rdb_flags & kOptRdbFlagNothrottle);
 }
 
 /// Scroll the screen up one line for displaying the next message line.
+#pragma weak msg_scroll_up
 void msg_scroll_up(bool may_throttle, bool zerocmd)
 {
   if (may_throttle && msg_do_throttle()) {
@@ -2695,6 +2783,7 @@ void msg_scroll_up(bool may_throttle, bool zerocmd)
 /// file_buffer, and message scrolling in TUI be reimplemented as a modal
 /// floating window. Then we get throttling "for free" using standard
 /// redraw_later code paths.
+#pragma weak msg_scroll_flush
 void msg_scroll_flush(void)
 {
   if (msg_grid.throttled) {
@@ -2729,6 +2818,7 @@ void msg_scroll_flush(void)
   msg_grid_pos_at_flush = msg_grid_pos;
 }
 
+#pragma weak msg_reset_scroll
 void msg_reset_scroll(void)
 {
   if (ui_has(kUIMessages)) {
@@ -2753,6 +2843,7 @@ void msg_reset_scroll(void)
   msg_grid_scroll_discount = 0;
 }
 
+#pragma weak msg_ui_refresh
 void msg_ui_refresh(void)
 {
   if (ui_has(kUIMultigrid) && msg_grid.chars) {
@@ -2761,6 +2852,7 @@ void msg_ui_refresh(void)
   }
 }
 
+#pragma weak msg_ui_flush
 void msg_ui_flush(void)
 {
   if (ui_has(kUIMultigrid) && msg_grid.chars && msg_grid.pending_comp_index_update) {
@@ -2850,6 +2942,7 @@ static void store_sb_text(const char **sb_str, const char *s, int hl_id, int *sb
 }
 
 /// Finished showing messages, clear the scroll-back text on the next message.
+#pragma weak may_clear_sb_text
 void may_clear_sb_text(void)
 {
   msg_ext_ui_flush();  // ensure messages until now are emitted
@@ -2858,6 +2951,7 @@ void may_clear_sb_text(void)
 }
 
 /// Starting to edit the command line: do not clear messages now.
+#pragma weak sb_text_start_cmdline
 void sb_text_start_cmdline(void)
 {
   if (do_clear_sb_text == SB_CLEAR_CMDLINE_BUSY) {
@@ -2872,6 +2966,7 @@ void sb_text_start_cmdline(void)
 }
 
 /// Redrawing the command line: clear the last unfinished line.
+#pragma weak sb_text_restart_cmdline
 void sb_text_restart_cmdline(void)
 {
   // Needed when returning from nested command line.
@@ -2895,6 +2990,7 @@ void sb_text_restart_cmdline(void)
 }
 
 /// Ending to edit the command line: clear old lines but the last one later.
+#pragma weak sb_text_end_cmdline
 void sb_text_end_cmdline(void)
 {
   do_clear_sb_text = SB_CLEAR_CMDLINE_DONE;
@@ -2903,6 +2999,7 @@ void sb_text_end_cmdline(void)
 /// Clear any text remembered for scrolling back.
 /// When "all" is false keep the last line.
 /// Called when redrawing the screen.
+#pragma weak clear_sb_text
 void clear_sb_text(bool all)
 {
   msgchunk_T *mp;
@@ -2925,6 +3022,7 @@ void clear_sb_text(bool all)
 }
 
 /// "g<" command.
+#pragma weak show_sb_text
 void show_sb_text(void)
 {
   if (ui_has(kUIMessages)) {
@@ -2955,6 +3053,7 @@ static msgchunk_T *msg_sb_start(msgchunk_T *mps)
 }
 
 /// Mark the last message chunk as finishing the line.
+#pragma weak msg_sb_eol
 void msg_sb_eol(void)
 {
   if (last_msgchunk != NULL) {
@@ -2987,6 +3086,7 @@ static msgchunk_T *disp_sb_line(int row, msgchunk_T *smp)
 ///          - "batch mode" ("silent mode", -es/-Es/-l)
 ///          - no UI and not embedded
 ///          - no ext_messages
+#pragma weak msg_use_printf
 int msg_use_printf(void)
 {
   return !embedded_mode && !ui_active() && !ui_has(kUIMessages);
@@ -3298,6 +3398,7 @@ static void msg_moremsg(bool full)
 
 /// Repeat the message for the current mode: MODE_ASKMORE, MODE_EXTERNCMD,
 /// confirm() prompt or exmode_active.
+#pragma weak repeat_message
 void repeat_message(void)
 {
   if (ui_has(kUIMessages)) {
@@ -3328,6 +3429,7 @@ void repeat_message(void)
 
 /// Clear from current message position to end of screen.
 /// Skip this when ":silent" was used, no need to clear for redirection.
+#pragma weak msg_clr_eos
 void msg_clr_eos(void)
 {
   if (msg_silent == 0) {
@@ -3338,6 +3440,7 @@ void msg_clr_eos(void)
 /// Clear from current message position to end of screen.
 /// Note: msg_col is not updated, so we remember the end of the message
 /// for msg_check().
+#pragma weak msg_clr_eos_force
 void msg_clr_eos_force(void)
 {
   if (ui_has(kUIMessages)) {
@@ -3367,6 +3470,7 @@ void msg_clr_eos_force(void)
 }
 
 /// Clear the command line.
+#pragma weak msg_clr_cmdline
 void msg_clr_cmdline(void)
 {
   msg_row = cmdline_row;
@@ -3378,6 +3482,7 @@ void msg_clr_cmdline(void)
 /// call wait_return() if the message does not fit in the available space
 ///
 /// @return  true if wait_return() not called.
+#pragma weak msg_end
 bool msg_end(void)
 {
   // If the string is larger than the window,
@@ -3407,6 +3512,7 @@ static Array *msg_ext_init_chunks(void)
   return tofree;
 }
 
+#pragma weak msg_ext_ui_flush
 void msg_ext_ui_flush(void)
 {
   if (!ui_has(kUIMessages)) {
@@ -3447,6 +3553,7 @@ void msg_ext_ui_flush(void)
   }
 }
 
+#pragma weak msg_ext_flush_showmode
 void msg_ext_flush_showmode(void)
 {
   // Showmode messages doesn't interrupt normal message flow, so we use
@@ -3466,6 +3573,7 @@ void msg_ext_flush_showmode(void)
 
 /// If the written message runs into the shown command or ruler, we have to
 /// wait for hit-return and redraw the window later.
+#pragma weak msg_check
 void msg_check(void)
 {
   if (ui_has(kUIMessages)) {
@@ -3557,6 +3665,7 @@ static void redir_write(const char *const str, const ptrdiff_t maxlen)
   }
 }
 
+#pragma weak redirecting
 int redirecting(void)
 {
   return redir_fd != NULL || *p_vfile != NUL
@@ -3569,6 +3678,7 @@ static const char *verbose_kind = "verbose";
 
 /// Before giving verbose message.
 /// Must always be called paired with verbose_leave()!
+#pragma weak verbose_enter
 void verbose_enter(void)
 {
   if (*p_vfile != NUL) {
@@ -3586,6 +3696,7 @@ void verbose_enter(void)
 
 /// After giving verbose message.
 /// Must always be called paired with verbose_enter()!
+#pragma weak verbose_leave
 void verbose_leave(void)
 {
   if (*p_vfile != NUL) {
@@ -3600,6 +3711,7 @@ void verbose_leave(void)
 }
 
 /// Like verbose_enter() and set msg_scroll when displaying the message.
+#pragma weak verbose_enter_scroll
 void verbose_enter_scroll(void)
 {
   verbose_enter();
@@ -3610,6 +3722,7 @@ void verbose_enter_scroll(void)
 }
 
 /// Like verbose_leave() and set cmdline_row when displaying the message.
+#pragma weak verbose_leave_scroll
 void verbose_leave_scroll(void)
 {
   verbose_leave();
@@ -3619,6 +3732,7 @@ void verbose_leave_scroll(void)
 }
 
 /// Called when 'verbosefile' is set: stop writing to the file.
+#pragma weak verbose_stop
 void verbose_stop(void)
 {
   if (verbose_fd != NULL) {
@@ -3631,6 +3745,7 @@ void verbose_stop(void)
 /// Open the file 'verbosefile'.
 ///
 /// @return  FAIL or OK.
+#pragma weak verbose_open
 int verbose_open(void)
 {
   if (verbose_fd == NULL && !verbose_did_open) {
@@ -3648,6 +3763,7 @@ int verbose_open(void)
 
 /// Give a warning message (for searching).
 /// Use 'w' highlighting and may repeat the message after redrawing
+#pragma weak give_warning
 void give_warning(const char *message, bool hl, bool hist)
   FUNC_ATTR_NONNULL_ARG(1)
 {
@@ -3692,19 +3808,20 @@ void give_warning(const char *message, bool hl, bool hist)
 ///
 /// @see smsg
 /// @see semsg
+// Odin implementation (message.odin swmsg_v) — C keeps ABI trampoline only.
+extern void swmsg_v(bool hl, const char *fmt, va_list ap);
 void swmsg(bool hl, const char *const fmt, ...)
   FUNC_ATTR_PRINTF(2, 3)
 {
   va_list args;
 
   va_start(args, fmt);
-  vim_vsnprintf(IObuff, IOSIZE, fmt, args);
+  swmsg_v(hl, fmt, args);
   va_end(args);
-
-  give_warning(IObuff, hl, true);
 }
 
 /// Advance msg cursor to column "col".
+#pragma weak msg_advance
 void msg_advance(int col)
 {
   if (msg_silent != 0) {        // nothing to advance to
@@ -3737,6 +3854,7 @@ void msg_advance(int col)
 /// @param textfiel  IObuff for inputdialog(), NULL otherwise
 /// @param ex_cmd  when true pressing : accepts default and starts Ex command
 /// @returns 0 if cancelled, otherwise the nth button (1-indexed).
+#pragma weak do_dialog
 int do_dialog(int type, const char *title, const char *message, const char *buttons, int dfltbutton,
               const char *textfield, int ex_cmd)
 {
@@ -4001,6 +4119,7 @@ static void display_confirm_msg(void)
   confirm_msg_used--;
 }
 
+#pragma weak vim_dialog_yesno
 int vim_dialog_yesno(int type, char *title, char *message, int dflt)
 {
   if (do_dialog(type,
@@ -4012,6 +4131,7 @@ int vim_dialog_yesno(int type, char *title, char *message, int dflt)
   return VIM_NO;
 }
 
+#pragma weak vim_dialog_yesnocancel
 int vim_dialog_yesnocancel(int type, char *title, char *message, int dflt)
 {
   switch (do_dialog(type,
@@ -4026,6 +4146,7 @@ int vim_dialog_yesnocancel(int type, char *title, char *message, int dflt)
   return VIM_CANCEL;
 }
 
+#pragma weak vim_dialog_yesnoallcancel
 int vim_dialog_yesnoallcancel(int type, char *title, char *message, int dflt)
 {
   switch (do_dialog(type,
@@ -4048,6 +4169,7 @@ int vim_dialog_yesnoallcancel(int type, char *title, char *message, int dflt)
 /// Only for legacy UI (`!ui_has(kUIMessages)`): Pause to display a message for `ms` milliseconds.
 ///
 /// TODO(justinmk): Most of these cases may not be needed after "ui2"...
+#pragma weak msg_delay
 void msg_delay(uint64_t ms, bool ignoreinput)
 {
   if (ui_has(kUIMessages)) {
@@ -4067,6 +4189,7 @@ void msg_delay(uint64_t ms, bool ignoreinput)
 /// Check if there should be a delay to allow the user to see a message.
 ///
 /// Used before clearing or redrawing the screen or the command line.
+#pragma weak msg_check_for_delay
 void msg_check_for_delay(bool check_msg_scroll)
 {
   if ((emsg_on_display || (check_msg_scroll && msg_scroll))

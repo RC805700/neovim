@@ -11,10 +11,7 @@ import "core:c/libc"
 foreign _ {
 	@(link_name = "p_aw")
 	p_aw_g: C.int
-	@(link_name = "vim_dialog_yesnocancel")
-	vim_dialog_yesnocancel_e :: proc "c" (typ: C.int, title: cstring, message: cstring, dflt: C.int) -> C.int ---
-	@(link_name = "vim_dialog_yesnoallcancel")
-	vim_dialog_yesnoallcancel_e :: proc "c" (typ: C.int, title: cstring, message: cstring, dflt: C.int) -> C.int ---
+	// vim_dialog_yesnocancel/yesnoallcancel now defined in message.odin — call directly.
 	@(link_name = "au_event_disable")
 	au_event_disable_e :: proc "c" (what: cstring) -> cstring ---
 	@(link_name = "au_event_restore")
@@ -27,8 +24,7 @@ foreign _ {
 	ex_cc_e :: proc "c" (eap: rawptr) ---
 	@(link_name = "ex_cnext")
 	ex_cnext_e :: proc "c" (eap: rawptr) ---
-	@(link_name = "msg_source")
-	msg_source_e :: proc "c" (hl_id: C.int) ---
+	// msg_source now defined in message.odin — call directly.
 }
 
 VIM_NO_O :: 3
@@ -239,7 +235,7 @@ dialog_changed :: proc "c" (buf: rawptr, checkall: bool) {
 	}
 	libc.snprintf(&buff[0], C.size_t(DIALOG_MSG_SIZE_O), cstring("Save changes to \"%s\"?"), transmute(cstring)(fname))
 	if checkall {
-		ret := vim_dialog_yesnoallcancel_e(VIM_QUESTION_O, nil, transmute(cstring)(&buff[0]), 1)
+		ret := vim_dialog_yesnoallcancel(VIM_QUESTION_O, nil, transmute(cstring)(&buff[0]), 1)
 		if ret == VIM_YES_O {
 			handle_dialog_write_o(buf)
 		} else if ret == VIM_NO_O {
@@ -250,7 +246,7 @@ dialog_changed :: proc "c" (buf: rawptr, checkall: bool) {
 			dialog_discard_all_o()
 		}
 	} else {
-		ret := vim_dialog_yesnocancel_e(VIM_QUESTION_O, nil, transmute(cstring)(&buff[0]), 1)
+		ret := vim_dialog_yesnocancel(VIM_QUESTION_O, nil, transmute(cstring)(&buff[0]), 1)
 		if ret == VIM_YES_O {
 			handle_dialog_write_o(buf)
 		} else if ret == VIM_NO_O {
@@ -329,7 +325,7 @@ dialog_close_terminal :: proc "c" (buf: rawptr) -> bool {
 		fname = transmute(rawptr)(cstring("?"))
 	}
 	libc.snprintf(&buff[0], C.size_t(DIALOG_MSG_SIZE_O), cstring("Close \"%s\"?"), transmute(cstring)(fname))
-	return vim_dialog_yesnocancel_e(VIM_QUESTION_O, nil, transmute(cstring)(&buff[0]), 1) == VIM_YES_O
+	return vim_dialog_yesnocancel(VIM_QUESTION_O, nil, transmute(cstring)(&buff[0]), 1) == VIM_YES_O
 }
 
 // True if buffer can be abandoned (hidden/unloadable/autowritten).
@@ -515,8 +511,8 @@ buf_write_all :: proc "c" (buf: rawptr, forceit: bool) -> C.int {
 	old_curbuf := curbuf
 	retval := buf_write_r(buf, transmute(cstring)((^rawptr)(uintptr(buf) + B_FFNAME)^), transmute(cstring)((^rawptr)(uintptr(buf) + B_FNAME)^), 1, (^C.int)(uintptr(buf) + B_ML_LINE_COUNT_OFF)^, nil, false, forceit, true, false)
 	if curbuf != old_curbuf {
-		msg_source_e(HLF_W_O)
-		msg_msg(cstring("Warning: Entered other buffer unexpectedly (check autocommands)"), 0)
+		msg_source(HLF_W_O)
+		msg(cstring("Warning: Entered other buffer unexpectedly (check autocommands)"), 0)
 	}
 	return retval
 }

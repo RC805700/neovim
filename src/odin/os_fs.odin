@@ -180,8 +180,7 @@ foreign clib {
 }
 
 foreign _ {
-	@(link_name = "emsg")
-	emsg :: proc "c" (msg: cstring) ---
+	// emsg now defined in message.odin — call directly (ignoring return, as before).
 }
 
 // ─────────────────────────────────────────────────────────────────

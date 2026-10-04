@@ -560,7 +560,7 @@ ex_history :: proc "c" (eap: rawptr) {
 	arg := (^cstring)(uintptr(eap) + EXARG_ARG_OFF)^
 	msg_ext_set_kind(cstring("list_cmd"))
 	if hislen_g == 0 {
-		msg_msg(_t(cstring("'history' option is zero")), 0)
+		msg(_t(cstring("'history' option is zero")), 0)
 		return
 	}
 	end := transmute(^u8)(arg)

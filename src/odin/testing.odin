@@ -608,7 +608,7 @@ f_assert_fails :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) 
 	no_wait_return -= 1
 	need_wait_return_g = false
 	emsg_on_display_g = false
-	msg_reset_scroll_r()
+	msg_reset_scroll()
 	lines_left = Rows
 	xfree(rawptr(emsg_assert_fails_msg_g))
 	emsg_assert_fails_msg_g = nil

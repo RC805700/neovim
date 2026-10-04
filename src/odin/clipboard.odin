@@ -38,9 +38,9 @@ adjust_clipboard_name :: proc "c" (name: ^C.int, quiet: bool, writing: bool) -> 
 		return target
 	}
 	if !eval_has_provider(cstring("clipboard"), false) {
-		if batch_change_count_g <= 1 && !quiet && (!clipboard_didwarn_g || (explicit_cb_reg && redirecting_e() == 0)) {
+		if batch_change_count_g <= 1 && !quiet && (!clipboard_didwarn_g || (explicit_cb_reg && redirecting() == 0)) {
 			clipboard_didwarn_g = true
-			msg_msg(cstring(MSG_NO_CLIP_S), 0)
+			msg(cstring(MSG_NO_CLIP_S), 0)
 		}
 		return target
 	}

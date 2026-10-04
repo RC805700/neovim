@@ -294,10 +294,8 @@ foreign _ {
 	utf_ptr2char :: proc "c" (p_in: cstring) -> C.int ---
 	// ptr2cells/vim_isprintc are Odin exports (charset.odin) — call directly.
 
-	message_filtered :: proc "c" (msg: cstring) -> bool ---
-	msg_puts_title :: proc "c" (s: cstring) ---
-	@(link_name = "msg")
-	msg_msg :: proc "c" (s: cstring, hl_id: C.int) -> bool ---
+	// message_filtered/msg_puts_title now defined in message.odin — call directly.
+	// msg now defined in message.odin — call directly.
 	// check_cursor — PORTED (cursor.odin).
 	beginline :: proc "c" (flags: C.int) ---
 	// set_topline now defined in move.odin — call directly.
@@ -1263,7 +1261,7 @@ show_one_mark :: proc "c"(c: C.int, arg: ^u8, p: ^Pos_T, name_arg: ^u8, current:
 			did_title = false
 		} else {
 			if arg == nil {
-				msg_msg(_t(cstring("No marks set")), 0)
+				msg(_t(cstring("No marks set")), 0)
 			} else {
 				buf: [1025]u8
 				n := libc.snprintf(&buf[0], size_of(buf),

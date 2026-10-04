@@ -485,8 +485,7 @@ foreign _ {
 	// fname_expand/buflist_setfpos now defined below — call directly.
 	@(link_name = "in_assert_fails")
 	in_assert_fails_g: bool
-	@(link_name = "msg_delay")
-	msg_delay_r :: proc "c" (ms: u64, ignoreinput: bool) ---
+	// msg_delay now defined in message.odin — call directly.
 	@(link_name = "uc_clear")
 	uc_clear_r :: proc "c" (gap: rawptr) ---
 	// extmark_free_all now defined in extmark.odin — call directly.
@@ -758,7 +757,7 @@ buflist_new :: proc "c"(ffname_arg: cstring, sfname_arg: cstring, lnum: C.int, f
 		if top + 1 < 0 { // wrap around (may cause duplicates)
 			emsg(cstring(W14_S))
 			if emsg_silent == 0 && !in_assert_fails_g {
-				msg_delay_r(3001, true) // make sure it is noticed
+				msg_delay(3001, true) // make sure it is noticed
 			}
 			top_file_num_g = 1
 		}
@@ -3810,10 +3809,10 @@ fileinfo :: proc "c"(fullname: C.int, shorthelp: C.int, dont_truncate: bool) {
 		msg_start()
 		n := msg_scroll
 		msg_scroll = 1
-		msg_msg(cstring(buffer), 0)
+		msg(cstring(buffer), 0)
 		msg_scroll = n
 	} else {
-		p := msg_trunc_r(buffer, false, 0)
+		p := msg_trunc(buffer, false, 0)
 		if restart_edit != 0 || (msg_scrolled != 0 && !need_wait_return_g) {
 			// Repeat the message after redraw when restart_edit is set
 			// or the screen scrolled without a wait-return prompt.

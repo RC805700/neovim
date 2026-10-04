@@ -201,26 +201,16 @@ foreign _ {
 	// unchanged now defined in change.odin — call directly.
 	// buf_updates_unload/changedtick are Odin exports (buffer_updates.odin).
 	// foldOpenCursor now defined in fold.odin — reuse directly.
-	@(link_name = "messaging")
-	messaging_r :: proc "c" () -> bool ---
-	@(link_name = "msg_keep")
-	msg_keep_r :: proc "c" (s: cstring, hl_id: C.int, keep: bool, multiline: bool) -> bool ---
-	@(link_name = "give_warning")
-	give_warning_r :: proc "c" (message: cstring, hl: bool, hist: bool) ---
-	@(link_name = "verbose_enter")
-	verbose_enter_r :: proc "c" () ---
-	@(link_name = "verbose_leave")
-	verbose_leave_r :: proc "c" () ---
-	@(link_name = "verb_msg")
-	verb_msg_r :: proc "c" (s: cstring) -> C.int ---
-	@(link_name = "iemsg")
-	iemsg_r :: proc "c" (s: cstring) ---
+	// messaging now defined in message.odin — call directly.
+	// msg_keep now defined in message.odin — call directly.
+	// give_warning now defined in message.odin — call directly.
+	// verbose_enter now defined in message.odin — call directly.
+	// verbose_leave now defined in message.odin — call directly.
+	// verb_msg now defined in message.odin — call directly.
+	// iemsg now defined in message.odin — call directly.
 	@(link_name = "sort_strings")
 	sort_strings_r :: proc "c" (files: ^^u8, count: C.int) ---
-	@(link_name = "msg_start")
-	msg_start_r :: proc "c" () ---
-	@(link_name = "msg_end")
-	msg_end_r :: proc "c" () -> bool ---
+	// msg_start/end now defined in message.odin — call directly.
 	// resolve_symlink now defined in memline.odin — call directly.
 	@(link_name = "path_tail")
 	path_tail_r :: proc "c" (fname: cstring) -> ^u8 ---
@@ -1368,7 +1358,7 @@ smsg_keep_u :: proc "c" (fmt: cstring, arg: rawptr) {
 	buf: [1025]u8
 	n := libc.snprintf(&buf[0], size_of(buf), fmt, arg)
 	buf[n if n >= 0 && n < 1024 else 1024] = 0
-	msg_keep_r(transmute(cstring)(&buf[0]), 0, true, false)
+	msg_keep(transmute(cstring)(&buf[0]), 0, true, false)
 }
 
 /// Loads the undo tree from an undo file.
@@ -1435,7 +1425,7 @@ u_read_undo :: proc "c" (name: ^u8, hash: ^u8, orig_name: cstring) {
 		line_count := undo_read_4c_b(&bi)
 		if libcmemcmp(hash, &read_hash[0], UNDO_HASH_SIZE) != 0 ||
 			line_count != ml_line_count_b(curbuf) {
-			give_warning_r(cstring("File contents changed, cannot use undo info"), true, true)
+			give_warning(cstring("File contents changed, cannot use undo info"), true, true)
 			err = true
 			break body
 		}
@@ -1718,7 +1708,7 @@ u_doit :: proc "c" (startcount: C.int, quiet: bool, do_buf_event: bool) {
 				beep_flush_r()
 				if count == startcount - 1 {
 					if !shortmess(SHM_UNDO_CH) {
-						msg_msg(_t(cstring("Already at oldest change")), 0)
+						msg(_t(cstring("Already at oldest change")), 0)
 					}
 					return
 				}
@@ -1731,7 +1721,7 @@ u_doit :: proc "c" (startcount: C.int, quiet: bool, do_buf_event: bool) {
 				beep_flush_r() // nothing to redo
 				if count == startcount - 1 {
 					if !shortmess(SHM_UNDO_CH) {
-						msg_msg(_t(cstring("Already at newest change")), 0)
+						msg(_t(cstring("Already at newest change")), 0)
 					}
 					return
 				}
@@ -1923,9 +1913,9 @@ undo_time :: proc "c" (step: C.int, sec: bool, file: bool, absolute: bool) {
 			if closest == closest_start {
 				if !shortmess(SHM_UNDO_CH) {
 					if step < 0 {
-						msg_msg(_t(cstring("Already at oldest change")), 0)
+						msg(_t(cstring("Already at oldest change")), 0)
 					} else {
-						msg_msg(_t(cstring("Already at newest change")), 0)
+						msg(_t(cstring("Already at newest change")), 0)
 					}
 				}
 				return
@@ -2033,7 +2023,7 @@ undo_time :: proc "c" (step: C.int, sec: bool, file: bool, absolute: bool) {
 
 				uhp = uh_prev_ptr(uhp)
 				if uhp == nil || uhp.uh_walk != mark {
-					iemsg_r(cstring("E838: internal error: undo_time()"))
+					iemsg(cstring("E838: internal error: undo_time()"))
 					break
 				}
 			}
@@ -2084,7 +2074,7 @@ u_undoredo :: proc "c" (undo: bool, do_buf_event: bool) {
 		if top > ml_line_count_b(curbuf) || top >= bot ||
 			bot > ml_line_count_b(curbuf) + 1 {
 			unblock_autocmds_r()
-			iemsg_r(cstring("E438: u_undo: line numbers wrong"))
+			iemsg(cstring("E438: u_undo: line numbers wrong"))
 			changed(curbuf)
 			return
 		}
@@ -2316,7 +2306,7 @@ u_undo_end :: proc "c" (did_undo_arg: bool, absolute: bool, quiet: bool) {
 		foldOpenCursor()
 	}
 
-	if quiet || global_busy != 0 || !messaging_r() || shortmess(SHM_UNDO_CH) {
+	if quiet || global_busy != 0 || !messaging() || shortmess(SHM_UNDO_CH) {
 		return
 	}
 
@@ -2395,7 +2385,7 @@ u_undo_end :: proc "c" (did_undo_arg: bool, absolute: bool, quiet: bool) {
 		C.long(uhp == nil ? 0 : uhp.uh_seq),
 		transmute(cstring)(&msgbuf[0]))
 	sbuf[n if n >= 0 && n < 255 else 255] = 0
-	msg_keep_r(transmute(cstring)(&sbuf[0]), 0, true, false)
+	msg_keep(transmute(cstring)(&sbuf[0]), 0, true, false)
 }
 
 kOptFdoFlagUndo_U :: 0x200
@@ -2497,12 +2487,12 @@ ex_undolist :: proc "c" (eap: rawptr) {
 
 	msg_ext_set_kind(cstring("list_cmd"))
 	if ga_lines.n == 0 {
-		msg_msg(_t(cstring("Nothing to undo")), 0)
+		msg(_t(cstring("Nothing to undo")), 0)
 	} else {
 		sort_strings_r((^^u8)(ga_lines.items), C.int(ga_lines.n))
 
-		msg_start_r()
-		msg_puts_hl_r(_t(cstring("number changes  when               saved")), HLF_T_U, false)
+		msg_start()
+		msg_puts_hl(_t(cstring("number changes  when               saved")), HLF_T_U, false)
 		for i: C.size_t = 0; i < ga_lines.n && !got_int; i += 1 {
 			msg_putchar('\n')
 			if got_int {
@@ -2511,7 +2501,7 @@ ex_undolist :: proc "c" (eap: rawptr) {
 			s := str_list_at(&ga_lines, i)
 			msg_puts(transmute(cstring)(s))
 		}
-		msg_end_r()
+		msg_end()
 
 		str_list_clear(&ga_lines)
 	}
@@ -2641,7 +2631,7 @@ u_unch_branch :: proc "c" (uhp: ^U_Header_T) {
 u_get_headentry :: proc "c" (buf: rawptr) -> ^U_Entry_T {
 	nh := buf_newhead(buf)
 	if nh == nil || nh.uh_entry == nil {
-		iemsg_r(e_undo_list_corrupt)
+		iemsg(e_undo_list_corrupt)
 		return nil
 	}
 	return nh.uh_entry
@@ -2659,7 +2649,7 @@ u_getbot :: proc "c" (buf: rawptr) {
 		extra := ml_line_count_b(buf) - uep.ue_lcount
 		uep.ue_bot = uep.ue_top + uep.ue_size + 1 + extra
 		if uep.ue_bot < 1 || uep.ue_bot > ml_line_count_b(buf) {
-			iemsg_r(e_undo_line_missing)
+			iemsg(e_undo_line_missing)
 			uep.ue_bot = uep.ue_top + 1
 		}
 

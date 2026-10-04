@@ -4896,8 +4896,7 @@ eval_all_expr_in_str_o :: proc "c" (str: ^u8) -> ^u8 {
 
 // —— Batch 20b: eval/vars.c list-one-var cluster ——
 foreign _ {
-	@(link_name = "msg_puts_len")
-	msg_puts_len_e :: proc "c" (str: cstring, len: C.ptrdiff_t, hl_id: C.int, hist: bool) ---
+	// msg_puts_len now defined in message.odin — call directly.
 }
 
 // List one variable value with name/type prefix formatting.
@@ -4913,7 +4912,7 @@ list_one_var_a_o :: proc "c" (prefix: cstring, name: cstring, name_len: C.ptrdif
 		msg_puts(prefix)
 	}
 	if name != nil {
-		msg_puts_len_e(name, name_len, 0, false)
+		msg_puts_len(name, name_len, 0, false)
 	}
 	msg_putchar(C.int(' '))
 	msg_advance(22)
@@ -4940,7 +4939,7 @@ list_one_var_a_o :: proc "c" (prefix: cstring, name: cstring, name_len: C.ptrdif
 		msg_puts(cstring("()"))
 	}
 	if first^ != 0 {
-		msg_clr_eos_r()
+		msg_clr_eos()
 		first^ = 0
 	}
 }
@@ -9936,7 +9935,7 @@ restore_vimvar :: proc "c" (idx: C.int, save_tv: ^Typval_T) {
 		}
 	}
 	if hi == nil {
-		iemsg_r(cstring("restore_vimvar()"))
+		iemsg(cstring("restore_vimvar()"))
 	} else {
 		hash_remove(ht, hi)
 	}
@@ -10740,7 +10739,7 @@ ex_let_vars :: proc "c" (arg_start: cstring, tv: ^Typval_T, copy: C.int, semicol
 			}
 			break
 		} else if ([^]u8)(arg)[0] != ',' && ([^]u8)(arg)[0] != ']' {
-			iemsg_r(cstring("ex_let_vars()"))
+			iemsg(cstring("ex_let_vars()"))
 			return FAIL_E
 		}
 	}
@@ -11063,7 +11062,7 @@ do_unlet :: proc "c" (name: cstring, name_len: C.size_t, forceit: bool) -> C.int
 				d = rawptr((^rawptr)(uintptr(rawptr(di)) + 8)^)
 			}
 			if d == nil {
-				iemsg_r(cstring("do_unlet()"))
+				iemsg(cstring("do_unlet()"))
 				return FAIL_E
 			}
 		}
@@ -12506,7 +12505,7 @@ f_empty :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 	case VAR_BLOB:
 		n = tv_blob_len_o(rawptr(av0.vval)) == 0
 	case VAR_UNKNOWN:
-		_internal_error(cstring("f_empty(UNKNOWN)"))
+		internal_error(cstring("f_empty(UNKNOWN)"))
 	}
 	if n {
 		rettv.vval = transmute(rawptr)(C.longlong(1))
@@ -12587,7 +12586,7 @@ f_type :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 	case VAR_BLOB:
 		n = VAR_TYPE_BLOB_O
 	case VAR_UNKNOWN:
-		_internal_error(cstring("f_type(UNKNOWN)"))
+		internal_error(cstring("f_type(UNKNOWN)"))
 	}
 	rettv.vval = transmute(rawptr)(n)
 }
@@ -13521,8 +13520,7 @@ f_interrupt :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 
 // —— Batch 27r: funcs.c gettext/keytrans/libcall ——
 foreign _ {
-	@(link_name = "str2special_save")
-	str2special_save_e :: proc "c" (str: cstring, replace_spaces: bool, replace_others: TriState) -> cstring ---
+	// str2special_save now defined in message.odin — call directly.
 }
 
 E364_S :: "E364: Library call failed for \"%s()\""
@@ -13547,7 +13545,7 @@ f_keytrans :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 		return
 	}
 	escaped := vim_strsave_escape_ks(transmute(^u8)(([^]Typval_T)(argvars)[0].vval))
-	rettv.vval = transmute(rawptr)(str2special_save_e(transmute(cstring)(escaped), true, TriState.kTrue))
+	rettv.vval = transmute(rawptr)(str2special_save(transmute(cstring)(escaped), true, C.int(TriState.kTrue)))
 	xfree(rawptr(escaped))
 }
 
@@ -14291,8 +14289,7 @@ f_eventhandler :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) 
 
 // —— Batch 27x: funcs.c confirm() ——
 foreign _ {
-	@(link_name = "do_dialog")
-	do_dialog_e :: proc "c" (type: C.int, title: cstring, message: cstring, buttons: cstring, dfltbutton: C.int, textfield: cstring, ex_cmd: C.int) -> C.int ---
+	// do_dialog now defined in message.odin — call directly.
 }
 
 VIM_GENERIC_O :: 0
@@ -14350,7 +14347,7 @@ f_confirm :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 		buttons = cstring("&Ok")
 	}
 	if !error {
-		rettv.vval = transmute(rawptr)(C.longlong(do_dialog_e(type, nil, message, buttons, def, nil, 0)))
+		rettv.vval = transmute(rawptr)(C.longlong(do_dialog(type, nil, message, buttons, def, nil, false)))
 	}
 }
 
@@ -15815,8 +15812,7 @@ f_ctxsize :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 
 // —— Batch 27ar: funcs.c screen cluster ——
 foreign _ {
-	@(link_name = "msg_scroll_flush")
-	msg_scroll_flush_e :: proc "c" () ---
+	// msg_scroll_flush now defined in message.odin — call directly.
 	@(link_name = "ui_comp_get_grid_at_coord")
 	ui_comp_get_grid_at_coord_e :: proc "c" (row: C.int, col: C.int) -> ^ScreenGrid ---
 	// ui_current_row/col now defined in ui.odin — call directly.
@@ -15825,7 +15821,7 @@ foreign _ {
 // Grid adjust for screen*() (C-static in funcs.c).
 screenchar_adjust_o :: proc "c" (grid: ^rawptr, row: ^C.int, col: ^C.int) {
 	context = runtime.default_context()
-	msg_scroll_flush_e()
+	msg_scroll_flush()
 	g := ui_comp_get_grid_at_coord_e(row^, col^)
 	grid^ = rawptr(g)
 	row^ -= g.comp_row
@@ -16231,8 +16227,7 @@ foreign _ {
 	get_user_input_e :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, inputdialog: bool, secret: bool) ---
 	@(link_name = "prompt_for_input")
 	prompt_for_input_e :: proc "c" (prompt: cstring, hl_id: C.int, one_key: bool, mouse_used: ^bool) -> C.int ---
-	@(link_name = "verb_msg")
-	verb_msg_e :: proc "c" (s: cstring) -> C.int ---
+	// verb_msg now defined in message.odin — call directly.
 	@(link_name = "save_typeahead")
 	save_typeahead_e :: proc "c" (tp: rawptr) ---
 	@(link_name = "restore_typeahead")
@@ -16272,7 +16267,7 @@ f_inputlist :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 	msg_row = Rows - 1
 	lines_left = Rows
 	msg_scroll = 1
-	msg_clr_eos_r()
+	msg_clr_eos()
 	l := rawptr(([^]Typval_T)(argvars)[0].vval)
 	li := tv_list_first_o(l)
 	for li != nil {
@@ -16298,7 +16293,7 @@ f_inputrestore :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) 
 		ga_userinput_g.ga_len -= 1
 		restore_typeahead_e(rawptr(uintptr(ga_userinput_g.ga_data) + uintptr(ga_userinput_g.ga_len) * TASAVE_SIZE))
 	} else if p_verbose > 1 {
-		verb_msg_e(cstring(E_INRESTORE_S))
+		verb_msg(cstring(E_INRESTORE_S))
 		rettv.vval = transmute(rawptr)(C.longlong(1))
 	}
 }
@@ -19760,7 +19755,7 @@ convert_one_value_string_o :: proc "c" (gap: ^Garray, mpstack: ^MPConvStack_O, c
 	} else if tv.v_type == VAR_FUNC {
 		s := transmute(cstring)(tv.vval)
 		if s == nil {
-			_internal_error(cstring("string(): NULL function name"))
+			internal_error(cstring("string(): NULL function name"))
 			ga_concat_len(gap, cstring("function(NULL"), 13)
 		} else {
 			ga_concat_len(gap, cstring("function("), 9)
@@ -19778,7 +19773,7 @@ convert_one_value_string_o :: proc "c" (gap: ^Garray, mpstack: ^MPConvStack_O, c
 			prefix = cstring("g:")
 		}
 		if fun == nil {
-			_internal_error(cstring("string(): NULL function name"))
+			internal_error(cstring("string(): NULL function name"))
 			ga_concat_len(gap, cstring("function(NULL"), 13)
 		} else {
 			ga_concat_len(gap, cstring("function("), 9)
@@ -23081,7 +23076,7 @@ eval_string_o :: proc "c" (arg: ^cstring, rettv: ^Typval_T, evaluate: bool, inte
 				if added != 0 {
 					e += uintptr(added)
 					if e >= uintptr(rawptr(transmute(^u8)(rettv.vval))) + uintptr(length) {
-						iemsg_r(cstring("eval_string() used more space than allocated"))
+						iemsg(cstring("eval_string() used more space than allocated"))
 					}
 				} else {
 					pc2 := transmute(cstring)(p)
@@ -24881,7 +24876,7 @@ var_item_copy :: proc "c" (conv: rawptr, from: ^Typval_T, to: ^Typval_T, deep: b
 			ret = FAIL_E
 		}
 	} else {
-		_internal_error(cstring("var_item_copy(UNKNOWN)"))
+		internal_error(cstring("var_item_copy(UNKNOWN)"))
 		ret = FAIL_E
 	}
 	var_item_copy_recurse_g -= 1
@@ -25010,10 +25005,10 @@ get_system_output_as_rettv_o :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, 
 	}
 	if p_verbose > 3 {
 		cmdstr := shell_argv_to_str(argv)
-		verbose_enter_scroll_e()
+		verbose_enter_scroll()
 		smsg(0, cstring("Executing command: \"%s\""), cmdstr)
 		msg_puts(cstring("\n\n"))
-		verbose_leave_scroll_e()
+		verbose_leave_scroll()
 		xfree(rawptr(transmute(^u8)(cmdstr)))
 	}
 	wait_time: proftime_T = 0
@@ -25067,10 +25062,8 @@ f_systemlist :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 
 // —— Batch 28ap: eval.c ex_echo cluster (exports + weak) ——
 foreign _ {
-	@(link_name = "msg_clr_eos")
-	msg_clr_eos_e :: proc "c" () ---
-	@(link_name = "emsg_multiline")
-	emsg_multiline_e :: proc "c" (str: cstring, kind: cstring, hl_id: C.int, hist: bool) ---
+	// msg_clr_eos now defined in message.odin — call directly.
+	// emsg_multiline now defined in message.odin — call directly.
 	@(link_name = "force_abort")
 	force_abort_g: bool
 }
@@ -25136,7 +25129,7 @@ ex_echo :: proc "c" (eap: rawptr) {
 					msg_start()
 				}
 			} else if cmdidx == CMD_ECHO_O {
-				msg_puts_hl_r(cstring(" "), echo_hl_id_g, false)
+				msg_puts_hl(cstring(" "), echo_hl_id_g, false)
 			}
 			tofree := encode_tv2echo(&rettv, nil)
 			msg_multiline(String{data = transmute(cstring)(tofree), size = libc.strlen(transmute(cstring)(tofree))}, echo_hl_id_g, true, false, &need_clear)
@@ -25154,9 +25147,9 @@ ex_echo :: proc "c" (eap: rawptr) {
 		cmdidx := (^C.int)(uintptr(eap) + EXARG_CMDIDX_OFF)^
 		eap_arg := (^cstring)(uintptr(eap) + EXARG_ARG_OFF)^
 		if ui_has(K_UIMESSAGES_O) && (([^]u8)(eap_arg)[0] == 0 || ([^]u8)(eap_arg)[0] == '|' || ([^]u8)(eap_arg)[0] == '\n') {
-			msg_puts_len_e(cstring(""), 0, 0, false)
+			msg_puts_len(cstring(""), 0, 0, false)
 		} else if need_clear {
-			msg_clr_eos_e()
+			msg_clr_eos()
 		}
 		if cmdidx == CMD_ECHO_O {
 			msg_end()
@@ -25232,11 +25225,11 @@ ex_execute :: proc "c" (eap: rawptr) {
 		if cmdidx == CMD_ECHOMSG_O {
 			msg_ext_no_fast()
 			msg_ext_set_kind(cstring("echomsg"))
-			msg_msg(transmute(cstring)(ga.ga_data), echo_hl_id_g)
+			msg(transmute(cstring)(ga.ga_data), echo_hl_id_g)
 		} else if cmdidx == CMD_ECHOERR_O {
 			save_did_emsg := did_emsg_g()
 			msg_ext_no_fast()
-			emsg_multiline_e(transmute(cstring)(ga.ga_data), cstring("echoerr"), HLF_E_O, true)
+			emsg_multiline(transmute(cstring)(ga.ga_data), cstring("echoerr"), HLF_E_O, true)
 			if !force_abort_g {
 				did_emsg_set(save_did_emsg != 0)
 			}
@@ -28929,7 +28922,7 @@ garbage_collect :: proc "c" (testing: bool) -> bool {
 		did_free = free_unref_items_o(copyID)
 		did_free = free_unref_funccal(copyID, testing) || did_free
 	} else if p_verbose > 0 {
-		verb_msg_r(cstring("Not enough memory to set references, garbage collection aborted!"))
+		abort = verb_msg(cstring("Not enough memory to set references, garbage collection aborted!")) != 0
 	}
 	return did_free
 }

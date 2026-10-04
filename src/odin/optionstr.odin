@@ -1434,12 +1434,8 @@ W_MINSCWIDTH_OFF :: 684
 foreign _ {
 	@(link_name = "p_vfile")
 	p_vfile_g: ^u8
-	@(link_name = "verbose_stop")
-	verbose_stop_r :: proc "c" () ---
-	@(link_name = "verbose_open")
-	verbose_open_r :: proc "c" () -> C.int ---
-	@(link_name = "messagesopt_changed")
-	messagesopt_changed_r :: proc "c" () -> C.int ---
+	// verbose_stop/open now defined in message.odin — call directly.
+	// messagesopt_changed now defined in message.odin — call directly.
 }
 // check_colorcolumn_r/buf_init_chartab/set_iminsert_global/set_imsearch_global/
 // keymap_init/valid_filetype_o/secure/W_NRWIDTH_OFF reused from sibling files.
@@ -1498,8 +1494,8 @@ did_set_iskeyword :: proc "c"(args: ^optset_T) -> cstring {
 
 @(export)
 did_set_verbosefile :: proc "c"(args: ^optset_T) -> cstring {
-	verbose_stop_r()
-	if b_at(p_vfile_g, 0) != 0 && verbose_open_r() == FAIL_S {
+	verbose_stop()
+	if b_at(p_vfile_g, 0) != 0 && verbose_open() == FAIL_S {
 		return cstring("E474: Invalid argument")
 	}
 	return nil
@@ -1507,7 +1503,7 @@ did_set_verbosefile :: proc "c"(args: ^optset_T) -> cstring {
 
 @(export)
 did_set_messagesopt :: proc "c"(args: ^optset_T) -> cstring {
-	if messagesopt_changed_r() == FAIL_S {
+	if messagesopt_changed() == FAIL_S {
 		return cstring("E474: Invalid argument")
 	}
 	return nil

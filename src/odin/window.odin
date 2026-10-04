@@ -1724,7 +1724,7 @@ win_split_ins :: proc "c"(size: C.int, flags: C.int, new_wp: rawptr, dir: C.int,
 	if need_status != 0 {
 		msg_row = Rows - 1
 		msg_col = sc_col
-		msg_clr_eos_force_r() // Old command/ruler may still be there
+		msg_clr_eos_force() // Old command/ruler may still be there
 		comp_col()
 		msg_row = Rows - 1
 		msg_col = 0 // put position back at start of line
@@ -1847,8 +1847,7 @@ foreign _ {
 	@(link_name = "ui_comp_remove_grid")
 	ui_comp_remove_grid_r :: proc "c" (grid: rawptr) ---
  	// ui_call_win_hide now defined in ui.odin — call directly.
- 	@(link_name = "msg_clr_eos_force")
-	msg_clr_eos_force_r :: proc "c" () ---
+ 	// msg_clr_eos_force now defined in message.odin — call directly.
  	// changed_line_abv_curs now defined in move.odin — call directly.
  	// get_real_state is an Odin export (state.odin) — call directly.
  	// do_autochdir now defined in buffer.odin — call directly.
@@ -3596,7 +3595,7 @@ win_close_othertab :: proc "c"(win: rawptr, free_buf: C.int, tp: rawptr, force: 
 					ptp = (^rawptr)(uintptr(ptp) + TP_NEXT_OFF)^
 				}
 				if ptp == nil {
-					_internal_error(cstring("win_close_othertab()"))
+					internal_error(cstring("win_close_othertab()"))
 					return false
 				}
 				(^rawptr)(uintptr(ptp) + TP_NEXT_OFF)^ = (^rawptr)(uintptr(tp) + TP_NEXT_OFF)^
@@ -4697,7 +4696,7 @@ close_others :: proc "c"(message: C.int, forceit: C.int, ignore_pinned: bool) {
 	}
 	if one_window(firstwin, nil) && !(^bool)(uintptr(lastwin_g) + W_FLOATING_OFF)^ {
 		if message != 0 && !autocmd_busy_g {
-			msg_msg(cstring(M_ONLYONE_S), 0)
+			msg(cstring(M_ONLYONE_S), 0)
 		}
 		return
 	}
@@ -6044,7 +6043,7 @@ win_move_after :: proc "c"(win1: rawptr, win2: rawptr) {
 	if (^rawptr)(uintptr(win2) + W_NEXT_OFF)^ != win1 {
 		if (^rawptr)(uintptr((^rawptr)(uintptr(win1) + W_FRAME_OFF)^) + FR_PARENT_OFF)^ !=
 			(^rawptr)(uintptr((^rawptr)(uintptr(win2) + W_FRAME_OFF)^) + FR_PARENT_OFF)^ {
-			iemsg_r(cstring("INTERNAL: trying to move a window into another frame"))
+			iemsg(cstring("INTERNAL: trying to move a window into another frame"))
 			return
 		}
 		// may need to move the status line, window bar, horizontal or
@@ -7241,7 +7240,7 @@ do_window :: proc "c"(nchar: C.int, prenum_in: C.int, xchar_in: C.int) {
 	// move window to new tab page
 	case 'T':
 		if one_window(curwin, nil) {
-			msg_msg(cstring(M_ONLYONE_S), 0)
+			msg(cstring(M_ONLYONE_S), 0)
 		} else {
 			oldtab := curtab
 			// First create a new tab with the window, then go back to

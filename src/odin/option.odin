@@ -153,8 +153,10 @@ foreign _ {
 	api_free_string_r :: proc "c" (s: NvimString) ---
 	@(link_name = "empty_string_option")
 	_empty_string_arr: [1]u8
-	// curbufIsChanged is an Odin proc in undo.odin — reuse directly.	@(link_name = "copy_string")
- 	copy_string_o :: proc "c" (s: NvimString, arena: rawptr) -> NvimString ---
+	// curbufIsChanged is an Odin proc in undo.odin — reuse directly.
+	// NOTE: copy_string_o decl intentionally has NO link_name (dup link_name with
+	// register.odin's copy_string crashes lb_emit_conv). Do NOT call it; use xmemdupz.
+	copy_string_o_unused :: proc "c" (s: NvimString, arena: rawptr) -> NvimString ---
 	// changed_window_setting now defined in move.odin — call directly.
 	@(link_name = "p_wmh")
 	p_wmh_opt: C.longlong
@@ -1430,10 +1432,8 @@ foreign _ {
 	@(link_name = "p_sps")
 	p_sps_g: ^u8
 	// vim_str2nr is an Odin export (charset.odin) — call directly.
-	@(link_name = "msg_advance")
-	msg_advance_r :: proc "c" (col: C.int) ---
-	@(link_name = "message_filtered")
-	message_filtered_r :: proc "c" (msg: cstring) -> bool ---
+	// msg_advance now defined in message.odin — call directly.
+	// message_filtered now defined in message.odin — call directly.
 	@(link_name = "spell_check_msm")
 	spell_check_msm_r :: proc "c" () -> C.int ---
 	@(link_name = "spell_check_sps")
@@ -2295,21 +2295,21 @@ showoneopt_o :: proc "c"(opt: ^vimoption_T, opt_flags: C.int) {
 		is_b_changed := varp == transmute(rawptr)(uintptr(curbuf) + BUF_CHANGED_OFF)
 		not_set := is_b_changed ? !curbufIsChanged() : (^C.int)(varp)^ == 0
 		if not_set {
-			msg_puts_s(cstring("no"))
+			msg_puts(cstring("no"))
 		} else if (^C.int)(varp)^ < 0 {
-			msg_puts_s(cstring("--"))
+			msg_puts(cstring("--"))
 		} else {
-			msg_puts_s(cstring("  "))
+			msg_puts(cstring("  "))
 		}
 	} else {
-		msg_puts_s(cstring("  "))
+		msg_puts(cstring("  "))
 	}
-	msg_puts_s(transmute(cstring)(opt.fullname))
+	msg_puts(transmute(cstring)(opt.fullname))
 	if !option_has_type(opt_idx, kOptValTypeBoolean) {
 		msg_putchar('=')
 		option_value2string_o(opt, opt_flags)
 		if b_at(&name_buff[0], 0) != 0 {
-			_ = msg_outtrans_s(transmute(cstring)(&name_buff[0]), 0, false)
+			_ = msg_outtrans(transmute(cstring)(&name_buff[0]), 0, false)
 		}
 	}
 
@@ -2325,11 +2325,11 @@ showoptions_o :: proc "c"(all: bool, opt_flags: C.int) {
 
 	msg_ext_set_kind(cstring("list_cmd"))
 	if (opt_flags & OPT_GLOBAL_S) != 0 {
-		msg_puts_title_s("--- Global option values ---")
+		msg_puts_title("--- Global option values ---")
 	} else if (opt_flags & OPT_LOCAL_S) != 0 {
-		msg_puts_title_s("--- Local option values ---")
+		msg_puts_title("--- Local option values ---")
 	} else {
-		msg_puts_title_s("--- Options ---")
+		msg_puts_title("--- Options ---")
 	}
 
 	for run := C.int(1); run <= 2 && !got_int; run += 1 {

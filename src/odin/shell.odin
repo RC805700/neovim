@@ -118,36 +118,20 @@ foreign _ {
 	utf8len_tab_zero: [256]u8
 
 	// message
-	@(link_name = "msg_puts")
-	msg_puts :: proc "c" (s: cstring) ---
-	@(link_name = "msg_putchar")
-	msg_putchar :: proc "c" (c: c.int) ---
-	@(link_name = "msg_start")
-	msg_start :: proc "c" () ---
-	@(link_name = "msg_end")
-	msg_end :: proc "c" () -> bool ---
-	@(link_name = "msg_outtrans")
-	msg_outtrans :: proc "c" (str: cstring, hl_id: c.int, hist: bool) -> c.int ---
-	@(link_name = "msg_outnum")
-	msg_outnum :: proc "c" (n: c.int) ---
-	@(link_name = "msg_sb_eol")
-	msg_sb_eol :: proc "c" () ---
-	@(link_name = "msg_ext_set_kind")
-	msg_ext_set_kind :: proc "c" (msg_kind: cstring) ---
-	@(link_name = "msg_ext_set_append")
-	msg_ext_set_append :: proc "c" (append: bool) ---
-	@(link_name = "msg_ext_no_fast")
-	msg_ext_no_fast :: proc "c" () ---
-	@(link_name = "msg_multiline")
-	msg_multiline :: proc "c" (str: String, hl_id: c.int, check_int: bool, hist: bool, need_clear: ^bool) ---
+	// msg_puts now defined in message.odin — call directly.
+	// msg_putchar/msg_outnum now defined in message.odin — call directly.
+	// msg_start/end now defined in message.odin — call directly.
+	// msg_outtrans now defined in message.odin — call directly.
+	// msg_sb_eol now defined in message.odin — call directly.
+	// msg_ext_set_kind/append/no_fast now defined in message.odin — call directly.
+	// msg_multiline now defined in message.odin — call directly.
 	@(link_name = "msg_schedule_semsg")
 	msg_schedule_semsg :: proc "c" (fmt: cstring, #c_vararg args: ..any) ---
 	@(link_name = "smsg")
 	smsg :: proc "c" (hl_id: c.int, s: cstring, #c_vararg args: ..any) ---
 	@(link_name = "semsg")
 	semsg :: proc "c" (fmt: cstring, #c_vararg args: ..any) -> bool ---
-	@(link_name = "wait_return")
-	wait_return :: proc "c" (redraw: c.int) ---
+	// wait_return now defined in message.odin — call directly.
 
 	// ui
 	// ui_flush/ui_has now defined in ui.odin — call directly.
@@ -176,10 +160,7 @@ foreign _ {
 	tag_freematch :: proc "c" () ---
 	@(link_name = "restore_env_var")
 	restore_env_var :: proc "c" (name: cstring, old_value: cstring, must_free: bool) ---
-	@(link_name = "verbose_enter")
-	verbose_enter :: proc "c" () ---
-	@(link_name = "verbose_leave")
-	verbose_leave :: proc "c" () ---
+	// verbose_enter/leave now defined in message.odin — call directly.
 	// prof_child_enter/exit — PORTED (profile.odin).
 	@(link_name = "uv_strerror")
 	os_strerror :: proc "c" (err: c.int) -> cstring ---
@@ -526,7 +507,7 @@ os_expand_wildcards :: proc "c" (num_pat: c.int, pat: ^^u8, num_file: ^c.int, fi
 		if flags & EW_SILENT == 0 {
 			msg_putchar('\n')
 			cmdline_row = Rows - 1
-			msg_msg(GT(cstring("E79: Cannot expand wildcards")), 0)
+			msg(GT(cstring("E79: Cannot expand wildcards")), 0)
 			msg_start()
 		}
 		if shell_style == STYLE_BT {
@@ -538,7 +519,7 @@ os_expand_wildcards :: proc "c" (num_pat: c.int, pat: ^^u8, num_file: ^c.int, fi
 	fd := os_fopen(transmute(cstring)(tempname), READBIN)
 	if fd == nil {
 		if flags & EW_SILENT == 0 {
-			msg_msg(GT(cstring("E79: Cannot expand wildcards")), 0)
+			msg(GT(cstring("E79: Cannot expand wildcards")), 0)
 			msg_start()
 		}
 		xfree(transmute(rawptr)(tempname))

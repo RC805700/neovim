@@ -110,8 +110,7 @@ LineGetter :: proc "c" (C.int, rawptr, C.int, bool) -> ^u8
 // FFI to C-only helpers (not yet ported)
 // ---------------------------------------------------------------------------
 foreign _ {
-	@(link_name = "msg_advance")
-	msg_advance :: proc "c" (col: C.int) ---
+	// msg_advance now defined in message.odin — call directly.
 
 	@(link_name = "plain_vgetc")
 	plain_vgetc :: proc "c" () -> C.int ---

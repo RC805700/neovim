@@ -2497,7 +2497,7 @@ spell_move_to :: proc "c"(wp: rawptr, dir: C.int, behaviour: C.int, curline: boo
 				lnum = buf_ml_line_count_r(buf_of_win(wp))
 				wrapped = true
 				if !shortmess(SHM_SEARCH) {
-					give_warning_s(cstring("search hit BOTTOM, continuing at TOP"), true, false)
+					give_warning(cstring("search hit BOTTOM, continuing at TOP"), true, false)
 				}
 			}
 			capcol = -1
@@ -2510,7 +2510,7 @@ spell_move_to :: proc "c"(wp: rawptr, dir: C.int, behaviour: C.int, curline: boo
 				lnum = 1
 				wrapped = true
 				if !shortmess(SHM_SEARCH) {
-					give_warning_s(cstring("search hit TOP, continuing at BOTTOM"), true, false)
+					give_warning(cstring("search hit TOP, continuing at BOTTOM"), true, false)
 				}
 			}
 
@@ -3329,14 +3329,14 @@ ex_spellinfo :: proc "c"(eap: rawptr) {
 	for lpi := C.int(0); lpi < langp.ga_len && !got_int; lpi += 1 {
 		lp := langp_entry(langp, lpi)
 		slang := (^Slang_T)(lp.lp_slang)
-		msg_puts_s(cstring("file: "))
-		msg_puts_s(transmute(cstring)(slang.sl_fname))
+		msg_puts(cstring("file: "))
+		msg_puts(transmute(cstring)(slang.sl_fname))
 		p := slang.sl_info
 		if lpi < langp.ga_len || p != nil {
 			msg_putchar('\n')
 		}
 		if p != nil {
-			msg_puts_s(transmute(cstring)(p))
+			msg_puts(transmute(cstring)(p))
 			if lpi < langp.ga_len - 1 {
 				msg_putchar('\n')
 			}

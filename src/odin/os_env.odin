@@ -183,8 +183,7 @@ foreign _ {
 	_ExpandOne :: proc(xp: rawptr, str: cstring, orig: cstring, options: c.int, mode: c.int) -> cstring ---
 	@(link_name = "path_is_absolute")
 	_path_is_absolute :: proc(fname: cstring) -> bool ---
-	@(link_name = "internal_error")
-	_internal_error :: proc(w: cstring) ---
+	// internal_error now defined in message.odin — call directly.
 	@(link_name = "striequal")
 	_striequal :: proc(a: cstring, b: cstring) -> bool ---
 
@@ -650,7 +649,7 @@ get_env_name :: proc "c" (xp: ^expand_T, idx: c.int) -> cstring {
 os_setenv_append_path :: proc "c" (fname: cstring) -> bool {
 	context = runtime.default_context()
 	if !_path_is_absolute(fname) {
-		_internal_error("os_setenv_append_path()")
+		internal_error("os_setenv_append_path()")
 		return false
 	}
 	tail := _path_tail_with_sep(fname)

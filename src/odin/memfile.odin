@@ -334,7 +334,7 @@ mf_put :: proc "c" (mfp: ^Memfile_O, hp: ^Bhdr_O, dirty: bool, infile: bool) {
 	context = runtime.default_context()
 	flags := hp.flags
 	if (flags & BH_LOCKED_O) == 0 {
-		iemsg_r(cstring(E_BLOCK_NOT_LOCKED_S))
+		iemsg(cstring(E_BLOCK_NOT_LOCKED_S))
 	}
 	flags &= ~u32(BH_LOCKED_O)
 	if dirty {

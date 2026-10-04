@@ -98,7 +98,7 @@ func_unref :: proc "c" (name: cstring) {
 	if fp == nil {
 		nb := ([^]u8)(name)
 		if nb[0] >= '0' && nb[0] <= '9' {
-			_internal_error(cstring("func_unref()"))
+			internal_error(cstring("func_unref()"))
 			libc.abort()
 		}
 	}
@@ -133,7 +133,7 @@ func_ref :: proc "c" (name: cstring) {
 	} else {
 		nb := ([^]u8)(name)
 		if nb[0] >= '0' && nb[0] <= '9' {
-			_internal_error(cstring("func_ref()"))
+			internal_error(cstring("func_ref()"))
 		}
 	}
 }
@@ -1113,7 +1113,7 @@ save_funccal :: proc "c" (entry: rawptr) {
 restore_funccal :: proc "c" () {
 	context = runtime.default_context()
 	if funccal_stack == nil {
-		iemsg_r(cstring("INTERNAL: restore_funccal()"))
+		iemsg(cstring("INTERNAL: restore_funccal()"))
 	} else {
 		current_funccal = (^rawptr)(uintptr(funccal_stack) + 0)^
 		funccal_stack = (^rawptr)(uintptr(funccal_stack) + 8)^
@@ -1138,10 +1138,7 @@ foreign _ {
 	p_mfd_g: C.longlong
 	@(link_name = "trylevel")
 	trylevel_g: C.int
-	@(link_name = "verbose_enter_scroll")
-	verbose_enter_scroll_e :: proc "c" () ---
-	@(link_name = "verbose_leave_scroll")
-	verbose_leave_scroll_e :: proc "c" () ---
+	// verbose_enter/leave_scroll now defined in message.odin — call directly.
 	@(link_name = "trunc_string")
 	trunc_string_e :: proc "c" (s: cstring, buf: ^u8, room: C.int, buflen: C.int) ---
 	// has_profiling — PORTED (debugger.odin).
@@ -1347,7 +1344,7 @@ call_user_func :: proc "c" (fp: rawptr, argcount: C.int, argvars: ^Typval_T, ret
 	estack_push_ufunc_e(fp, 1)
 	if p_verbose >= 12 {
 		no_wait_return += 1
-		verbose_enter_scroll_e()
+		verbose_enter_scroll()
 		smsg(0, cstring("calling %s"), sourcing_name_str_o())
 		if p_verbose >= 14 {
 			msg_puts(cstring("("))
@@ -1376,7 +1373,7 @@ call_user_func :: proc "c" (fp: rawptr, argcount: C.int, argvars: ^Typval_T, ret
 			msg_puts(cstring(")"))
 		}
 		msg_puts(cstring("\n"))
-		verbose_leave_scroll_e()
+		verbose_leave_scroll()
 		no_wait_return -= 1
 	}
 	do_profiling_yes := do_profiling == PROF_YES
@@ -1439,7 +1436,7 @@ call_user_func :: proc "c" (fp: rawptr, argcount: C.int, argvars: ^Typval_T, ret
 	}
 	if p_verbose >= 12 {
 		no_wait_return += 1
-		verbose_enter_scroll_e()
+		verbose_enter_scroll()
 		if aborting_r() {
 			smsg(0, cstring("%s aborted"), sourcing_name_str_o())
 		} else if (^C.int)(uintptr((^rawptr)(uintptr(fc) + FC_RETTV_OFF_O)^) + 0)^ == VAR_NUMBER {
@@ -1462,7 +1459,7 @@ call_user_func :: proc "c" (fp: rawptr, argcount: C.int, argvars: ^Typval_T, ret
 			}
 		}
 		msg_puts(cstring("\n"))
-		verbose_leave_scroll_e()
+		verbose_leave_scroll()
 		no_wait_return -= 1
 	}
 	// Balance estack_push_ufunc_e() above (C pops before restoring sctx).
@@ -1476,10 +1473,10 @@ call_user_func :: proc "c" (fp: rawptr, argcount: C.int, argvars: ^Typval_T, ret
 	}
 	if p_verbose >= 12 && sourcing_name_str_o() != nil {
 		no_wait_return += 1
-		verbose_enter_scroll_e()
+		verbose_enter_scroll()
 		smsg(0, cstring("continuing in %s"), sourcing_name_str_o())
 		msg_puts(cstring("\n"))
-		verbose_leave_scroll_e()
+		verbose_leave_scroll()
 		no_wait_return -= 1
 	}
 	did_emsg_set(did_emsg_g() != 0 || save_did_emsg != 0)
@@ -3378,7 +3375,7 @@ list_func_head_o :: proc "c" (fp: rawptr, indent: bool, force: bool) -> C.int {
 	if ((^C.int)(uintptr(fp) + UF_FLAGS_OFF_O)^ & FC_CLOSURE_O) != 0 {
 		msg_puts(cstring(" closure"))
 	}
-	msg_clr_eos_r()
+	msg_clr_eos()
 	if p_verbose > 0 {
 		last_set_msg((^sctx_T)(uintptr(fp) + UF_SCRIPT_CTX_OFF_O)^)
 	}
@@ -3492,7 +3489,7 @@ list_one_function_o :: proc "c" (eap: rawptr, name: cstring, p: cstring) -> rawp
 				break
 			}
 		}
-		msg_prt_line_r(transmute(^u8)(line), false)
+		msg_prt_line(transmute(cstring)(transmute(^u8)(line)), false)
 		line_breakcheck()
 		j += 1
 	}

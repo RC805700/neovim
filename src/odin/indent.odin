@@ -443,8 +443,7 @@ RE_AUTO_O :: 8
 RE_STRICT_O :: 4
 
 foreign _ {
-	@(link_name = "msg_progress")
-	msg_progress_e :: proc "c" (s: cstring, id: cstring, status: cstring, hl_id: C.int, hist: bool, trunc: bool) -> cstring ---
+	// msg_progress now defined in message.odin — call directly.
 }
 
 @(export)
@@ -1116,7 +1115,7 @@ op_reindent :: proc "c" (oap: rawptr, how: Indenter_T) {
 				libc.snprintf(&IObuff[0], C.size_t(IOSIZE_O), cstring("%lld lines to indent... "), C.longlong(i))
 				save_lnum := (^C.int)(uintptr(curwin) + W_CURSOR_OFF)^
 				(^C.int)(uintptr(curwin) + W_CURSOR_OFF)^ = start_lnum
-				msg_progress_e(transmute(cstring)(&IObuff[0]), cstring("nvim.indent"), cstring("running"), 0, true, false)
+				msg_progress(transmute(^u8)(&IObuff[0]), cstring("nvim.indent"), cstring("running"), 0, true, false)
 				(^C.int)(uintptr(curwin) + W_CURSOR_OFF)^ = save_lnum
 			}
 			lisp_indent := how == get_lisp_indent
@@ -1158,7 +1157,7 @@ op_reindent :: proc "c" (oap: rawptr, how: Indenter_T) {
 			fmt = cstring("%lld line indented ")
 		}
 		libc.snprintf(&IObuff[0], C.size_t(IOSIZE_O), fmt, C.longlong(n))
-		msg_progress_e(transmute(cstring)(&IObuff[0]), cstring("nvim.indent"), cstring("success"), 0, true, false)
+		msg_progress(transmute(^u8)(&IObuff[0]), cstring("nvim.indent"), cstring("success"), 0, true, false)
 	}
 	if (cmdmod_cmod_flags & CMOD_LOCKMARKS) == 0 {
 		(^Pos_T)(uintptr(curbuf) + B_OP_START)^ = (^Pos_T)(uintptr(oap) + OAP_START)^

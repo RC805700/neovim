@@ -670,10 +670,7 @@ SHM_RECORDING_O :: 'q' // no recording message
 SHM_COMPLETIONMENU_O :: 'c' // completion menu messages
 
 foreign _ {
-	@(link_name = "msg_ext_ui_flush")
-	msg_ext_ui_flush_r :: proc "c"() ---
-	@(link_name = "msg_ext_flush_showmode")
-	msg_ext_flush_showmode_r :: proc "c"() ---
+	// msg_ext_ui_flush/flush_showmode now defined in message.odin — call directly.
 	@(link_name = "p_smd")
 	p_smd_g: C.int
 	@(link_name = "p_paste")
@@ -688,8 +685,7 @@ foreign _ {
 	edit_submode_highl_g: C.int
 	@(link_name = "VIsual_select")
 	VIsual_select_g: bool
-	@(link_name = "msg_clr_cmdline")
-	msg_clr_cmdline_r :: proc "c"() ---
+	// msg_clr_cmdline now defined in message.odin — call directly.
 	@(link_name = "clear_showcmd")
 	clear_showcmd_r :: proc "c"() ---
 	@(link_name = "redraw_ruler")
@@ -779,13 +775,13 @@ clearmode :: proc "c"() {
 	save_msg_row := msg_row
 	save_msg_col := msg_col
 
-	msg_ext_ui_flush_r()
+	msg_ext_ui_flush()
 	msg_pos_mode_o()
 	if reg_recording != 0 {
 		recording_mode_o(HLF_CM_O)
 	}
-	msg_clr_eos_r()
-	msg_ext_flush_showmode_r()
+	msg_clr_eos()
+	msg_ext_flush_showmode()
 
 	msg_col = save_msg_col
 	msg_row = save_msg_row
@@ -797,10 +793,10 @@ recording_mode_o :: proc "c"(hl_id: C.int) {
 		return
 	}
 
-	msg_puts_hl_r(gettext("recording"), hl_id, false)
+	msg_puts_hl(gettext("recording"), hl_id, false)
 	s: [4]u8
 	libc.snprintf(&s[0], 4, " @%c", C.int(reg_recording))
-	msg_puts_hl_r(cstring(&s[0]), hl_id, false)
+	msg_puts_hl(cstring(&s[0]), hl_id, false)
 }
 
 // ── Batch 5: showmode ─────────────────────────────────────────────────────────
@@ -813,7 +809,7 @@ showmode :: proc "c"() -> C.int {
 	length: C.int = 0
 
 	// Don't make non-flushed message part of the showmode.
-	msg_ext_ui_flush_r()
+	msg_ext_ui_flush()
 
 	msg_grid_validate_r()
 
@@ -832,12 +828,12 @@ showmode :: proc "c"() -> C.int {
 		nwr_save := need_wait_return_g
 
 		// Wait a bit before overwriting an important message.
-		msg_check_for_delay_r(false)
+		msg_check_for_delay(false)
 
 		// If the cmdline is more than one line high, erase top lines.
 		need_clear := clear_cmdline_g
 		if clear_cmdline_g && cmdline_row < Rows - 1 {
-			msg_clr_cmdline_r() // resets clear_cmdline
+			msg_clr_cmdline() // resets clear_cmdline
 		}
 
 		// Position on the last line, column 0.
@@ -850,7 +846,7 @@ showmode :: proc "c"() -> C.int {
 		lines_left = 0
 
 		if do_mode {
-			msg_puts_hl_r("--", hl_id, false)
+			msg_puts_hl("--", hl_id, false)
 			// CTRL-X in Insert mode.
 			if edit_submode_g != nil && !shortmess(SHM_COMPLETIONMENU_O) {
 				// Long messages: avoid wrap in a narrow window.
@@ -868,53 +864,53 @@ showmode :: proc "c"() -> C.int {
 					}
 					if length - vim_strsize(transmute(cstring)(edit_submode_g)) > 0 {
 						if edit_submode_pre_g != nil {
-							msg_puts_hl_r(transmute(cstring)(edit_submode_pre_g), hl_id, false)
+							msg_puts_hl(transmute(cstring)(edit_submode_pre_g), hl_id, false)
 						}
-						msg_puts_hl_r(transmute(cstring)(edit_submode_g), hl_id, false)
+						msg_puts_hl(transmute(cstring)(edit_submode_g), hl_id, false)
 					}
 					if edit_submode_extra_g != nil {
-						msg_puts_hl_r(" ", hl_id, false) // space in between
+						msg_puts_hl(" ", hl_id, false) // space in between
 						sub_id := hl_id
 						if edit_submode_highl_g < HLF_COUNT_O {
 							sub_id = edit_submode_highl_g
 						}
-						msg_puts_hl_r(transmute(cstring)(edit_submode_extra_g), sub_id, false)
+						msg_puts_hl(transmute(cstring)(edit_submode_extra_g), sub_id, false)
 					}
 				}
 			} else {
 				if State & MODE_TERMINAL_S != 0 {
-					msg_puts_hl_r(gettext(" TERMINAL"), hl_id, false)
+					msg_puts_hl(gettext(" TERMINAL"), hl_id, false)
 				} else if State & VREPLACE_FLAG_O != 0 {
-					msg_puts_hl_r(gettext(" VREPLACE"), hl_id, false)
+					msg_puts_hl(gettext(" VREPLACE"), hl_id, false)
 				} else if State & REPLACE_FLAG != 0 {
-					msg_puts_hl_r(gettext(" REPLACE"), hl_id, false)
+					msg_puts_hl(gettext(" REPLACE"), hl_id, false)
 				} else if State & MODE_INSERT != 0 {
 					if p_ri != 0 {
-						msg_puts_hl_r(gettext(" REVERSE"), hl_id, false)
+						msg_puts_hl(gettext(" REVERSE"), hl_id, false)
 					}
-					msg_puts_hl_r(gettext(" INSERT"), hl_id, false)
+					msg_puts_hl(gettext(" INSERT"), hl_id, false)
 				} else if restart_edit == 'I' || restart_edit == 'i' ||
 					restart_edit == 'a' || restart_edit == 'A' {
 					if (^rawptr)(uintptr(curbuf) + B_TERMINAL_OFF)^ != nil {
-						msg_puts_hl_r(gettext(" (terminal)"), hl_id, false)
+						msg_puts_hl(gettext(" (terminal)"), hl_id, false)
 					} else {
-						msg_puts_hl_r(gettext(" (insert)"), hl_id, false)
+						msg_puts_hl(gettext(" (insert)"), hl_id, false)
 					}
 				} else if restart_edit == 'R' {
-					msg_puts_hl_r(gettext(" (replace)"), hl_id, false)
+					msg_puts_hl(gettext(" (replace)"), hl_id, false)
 				} else if restart_edit == 'V' {
-					msg_puts_hl_r(gettext(" (vreplace)"), hl_id, false)
+					msg_puts_hl(gettext(" (vreplace)"), hl_id, false)
 				}
 				if State & MODE_LANGMAP != 0 {
 					if (^C.int)(uintptr(curwin) + W_P_ARAB_OFF)^ != 0 {
-						msg_puts_hl_r(gettext(" Arabic"), hl_id, false)
+						msg_puts_hl(gettext(" Arabic"), hl_id, false)
 					} else if get_keymap_str(curwin, transmute(^u8)cstring(" (%s)"),
 						&name_buff[0], MAXPATHL) > 0 {
-						msg_puts_hl_r(cstring(&name_buff[0]), hl_id, false)
+						msg_puts_hl(cstring(&name_buff[0]), hl_id, false)
 					}
 				}
 				if (State & MODE_INSERT) != 0 && p_paste_g != 0 {
-					msg_puts_hl_r(gettext(" (paste)"), hl_id, false)
+					msg_puts_hl(gettext(" (paste)"), hl_id, false)
 				}
 
 				if VIsual_active {
@@ -944,9 +940,9 @@ showmode :: proc "c"() -> C.int {
 					case:
 						p = " SELECT BLOCK"
 					}
-					msg_puts_hl_r(gettext(p), hl_id, false)
+					msg_puts_hl(gettext(p), hl_id, false)
 				}
-				msg_puts_hl_r(" --", hl_id, false)
+				msg_puts_hl(" --", hl_id, false)
 			}
 
 			need_clear = true
@@ -959,7 +955,7 @@ showmode :: proc "c"() -> C.int {
 
 		mode_displayed_g = true
 		if need_clear || clear_cmdline_g || redraw_mode_g {
-			msg_clr_eos_r()
+			msg_clr_eos()
 		}
 		msg_didout_g = false // overwrite this message
 		length = msg_col
@@ -969,14 +965,14 @@ showmode :: proc "c"() -> C.int {
 		need_wait_return_g = nwr_save // never hit-return for this
 	} else if clear_cmdline_g && msg_silent == 0 {
 		// Clear the whole command line (resets clear_cmdline).
-		msg_clr_cmdline_r()
+		msg_clr_cmdline()
 	} else if redraw_mode_g {
 		msg_pos_mode_o()
-		msg_clr_eos_r()
+		msg_clr_eos()
 	}
 
 	// Also clears showmode when empty or disabled.
-	msg_ext_flush_showmode_r()
+	msg_ext_flush_showmode()
 
 	// In Visual mode the selected-area size must be redrawn.
 	if VIsual_active {
@@ -1012,8 +1008,7 @@ foreign _ {
 	p_columns_g: C.longlong
 	@(link_name = "get_cmdline_info")
 	get_cmdline_info_r :: proc "c"() -> rawptr ---
-	@(link_name = "repeat_message")
-	repeat_message_r :: proc "c"() ---
+	// repeat_message now defined in message.odin — call directly.
 	@(link_name = "do_check_scrollbind")
 	do_check_scrollbind_r :: proc "c"(check: bool) ---
 	@(link_name = "redrawcmdline")
@@ -1139,7 +1134,7 @@ screen_resize :: proc "c"(width_in: C.int, height_in: C.int) {
 			}
 			// TODO(bfredl): sometimes messes up pager output.
 			ui_comp_set_screen_valid_r(true)
-			repeat_message_r()
+			repeat_message()
 		} else {
 			if (^bool)(uintptr(curwin) + W_P_SCB_OFF)^ {
 				do_check_scrollbind_r(true)
@@ -1206,10 +1201,8 @@ foreign _ {
 	msg_scrolled_at_flush_g: C.int
 	@(link_name = "msg_grid_scroll_discount")
 	msg_grid_scroll_discount_g: C.int
-	@(link_name = "msg_scrollsize")
-	msg_scrollsize_r :: proc "c"() -> C.int ---
-	@(link_name = "msg_grid_set_pos")
-	msg_grid_set_pos_r :: proc "c"(row: C.int, scrolled: bool) ---
+	// msg_scrollsize now defined in message.odin — call directly.
+	// msg_grid_set_pos now defined in message.odin — call directly.
 	@(link_name = "need_highlight_changed")
 	need_highlight_changed_g: bool
 	@(link_name = "cmdline_screen_cleared")
@@ -1497,7 +1490,7 @@ update_screen :: proc "c"() -> C.int {
 	// Screen scrolled up for a message: scroll it down.
 	if msg_scrolled != 0 || msg_grid_invalid_f {
 		clear_cmdline_g = true
-		scrollsize := msg_scrollsize_r()
+		scrollsize := msg_scrollsize()
 		valid := max(Rows - scrollsize, 0)
 		mg := (^ScreenGrid)(&msg_grid_u8)
 		if mg.chars != nil {
@@ -1540,7 +1533,7 @@ update_screen :: proc "c"() -> C.int {
 				(^bool)(uintptr(curwin) + W_REDR_STATUS_OFF)^ = true
 			}
 		}
-		msg_grid_set_pos_r(Rows - C.int(p_ch), false)
+		msg_grid_set_pos(Rows - C.int(p_ch), false)
 		msg_grid_invalid_f = false
 		if was_invalidated {
 			// Only the msgarea part was invalid.
@@ -1595,7 +1588,7 @@ update_screen :: proc "c"() -> C.int {
 	}
 
 	if clear_cmdline_g { // cmdline cleared below
-		msg_check_for_delay_r(false)
+		msg_check_for_delay(false)
 	}
 
 	// Force redraw when number-column width changes.
@@ -1754,7 +1747,7 @@ update_screen :: proc "c"() -> C.int {
 	if still_may_intro_f {
 		intro_message_r(false)
 	}
-	repeat_message_r()
+	repeat_message()
 
 	decor_providers_invoke_end_r()
 
@@ -3093,10 +3086,8 @@ foreign _ {
 	msg_didany_g: bool
 	@(link_name = "pum_invalidate")
 	pum_invalidate_r :: proc "c"() ---
-	@(link_name = "msg_reset_scroll")
-	msg_reset_scroll_r :: proc "c"() ---
-	@(link_name = "msg_use_grid")
-	msg_use_grid_r :: proc "c"() -> bool ---
+	// msg_reset_scroll now defined in message.odin — call directly.
+	// msg_use_grid now defined in message.odin — call directly.
 	@(link_name = "msg_grid")
 	msg_grid_u8: u8 // address-of only (ScreenGrid)
 }
@@ -3137,7 +3128,7 @@ default_grid_alloc :: proc "c"() -> bool {
 
 @(export)
 screenclear :: proc "c"() {
-	msg_check_for_delay_r(false)
+	msg_check_for_delay(false)
 
 	dg := (^ScreenGrid)(&default_grid_u8)
 	if starting == NO_SCREEN_O || dg.chars == nil {
@@ -3177,10 +3168,10 @@ screenclear :: proc "c"() {
 	compute_cmdrow_r()
 	msg_row = cmdline_row // cursor on last line for messages
 	msg_col = 0
-	msg_reset_scroll_r() // can't scroll back
+	msg_reset_scroll() // can't scroll back
 	msg_didany_g = false
 	msg_didout_g = false
-	if hl_attr_active_g[HLF_MSG_O] > 0 && msg_use_grid_r() &&
+	if hl_attr_active_g[HLF_MSG_O] > 0 && msg_use_grid() &&
 		(^rawptr)(uintptr(transmute(rawptr)(&msg_grid_u8)) + 8)^ != nil {
 		mg := (^ScreenGrid)(&msg_grid_u8)
 		grid_invalidate(mg)

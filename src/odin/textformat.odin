@@ -699,7 +699,7 @@ op_format :: proc "c" (oap_raw: rawptr, keep_cursor: bool) {
 	}
 	beginline(BL_WHITE + BL_FIX)
 	old_line_count = (^C.int)(uintptr(curbuf) + B_ML_LINE_COUNT)^ - old_line_count
-	msgmore_r(old_line_count)
+	msgmore(old_line_count)
 	if (cmdmod_cmod_flags & CMOD_LOCKMARKS_O) == 0 {
 		(^Pos_T)(uintptr(curbuf) + B_OP_END)^ = (^Pos_T)(uintptr(curwin) + W_CURSOR_OFF)^
 	}

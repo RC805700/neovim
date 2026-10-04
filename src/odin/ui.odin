@@ -104,12 +104,10 @@ foreign _ {
 	nlua_call_ref_ctx_e :: proc "c" (fast: bool, ref: C.int, name: cstring, args: Api_Array, mode: C.int, arena: rawptr, err: ^Api_Error) -> Api_Object ---
 	@(link_name = "api_err_invalid")
 	api_err_invalid_e :: proc "c" (err: ^Api_Error, name: cstring, val_s: cstring, val_n: i64, quote_val: bool) ---
-	@(link_name = "msg")
-	msg_e :: proc "c" (s: cstring, hl_id: C.int) -> bool ---
+	// msg now defined in message.odin — call directly.
 	@(link_name = "msg_schedule_semsg_multiline")
 	msg_schedule_semsg_multiline_e :: proc "c" (fmt: cstring, #c_vararg args: ..any) ---
-	@(link_name = "msg_ui_refresh")
-	msg_ui_refresh_e :: proc "c" () ---
+	// msg_ui_refresh now defined in message.odin — call directly.
 	@(link_name = "cmdline_ui_flush")
 	cmdline_ui_flush_e :: proc "c" () ---
 	@(link_name = "p_wd")
@@ -368,9 +366,9 @@ ui_refresh :: proc "c" () {
 				tp = (^rawptr)(uintptr(tp) + uintptr(TP_NEXT_OFF))^
 			}
 		}
-		msg_scroll_flush_e()
+		msg_scroll_flush()
 	}
-	msg_ui_refresh_e()
+	msg_ui_refresh()
 	if ui_count_g == 0 {
 		return
 	}
@@ -492,8 +490,8 @@ vim_beep :: proc "c" (val: C.uint) {
 		}
 	}
 	if vim_strchr_c(p_debug_g, C.int('e')) != nil {
-		msg_source_e(26)
-		msg_e(_t(cstring("Beep!")), 26)
+		msg_source(26)
+		msg(_t(cstring("Beep!")), 26)
 	}
 }
 
@@ -692,9 +690,9 @@ ui_flush :: proc "c" () {
 	win_ui_flush(false)
 	if textlock == 0 && expr_map_lock_g == 0 {
 		cmdline_ui_flush_e()
-		msg_ext_ui_flush_r()
+		msg_ext_ui_flush()
 	}
-	msg_scroll_flush_e()
+	msg_scroll_flush()
 	if pending_cursor_update_g {
 		ui_call_grid_cursor_goto(i64(cursor_grid_handle_g), i64(cursor_row_g), i64(cursor_col_g))
 		pending_cursor_update_g = false

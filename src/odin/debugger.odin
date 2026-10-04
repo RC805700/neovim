@@ -10,8 +10,7 @@ import "core:c/libc"
 foreign _ {
 	@(link_name = "ignore_script")
 	ignore_script_g: bool
-	@(link_name = "msg_starthere")
-	msg_starthere_e :: proc "c" () ---
+	// msg_starthere now defined in message.odin — call directly.
 	@(link_name = "debug_did_msg")
 	debug_did_msg_g: bool
 }
@@ -92,7 +91,7 @@ do_debug :: proc "c" (cmd: cstring) {
 	State = MODE_NORMAL_O
 	debug_mode_g = true
 	if !debug_did_msg_g {
-		msg_msg(_t(cstring("Entering Debug mode.  Type \"cont\" to continue.")), 0)
+		msg(_t(cstring("Entering Debug mode.  Type \"cont\" to continue.")), 0)
 	}
 	if debug_oldval_g != nil {
 		smsg(0, _t(cstring("Oldval = \"%s\"")), transmute(cstring)(debug_oldval_g))
@@ -106,7 +105,7 @@ do_debug :: proc "c" (cmd: cstring) {
 	}
 	sname := estack_sfile_e(ESTACK_NONE_O)
 	if sname != nil {
-		msg_msg(transmute(cstring)(sname), 0)
+		msg(transmute(cstring)(sname), 0)
 	}
 	xfree(rawptr(sname))
 	if sourcing_lnum_o() != 0 {
@@ -139,7 +138,7 @@ do_debug :: proc "c" (cmd: cstring) {
 		}
 		ex_normal_busy_g = save_ex_normal_busy
 		cmdline_row = msg_row
-		msg_starthere_e()
+		msg_starthere()
 		if cmdline != nil {
 			p = transmute(^u8)(skipwhite(transmute(cstring)(cmdline)))
 			if ([^]u8)(p)[0] != 0 {
@@ -296,7 +295,7 @@ do_checkbacktracelevel_o :: proc "c" () {
 	context = runtime.default_context()
 	if debug_backtrace_level_g < 0 {
 		debug_backtrace_level_g = 0
-		msg_msg(_t(cstring("frame is zero")), 0)
+		msg(_t(cstring("frame is zero")), 0)
 	} else {
 		sname := estack_sfile_e(ESTACK_NONE_O)
 		max := get_maxbacktrace_level_o(sname)
@@ -621,7 +620,7 @@ ex_breakdel :: proc "c" (eap: rawptr) {
 ex_breaklist :: proc "c" (eap: rawptr) {
 	context = runtime.default_context()
 	if dbg_breakp_g.ga_len <= 0 {
-		msg_msg(_t(cstring("No breakpoints defined")), 0)
+		msg(_t(cstring("No breakpoints defined")), 0)
 		return
 	}
 	for i: C.int = 0; i < dbg_breakp_g.ga_len; i += 1 {

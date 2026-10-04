@@ -77,32 +77,19 @@ foreign _ {
 	// inc now defined in memline.odin — call directly.
 	// inc_cursor/dec_cursor — PORTED (cursor.odin).
 
-	@(link_name = "give_warning")
-	give_warning_s :: proc "c" (message: cstring, hl: bool, hist: bool) ---
-	@(link_name = "messaging")
-	messaging_s :: proc "c" () -> bool ---
+	// give_warning now defined in message.odin — call directly.
+	// messaging now defined in message.odin — call directly.
 	@(link_name = "gotocmdline")
 	gotocmdline_r :: proc "c" (clr: bool) ---
-	@(link_name = "msg_clr_eos")
-	msg_clr_eos_r :: proc "c" () ---
-	@(link_name = "msg_check")
-	msg_check_r :: proc "c" () ---
-	@(link_name = "msg_strtrunc")
-	msg_strtrunc_r :: proc "c" (s: ^u8, force: bool) -> ^u8 ---
-	@(link_name = "msg_puts")
-	msg_puts_s :: proc "c" (s: cstring) ---
-	@(link_name = "msg_puts_title")
-	msg_puts_title_s :: proc "c" (s: cstring) ---
-	@(link_name = "msg_puts_hl")
-	msg_puts_hl_s :: proc "c" (s: cstring, hl: C.int, hist: bool) ---
-	@(link_name = "msg_prt_line")
-	msg_prt_line_r :: proc "c" (s: ^u8, list: bool) ---
+	// msg_clr_eos now defined in message.odin — call directly.
+	// msg_check now defined in message.odin — call directly.
+	// msg_strtrunc now defined in message.odin — call directly.
+	// msg_puts/puts_title/puts_hl now defined in message.odin — call directly.
+	// msg_prt_line now defined in message.odin — call directly.
 	@(link_name = "msg_trunc_attr")
 	msg_trunc_s :: proc "c" (s: cstring, check: bool, hl_id: C.int) ---
-	@(link_name = "msg_home_replace")
-	msg_home_replace_r :: proc "c" (fname: ^u8) ---
-	@(link_name = "msg_outtrans")
-	msg_outtrans_s :: proc "c" (str: cstring, hl_id: C.int, hist: bool) -> C.int ---
+	// msg_home_replace now defined in message.odin — call directly.
+	// msg_outtrans now defined in message.odin — call directly.
 	// ui_flush/ui_cursor_shape/vim_beep now defined in ui.odin — call directly.
 	// getvcol — PORTED (cursor.odin).
 
@@ -1090,7 +1077,7 @@ searchit :: proc "c"(
 
 			lnum = dir == .BACKWARD ? buf_ml_line_count_r(buf) : 1
 			if !shortmess(SHM_SEARCH) && shortmess(SHM_SEARCHCOUNT) && (options & SEARCH_MSG) != 0 {
-				give_warning_s(dir == .BACKWARD ? cstring("search hit BOTTOM, continuing at TOP") : cstring("search hit TOP, continuing at BOTTOM"), true, false)
+				give_warning(dir == .BACKWARD ? cstring("search hit BOTTOM, continuing at TOP") : cstring("search hit TOP, continuing at BOTTOM"), true, false)
 			}
 			if extra_arg != nil {
 				extra_arg.sa_wrapped = 1
@@ -1145,8 +1132,7 @@ foreign _ {
 	p_inc: ^u8
 	@(link_name = "p_def")
 	p_def: ^u8
-	@(link_name = "msg_hist_off")
-	msg_hist_off: C.int
+	// msg_hist_off now defined in message.odin (bool) — call directly.
 
 	@(link_name = "ins_compl_len")
 	ins_compl_len_r :: proc "c" () -> C.int ---
@@ -1180,8 +1166,7 @@ foreign _ {
 	// getfile now defined in ex_cmds.odin — call directly (cstring args).
 	// validate_cursor now defined in move.odin — call directly.
 
-	@(link_name = "msg_trunc")
-	msg_trunc_r :: proc "c" (s: ^u8, check: bool, hl_id: C.int) -> ^u8 ---
+	// msg_trunc now defined in message.odin — call directly.
 }
 
 FNAME_INCL_S :: 8
@@ -1355,7 +1340,7 @@ search_for_exact_line :: proc "c"(buf: rawptr, pos: ^Pos_T, dir: Direction, pat:
 			if p_ws_g != 0 {
 				pos.lnum = buf_ml_line_count_r(buf)
 				if !shortmess(SHM_SEARCH) {
-					give_warning_s(cstring("search hit BOTTOM, continuing at TOP"), true, false)
+					give_warning(cstring("search hit BOTTOM, continuing at TOP"), true, false)
 				}
 			} else {
 				pos.lnum = 1
@@ -1365,7 +1350,7 @@ search_for_exact_line :: proc "c"(buf: rawptr, pos: ^Pos_T, dir: Direction, pat:
 			if p_ws_g != 0 {
 				pos.lnum = 1
 				if !shortmess(SHM_SEARCH) {
-					give_warning_s(cstring("search hit TOP, continuing at BOTTOM"), true, false)
+					give_warning(cstring("search hit TOP, continuing at BOTTOM"), true, false)
 				}
 			} else {
 				pos.lnum = 1
@@ -1794,14 +1779,9 @@ cmdline_search_stat :: proc "c"(
 		stat.cur = -1
 	}
 
-	msg_ext_overwrite = true
+	msg_ext_overwrite_g = true
 	msg_ext_set_kind(cstring("search_count"))
-	give_warning_s(transmute(cstring)(msgbuf), false, false)
-}
-
-foreign _ {
-	@(link_name = "msg_ext_overwrite")
-	msg_ext_overwrite: bool
+	give_warning(transmute(cstring)(msgbuf), false, false)
 }
 
 // ── do_search ────────────────────────────────────────────────────────────────
@@ -1896,7 +1876,7 @@ do_search :: proc "c"(
 				&strcopy, &searchstr, &searchstrlen, &dircp, &spats[0].off)
 		}
 
-		if (options & SEARCH_ECHO) != 0 && messaging_s() && msg_silent == 0 &&
+		if (options & SEARCH_ECHO) != 0 && messaging() && msg_silent == 0 &&
 		(!cmd_silent || !shortmess(SHM_SEARCHCOUNT)) {
 			off_buf: [40]u8
 			off_len: C.size_t = 0
@@ -1966,10 +1946,10 @@ do_search :: proc "c"(
 					libc.memmove((^u8)(uintptr(msgbuf) + uintptr(plen) + 1), &off_buf[0], off_len)
 				}
 
-				trunc := msg_strtrunc_r(msgbuf, true)
+				trunc := msg_strtrunc(transmute(cstring)(msgbuf), 1)
 				if trunc != nil {
 					xfree(msgbuf)
-					msgbuf = trunc
+					msgbuf = transmute(^u8)(trunc)
 					msgbuflen = libc.strlen(transmute(cstring)(msgbuf))
 				}
 
@@ -1989,9 +1969,9 @@ do_search :: proc "c"(
 						libc.memset((^u8)(uintptr(msgbuf) + uintptr(pat_len)), ' ', C.size_t(uintptr(r) - uintptr(msgbuf)))
 					}
 				}
-				_ = msg_outtrans_s(transmute(cstring)(msgbuf), 0, false)
-				msg_clr_eos_r()
-				msg_check_r()
+				_ = msg_outtrans(transmute(cstring)(msgbuf), 0, false)
+				msg_clr_eos()
+				msg_check()
 
 				gotocmdline_r(false)
 				ui_flush()
@@ -3105,8 +3085,8 @@ find_pattern_in_path :: proc "c"(
 							if type_ != CHECK_PATH_S && action == ACTION_SHOW_ALL_S && files[i].matched {
 								msg_putchar('\n')
 								if !got_int {
-									msg_home_replace_r(new_fname)
-									msg_puts_s(cstring(" (includes previously listed match)"))
+									msg_home_replace(transmute(cstring)(new_fname))
+									msg_puts(cstring(" (includes previously listed match)"))
 									prev_fname = nil
 								}
 							}
@@ -3123,27 +3103,27 @@ find_pattern_in_path :: proc "c"(
 						msg_putchar('\n')
 					} else {
 						gotocmdline_r(true)
-						msg_puts_title_s(cstring("--- Included files "))
+						msg_puts_title(cstring("--- Included files "))
 						if action != ACTION_SHOW_ALL_S {
-							msg_puts_title_s(cstring("not found "))
+							msg_puts_title(cstring("not found "))
 						}
-						msg_puts_title_s(cstring("in path ---\n"))
+						msg_puts_title(cstring("in path ---\n"))
 					}
 					did_show = true
 					for depth_displayed < depth && !got_int {
 						depth_displayed += 1
 						for i := C.int(0); i < depth_displayed; i += 1 {
-							msg_puts_s(cstring("  "))
+							msg_puts(cstring("  "))
 						}
-						msg_home_replace_r(files[depth_displayed].name)
-						msg_puts_s(cstring(" -->\n"))
+						msg_home_replace(transmute(cstring)(files[depth_displayed].name))
+						msg_puts(cstring(" -->\n"))
 					}
 					if !got_int {
 						for i := C.int(0); i <= depth_displayed; i += 1 {
-							msg_puts_s(cstring("  "))
+							msg_puts(cstring("  "))
 						}
 						if new_fname != nil {
-							_ = msg_outtrans_s(transmute(cstring)(new_fname), HLF_D_S, false)
+							_ = msg_outtrans(transmute(cstring)(new_fname), HLF_D_S, false)
 						} else {
 							qp: ^u8 = nil
 							qi := C.int(0)
@@ -3173,15 +3153,15 @@ find_pattern_in_path :: proc "c"(
 							}
 							save_char := b_at(qp, qi)
 							b_set(qp, qi, 0)
-							_ = msg_outtrans_s(transmute(cstring)(qp), HLF_D_S, false)
+							_ = msg_outtrans(transmute(cstring)(qp), HLF_D_S, false)
 							b_set(qp, qi, save_char)
 						}
 
 						if new_fname == nil && action == ACTION_SHOW_ALL_S {
 							if already_searched {
-								msg_puts_s(cstring("  (Already listed)"))
+								msg_puts(cstring("  (Already listed)"))
 							} else {
-								msg_puts_s(cstring("  NOT FOUND"))
+								msg_puts(cstring("  NOT FOUND"))
 							}
 						}
 					}
@@ -3224,14 +3204,14 @@ find_pattern_in_path :: proc "c"(
 						files[depth].lnum = 0
 						files[depth].matched = false
 						if action == ACTION_EXPAND_S && !shortmess(SHM_COMPLETIONSCAN) && !silent {
-							msg_hist_off = 1
+							msg_hist_off_g = true
 							libc.snprintf(&IObuff[0], IOSIZE_S, "Scanning included file: %s", transmute(cstring)(new_fname))
-							msg_trunc_r(&IObuff[0], true, HLF_R_S)
-							msg_hist_off = 0
+							msg_trunc(&IObuff[0], true, HLF_R_S)
+							msg_hist_off_g = false
 						} else if p_verbose >= 5 {
-							verbose_enter_r()
+							verbose_enter()
 							vmsg_buf(cstring("Searching included file %s"), new_fname)
-							verbose_leave_r()
+							verbose_leave()
 						}
 					}
 				}
@@ -3383,7 +3363,7 @@ find_pattern_in_path :: proc "c"(
 								msg_putchar('\n')
 							}
 							if !got_int {
-								msg_home_replace_r(curr_fname)
+								msg_home_replace(transmute(cstring)(curr_fname))
 							}
 							prev_fname = curr_fname
 						}
@@ -3534,9 +3514,9 @@ find_pattern_in_path :: proc "c"(
 		if type_ == CHECK_PATH_S {
 			if !did_show {
 				if action != ACTION_SHOW_ALL_S {
-					msg_msg(cstring("All included files were found"), 0)
+					msg(cstring("All included files were found"), 0)
 				} else {
-					msg_msg(cstring("No included files"), 0)
+					msg(cstring("No included files"), 0)
 				}
 			}
 		} else if !found && action != ACTION_EXPAND_S && !silent {
@@ -3549,7 +3529,7 @@ find_pattern_in_path :: proc "c"(
 			}
 		}
 		if action == ACTION_SHOW_S || action == ACTION_SHOW_ALL_S {
-			msg_end_r()
+			msg_end()
 		}
 	}
 
@@ -3572,7 +3552,7 @@ IOSIZE_S :: 1025 // globals.h IOSIZE
 vmsg_buf :: proc "c"(fmt: cstring, s: ^u8) {
 	tmp: [1025]u8
 	libc.snprintf(&tmp[0], 1025, transmute(cstring)(fmt), transmute(cstring)(s))
-	msg_trunc_r(&tmp[0], true, HLF_R_S)
+	msg_trunc(&tmp[0], true, HLF_R_S)
 }
 
 // RESET_BINDING(wp): w_p_scb@1112 and w_p_crb@1152 = false
@@ -3625,12 +3605,12 @@ show_pat_in_path :: proc "c"(
 		if action == ACTION_SHOW_ALL_S {
 			tmpn: [32]u8
 			libc.snprintf(&tmpn[0], 32, "%3d: ", count)
-			msg_puts_s(transmute(cstring)(&tmpn[0]))
+			msg_puts(transmute(cstring)(&tmpn[0]))
 			libc.snprintf(&tmpn[0], 32, "%4d", lnum^)
-			msg_puts_hl_s(transmute(cstring)(&tmpn[0]), HLF_N_S, false)
-			msg_puts_s(cstring(" "))
+			msg_puts_hl(transmute(cstring)(&tmpn[0]), HLF_N_S, false)
+			msg_puts(cstring(" "))
 		}
-		msg_prt_line_r(line, false)
+		msg_prt_line(transmute(cstring)(line), false)
 
 		if got_int || type_ != FIND_DEFINE_S || uintptr(p) < uintptr(line) || b_at(p, 0) != '\\' {
 			break

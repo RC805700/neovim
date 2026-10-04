@@ -268,7 +268,7 @@ ml_lineadd_o :: proc "c" (buf: rawptr, count: C.int) {
 		}
 		if (^u16)(hp.data)^ != PTR_ID_O {
 			mf_put(mfp, hp, false, false)
-			iemsg_r(cstring(E_ML_E317_2_S))
+			iemsg(cstring(E_ML_E317_2_S))
 			break
 		}
 		([^]PointerEntry_O)(uintptr(hp.data) + 8)[ip.index].line_count += count
@@ -345,7 +345,7 @@ ml_find_line_o :: proc "c" (buf: rawptr, lnum: C.int, action: C.int) -> ^Bhdr_O 
 			return hp
 		}
 		if (^u16)(hp.data)^ != PTR_ID_O {
-			iemsg_r(cstring(E_ML_E317_S))
+			iemsg(cstring(E_ML_E317_S))
 			mf_put(mfp, hp, false, false)
 			break
 		}
@@ -944,7 +944,7 @@ ml_append_int_o :: proc "c" (buf: rawptr, lnum: C.int, line_arg: ^u8, len_arg: C
 				return 0
 			}
 			if ([^]u16)(hp.data)[0] != PTR_ID_O {
-				iemsg_r(cstring(E_ML_E317_3_S))
+				iemsg(cstring(E_ML_E317_3_S))
 				mf_put(mfp, hp, false, false)
 				return 0
 			}
@@ -1044,7 +1044,7 @@ ml_append_int_o :: proc "c" (buf: rawptr, lnum: C.int, line_arg: ^u8, len_arg: C
 			stack_idx -= 1
 		}
 		if stack_idx < 0 {
-			iemsg_r(cstring(E_ML_E318_S))
+			iemsg(cstring(E_ML_E318_S))
 			ml.stack_top = 0
 		}
 	}
@@ -1396,7 +1396,7 @@ ml_delete_int_o :: proc "c" (buf: rawptr, lnum: C.int, flags: C.int) -> C.int {
 				break
 			}
 			if ([^]u16)(hp.data)[0] != PTR_ID_O {
-				iemsg_r(cstring(E_ML_E317_4_S))
+				iemsg(cstring(E_ML_E317_4_S))
 				mf_put(mfp, hp, false, false)
 				err = true
 				break
@@ -2134,7 +2134,7 @@ ml_preserve :: proc "c" (buf: rawptr, message: bool, do_fsync: bool) {
 	got_int = got_int || got_int_save
 	if message {
 		if status == 1 {
-			msg_msg(cstring("File preserved"), 0)
+			msg(cstring("File preserved"), 0)
 		} else {
 			emsg(cstring("E314: Preserve failed"))
 		}
@@ -2152,7 +2152,7 @@ ml_upd_block0_o :: proc "c" (buf: rawptr, what: C.int) {
 	}
 	hp := mf_get(mfp, 0, 1)
 	if hp == nil {
-		iemsg_r(cstring(E_ML_E304_S))
+		iemsg(cstring(E_ML_E304_S))
 		return
 	}
 	if what == UB_FNAME_O {
@@ -2365,7 +2365,7 @@ ml_open :: proc "c" (buf: rawptr) -> C.int {
 	ml.line_count = 1
 	hp := mf_new(mfp, false, 1)
 	if hp.bnum != 0 {
-		iemsg_r(cstring("E298: Didn't get block nr 0?"))
+		iemsg(cstring("E298: Didn't get block nr 0?"))
 		mf_put(mfp, hp, false, false)
 		mf_close(mfp, true)
 		ml.mfp = nil
@@ -2406,7 +2406,7 @@ ml_open :: proc "c" (buf: rawptr) -> C.int {
 		return 0
 	}
 	if hp.bnum != 1 {
-		iemsg_r(cstring("E298: Didn't get block nr 1?"))
+		iemsg(cstring("E298: Didn't get block nr 1?"))
 		mf_put(mfp, hp, false, false)
 		mf_close(mfp, true)
 		ml.mfp = nil
@@ -2421,7 +2421,7 @@ ml_open :: proc "c" (buf: rawptr) -> C.int {
 	mf_put(mfp, hp, true, false)
 	hp = ml_new_data_o(mfp, false, 1)
 	if hp.bnum != 2 {
-		iemsg_r(cstring("E298: Didn't get block nr 2?"))
+		iemsg(cstring("E298: Didn't get block nr 2?"))
 		mf_put(mfp, hp, false, false)
 		mf_close(mfp, true)
 		ml.mfp = nil
@@ -2499,7 +2499,7 @@ findswapname :: proc "c" (buf: rawptr, dirp: ^^u8, old_fname: cstring, found_exi
 					if os_path_exists(transmute(cstring)(buf_fname)) && swapfile_unchanged_o(transmute(cstring)(fname)) {
 						choice = ML_SEA_DELETE_O
 						if p_verbose > 0 {
-							verb_msg_r(cstring("Found a swap file that is not useful, deleting it"))
+							verb_msg(cstring("Found a swap file that is not useful, deleting it"))
 						}
 					}
 					if choice == ML_SEA_NONE_O && swap_exists_action_g != SEA_NONE_O && has_autocmd_e(EVENT_SWAPEXISTS_O, buf_fname, buf) {
@@ -2529,11 +2529,11 @@ findswapname :: proc "c" (buf: rawptr, dirp: ^^u8, old_fname: cstring, found_exi
 							if ml_proc_running_g != 0 {
 								buttons = run_but
 							}
-							choice = do_dialog_e(VIM_WARNING_O, cstring("VIM - ATTENTION"), transmute(cstring)(msg.items), buttons, 1, nil, 0)
+							choice = do_dialog(VIM_WARNING_O, cstring("VIM - ATTENTION"), transmute(cstring)(msg.items), buttons, 1, nil, false)
 							if ml_proc_running_g != 0 && choice >= 4 {
 								choice += 1
 							}
-							msg_reset_scroll_r()
+							msg_reset_scroll()
 						} else {
 							need_clear := false
 							msg_ext_set_kind(cstring("wmsg"))
@@ -3125,9 +3125,9 @@ ml_recover :: proc "c" (checkext: bool) {
 	hp = mf_get(mfp, 0, 1)
 	if hp == nil {
 		msg_start()
-		msg_puts_hl_r(cstring("Unable to read block 0 from "), hl_id, true)
+		msg_puts_hl(cstring("Unable to read block 0 from "), hl_id, true)
 		msg_outtrans(transmute(cstring)(mfp.fname), hl_id, true)
-		msg_puts_hl_r(cstring("\nMaybe no changes were made or Nvim did not update the swap file."), hl_id, true)
+		msg_puts_hl(cstring("\nMaybe no changes were made or Nvim did not update the swap file."), hl_id, true)
 		msg_end()
 		ml_recover_end_o(buf, mfp, fname_used, hp, serious_error, called_from_main)
 		return
@@ -3136,8 +3136,8 @@ ml_recover :: proc "c" (checkext: bool) {
 	if libc.strncmp(transmute(cstring)(rawptr(uintptr(b0p) + 2)), cstring("VIM 3.0"), 7) == 0 {
 		msg_start()
 		msg_outtrans(transmute(cstring)(mfp.fname), 0, true)
-		msg_puts_hl_r(cstring(" cannot be used with this version of Nvim.\n"), 0, true)
-		msg_puts_hl_r(cstring("Use Vim version 3.0.\n"), 0, true)
+		msg_puts_hl(cstring(" cannot be used with this version of Nvim.\n"), 0, true)
+		msg_puts_hl(cstring("Use Vim version 3.0.\n"), 0, true)
 		msg_end()
 		ml_recover_end_o(buf, mfp, fname_used, hp, serious_error, called_from_main)
 		return
@@ -3150,11 +3150,11 @@ ml_recover :: proc "c" (checkext: bool) {
 	if b0_magic_wrong_o(b0p) != 0 {
 		msg_start()
 		msg_outtrans(transmute(cstring)(mfp.fname), hl_id, true)
-		msg_puts_hl_r(cstring(" cannot be used on this computer.\n"), hl_id, true)
-		msg_puts_hl_r(cstring("The file was created on "), hl_id, true)
+		msg_puts_hl(cstring(" cannot be used on this computer.\n"), hl_id, true)
+		msg_puts_hl(cstring("The file was created on "), hl_id, true)
 		([^]u8)(uintptr(b0p) + B0_FNAME_AT_O)[0] = 0
-		msg_puts_hl_r(transmute(cstring)(rawptr(uintptr(b0p) + 68)), hl_id, true)
-		msg_puts_hl_r(cstring(",\nor the file has been damaged."), hl_id, true)
+		msg_puts_hl(transmute(cstring)(rawptr(uintptr(b0p) + 68)), hl_id, true)
+		msg_puts_hl(cstring(",\nor the file has been damaged."), hl_id, true)
 		msg_end()
 		ml_recover_end_o(buf, mfp, fname_used, hp, serious_error, called_from_main)
 		return
@@ -3165,7 +3165,7 @@ ml_recover :: proc "c" (checkext: bool) {
 		if mfp.page_size < previous_page_size {
 			msg_start()
 			msg_outtrans(transmute(cstring)(mfp.fname), hl_id, true)
-			msg_puts_hl_r(cstring(" has been damaged (page size is smaller than minimum value).\n"), hl_id, true)
+			msg_puts_hl(cstring(" has been damaged (page size is smaller than minimum value).\n"), hl_id, true)
 			msg_end()
 			ml_recover_end_o(buf, mfp, fname_used, hp, serious_error, called_from_main)
 			return
@@ -3460,20 +3460,20 @@ ml_recover :: proc "c" (checkext: bool) {
 	} else if error != 0 {
 		no_wait_return += 1
 		msg_ext_set_kind(cstring("emsg"))
-		msg_msg(cstring(">>>>>>>>>>>>>\n"), 0)
+		msg(cstring(">>>>>>>>>>>>>\n"), 0)
 		emsg(cstring("E312: Errors detected while recovering; look for lines starting with ???"))
 		no_wait_return -= 1
 		msg_putchar('\n')
-		msg_msg(cstring("See \":help E312\" for more information."), 0)
-		msg_msg(cstring("\n>>>>>>>>>>>>>"), 0)
+		msg(cstring("See \":help E312\" for more information."), 0)
+		msg(cstring("\n>>>>>>>>>>>>>"), 0)
 	} else {
 		msg_ext_set_kind(cstring("wmsg"))
 		if (^bool)(uintptr(curbuf) + B_CHG_OFF_O)^ {
-			msg_msg(cstring("Recovery completed. You should check if everything is OK."), 0)
+			msg(cstring("Recovery completed. You should check if everything is OK."), 0)
 			msg_puts(cstring("\n(You might want to write out this file under another name\n"))
 			msg_puts(cstring("and run diff with the original file to check for changes)"))
 		} else {
-			msg_msg(cstring("Recovery completed. Buffer contents equals file contents."), 0)
+			msg(cstring("Recovery completed. Buffer contents equals file contents."), 0)
 		}
 		msg_puts(cstring("\nYou may want to delete the .swp file now."))
 		if swapfile_proc_running_o(b0p, transmute(cstring)(fname_used)) != 0 {

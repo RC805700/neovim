@@ -43,8 +43,7 @@ foreign _ {
 	@(link_name = "should_abort")
 	should_abort_r :: proc "c"(retcode: C.int) -> bool ---
 	// plines_m_win_fill now defined in plines.odin — call directly.
-	@(link_name = "msg_check_for_delay")
-	msg_check_for_delay_r :: proc "c"(canwait: bool) ---
+	// msg_check_for_delay now defined in message.odin — call directly.
 	@(link_name = "diff_invalidate")
 	diff_invalidate_r :: proc "c"(buf: rawptr) ---
 	@(link_name = "p_ur")
@@ -674,7 +673,7 @@ do_ecmd :: proc "c"(fnum: C.int, ffname_in: cstring, sfname_in: cstring, eap: ra
 				msg_scroll = 0
 			}
 			if msg_scroll == 0 { // wait a bit when overwriting an error msg
-				msg_check_for_delay_r(false)
+				msg_check_for_delay(false)
 			}
 			msg_start()
 			msg_scroll = msg_scroll_save
@@ -858,8 +857,7 @@ E505_S :: "E505: \"%s\" is read-only (add ! to override)"
 foreign _ {
 	// check_overwrite now defined below (Batch 39) — call directly.
 	// buf_write_all now defined in ex_cmds2.odin — call directly.
-	@(link_name = "vim_dialog_yesno")
-	vim_dialog_yesno_r :: proc "c"(typ: C.int, title: cstring, message: cstring, dflt: C.int) -> C.int ---
+	// vim_dialog_yesno now defined in message.odin — call directly.
 	// p_confirm_g/p_write_g already in buffer.odin — reuse.
 }
 
@@ -894,7 +892,7 @@ check_readonly_o :: proc "c"(forceit: ^C.int, buf: rawptr) -> bool {
 					cstring(fname))
 			}
 
-			if vim_dialog_yesno_r(VIM_QUESTION_O, nil, cstring(&buff[0]), 2) ==
+			if vim_dialog_yesno(VIM_QUESTION_O, nil, cstring(&buff[0]), 2) ==
 				VIM_YES_O {
 				forceit^ = 1 // force writing of a readonly file
 				return false
@@ -1497,7 +1495,7 @@ ex_sort :: proc "c"(eap: rawptr) {
 			if deleted > 0 {
 				mark_adjust(line2 - deleted, line2, MAXLNUM, -deleted,
 					kExtmarkNOOP)
-				msgmore_r(-deleted)
+				msgmore(-deleted)
 			} else if deleted < 0 {
 				mark_adjust(line2, MAXLNUM, -deleted, 0, kExtmarkNOOP)
 			}
@@ -1748,7 +1746,7 @@ ex_uniq :: proc "c"(eap: rawptr) {
 			// Adjust marks, prepare for display.
 			mark_adjust(line2 - deleted, line2, MAXLNUM, -deleted,
 				change_occurred ? kExtmarkUndo : kExtmarkNOOP)
-			msgmore_r(-deleted)
+			msgmore(-deleted)
 
 			if change_occurred {
 				changed_lines(curbuf, line1, 0, line2 + 1, -deleted, true)
@@ -1982,7 +1980,7 @@ ex_copy :: proc "c"(line1_in: C.int, line2_in: C.int, n: C.int) {
 		check_pos(curbuf, &VIsual_g)
 	}
 
-	msgmore_r(count)
+	msgmore(count)
 }
 
 // ── Batch 31a: shell-filter builders (make_filter_cmd/append_redir) ────────
@@ -2023,8 +2021,7 @@ foreign _ {
 	@(link_name = "write_lnum_adjust")
 	write_lnum_adjust_r :: proc "c"(offset: C.int) ---
 	// foldUpdate now defined in fold.odin — call directly.
-	@(link_name = "wait_return")
-	wait_return_r :: proc "c"(redraw: C.int) ---
+	// wait_return now defined in message.odin — call directly.
 }
 
 // Append output redirection for "fname" to "buf" (" %s %s" or opt-as-format).
@@ -2352,13 +2349,13 @@ do_filter_o :: proc "c"(line1: C.int, line2: C.int, eap: rawptr, cmd: ^u8, do_in
 							libc.snprintf(&msg_buf_g[0],
 								C.size_t(MSG_BUF_LEN_O), filt_fmt,
 								C.longlong(linecount))
-							if msg_msg(cstring(&msg_buf_g[0]), 0) &&
+							if msg(cstring(&msg_buf_g[0]), 0) &&
 								msg_scroll == 0 {
 								// Save message for after redraw.
 								set_keep_msg_r(cstring(&msg_buf_g[0]), 0)
 							}
 						} else {
-							msgmore_r(linecount)
+							msgmore(linecount)
 						}
 					}
 				}
@@ -2538,7 +2535,7 @@ do_bang :: proc "c"(addr_count: C.int, eap: rawptr, forceit: bool, do_in: bool, 
 			msg_putchar(':')
 			msg_putchar('!')
 			msg_outtrans(cstring(newcmd), 0, false)
-			msg_clr_eos_r()
+			msg_clr_eos()
 			ui_cursor_goto(msg_row, msg_col)
 
 			do_shell(newcmd, 0)
@@ -2614,9 +2611,9 @@ print_line_no_prefix :: proc "c"(lnum: C.int, use_number: bool, list: bool) {
 	if (^C.int)(uintptr(curwin) + W_P_NU_OFF)^ != 0 || use_number {
 		libc.snprintf(&numbuf[0], C.size_t(30), cstring("%*d "),
 			number_width(curwin), lnum)
-		msg_puts_hl_r(cstring(&numbuf[0]), HLF_N_S + 1, false)
+		msg_puts_hl(cstring(&numbuf[0]), HLF_N_S + 1, false)
 	}
-	msg_prt_line_r(ml_get(lnum), list)
+	msg_prt_line(transmute(cstring)(ml_get(lnum)), list)
 }
 
 // Print a text line (also in silent/batch mode).
@@ -3087,7 +3084,7 @@ global_exe :: proc "c"(cmd: cstring) {
 	// Substitutes report their count, else report added/deleted lines
 	// (not when the buffer changed mid-execution).
 	if !do_sub_msg(false) && curbuf == old_buf {
-		msgmore_r((^C.int)(uintptr(curbuf) + B_ML_LINE_COUNT_OFF)^ - old_lcount)
+		msgmore((^C.int)(uintptr(curbuf) + B_ML_LINE_COUNT_OFF)^ - old_lcount)
 	}
 }
 
@@ -3192,7 +3189,7 @@ ex_global :: proc "c"(eap: rawptr) {
 
 		// Pass 2: execute the command for each marked line.
 		if got_int {
-			msg_msg(cstring(E_INTERR_S), 0)
+			msg(cstring(E_INTERR_S), 0)
 		} else if ndone == 0 {
 			// C uses smsg (plain message, NOT an error like semsg).
 			nmbuf: [512]u8
@@ -3204,7 +3201,7 @@ ex_global :: proc "c"(eap: rawptr) {
 				libc.snprintf(&nmbuf[0], C.size_t(512),
 					cstring("Pattern not found: %s"), cstring(used_pat))
 			}
-			msg_msg(cstring(&nmbuf[0]), 0)
+			msg(cstring(&nmbuf[0]), 0)
 		} else {
 			global_exe(cstring(cmd))
 		}
@@ -3361,7 +3358,7 @@ do_ascii :: proc "c"(eap: rawptr) {
 	len := C.size_t(utfc_ptr2len(cstring(data)))
 
 	if len == 0 {
-		msg_msg(cstring("NUL"), 0)
+		msg(cstring("NUL"), 0)
 		return
 	}
 
@@ -3456,7 +3453,7 @@ do_ascii :: proc "c"(eap: rawptr) {
 	}
 
 	if need_clear {
-		msg_clr_eos_r()
+		msg_clr_eos()
 	}
 	msg_end()
 }
@@ -4866,7 +4863,7 @@ sub_engine_o :: proc "c"(eap: rawptr, timeout: proftime_T, cmdpreview_ns: C.int,
 				}
 			}
 			if cmdpreview_ns <= 0 && !do_sub_msg(subflags_f.do_count) && subflags_f.do_ask && p_ch > 0 {
-				msg_msg(cstring(""), 0)
+				msg(cstring(""), 0)
 			}
 		} else {
 			global_need_beginline_f = true
@@ -4881,7 +4878,7 @@ sub_engine_o :: proc "c"(eap: rawptr, timeout: proftime_T, cmdpreview_ns: C.int,
 		} else if got_match {
 			// Found something but substituted nothing.
 			if p_ch > 0 && !ui_has(K_UIMESSAGES_O) {
-				msg_msg(cstring(""), 0)
+				msg(cstring(""), 0)
 			}
 		} else if subflags_f.do_error {
 			// Nothing found.
@@ -5033,7 +5030,7 @@ check_overwrite :: proc "c"(eap: rawptr, buf: rawptr, fname: cstring, ffname: cs
 				libc.snprintf(&buff[0], C.size_t(DIALOG_MSG_SIZE_O),
 					cstring("Overwrite existing file \"%s\"?"),
 					fname == nil ? cstring("") : fname)
-				if vim_dialog_yesno_r(VIM_QUESTION_O, nil, cstring(&buff[0]),
+				if vim_dialog_yesno(VIM_QUESTION_O, nil, cstring(&buff[0]),
 					2) != VIM_YES_O {
 					return FAIL
 				}
@@ -5066,7 +5063,7 @@ check_overwrite :: proc "c"(eap: rawptr, buf: rawptr, fname: cstring, ffname: cs
 					libc.snprintf(&buff[0], C.size_t(DIALOG_MSG_SIZE_O),
 						cstring("Swap file \"%s\" exists, overwrite anyway?"),
 						cstring(swapname))
-					if vim_dialog_yesno_r(VIM_QUESTION_O, nil,
+					if vim_dialog_yesno(VIM_QUESTION_O, nil,
 						cstring(&buff[0]), 2) != VIM_YES_O {
 						xfree(transmute(rawptr)(swapname))
 						return FAIL
@@ -5155,7 +5152,7 @@ do_write :: proc "c"(eap: rawptr) -> C.int {
 			p_wa_g == 0) {
 			if p_confirm_g != 0 ||
 				(cmdmod_cmod_flags & CMOD_CONFIRM_O) != 0 {
-				if vim_dialog_yesno_r(VIM_QUESTION_O, nil,
+				if vim_dialog_yesno(VIM_QUESTION_O, nil,
 					cstring("Write partial file?"), 2) != VIM_YES_O {
 					done = true
 				} else {
@@ -5330,7 +5327,7 @@ do_sub_msg :: proc "c"(count_only: bool) -> bool {
 	if ((C.longlong(sub_nsubs_sp) > p_report &&
 			(KeyTyped || sub_nlines_sp > 1 || p_report < 1)) ||
 			count_only) &&
-		messaging_r() {
+		messaging() {
 		if got_int {
 			xstrlcpy(cstring(&msg_buf_g[0]), cstring("(Interrupted) "),
 				MSG_BUF_LEN_O)
@@ -5366,7 +5363,7 @@ do_sub_msg :: proc "c"(count_only: bool) -> bool {
 			C.longlong(sub_nsubs_sp), C.longlong(sub_nlines_sp))
 		_xstrlcat(cstring(&msg_buf_g[0]), cstring(&tmp[0]),
 			C.size_t(MSG_BUF_LEN_O))
-		if msg_msg(cstring(&msg_buf_g[0]), 0) {
+		if msg(cstring(&msg_buf_g[0]), 0) {
 			// Save message to display it after redraw.
 			set_keep_msg_r(cstring(&msg_buf_g[0]), 0)
 		}
