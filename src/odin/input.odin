@@ -136,6 +136,14 @@ foreign _ {
 	p_mouset: c.long
 	@(link_name = "ch_before_blocking_events")
 	ch_before_blocking_events: ^MultiQueue
+	// mod_mask (C EXTERN int, globals.h) — no Odin owner yet.
+	mod_mask: c.int
+	@(link_name = "fix_input_buffer")
+	fix_input_buffer :: proc(buf: ^u8, len: c.int) -> c.int ---
+	@(link_name = "merge_modifiers")
+	merge_modifiers :: proc(c_arg: c.int, modifiers: ^c.int) -> c.int ---
+	@(link_name = "is_mouse_key")
+	is_mouse_key :: proc(c: c.int) -> bool ---
 
 	// trans_special — PORTED (keycodes.odin).
 	@(link_name = "trigger_cursorhold")
@@ -663,8 +671,7 @@ inbuf_poll :: proc "c" (ms: c.int, events: ^MultiQueue) -> TriState {
 	for {
 		if os_input_ready(events) || input_eof {
 			break
-		}
-		remaining := i64(-1)
+		}		remaining := i64(-1)
 		if ms >= 0 {
 			now := i64(os_hrtime() / 1000000)
 			remaining = deadline - now
@@ -674,6 +681,17 @@ inbuf_poll :: proc "c" (ms: c.int, events: ^MultiQueue) -> TriState {
 			}
 		}
 		loop_poll_events(&main_loop, remaining)
+		// Dispatch channel/RPC events (nvim_input keys, job output) into
+		// input_buffer. loop_poll_events drains fast_events only (C-faithful),
+		// but in this tree ALL TUI input arrives via nvim_input RPC whose
+		// read_event sits in loop.events (chan.events is its child) — without
+		// this drain, any input wait outside the state machine (pager,
+		// prompts, getchar) wedges with input queued but undispatched.
+		// (Upstream refactored stream_init to NULL/direct dispatch instead;
+		// this port still queues, so drain here. The which-key ordering fix
+		// stays intact: loop_poll_events itself is untouched, and try_read
+		// consumes already-buffered typeahead before we ever poll.)
+		multiqueue_process_events(main_loop.events)
 		if os_input_ready(events) || input_eof {
 			break
 		}
@@ -766,4 +784,148 @@ read_error_exit :: proc "contextless" () {
 @(private = "file")
 pending_events :: proc "contextless" (events: ^MultiQueue) -> bool {
 	return events != nil && !multiqueue_empty(events)
+}
+
+// —— Top-level input.c port: high-level user prompts ——
+
+to_special_o :: proc "c" (a: u8, b: u8) -> c.int {
+	context = runtime.default_context()
+	if a == KS_SPECIAL {
+		return K_SPECIAL_O
+	} else if a == u8(KS_ZERO) {
+		return K_ZERO
+	}
+	return -(c.int(a) + (c.int(b) << 8))
+}
+
+@(export)
+ask_yesno :: proc "c" (str: cstring) -> c.int {
+	context = runtime.default_context()
+	save_State := State
+	no_wait_return += 1
+	libc.snprintf(transmute(^u8)(&IObuff[0]), IOSIZE, _t(cstring("%s (y/n)?")), str)
+	prompt := xstrdup(transmute(^u8)(&IObuff[0]))
+	r: c.int = ' '
+	for r != 'y' && r != 'n' {
+		r = prompt_for_input(transmute(cstring)(prompt), HLF_R_O, true, nil)
+		if r == Ctrl_C || r == 27 {
+			r = 'n'
+			if !ui_has(K_UIMESSAGES_O) {
+				msg_putchar(r)
+			}
+		}
+	}
+	need_wait_return_g = msg_scrolled != 0
+	no_wait_return -= 1
+	State = save_State
+	setmouse()
+	xfree(rawptr(prompt))
+	return r
+}
+
+@(export)
+get_keystroke :: proc "c" (events: ^MultiQueue) -> c.int {
+	context = runtime.default_context()
+	buf: ^u8 = nil
+	buflen: c.int = 150
+	len: c.int = 0
+	n: c.int = 0
+	save_mapped_ctrl_c := mapped_ctrl_c
+	mod_mask = 0
+	mapped_ctrl_c = 0
+	for {
+		ui_flush()
+		maxlen := (buflen - 6 - len) / 3
+		if buf == nil {
+			buf = transmute(^u8)(xmalloc(c.size_t(buflen)))
+		} else if maxlen < 10 {
+			buflen += 100
+			buf = transmute(^u8)(xrealloc(rawptr(buf), c.size_t(buflen)))
+			maxlen = (buflen - 6 - len) / 3
+		}
+		ms := c.int(100)
+		if len == 0 {
+			ms = -1
+		}
+		n = input_get(transmute(^u8)(rawptr(uintptr(buf) + uintptr(len))), maxlen, ms, 0, events)
+		if n > 0 {
+			n = fix_input_buffer(transmute(^u8)(rawptr(uintptr(buf) + uintptr(len))), n)
+			len += n
+		}
+		if n > 0 {
+			len = n
+		}
+		if len == 0 {
+			continue
+		}
+		n = c.int(([^]u8)(buf)[0])
+		if n == K_SPECIAL_O {
+			n = to_special_o(([^]u8)(buf)[1], ([^]u8)(buf)[2])
+			if ([^]u8)(buf)[1] == KS_MODIFIER || n == K_IGNORE_O || (is_mouse_key(n) && n != K_LEFTMOUSE_O) {
+				if ([^]u8)(buf)[1] == KS_MODIFIER {
+					mod_mask = c.int(([^]u8)(buf)[2])
+				}
+				len -= 3
+				if len > 0 {
+					libc.memmove(rawptr(buf), rawptr(uintptr(buf) + 3), c.size_t(len))
+				}
+				continue
+			}
+			break
+		}
+		if c.int(utf8len_tab_g[uintptr(n)]) > len {
+			continue
+		}
+		term: c.int = len
+		if len >= buflen {
+			term = buflen - 1
+		}
+		([^]u8)(buf)[term] = 0
+		n = utf_ptr2char(transmute(cstring)(buf))
+		break
+	}
+	xfree(rawptr(buf))
+	mapped_ctrl_c = save_mapped_ctrl_c
+	return merge_modifiers(n, &mod_mask)
+}
+
+@(export)
+prompt_for_input :: proc "c" (prompt_in: cstring, hl_id: c.int, one_key: bool, mouse_used: ^bool) -> c.int {
+	context = runtime.default_context()
+	ret: c.int = 0
+	if one_key {
+		ret = 27
+	}
+	kmsg: ^u8 = nil
+	if keep_msg_g != nil {
+		kmsg = xstrdup(keep_msg_g)
+	}
+	prompt := prompt_in
+	if prompt == nil {
+		if mouse_used != nil {
+			prompt = _t(cstring("Type number and <Enter> or click with the mouse (q or empty cancels): "))
+		} else {
+			prompt = _t(cstring("Type number and <Enter> (q or empty cancels): "))
+		}
+	}
+	cmdline_row = msg_row
+	ui_flush()
+	no_mapping += 1
+	allow_keys += 1
+	resp := getcmdline_prompt_r(-1, prompt, hl_id, EXPAND_NOTHING_S, nil, Callback_T{}, one_key, transmute(rawptr)(mouse_used))
+	allow_keys -= 1
+	no_mapping -= 1
+	if resp != nil {
+		if one_key {
+			ret = c.int(([^]u8)(resp)[0])
+		} else {
+			ret = libc.atoi(transmute(cstring)(resp))
+		}
+		xfree(rawptr(resp))
+	}
+	if kmsg != nil {
+		set_keep_msg(transmute(cstring)(kmsg), keep_msg_hl_id_g)
+		xfree(rawptr(kmsg))
+	}
+	return ret
 }

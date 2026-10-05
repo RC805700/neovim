@@ -2100,7 +2100,7 @@ win_enter_ext_o :: proc "c"(wp: rawptr, flags: C.int) {
  		win_setwidth(C.int(p_wiw_opt))
  	}
 
-	setmouse_r() // in case jumped to/from help buffer
+	setmouse() // in case jumped to/from help buffer
 
 	// Change directories when the 'acd' option is set.
 	do_autochdir()

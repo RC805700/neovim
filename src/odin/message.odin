@@ -2191,8 +2191,7 @@ foreign _ {
 	p_more_g: C.int
 	@(link_name = "quit_more")
 	quit_more_g: bool
-	@(link_name = "get_keystroke")
-	get_keystroke_e :: proc "c" (events: ^MultiQueue) -> C.int ---
+	// get_keystroke now defined in input.odin — call directly.
 	@(link_name = "typeahead_noflush")
 	typeahead_noflush_e :: proc "c" (c: C.int) ---
 	@(link_name = "did_wait_return")
@@ -2467,7 +2466,7 @@ do_more_prompt_o :: proc "c" (typed_char: C.int) -> bool {
 		}
 	}
 	State = MODE_ASKMORE_O
-	setmouse_r()
+	setmouse()
 	if typed_char == 0 {
 		msg_moremsg_o(false)
 	}
@@ -2476,7 +2475,7 @@ do_more_prompt_o :: proc "c" (typed_char: C.int) -> bool {
 			c = used_typed_char
 			used_typed_char = 0
 		} else {
-			c = get_keystroke_e(resize_events_g)
+			c = get_keystroke(resize_events_g)
 		}
 		toscroll: C.int = 0
 		if c == 8 || c == K_BS || c == 'k' || c == K_UP {
@@ -2596,7 +2595,7 @@ do_more_prompt_o :: proc "c" (typed_char: C.int) -> bool {
 	clear_cmdline_g = false
 	mode_displayed_g = false
 	State = oldState
-	setmouse_r()
+	setmouse()
 	if quit_more_g {
 		msg_row = Rows - 1
 		msg_col = 0
@@ -3100,7 +3099,7 @@ do_dialog :: proc "c" (type: C.int, title: cstring, message: cstring, buttons: c
 			retval = dfltbutton
 			break
 		}
-		c := prompt_for_input_e(transmute(cstring)(confirm_buttons), HLF_M_O, true, nil)
+		c := prompt_for_input(transmute(cstring)(confirm_buttons), HLF_M_O, true, nil)
 		if c == 13 || c == 0 {
 			retval = dfltbutton
 			break
@@ -3143,7 +3142,7 @@ do_dialog :: proc "c" (type: C.int, title: cstring, message: cstring, buttons: c
 	confirm_msg = nil
 	msg_silent = save_msg_silent
 	State = oldState
-	setmouse_r()
+	setmouse()
 	no_wait_return -= 1
 	msg_end_prompt()
 	return retval
@@ -3258,7 +3257,7 @@ wait_return :: proc "c" (redraw: C.int) {
 		redraw_all_later(UPD_NOT_VALID)
 	}
 	if ui_has(K_UIMESSAGES_O) {
-		prompt_for_input_e(cstring("Press any key to continue"), HLF_M_O, true, nil)
+		prompt_for_input(cstring("Press any key to continue"), HLF_M_O, true, nil)
 		return
 	}
 	if msg_silent != 0 {
@@ -3291,7 +3290,7 @@ wait_return :: proc "c" (redraw: C.int) {
 		c = 13
 	} else {
 		State = MODE_HITRETURN_O
-		setmouse_r()
+		setmouse()
 		cmdline_row = msg_row
 		if need_check_timestamps_g {
 			check_timestamps_e(false)
@@ -3367,7 +3366,7 @@ wait_return :: proc "c" (redraw: C.int) {
 	}
 	tmpState := State
 	State = oldState
-	setmouse_r()
+	setmouse()
 	msg_check()
 	need_wait_return_g = false
 	did_wait_return_g = true

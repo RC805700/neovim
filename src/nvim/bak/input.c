@@ -34,6 +34,7 @@
 /// @param[in]  str  Prompt: question to ask user. Is always followed by " (y/n)?".
 ///
 /// @return 'y' or 'n'. Last is also what will be returned in case of interrupt.
+#pragma weak ask_yesno
 int ask_yesno(const char *const str)
 {
   const int save_State = State;
@@ -70,6 +71,7 @@ int ask_yesno(const char *const str)
 /// Doesn't use vgetc(), because it syncs undo and eats mapped characters.
 /// Disadvantage: typeahead is ignored.
 /// Translates the interrupt character for unix to ESC.
+#pragma weak get_keystroke
 int get_keystroke(MultiQueue *events)
 {
   uint8_t *buf = NULL;
@@ -149,6 +151,7 @@ int get_keystroke(MultiQueue *events)
 ///
 /// @param one_key Return from cmdline after one key press.
 /// @param mouse_used When not NULL, allow using the mouse to press a number.
+#pragma weak prompt_for_input
 int prompt_for_input(char *prompt, int hl_id, bool one_key, bool *mouse_used)
 {
   int ret = one_key ? ESC : 0;

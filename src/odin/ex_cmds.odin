@@ -3739,8 +3739,7 @@ foreign _ {
 	highlight_match_g: bool
 	@(link_name = "getcmdline_prompt")
 	getcmdline_prompt_r :: proc "c"(firstc: C.int, prompt: cstring, hl_id: C.int, xp_context: C.int, xp_arg: cstring, highlight_callback: Callback_T, one_key: bool, mouse_used: rawptr) -> ^u8 ---
-	@(link_name = "prompt_for_input")
-	prompt_for_input_r :: proc "c"(p: ^u8, hl_id: C.int, one_key: bool, mouse_used: rawptr) -> C.int ---
+	// prompt_for_input now defined in input.odin — call directly.
 	// scrollup/down_clamp now defined in move.odin — call directly.
 	// do_check_cursorbind now defined in move.odin — call directly.
 	@(link_name = "p_cwh")
@@ -4348,7 +4347,7 @@ sub_engine_o :: proc "c"(eap: rawptr, timeout: proftime_T, cmdpreview_ns: C.int,
 							p := cstring("replace with %s? (y)es/(n)o/(a)ll/(q)uit/(l)ast/scroll up(^E)/down(^Y)")
 							libc.snprintf(&IObuff[0], C.size_t(IOSIZE_O), p, cstring(sub))
 							pp := xstrdup_o(&IObuff[0])
-							typed = prompt_for_input_r(pp, HLF_R_S, true, nil)
+							typed = prompt_for_input(transmute(cstring)(pp), HLF_R_S, true, nil)
 							highlight_match_g = false
 							xfree(transmute(rawptr)(pp))
 

@@ -1535,7 +1535,7 @@ current_search :: proc "c"(count: C.int, forward: bool) -> C.int {
 	}
 
 	may_start_select('c')
-	setmouse_r()
+	setmouse()
 	redraw_curbuf_later(UPD_INVERTED_S2)
 	_ = showmode()
 
@@ -1545,8 +1545,7 @@ current_search :: proc "c"(count: C.int, forward: bool) -> C.int {
 foreign _ {
 	@(link_name = "may_start_select")
 	may_start_select :: proc "c" (c: C.int) ---
-	@(link_name = "setmouse")
-	setmouse_r :: proc "c" () ---
+	// setmouse is declared in main.odin — call directly.
 	// apply_autocmds declared in main.odin (proc "c") — reuse directly.
 }
 

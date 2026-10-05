@@ -16223,8 +16223,7 @@ f_jobwait :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 foreign _ {
 	@(link_name = "get_user_input")
 	get_user_input_e :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, inputdialog: bool, secret: bool) ---
-	@(link_name = "prompt_for_input")
-	prompt_for_input_e :: proc "c" (prompt: cstring, hl_id: C.int, one_key: bool, mouse_used: ^bool) -> C.int ---
+	// prompt_for_input now defined in input.odin — call directly.
 	// verb_msg now defined in message.odin — call directly.
 	@(link_name = "save_typeahead")
 	save_typeahead_e :: proc "c" (tp: rawptr) ---
@@ -16276,7 +16275,7 @@ f_inputlist :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 		li = (^rawptr)(uintptr(li))^
 	}
 	mouse_used := false
-	selected := prompt_for_input_e(nil, 0, false, &mouse_used)
+	selected := prompt_for_input(nil, 0, false, &mouse_used)
 	if mouse_used {
 		selected = tv_list_len_o(l) - (cmdline_row - mouse_row)
 	}

@@ -3955,8 +3955,7 @@ foreign _ {
 	@(link_name = "do_intthrow")
 	do_intthrow_e :: proc "c" (cstack: rawptr) -> bool ---
 	// dbg_check_breakpoint — PORTED (debugger.odin).
-	@(link_name = "ask_yesno")
-	ask_yesno_e :: proc "c" (str: cstring) -> C.int ---
+	// ask_yesno now defined in input.odin — call directly.
 }
 
 EVENT_CMDUNDEFINED_O :: 29
@@ -4121,7 +4120,7 @@ do_one_cmd_o :: proc "c" (cmdlinep: ^cstring, flags: C.int, cstack: rawptr, fget
 						errormsg = cstring(E493_S)
 						break
 					}
-					if ask_yesno_e(cstring("Backwards range given, OK to swap")) != 'y' {
+					if ask_yesno(cstring("Backwards range given, OK to swap")) != 'y' {
 						break
 					}
 				}
