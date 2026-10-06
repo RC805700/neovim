@@ -38,8 +38,6 @@ K_MTMETA_INLINE_O :: 0
 TERM_ATTRS_MAX_O :: 1024
 
 foreign _ {
-	@(link_name = "decor_providers_invoke_line")
-	decor_providers_invoke_line_r :: proc "c"(wp: rawptr, lnum: C.int) ---
 	// validate_virtcol now defined in move.odin — call directly.
 	// decor_redraw_line_r: spell.odin (identical sig).
 	@(link_name = "decor_has_more_decorations")
@@ -76,15 +74,13 @@ decor_providers_setup_o :: proc "c"(rows_to_draw: C.int, draw_from_line_start: b
 	}
 
 	// Invalidate the line pointer anyway.
-	decor_providers_invoke_line_r(wp, lnum - 1)
+	decor_providers_invoke_line(wp, lnum - 1)
 	validate_virtcol(wp)
 
 	return invoke_range_next_o(wp, lnum, col, rem_vcols + 1)
 }
 
 foreign _ {
-	@(link_name = "decor_providers_invoke_range")
-	decor_providers_invoke_range_r :: proc "c"(wp: rawptr, lnum1: C.int, col1: C.int, lnum2: C.int, col2: C.int) ---
 	@(link_name = "mb_off_next")
 	mb_off_next_r :: proc "c"(base: ^u8, p: ^u8) -> C.int ---
 }
@@ -99,11 +95,11 @@ invoke_range_next_o :: proc "c"(wp: rawptr, lnum: C.int, begin_col: C.int, col_o
 	if co <= line_len - begin_col {
 		end_col := begin_col + co
 		end_col += mb_off_next_r(line, (^u8)(uintptr(line) + uintptr(end_col)))
-		decor_providers_invoke_range_r(wp, lnum - 1, begin_col, lnum - 1, end_col)
+		decor_providers_invoke_range(wp, lnum - 1, begin_col, lnum - 1, end_col)
 		validate_virtcol(wp)
 		new_col = end_col
 	} else {
-		decor_providers_invoke_range_r(wp, lnum - 1, begin_col, lnum, 0)
+		decor_providers_invoke_range(wp, lnum - 1, begin_col, lnum, 0)
 		validate_virtcol(wp)
 		new_col = 2147483647 // INT_MAX
 	}

@@ -71,6 +71,7 @@ static bool decor_provider_invoke(int provider_idx, const char *name, LuaRef ref
   return false;
 }
 
+#pragma weak decor_providers_invoke_spell
 void decor_providers_invoke_spell(win_T *wp, int start_row, int start_col, int end_row, int end_col)
 {
   for (size_t i = 0; i < kv_size(decor_providers); i++) {
@@ -89,6 +90,7 @@ void decor_providers_invoke_spell(win_T *wp, int start_row, int start_col, int e
 }
 
 /// @return whether a provider placed any marks in the callback.
+#pragma weak decor_providers_invoke_conceal_line
 bool decor_providers_invoke_conceal_line(win_T *wp, int row)
 {
   size_t keys = wp->w_buffer->b_marktree->n_keys;
@@ -109,6 +111,7 @@ bool decor_providers_invoke_conceal_line(win_T *wp, int row)
 ///
 /// @param[out] providers Decoration providers
 /// @param[out] err       Provider err
+#pragma weak decor_providers_start
 void decor_providers_start(void)
 {
   for (size_t i = 0; i < kv_size(decor_providers); i++) {
@@ -131,6 +134,7 @@ void decor_providers_start(void)
 /// @param      providers      Decoration providers
 /// @param[out] line_providers Enabled line providers to invoke in win_line
 /// @param[out] err            Provider error
+#pragma weak decor_providers_invoke_win
 void decor_providers_invoke_win(win_T *wp)
 {
   // this might change in the future
@@ -174,6 +178,7 @@ void decor_providers_invoke_win(win_T *wp)
 /// @param      row       Row to invoke line callback for
 /// @param[out] has_decor Set when at least one provider invokes a line callback
 /// @param[out] err       Provider error
+#pragma weak decor_providers_invoke_line
 void decor_providers_invoke_line(win_T *wp, int row)
 {
   decor_state.running_decor_provider = true;
@@ -195,6 +200,7 @@ void decor_providers_invoke_line(win_T *wp, int row)
   decor_state.running_decor_provider = false;
 }
 
+#pragma weak decor_providers_invoke_range
 void decor_providers_invoke_range(win_T *wp, int start_row, int start_col, int end_row, int end_col)
 {
   decor_state.running_decor_provider = true;
@@ -252,6 +258,7 @@ void decor_providers_invoke_range(win_T *wp, int start_row, int start_col, int e
 /// @param      buf       Buffer
 /// @param      providers Decoration providers
 /// @param[out] err       Provider error
+#pragma weak decor_providers_invoke_buf
 void decor_providers_invoke_buf(buf_T *buf)
 {
   for (size_t i = 0; i < kv_size(decor_providers); i++) {
@@ -270,6 +277,7 @@ void decor_providers_invoke_buf(buf_T *buf)
 /// @param      providers   Decoration providers
 /// @param      displaytick Display tick
 /// @param[out] err         Provider error
+#pragma weak decor_providers_invoke_end
 void decor_providers_invoke_end(void)
 {
   for (size_t i = 0; i < kv_size(decor_providers); i++) {
@@ -288,6 +296,7 @@ void decor_providers_invoke_end(void)
 ///
 /// Expensive! Should on be called by an already throttled validity check
 /// like highlight_changed() (throttled to the next redraw or mode change)
+#pragma weak decor_provider_invalidate_hl
 void decor_provider_invalidate_hl(void)
 {
   for (size_t i = 0; i < kv_size(decor_providers); i++) {
@@ -300,6 +309,7 @@ void decor_provider_invalidate_hl(void)
   }
 }
 
+#pragma weak get_decor_provider
 DecorProvider *get_decor_provider(NS ns_id, bool force)
 {
   assert(ns_id > 0);
@@ -321,6 +331,7 @@ DecorProvider *get_decor_provider(NS ns_id, bool force)
   return item;
 }
 
+#pragma weak decor_provider_clear
 void decor_provider_clear(DecorProvider *p)
 {
   if (p == NULL) {
@@ -337,6 +348,7 @@ void decor_provider_clear(DecorProvider *p)
   p->state = kDecorProviderDisabled;
 }
 
+#pragma weak decor_free_all_mem
 void decor_free_all_mem(void)
 {
   for (size_t i = 0; i < kv_size(decor_providers); i++) {

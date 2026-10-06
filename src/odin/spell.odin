@@ -49,8 +49,6 @@ foreign _ {
 	decor_redraw_line_r :: proc "c" (wp: rawptr, lnum: C.int, ds: rawptr) ---
 	@(link_name = "decor_redraw_col_impl")
 	decor_redraw_col_impl_r :: proc "c" (wp: rawptr, col: C.int, win_col: C.int, hidden: bool, ds: rawptr, max_col: C.int) -> C.int ---
-	@(link_name = "decor_providers_invoke_spell")
-	decor_providers_invoke_spell_r :: proc "c" (wp: rawptr, start_row: C.int, start_col: C.int, end_row: C.int, end_col: C.int) ---
 	@(link_name = "decor_state_free")
 	decor_state_free_r :: proc "c" (ds: rawptr) ---
 
@@ -2324,7 +2322,7 @@ decor_state_buf_p :: proc "c"() -> ^u8 {
 decor_spell_nav_col :: proc "c"(wp: rawptr, lnum: C.int, decor_lnum: ^C.int, col: C.int) -> C.int {
 	if decor_lnum^ != lnum {
 		decor_redraw_reset_r(wp, decor_state_buf_p())
-		decor_providers_invoke_spell_r(wp, lnum - 1, col, lnum - 1, -1)
+		decor_providers_invoke_spell(wp, lnum - 1, col, lnum - 1, -1)
 		decor_redraw_line_r(wp, lnum - 1, decor_state_buf_p())
 		decor_lnum^ = lnum
 	}

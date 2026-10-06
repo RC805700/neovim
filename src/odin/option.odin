@@ -4787,8 +4787,7 @@ object_as_optval :: proc "c"(o: Api_Object, error: ^bool) -> OptVal {
 foreign _ {
 	@(link_name = "nvim_create_namespace")
 	nvim_create_namespace_c :: proc "c" (name: NvimString) -> C.int ---
-	@(link_name = "get_decor_provider")
-	get_decor_provider_c :: proc "c" (ns: C.int, force: bool) -> rawptr ---
+	// get_decor_provider now defined in decor_provider.odin — call directly.
 	@(link_name = "ns_hl_def")
 	ns_hl_def_c :: proc "c" (ns: C.int, hl_id: C.int, attrs: HlAttrs, attr_id: C.int, info: rawptr) ---
 	@(link_name = "syn_check_group")
@@ -4832,7 +4831,7 @@ parse_winhl_opt :: proc "c"(winhl: ^u8, wp: rawptr) -> bool {
 				nvim_create_namespace_c(NvimString{data = nil, size = 0})
 		} else {
 			// Namespace already exists. Invalidate existing items.
-			dp := get_decor_provider_c((^C.int)(uintptr(wp) + W_NS_HL_WINHL_OFF)^, true)
+			dp := get_decor_provider((^C.int)(uintptr(wp) + W_NS_HL_WINHL_OFF)^, true)
 			(^C.int)(uintptr(dp) + 52)^ += 1 // DecorProvider.hl_valid @52
 		}
 		ns_hl = (^C.int)(uintptr(wp) + W_NS_HL_WINHL_OFF)^

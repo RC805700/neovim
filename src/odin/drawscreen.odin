@@ -1208,12 +1208,6 @@ foreign _ {
 	@(link_name = "cmdline_screen_cleared")
 	cmdline_screen_cleared_r :: proc "c"() ---
 	// ui_call_msg_clear now defined in ui.odin — call directly.
-	@(link_name = "decor_providers_start")
-	decor_providers_start_r :: proc "c"() ---
-	@(link_name = "decor_providers_invoke_buf")
-	decor_providers_invoke_buf_r :: proc "c"(buf: rawptr) ---
-	@(link_name = "decor_providers_invoke_end")
-	decor_providers_invoke_end_r :: proc "c"() ---
 	// update_curswant now defined in move.odin — call directly.
 	@(link_name = "update_window_hl")
 	update_window_hl_r :: proc "c"(wp: rawptr, invalid: bool) ---
@@ -1579,7 +1573,7 @@ update_screen :: proc "c"() -> C.int {
 
 	ui_comp_set_screen_valid_r(true)
 
-	decor_providers_start_r()
+	decor_providers_start()
 
 	// "start" callback may change global-element highlights.
 	if win_check_ns_hl_r(nil) {
@@ -1640,7 +1634,7 @@ update_screen :: proc "c"() -> C.int {
 			}
 
 			if (^u64)(uintptr(buf) + B_MOD_TICK_DECOR_OFF)^ < display_tick_g {
-				decor_providers_invoke_buf_r(buf)
+				decor_providers_invoke_buf(buf)
 				(^u64)(uintptr(buf) + B_MOD_TICK_DECOR_OFF)^ = display_tick_g
 			}
 		}
@@ -1749,7 +1743,7 @@ update_screen :: proc "c"() -> C.int {
 	}
 	repeat_message()
 
-	decor_providers_invoke_end_r()
+	decor_providers_invoke_end()
 
 	// Cmdline cleared/not drawn/mode last drawn (not always ext cmdline).
 	if !ui_has(K_UICMDLINE_O) {
@@ -1796,8 +1790,6 @@ DID_FOLD_O :: 3
 DECOR_PRIORITY_BASE_O :: 0x1000
 
 foreign _ {
-	@(link_name = "decor_providers_invoke_win")
-	decor_providers_invoke_win_r :: proc "c"(wp: rawptr) ---
 	@(link_name = "terminal_suspended")
 	terminal_suspended_r :: proc "c"(term: rawptr) -> bool ---
 	@(link_name = "decor_range_add_virt")
@@ -1962,7 +1954,7 @@ win_update :: proc "c"(wp: rawptr) {
 
 	decor_redraw_reset_r(wp, transmute(rawptr)(&decor_state_g))
 
-	decor_providers_invoke_win_r(wp)
+	decor_providers_invoke_win(wp)
 
 	if (^rawptr)(uintptr(buf) + B_TERMINAL_OFF)^ != nil &&
 		terminal_suspended_r((^rawptr)(uintptr(buf) + B_TERMINAL_OFF)^) {
@@ -2866,7 +2858,7 @@ win_update :: proc "c"(wp: rawptr) {
 			(^C.int)(uintptr(wp) + W_LINES_VALID_OFF)^ = 0
 			(^C.int)(uintptr(wp) + W_VALID_OFF)^ &= ~C.int(VALID_WCOL_O)
 			decor_redraw_reset_r(wp, transmute(rawptr)(&decor_state_g))
-			decor_providers_invoke_win_r(wp)
+			decor_providers_invoke_win(wp)
 			continue
 		}
 
@@ -2971,7 +2963,7 @@ win_update :: proc "c"(wp: rawptr) {
 					(^C.int)(uintptr(wp) + W_LINES_VALID_OFF)^ = 0
 					(^C.int)(uintptr(wp) + W_VALID_OFF)^ &= ~C.int(VALID_WCOL_O)
 					decor_redraw_reset_r(wp, transmute(rawptr)(&decor_state_g))
-					decor_providers_invoke_win_r(wp)
+					decor_providers_invoke_win(wp)
 					sc_redo = true
 					continue
 				}
