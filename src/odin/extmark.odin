@@ -348,11 +348,14 @@ extmark_del :: proc "c" (buf: rawptr, itr_raw: rawptr, key: MTKey_O, restore: bo
 		} else {
 			k1 := key
 			k2 := key2
+			// C swaps key/key2 first, so mt_decor reads the swapped key.
+			dd := mt_decor_o(key)
 			if mt_end_o(key) {
 				k1 = key2
 				k2 = key
+				dd = mt_decor_o(key2)
 			}
-			buf_decor_remove_e(buf, C.int(k1.pos.row), C.int(k2.pos.row), C.int(k1.pos.col), mt_decor_o(key), true)
+			buf_decor_remove_e(buf, C.int(k1.pos.row), C.int(k2.pos.row), C.int(k1.pos.col), dd, true)
 		}
 	}
 	decor_state_invalidate_e(buf)

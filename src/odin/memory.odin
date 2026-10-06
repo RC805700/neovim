@@ -6,6 +6,7 @@ import "core:c/libc"
 import "core:fmt"
 import "core:mem"
 import "core:os"
+import "core:sync"
 
 AllocInfo :: struct {
   size: int,
@@ -19,6 +20,11 @@ WrappedCaller :: struct {
 
 @(private)
 alloc_sizes: map[rawptr]AllocInfo
+
+// x* procs run on libuv worker threads too (xdiff, fs ops), concurrent with
+// the main thread. The map is not thread-safe, so every access takes this.
+@(private)
+alloc_lock: sync.Mutex
 
 // When false (default), the x* allocation procs are thin wrappers with zero
 // tracking overhead — identical speed to the original libc malloc. Tracking
@@ -41,6 +47,8 @@ foreign _ {
   @(link_name = "preserve_exit")
   preserve_exit :: proc "c" (errmsg: cstring) ---
   backtrace :: proc "c" (buffer: [^]rawptr, size: c.int) -> c.int ---
+  @(link_name = "malloc_usable_size")
+  malloc_usable_size_e :: proc "c" (ptr: rawptr) -> c.size_t ---
   // Defined by main.c.o (EXTERN in memory.h); C copy is authoritative
   // (new compiler emits @(export) globals strong — would clash).
   arena_alloc_count: c.size_t
@@ -93,7 +101,9 @@ xmalloc :: proc "c" (size: c.size_t) -> rawptr {
     preserve_exit("E41: Out of memory!")
   }
 	data := raw_data(data_bytes)
+	sync.lock(&alloc_lock)
 	alloc_sizes[data] = AllocInfo{actual, caller_if_tracked()}
+	sync.unlock(&alloc_lock)
 	return data
 }
 
@@ -102,7 +112,9 @@ xfree :: proc "c" (ptr: rawptr) {
 	if ptr == nil { return }
 	context = runtime.default_context()
 	context.allocator = backing_allocator()
+	sync.lock(&alloc_lock)
 	delete_key(&alloc_sizes, ptr)
+	sync.unlock(&alloc_lock)
 	mem.free(ptr)
 }
 
@@ -117,7 +129,9 @@ xcalloc :: proc "c" (count: c.size_t, size: c.size_t) -> rawptr {
 	if err != nil {
 		preserve_exit("E41: Out of memory!")
 	}
+	sync.lock(&alloc_lock)
 	alloc_sizes[data] = AllocInfo{total, caller_if_tracked()}
+	sync.unlock(&alloc_lock)
 	return data
 }
 
@@ -132,20 +146,43 @@ xrealloc :: proc "c" (ptr: rawptr, size: c.size_t) -> rawptr {
 			preserve_exit("E41: Out of memory!")
 		}
 		data := raw_data(data_bytes)
+		sync.lock(&alloc_lock)
 		alloc_sizes[data] = AllocInfo{actual, caller_if_tracked()}
+		sync.unlock(&alloc_lock)
 		return data
 	}
 
+	sync.lock(&alloc_lock)
 	old_info, have_old := alloc_sizes[ptr]
+	sync.unlock(&alloc_lock)
 	if !have_old {
+		// Pointer not tracked by us (raw libc allocation from a third-party
+		// lib, or a lost tracking entry). C's realloc copies min(old, new);
+		// recover the real old size from the allocator instead of copying
+		// `actual` bytes blindly (over-read) like before. All our backing
+		// memory is libc chunks, so malloc_usable_size is exact for heap.
+		// A static/global address here is a fatal caller bug (C aborts in
+		// realloc too) — fail loudly with the symbol instead of corrupting.
+		dlinfo: Dl_info
+		if dladdr(ptr, &dlinfo) != 0 && dlinfo.dli_sname != nil {
+			libc.fprintf(libc.stderr, cstring("xrealloc: pointer %p is not heap (nearest symbol: %s in %s), aborting\n"), ptr, dlinfo.dli_sname, dlinfo.dli_fname)
+			libc.abort()
+		}
+		real_old := int(malloc_usable_size_e(ptr))
+		if real_old <= 0 {
+			real_old = actual
+		}
+		n := min(real_old, actual)
 		new_data_bytes, err := mem.alloc_bytes_non_zeroed(actual)
 		if err != nil {
 			preserve_exit("E41: Out of memory!")
 		}
 		new_data := raw_data(new_data_bytes)
-		mem.copy(new_data, ptr, actual)
+		mem.copy(new_data, ptr, n)
 		mem.free(ptr)
+		sync.lock(&alloc_lock)
 		alloc_sizes[new_data] = AllocInfo{actual, caller_if_tracked()}
+		sync.unlock(&alloc_lock)
 		return new_data
 	}
 
@@ -153,8 +190,12 @@ xrealloc :: proc "c" (ptr: rawptr, size: c.size_t) -> rawptr {
 	if err != nil {
 		preserve_exit("E41: Out of memory!")
 	}
+	sync.lock(&alloc_lock)
 	delete_key(&alloc_sizes, ptr)
+	sync.unlock(&alloc_lock)
+	sync.lock(&alloc_lock)
 	alloc_sizes[new_data] = AllocInfo{actual, caller_if_tracked()}
+	sync.unlock(&alloc_lock)
 	return new_data
 }
 
@@ -166,7 +207,9 @@ try_malloc :: proc "c" (size: c.size_t) -> rawptr {
 	data_bytes, err := mem.alloc_bytes_non_zeroed(actual)
 	if err != nil { return nil }
 	data := raw_data(data_bytes)
+	sync.lock(&alloc_lock)
 	alloc_sizes[data] = AllocInfo{actual, caller_if_tracked()}
+	sync.unlock(&alloc_lock)
 	return data
 }
 
@@ -181,7 +224,9 @@ verbose_try_malloc :: proc "c" (size: c.size_t) -> rawptr {
 		return nil
 	}
 	data := raw_data(data_bytes)
+	sync.lock(&alloc_lock)
 	alloc_sizes[data] = AllocInfo{actual, caller_if_tracked()}
+	sync.unlock(&alloc_lock)
 	return data
 }
 

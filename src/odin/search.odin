@@ -2975,7 +2975,7 @@ ACTION_EXPAND_S :: 5
 
 get_line_and_copy :: proc "c"(lnum: C.int, buf: ^u8) -> ^u8 {
 	line := ml_get(lnum)
-	libc.strncpy(buf, transmute(cstring)(line), LSIZE_C)
+	xstrlcpy(transmute(cstring)(buf), transmute(cstring)(line), LSIZE_C)
 	return buf
 }
 

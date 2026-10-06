@@ -683,6 +683,7 @@ static int get_fileinfo(buf_T *buf, char *fname, bool overwriting, bool forceit,
 }
 
 /// @return The backup file name
+#pragma weak buf_get_backup_name
 char *buf_get_backup_name(char *fname, char **dirp, bool no_prepend_dot, char *backup_ext)
 {
   char *backup = NULL;
@@ -972,6 +973,7 @@ nobackup:
 /// @param append  append to the file
 ///
 /// @return        FAIL for failure, OK otherwise
+#pragma weak buf_write
 int buf_write(buf_T *buf, char *fname, char *sfname, linenr_T start, linenr_T end, exarg_T *eap,
               bool append, bool forceit, bool reset_changed, bool filtering)
 {

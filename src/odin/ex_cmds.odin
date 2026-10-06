@@ -2015,8 +2015,7 @@ foreign _ {
 	did_check_timestamps_g: bool
 	@(link_name = "need_check_timestamps")
 	need_check_timestamps_g: bool
-	@(link_name = "buf_write")
-	buf_write_r :: proc "c"(buf: rawptr, fname: cstring, sfname: cstring, start: C.int, end: C.int, eap: rawptr, append: bool, forceit: bool, reset_changed: bool, filtering: bool) -> C.int ---
+	// buf_write now defined in bufwrite.odin — call directly.
 	// del_lines now defined in change.odin — call directly.
 	@(link_name = "write_lnum_adjust")
 	write_lnum_adjust_r :: proc "c"(offset: C.int) ---
@@ -2215,7 +2214,7 @@ do_filter_o :: proc "c"(line1: C.int, line2: C.int, eap: rawptr, cmd: ^u8, do_in
 	// Temp-file messages are not shown (uninformative, unlike Vi).
 	no_wait_return += 1 // don't call wait_return() while busy
 	if !fend && itmp != nil &&
-		buf_write_r(curbuf, cstring(itmp), nil, line1, line2, eap, false,
+		buf_write(curbuf, cstring(itmp), nil, line1, line2, eap, false,
 			false, false, true) == FAIL {
 		if !ui_has(K_UIMESSAGES_O) {
 			msg_putchar('\n') // keep message from buf_write()
@@ -5210,19 +5209,20 @@ do_write :: proc "c"(eap: rawptr) -> C.int {
 						done = true
 					}
 				}
-			}
-			if !done {
-				// Empty 'filetype' gets detected now.
-				if b_at((^u8)(uintptr(curbuf) + B_P_FT_OFF), 0) == 0 {
-					if augroup_exists_r(cstring("filetypedetect")) {
-						do_doautocmd_r(cstring("filetypedetect BufRead"),
-							true, nil)
+				// Empty 'filetype' gets detected now (saveas-only,
+				// like C: inside the saveas/alt_buf block).
+				if !done {
+					if b_at((^u8)(uintptr(curbuf) + B_P_FT_OFF), 0) == 0 {
+						if augroup_exists_r(cstring("filetypedetect")) {
+							do_doautocmd_r(cstring("filetypedetect BufRead"),
+								true, nil)
+						}
+						do_modelines(0)
 					}
-					do_modelines(0)
-				}
 
-				// Autocommands may have renamed (esp. 'autochdir').
-				fname = (^u8)((^rawptr)(uintptr(curbuf) + B_SFNAME_OFF)^)
+					// Autocommands may have renamed (esp. 'autochdir').
+					fname = (^u8)((^rawptr)(uintptr(curbuf) + B_SFNAME_OFF)^)
+				}
 			}
 			if !done {
 				if handle_mkdir_p_arg_o(eap, cstring(fname)) == FAIL {
@@ -5231,7 +5231,7 @@ do_write :: proc "c"(eap: rawptr) -> C.int {
 				} else {
 					name_was_missing :=
 						(^rawptr)(uintptr(curbuf) + B_FFNAME)^ == nil
-					retval = buf_write_r(curbuf, cstring(ffname), cstring(fname),
+					retval = buf_write(curbuf, cstring(ffname), cstring(fname),
 						(^C.int)(uintptr(eap) + EXARG_LINE1_OFF)^,
 						(^C.int)(uintptr(eap) + EXARG_LINE2_OFF)^, eap,
 						(^C.int)(uintptr(eap) + EXARG_APPEND_OFF)^ != 0,

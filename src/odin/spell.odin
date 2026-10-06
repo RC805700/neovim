@@ -1905,7 +1905,7 @@ spell_cat_line :: proc "c"(buf: ^u8, line: ^u8, maxlen: C.int) {
 	n := C.int(uintptr(p) - uintptr(line)) + 1
 	if n < maxlen - 1 {
 		libc.memset(buf, ' ', C.size_t(n))
-		libc.strncpy(([^]u8)(uintptr(buf) + uintptr(n)), transmute(cstring)(p), C.size_t(maxlen - n))
+		xstrlcpy(transmute(cstring)(rawptr(uintptr(buf) + uintptr(n))), transmute(cstring)(p), C.size_t(maxlen - n))
 	}
 }
 
@@ -2171,7 +2171,7 @@ parse_spelllang :: proc "c"(wp: rawptr) -> ^u8 {
 			if round == 0 {
 				libc.strcpy(&lang[0], "internal wordlist")
 			} else {
-				libc.strncpy(&lang[0], path_tail(transmute(cstring)(&spf_name[0])), MAXWLEN + 1)
+				xstrlcpy(transmute(cstring)(&lang[0]), path_tail(transmute(cstring)(&spf_name[0])), MAXWLEN + 1)
 				pp := vim_strchr(transmute(cstring)(&lang[0]), '.')
 				if pp != nil {
 					b_set(transmute(^u8)(pp), 0, 0)
@@ -2686,7 +2686,7 @@ onecap_copy :: proc "c"(word: ^u8, wcopy: ^u8, upper: bool) {
 		c = spell_tofold(c)
 	}
 	l := utf_char2bytes_r(c, wcopy)
-	libc.strncpy(([^]u8)(uintptr(wcopy) + uintptr(l)), transmute(cstring)(p), C.size_t(MAXWLEN - l))
+	xstrlcpy(transmute(cstring)(rawptr(uintptr(wcopy) + uintptr(l))), transmute(cstring)(p), C.size_t(MAXWLEN - l))
 }
 
 // Make a copy of "word" with all letters upper cased.
@@ -3499,7 +3499,7 @@ dump_prefixes :: proc "c"(
 
 					cc = valid_word_prefix(i, n, flags, word, slang, false)
 					if cc != 0 {
-						libc.strncpy(([^]u8)(uintptr(&prefix[0]) + uintptr(depth)),
+						xstrlcpy(transmute(cstring)(rawptr(uintptr(&prefix[0]) + uintptr(depth))),
 							transmute(cstring)(word), C.size_t(MAXWLEN - depth))
 						dump_word(slang, &prefix[0], pat, dir, dumpflags,
 							(cc & WF_RAREPFX) != 0 ? (flags | WF_RARE) : flags, lnum)
@@ -3511,7 +3511,7 @@ dump_prefixes :: proc "c"(
 					if has_word_up {
 						cc = valid_word_prefix(i, n, flags, &word_up[0], slang, true)
 						if cc != 0 {
-							libc.strncpy(([^]u8)(uintptr(&prefix[0]) + uintptr(depth)),
+							xstrlcpy(transmute(cstring)(rawptr(uintptr(&prefix[0]) + uintptr(depth))),
 								transmute(cstring)(&word_up[0]), C.size_t(MAXWLEN - depth))
 							dump_word(slang, &prefix[0], pat, dir, dumpflags,
 								(cc & WF_RAREPFX) != 0 ? (flags | WF_RARE) : flags, lnum)

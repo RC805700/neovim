@@ -3018,11 +3018,18 @@ copy_confirm_hotkeys_o :: proc "c" (buttons: cstring, default_button_idx: C.int,
 	msgp := confirm_buttons
 	idx: C.int = 0
 	r := transmute(^u8)(buttons)
+	hk := hotkeys_ptr
+	dflt := default_button_idx
 	for ([^]u8)(r)[0] != 0 {
 		if ([^]u8)(r)[0] == DLG_BUTTON_SEP_O {
 			([^]u8)(msgp)[0] = ','
 			([^]u8)(msgp)[1] = ' '
 			msgp = transmute(^u8)(rawptr(uintptr(msgp) + 2))
+			hk = transmute(^u8)(rawptr(uintptr(hk) + uintptr(libc.strlen(transmute(cstring)(hk)))))
+			([^]u8)(hk)[uintptr(copy_char_o(transmute(cstring)(rawptr(uintptr(r) + 1)), hk, true))] = 0
+			if dflt != 0 {
+				dflt -= 1
+			}
 			if idx < HAS_HOTKEY_LEN_O - 1 {
 				idx += 1
 				if !([^]bool)(has_hotkey)[uintptr(idx)] {
@@ -3038,20 +3045,20 @@ copy_confirm_hotkeys_o :: proc "c" (buttons: cstring, default_button_idx: C.int,
 				([^]u8)(msgp)[0] = ([^]u8)(r)[0]
 				msgp = transmute(^u8)(rawptr(uintptr(msgp) + 1))
 			} else {
-				if default_button_idx == 1 {
+				if dflt == 1 {
 					([^]u8)(msgp)[0] = '['
 				} else {
 					([^]u8)(msgp)[0] = '('
 				}
 				msgp = transmute(^u8)(rawptr(uintptr(msgp) + 1))
 				msgp = transmute(^u8)(rawptr(uintptr(msgp) + uintptr(copy_char_o(transmute(cstring)(r), msgp, false))))
-				if default_button_idx == 1 {
+				if dflt == 1 {
 					([^]u8)(msgp)[0] = ']'
 				} else {
 					([^]u8)(msgp)[0] = ')'
 				}
 				msgp = transmute(^u8)(rawptr(uintptr(msgp) + 1))
-				([^]u8)(hotkeys_ptr)[uintptr(copy_char_o(transmute(cstring)(r), hotkeys_ptr, true))] = 0
+				([^]u8)(hk)[uintptr(copy_char_o(transmute(cstring)(r), hk, true))] = 0
 			}
 		} else {
 			msgp = transmute(^u8)(rawptr(uintptr(msgp) + uintptr(copy_char_o(transmute(cstring)(r), msgp, false))))

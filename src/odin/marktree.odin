@@ -364,7 +364,7 @@ split_node_o :: proc "c" (b: ^MarkTree_O, x: ^MTNode_O, i: C.int, next: MTKey_O)
 	libc.memmove(rawptr(xpb + uintptr(i + 2) * 8), rawptr(xpb + uintptr(i + 1) * 8), C.size_t(x.n - i) * 8)
 	libc.memmove(rawptr(xmb + uintptr(i + 2) * 20), rawptr(xmb + uintptr(i + 1) * 20), C.size_t(x.n - i) * 20)
 	node_ptr_set_o(x, i + 1, rawptr(z))
-	meta_describe_node_o(node_meta_row_o(x, i + 1), x)
+	meta_describe_node_o(node_meta_row_o(x, i + 1), z)
 	z.parent = rawptr(x)
 	for j := i + 1; j < x.n + 2; j += 1 {
 		ch := (^MTNode_O)(node_ptr_o(x, j))
@@ -633,7 +633,7 @@ meta_describe_node_o :: proc "c" (meta_node: [^]u32, x: ^MTNode_O) {
 	if x.level != 0 {
 		for i: C.int = 0; i < x.n + 1; i += 1 {
 			for m in 0 ..< 5 {
-				meta_node[uintptr(i * 5 + C.int(m))] += node_meta_o(x, i, C.int(m))
+				meta_node[uintptr(m)] += node_meta_o(x, i, C.int(m))
 			}
 		}
 	}

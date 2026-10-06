@@ -509,7 +509,7 @@ check_fname :: proc "c" () -> C.int {
 buf_write_all :: proc "c" (buf: rawptr, forceit: bool) -> C.int {
 	context = runtime.default_context()
 	old_curbuf := curbuf
-	retval := buf_write_r(buf, transmute(cstring)((^rawptr)(uintptr(buf) + B_FFNAME)^), transmute(cstring)((^rawptr)(uintptr(buf) + B_FNAME)^), 1, (^C.int)(uintptr(buf) + B_ML_LINE_COUNT_OFF)^, nil, false, forceit, true, false)
+	retval := buf_write(buf, transmute(cstring)((^rawptr)(uintptr(buf) + B_FFNAME)^), transmute(cstring)((^rawptr)(uintptr(buf) + B_FNAME)^), 1, (^C.int)(uintptr(buf) + B_ML_LINE_COUNT_OFF)^, nil, false, forceit, true, false)
 	if curbuf != old_curbuf {
 		msg_source(HLF_W_O)
 		msg(cstring("Warning: Entered other buffer unexpectedly (check autocommands)"), 0)

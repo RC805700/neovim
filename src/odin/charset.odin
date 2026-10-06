@@ -937,7 +937,7 @@ str_foldcase :: proc "c" (str: cstring, orglen: C.int, buf: cstring, buflen: C.i
 		}
 		at := rawptr(uintptr(base) + uintptr(i))
 		c := utf_ptr2char(transmute(cstring)(at))
-		olen := utfc_ptr2len(transmute(cstring)(at))
+		olen := utf_ptr2len_o(transmute(cstring)(at))
 		lc := mb_tolower_r(c)
 		if ((c < 0x80) || (olen > 1)) && (c != lc) {
 			nlen := utf_char2len_r(lc)
@@ -959,7 +959,16 @@ str_foldcase :: proc "c" (str: cstring, orglen: C.int, buf: cstring, buflen: C.i
 						ga.ga_len += nlen - olen
 					} else {
 						b2 := ([^]u8)(buf)
-						libc.memmove(rawptr(uintptr(b2) + uintptr(i + nlen)), rawptr(uintptr(b2) + uintptr(i + olen)), C.size_t(length - (i + olen) + 1))
+						sz := length - (i + olen) + 1
+						// Guard: olen comes from utf_ptr2len, which can read
+						// past the NUL into heap when the string ends in a
+						// truncated multibyte sequence (heap bytes decide).
+						// C computes strlen() from the same spot (same UB);
+						// skipping the shift here keeps it bounded instead
+						// of smashing the heap with a huge memmove.
+						if sz >= 0 {
+							libc.memmove(rawptr(uintptr(b2) + uintptr(i + nlen)), rawptr(uintptr(b2) + uintptr(i + olen)), C.size_t(sz))
+						}
 						length += nlen - olen
 					}
 				}

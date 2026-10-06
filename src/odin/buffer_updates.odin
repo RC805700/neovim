@@ -258,8 +258,8 @@ buf_updates_unload :: proc "c" (buf: rawptr, can_reload: bool) {
 	}
 	bbase := uintptr(buf) + B_UPDATE_CALLBACKS_OFF
 	j: C.size_t = 0
-	n := (^C.size_t)(bbase)^
-	for i: C.size_t = 0; i < n; i += 1 {
+	// C re-reads kv_size every iteration (Lua can attach/detach mid-loop).
+	for i: C.size_t = 0; i < (^C.size_t)(bbase)^; i += 1 {
 		cb := ucb_at_o(buf, i)^
 		thecb: C.int = LUA_NOREF_O
 		keep := false
@@ -316,8 +316,9 @@ buf_updates_send_changes :: proc "c" (buf: rawptr, firstline: C.int, num_added: 
 		linedata = arena_array_e(rawptr(&arena), C.size_t(num_added))
 		buf_collect_lines_e(buf, C.size_t(num_added), firstline, 0, true, rawptr(&linedata), nil, rawptr(&arena))
 	}
-	n := uchans_size_o(buf)
-	for i: C.size_t = 0; i < n; i += 1 {
+	// C re-reads kv_size every iteration (Lua callbacks can attach/detach
+	// mid-loop); never snapshot it.
+	for i: C.size_t = 0; i < uchans_size_o(buf); i += 1 {
 		channelid := uchans_item_o(buf, i)
 		items: [6]Api_Object
 		args := Api_Array{size = 0, capacity = 6, items = &items[0]}
@@ -342,8 +343,8 @@ buf_updates_send_changes :: proc "c" (buf: rawptr, firstline: C.int, num_added: 
 	arena_mem_free(arena_finish(rawptr(&arena)))
 	bbase := uintptr(buf) + B_UPDATE_CALLBACKS_OFF
 	j: C.size_t = 0
-	m := (^C.size_t)(bbase)^
-	for i: C.size_t = 0; i < m; i += 1 {
+	// C re-reads kv_size every iteration (Lua can attach/detach mid-loop).
+	for i: C.size_t = 0; i < (^C.size_t)(bbase)^; i += 1 {
 		cb := ucb_at_o(buf, i)^
 		keep := true
 		if cb.on_lines != LUA_NOREF_O && (cb.preview || !cmdpreview_g) {
@@ -388,8 +389,8 @@ buf_updates_send_splice :: proc "c" (buf: rawptr, start_row: C.int, start_col: C
 	}
 	bbase := uintptr(buf) + B_UPDATE_CALLBACKS_OFF
 	j: C.size_t = 0
-	m := (^C.size_t)(bbase)^
-	for i: C.size_t = 0; i < m; i += 1 {
+	// C re-reads kv_size every iteration (Lua can attach/detach mid-loop).
+	for i: C.size_t = 0; i < (^C.size_t)(bbase)^; i += 1 {
 		cb := ucb_at_o(buf, i)^
 		keep := true
 		if cb.on_bytes != LUA_NOREF_O && (cb.preview || !cmdpreview_g) {
@@ -432,8 +433,8 @@ buf_updates_changedtick :: proc "c" (buf: rawptr) {
 	}
 	bbase := uintptr(buf) + B_UPDATE_CALLBACKS_OFF
 	j: C.size_t = 0
-	m := (^C.size_t)(bbase)^
-	for i: C.size_t = 0; i < m; i += 1 {
+	// C re-reads kv_size every iteration (Lua can attach/detach mid-loop).
+	for i: C.size_t = 0; i < (^C.size_t)(bbase)^; i += 1 {
 		cb := ucb_at_o(buf, i)^
 		keep := true
 		if cb.on_changedtick != LUA_NOREF_O {

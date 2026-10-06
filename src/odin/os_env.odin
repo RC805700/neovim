@@ -315,7 +315,12 @@ init_homedir :: proc "c" () {
 		p := vim_strchr(cstring(rawptr(uintptr(rawptr(var)) + 1)), '%')
 		if p != nil {
 			buf: [MAXPATHL]u8
-			libc.strncpy(&buf[0], cstring(rawptr(uintptr(rawptr(var)) + 1)), c.size_t(uintptr(rawptr(p)) - uintptr(rawptr(var)) - 1))
+			vn := int(uintptr(rawptr(p)) - uintptr(rawptr(var)) - 1)
+			if vn >= MAXPATHL {
+				vn = MAXPATHL - 1
+			}
+			libc.memmove(rawptr(&buf[0]), rawptr(uintptr(rawptr(var)) + 1), c.size_t(vn))
+			([^]u8)(rawptr(&buf[0]))[uintptr(vn)] = 0
 			exp := os_getenv(cstring(&buf[0]))
 			if exp != nil && ([^]u8)(exp)[0] != 0 {
 				var = vim_strsave_escaped(exp, cstring(nil))
