@@ -14871,8 +14871,6 @@ f_srand :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 
 // —— Batch 27am: funcs.c api_info + chanclose ——
 foreign _ {
-	@(link_name = "api_metadata")
-	api_metadata_e :: proc "c" () -> Api_Object ---
 	@(link_name = "object_to_vim")
 	object_to_vim_e :: proc "c" (obj: Api_Object, tv: ^Typval_T, err: rawptr) ---
 }

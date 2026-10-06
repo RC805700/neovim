@@ -220,8 +220,7 @@ foreign nvim {
 
   // Mid-startup helpers
   remote_request :: proc(params: ^Mparm, remote_args: c.int, server_addr: cstring, argc: c.int, argv: [^]cstring, ui_only: bool) ---
-  ui_client_start_server :: proc(progpath: cstring, argc: c.size_t, argv: [^]cstring) -> u64 ---
-  ui_client_run :: proc() ---
+  // ui_client_start_server/run now defined in ui_client.odin — call directly.
   remote_ui_wait_for_attach :: proc() ---
   edit_stdin :: proc(parmp: ^Mparm) -> bool ---
   open_scriptin :: proc(fname: cstring) -> bool ---

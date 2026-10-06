@@ -28,8 +28,7 @@ foreign _ {
 	terminal_receive_e :: proc "c" (term: rawptr, data: ^u8, len: C.size_t) ---
 	@(link_name = "terminal_destroy")
 	terminal_destroy_e :: proc "c" (termpp: rawptr) ---
-	@(link_name = "ui_client_attach_to_restarted_server")
-	ui_client_attach_to_restarted_server_e :: proc "c" (restart: bool) ---
+	// ui_client_attach_to_restarted_server now defined in ui_client.odin — call directly.
 }
 
 // Moved channel.c statics (single copy; no other C file touches them).
@@ -855,7 +854,7 @@ channel_proc_exit_cb_o :: proc "c" (pr: ^Proc, status: C.int, data: rawptr) {
 		terminal_close_r(rawptr(&chan.term), C.int(status))
 	}
 	if !exiting && ui_client_channel_id == chan.id {
-		ui_client_attach_to_restarted_server_e(pr.status != 0)
+		ui_client_attach_to_restarted_server(pr.status != 0)
 		if ui_client_channel_id == chan.id {
 			exit_on_closed_chan(status)
 		}

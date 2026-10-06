@@ -45,6 +45,7 @@ static bool tui_rgb = false;
 #include "ui_events_client.generated.h"
 // uncrustify:on
 
+#pragma weak ui_client_start_server
 uint64_t ui_client_start_server(const char *exepath, size_t argc, char **argv)
 {
   char **args = xmalloc((2 + argc) * sizeof(char *));
@@ -84,6 +85,7 @@ uint64_t ui_client_start_server(const char *exepath, size_t argc, char **argv)
 }
 
 /// Attaches this client to the UI channel, and sets its client info.
+#pragma weak ui_client_attach
 void ui_client_attach(int width, int height, char *term, bool rgb)
 {
   //
@@ -146,12 +148,14 @@ void ui_client_attach(int width, int height, char *term, bool rgb)
   TIME_MSG("nvim_set_client_info");
 }
 
+#pragma weak ui_client_detach
 void ui_client_detach(void)
 {
   rpc_send_event(ui_client_channel_id, "nvim_ui_detach", (Array)ARRAY_DICT_INIT);
   ui_client_attached = false;
 }
 
+#pragma weak ui_client_run
 void ui_client_run(void)
   FUNC_ATTR_NORETURN
 {
@@ -173,6 +177,7 @@ void ui_client_run(void)
   }
 }
 
+#pragma weak ui_client_stop
 void ui_client_stop(void)
 {
   ui_client_attached = false;
@@ -181,6 +186,7 @@ void ui_client_stop(void)
   }
 }
 
+#pragma weak ui_client_set_size
 void ui_client_set_size(int width, int height)
 {
   // The currently known size will be sent when attaching
@@ -194,6 +200,7 @@ void ui_client_set_size(int width, int height)
   tui_height = height;
 }
 
+#pragma weak ui_client_get_redraw_handler
 UIClientHandler ui_client_get_redraw_handler(const char *name, size_t name_len, Error *error)
 {
   int hash = ui_client_handler_hash(name, name_len);
@@ -208,6 +215,7 @@ UIClientHandler ui_client_get_redraw_handler(const char *name, size_t name_len, 
 /// async 'redraw' events, which are expected when nvim acts as a ui client.
 /// get handled in msgpack_rpc/unpacker.c and directly dispatched to handlers
 /// of specific ui events, like ui_client_event_grid_resize and so on.
+#pragma weak handle_ui_client_redraw
 Object handle_ui_client_redraw(uint64_t channel_id, Array args, Arena *arena, Error *error)
 {
   api_set_error(error, kErrorTypeValidation, "'redraw' cannot be sent as a request");
@@ -232,6 +240,7 @@ static HlAttrs ui_client_dict2hlattrs(Dict d, bool rgb)
   return attrs;
 }
 
+#pragma weak ui_client_event_grid_resize
 void ui_client_event_grid_resize(Array args)
 {
   if (args.size < 3
@@ -256,12 +265,14 @@ void ui_client_event_grid_resize(Array args)
   }
 }
 
+#pragma weak ui_client_event_grid_line
 void ui_client_event_grid_line(Array args)
   FUNC_ATTR_NORETURN
 {
   abort();  // unreachable
 }
 
+#pragma weak ui_client_event_raw_line
 void ui_client_event_raw_line(GridLineEvent *g)
 {
   int grid = g->args[0];
@@ -276,6 +287,7 @@ void ui_client_event_raw_line(GridLineEvent *g)
 }
 
 /// Handles the "connect" ui-event.
+#pragma weak ui_client_event_connect
 void ui_client_event_connect(Array args)
 {
   if (args.size < 1 || args.items[0].type != kObjectTypeString) {
@@ -323,6 +335,7 @@ static bool restart_pending = false;
 static Array restart_args_after_crash_exit = ARRAY_DICT_INIT;
 
 /// Handles the "restart" ui-event.
+#pragma weak ui_client_event_restart
 void ui_client_event_restart(Array args)
 {
   // NB: don't send nvim_ui_detach to server, as it may have already exited.
@@ -334,6 +347,7 @@ void ui_client_event_restart(Array args)
   restart_pending = true;
 }
 
+#pragma weak ui_client_event__set_restart_on_crash_exit
 void ui_client_event__set_restart_on_crash_exit(Array args)
 {
   // Save the arguments for ui_client_may_restart_server() later.
@@ -342,6 +356,7 @@ void ui_client_event__set_restart_on_crash_exit(Array args)
 }
 
 /// Called during "restart" when the old server just exited.
+#pragma weak ui_client_attach_to_restarted_server
 void ui_client_attach_to_restarted_server(bool error_restart)
 {
   Array args = restart_args;
@@ -405,6 +420,7 @@ cleanup:
 }
 
 /// Handles the "error_exit" ui-event.
+#pragma weak ui_client_event_error_exit
 void ui_client_event_error_exit(Array args)
 {
   if (args.size < 1

@@ -36,3 +36,23 @@ EXTERN bool ui_client_forward_stdin INIT( = false);
 # include "ui_client.h.generated.h"
 # include "ui_events_client.h.generated.h"
 // uncrustify:on
+
+// Hand-written declarations (Odin owns all definitions; the generated
+// headers vanish with the .c source, so these keep live C includers
+// compiling on clean configures).
+uint64_t ui_client_start_server(const char *exepath, size_t argc, char **argv);
+void ui_client_attach(int width, int height, char *term, bool rgb);
+void ui_client_detach(void);
+void ui_client_run(void);
+void ui_client_stop(void);
+void ui_client_set_size(int width, int height);
+UIClientHandler ui_client_get_redraw_handler(const char *name, size_t name_len, Error *error);
+Object handle_ui_client_redraw(uint64_t channel_id, Array args, Arena *arena, Error *error);
+void ui_client_event_grid_resize(Array args);
+void ui_client_event_grid_line(Array args);
+void ui_client_event_raw_line(GridLineEvent *g);
+void ui_client_event_connect(Array args);
+void ui_client_event_restart(Array args);
+void ui_client_event__set_restart_on_crash_exit(Array args);
+void ui_client_attach_to_restarted_server(bool error_restart);
+void ui_client_event_error_exit(Array args);
