@@ -76,6 +76,9 @@ foreign _ {
 	ui_client_attached_g: bool
 	@(link_name = "ui_client_error_exit")
 	ui_client_error_exit_g: C.int
+	grid_line_buf_size: C.size_t
+	grid_line_buf_char: ^u32
+	grid_line_buf_attr: ^i32
 }
 
 // KeyDict_highlight mirror (cc-probed: sizeof 384, link@312/blend@336/
@@ -350,13 +353,10 @@ ui_client_set_size :: proc "c" (width: C.int, height: C.int) {
 }
 
 // —— Batch U2: dispatch + restart + grid + hlattr-convert ——
-
-@(private = "file")
-grid_line_buf_size_g: C.size_t = 0
-@(private = "file")
-grid_line_buf_char_g: ^u32 = nil
-@(private = "file")
-grid_line_buf_attr_g: ^i32 = nil
+// NOTE: grid_line_buf_size/char/attr are C-owned EXTERN globals
+// (ui_client.h, defined in main.c.o); C's unpacker.c reads them
+// directly, so the resize handler below must grow the C copies —
+// Odin-private shadows would split-brain the parser (flaky exit-1).
 
 @(private = "file")
 restart_args_g: Api_Array = Api_Array{}
@@ -395,12 +395,12 @@ ui_client_event_grid_resize :: proc "c" (args: Api_Array) {
 	height := (^C.longlong)(&([^]Api_Object)(args.items)[2].data[0])^
 	tui_grid_resize_e(tui_g, grid, width, height)
 
-	if grid_line_buf_size_g < C.size_t(width) {
-		xfree(grid_line_buf_char_g)
-		xfree(grid_line_buf_attr_g)
-		grid_line_buf_size_g = C.size_t(width)
-		grid_line_buf_char_g = (^u32)(xmalloc(grid_line_buf_size_g * 4))
-		grid_line_buf_attr_g = (^i32)(xmalloc(grid_line_buf_size_g * 4))
+	if grid_line_buf_size < C.size_t(width) {
+		xfree(rawptr(grid_line_buf_char))
+		xfree(rawptr(grid_line_buf_attr))
+		grid_line_buf_size = C.size_t(width)
+		grid_line_buf_char = (^u32)(xmalloc(grid_line_buf_size * 4))
+		grid_line_buf_attr = (^i32)(xmalloc(grid_line_buf_size * 4))
 	}
 }
 
@@ -422,7 +422,7 @@ ui_client_event_raw_line :: proc "c" (g: ^GridLineEvent_O) {
 	if g.wrap {
 		lineflags = 1
 	}
-	tui_raw_line_e(tui_g, C.longlong(grid), C.longlong(row), C.longlong(startcol), endcol, clearcol, C.longlong(g.cur_attr), lineflags, grid_line_buf_char_g, grid_line_buf_attr_g)
+	tui_raw_line_e(tui_g, C.longlong(grid), C.longlong(row), C.longlong(startcol), endcol, clearcol, C.longlong(g.cur_attr), lineflags, grid_line_buf_char, grid_line_buf_attr)
 }
 
 @(export)

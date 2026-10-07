@@ -1084,7 +1084,7 @@ screen_resize :: proc "c"(width_in: C.int, height_in: C.int) {
 	// Autocommands may alter Rows/Columns; retry the alloc.
 	for default_grid_alloc() {
 		// Recompute floats position; compositor redraw comes later.
-		ui_comp_set_screen_valid_r(false)
+		ui_comp_set_screen_valid(false)
 		if (^rawptr)(uintptr(transmute(rawptr)(&msg_grid_u8)) + 8)^ != nil {
 			msg_grid_invalid_f = true
 		}
@@ -1133,7 +1133,7 @@ screen_resize :: proc "c"(width_in: C.int, height_in: C.int) {
 				msg_grid_validate_r()
 			}
 			// TODO(bfredl): sometimes messes up pager output.
-			ui_comp_set_screen_valid_r(true)
+			ui_comp_set_screen_valid(true)
 			repeat_message()
 		} else {
 			if (^bool)(uintptr(curwin) + W_P_SCB_OFF)^ {
@@ -1478,7 +1478,7 @@ update_screen :: proc "c"() -> C.int {
 
 	dg := (^ScreenGrid)(&default_grid_u8)
 	if type_ >= UPD_CLEAR_O || !dg.valid {
-		ui_comp_set_screen_valid_r(false)
+		ui_comp_set_screen_valid(false)
 	}
 
 	// Screen scrolled up for a message: scroll it down.
@@ -1499,7 +1499,7 @@ update_screen :: proc "c"() -> C.int {
 
 		// UPD_CLEAR already handled.
 		if type_ == UPD_NOT_VALID && !ui_has(K_UIMULTIGRID_O) && msg_scrolled != 0 {
-			was_invalidated = ui_comp_set_screen_valid_r(false)
+			was_invalidated = ui_comp_set_screen_valid(false)
 			for i := valid; i < Rows - C.int(p_ch); i += 1 {
 				grid_clear_line(dg, dg.line_offset[uintptr(i)], Columns, false)
 			}
@@ -1532,7 +1532,7 @@ update_screen :: proc "c"() -> C.int {
 		if was_invalidated {
 			// Only the msgarea part was invalid.
 			// @TODO(bfredl): same "valid" flag for messages+floats is a mess.
-			ui_comp_set_screen_valid_r(true)
+			ui_comp_set_screen_valid(true)
 		}
 		msg_scrolled = 0
 		msg_scrolled_at_flush_g = 0
@@ -1571,7 +1571,7 @@ update_screen :: proc "c"() -> C.int {
 		grid_clear((^GridView)(&default_gridview_u8), Rows - C.int(p_ch), Rows, 0, Columns, 0)
 	}
 
-	ui_comp_set_screen_valid_r(true)
+	ui_comp_set_screen_valid(true)
 
 	decor_providers_start()
 
@@ -3070,8 +3070,7 @@ foreign _ {
 	@(link_name = "stl_alloc_click_defs")
 	stl_alloc_click_defs_r :: proc "c"(cdp: rawptr, width: C.int, size: ^C.size_t) -> rawptr ---
 	// ui_call_grid_clear now defined in ui.odin — call directly.
-	@(link_name = "ui_comp_set_screen_valid")
-	ui_comp_set_screen_valid_r :: proc "c"(valid: bool) -> bool ---
+	// ui_comp_set_screen_valid now defined in ui_compositor.odin — call directly.
 	@(link_name = "cmdline_was_last_drawn")
 	cmdline_was_last_drawn_g: bool
 	@(link_name = "msg_didany")
@@ -3133,7 +3132,7 @@ screenclear :: proc "c"() {
 	}
 
 	ui_call_grid_clear(1) // clear the display
-	ui_comp_set_screen_valid_r(true)
+	ui_comp_set_screen_valid(true)
 
 	ns_hl_fast_g = -1
 

@@ -191,7 +191,7 @@ foreign nvim {
   server_init :: proc(listen_addr: cstring) -> bool ---
   set_init_2 :: proc(headless: bool) ---
   init_highlight :: proc(load_defaults: bool, reinit: bool) ---
-  ui_comp_syn_init :: proc() ---
+  // ui_comp_syn_init now defined in ui_compositor.odin — call directly.
   nlua_init_defaults :: proc() ---
   exe_pre_commands :: proc(parmp: ^Mparm) ---
   source_startup_scripts :: proc(parmp: ^Mparm) ---

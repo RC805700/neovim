@@ -74,24 +74,8 @@ foreign _ {
 	remote_ui__set_restart_on_crash_exit_e :: proc "c" (ui: rawptr, progpath: Api_String, argv: Api_Array) ---
 	@(link_name = "remote_ui_event")
 	remote_ui_event_e :: proc "c" (ui: rawptr, name: cstring, args: Api_Array) ---
-	@(link_name = "ui_comp_init")
-	ui_comp_init_e :: proc "c" () ---
-	@(link_name = "ui_comp_attach")
-	ui_comp_attach_e :: proc "c" (ui: rawptr) ---
-	@(link_name = "ui_comp_detach")
-	ui_comp_detach_e :: proc "c" (ui: rawptr) ---
-	@(link_name = "ui_comp_should_draw")
-	ui_comp_should_draw_e :: proc "c" () -> bool ---
-	@(link_name = "ui_comp_grid_resize")
-	ui_comp_grid_resize_e :: proc "c" (grid: i64, width: i64, height: i64) ---
-	@(link_name = "ui_comp_grid_cursor_goto")
-	ui_comp_grid_cursor_goto_e :: proc "c" (grid: i64, r: i64, c: i64) ---
-	@(link_name = "ui_comp_grid_scroll")
-	ui_comp_grid_scroll_e :: proc "c" (grid: i64, top: i64, bot: i64, left: i64, right: i64, rows: i64, cols: i64) ---
-	@(link_name = "ui_comp_raw_line")
-	ui_comp_raw_line_e :: proc "c" (grid: i64, row: i64, startcol: i64, endcol: i64, clearcol: i64, clearattr: i64, flags: C.int, chunk: ^u32, attrs: ^C.int32_t) ---
-	@(link_name = "ui_comp_msg_set_pos")
-	ui_comp_msg_set_pos_e :: proc "c" (grid: i64, row: i64, scrolled: bool, sep_char: Api_String, zindex: i64, compindex: i64) ---
+	// ui_comp_init/attach/detach/should_draw now defined in ui_compositor.odin — call directly.
+	// ui_comp_* now defined in ui_compositor.odin — call directly.
 	@(link_name = "highlight_use_hlstate")
 	highlight_use_hlstate_e :: proc "c" () -> bool ---
 	@(link_name = "ui_send_all_hls")
@@ -265,7 +249,7 @@ ui_init :: proc "c" () {
 	context = runtime.default_context()
 	(^ScreenGrid)(&default_grid_u8).handle = 1
 	(^GridView)(&msg_grid_adj_u8).target = (^ScreenGrid)(&default_grid_u8)
-	ui_comp_init_e()
+	ui_comp_init()
 }
 
 // True if any rgb=true UI is attached.
@@ -518,7 +502,7 @@ ui_attach_impl :: proc "c" (ui_raw: rawptr, chanid: u64) {
 		libc.abort()
 	}
 	if !ui.ui_ext[6] && !ui.ui_ext[9] && ui_client_channel_id == 0 {
-		ui_comp_attach_e(ui_raw)
+		ui_comp_attach(ui_raw)
 	}
 	uis_g[int(ui_count_g)] = ui_raw
 	ui_count_g += 1
@@ -569,7 +553,7 @@ ui_detach_impl :: proc "c" (ui_raw: rawptr, chanid: u64) {
 		ui_schedule_refresh()
 	}
 	if !ui.ui_ext[6] && !ui.ui_ext[9] {
-		ui_comp_detach_e(ui_raw)
+		ui_comp_detach(ui_raw)
 	}
 	do_autocmd_uienter_e(chanid, false)
 }
@@ -804,7 +788,7 @@ ui_cursor_shape :: proc "c" () {
 // True if cursor is obscured by a float (zindex exceeds window by 50).
 ui_cursor_is_behind_floatwin_o :: proc "c" () -> bool {
 	context = runtime.default_context()
-	if (State & MODE_CMDLINE_O) != 0 || !ui_comp_should_draw_e() {
+	if (State & MODE_CMDLINE_O) != 0 || !ui_comp_should_draw() {
 		return false
 	}
 	crow := (^C.int)(uintptr(curwin) + uintptr(W_WINROW_OFF))^ + (^C.int)(uintptr(curwin) + uintptr(W_WINROW_OFF2_OFF))^ + (^C.int)(uintptr(curwin) + uintptr(W_WROW_OFF))^
@@ -814,7 +798,7 @@ ui_cursor_is_behind_floatwin_o :: proc "c" () -> bool {
 	} else {
 		ccol += (^C.int)(uintptr(curwin) + uintptr(W_WCOL_OFF))^
 	}
-	top_grid := ui_comp_get_grid_at_coord_e(crow, ccol)
+	top_grid := ui_comp_get_grid_at_coord(crow, ccol)
 	return top_grid != (^ScreenGrid)(uintptr(curwin) + uintptr(W_GRID_ALLOC_OFF)) && top_grid != (^ScreenGrid)(&default_grid_u8) && top_grid.zindex >= (^ScreenGrid)(uintptr(curwin) + uintptr(W_GRID_ALLOC_OFF)).zindex + 50
 }
 
@@ -1340,7 +1324,7 @@ ui_call_hl_group_set :: proc "c" (name: Api_String, id: i64) {
 @(export)
 ui_call_grid_resize :: proc "c" (grid: i64, width: i64, height: i64) {
 	context = runtime.default_context()
-	ui_comp_grid_resize_e(grid, width, height)
+	ui_comp_grid_resize(C.longlong(grid), C.longlong(width), C.longlong(height))
 	for i := 0; i < int(ui_count_g); i += 1 {
 		if !(^RemoteUI_O)(uis_g[i]).composed {
 			remote_ui_grid_resize_e(uis_g[i], grid, width, height)
@@ -1369,7 +1353,7 @@ ui_call_grid_clear :: proc "c" (grid: i64) {
 @(export)
 ui_call_grid_cursor_goto :: proc "c" (grid: i64, row: i64, col: i64) {
 	context = runtime.default_context()
-	ui_comp_grid_cursor_goto_e(grid, row, col)
+	ui_comp_grid_cursor_goto(C.longlong(grid), C.longlong(row), C.longlong(col))
 	for i := 0; i < int(ui_count_g); i += 1 {
 		if !(^RemoteUI_O)(uis_g[i]).composed {
 			remote_ui_grid_cursor_goto_e(uis_g[i], grid, row, col)
@@ -1410,7 +1394,7 @@ ui_call_grid_line :: proc "c" (grid: i64, row: i64, col_start: i64, data: Api_Ar
 @(export)
 ui_call_grid_scroll :: proc "c" (grid: i64, top: i64, bot: i64, left: i64, right: i64, rows: i64, cols: i64) {
 	context = runtime.default_context()
-	ui_comp_grid_scroll_e(grid, top, bot, left, right, rows, cols)
+	ui_comp_grid_scroll(C.longlong(grid), C.longlong(top), C.longlong(bot), C.longlong(left), C.longlong(right), C.longlong(rows), C.longlong(cols))
 	for i := 0; i < int(ui_count_g); i += 1 {
 		if !(^RemoteUI_O)(uis_g[i]).composed {
 			remote_ui_grid_scroll_e(uis_g[i], grid, top, bot, left, right, rows, cols)
@@ -1447,7 +1431,7 @@ ui_call_grid_destroy :: proc "c" (grid: i64) {
 @(export)
 ui_call_raw_line :: proc "c" (grid: i64, row: i64, startcol: i64, endcol: i64, clearcol: i64, clearattr: i64, flags: C.int, chunk: ^u32, attrs: ^C.int32_t) {
 	context = runtime.default_context()
-	ui_comp_raw_line_e(grid, row, startcol, endcol, clearcol, clearattr, flags, chunk, attrs)
+	ui_comp_raw_line(C.longlong(grid), C.longlong(row), C.longlong(startcol), C.longlong(endcol), C.longlong(clearcol), C.longlong(clearattr), flags, chunk, transmute(^i32)(attrs))
 	for i := 0; i < int(ui_count_g); i += 1 {
 		if !(^RemoteUI_O)(uis_g[i]).composed {
 			remote_ui_raw_line_e(uis_g[i], grid, row, startcol, endcol, clearcol, clearattr, flags, chunk, attrs)
@@ -1564,7 +1548,7 @@ ui_call_win_close :: proc "c" (grid: i64) {
 @(export)
 ui_call_msg_set_pos :: proc "c" (grid: i64, row: i64, scrolled: bool, sep_char: Api_String, zindex: i64, compindex: i64) {
 	context = runtime.default_context()
-	ui_comp_msg_set_pos_e(grid, row, scrolled, sep_char, zindex, compindex)
+	ui_comp_msg_set_pos(C.longlong(grid), C.longlong(row), scrolled, transmute(NvimString)(sep_char), C.longlong(zindex), C.longlong(compindex))
 	for i := 0; i < int(ui_count_g); i += 1 {
 		if !(^RemoteUI_O)(uis_g[i]).composed {
 			remote_ui_msg_set_pos_e(uis_g[i], grid, row, scrolled, sep_char, zindex, compindex)

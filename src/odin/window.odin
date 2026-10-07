@@ -1481,7 +1481,7 @@ win_split_ins :: proc "c"(size: C.int, flags: C.int, new_wp: rawptr, dir: C.int,
 		// make the contents of the new window the same as the current one
 		win_init(wp, curwin, flags)
 	} else if (^bool)(uintptr(wp) + W_FLOATING_OFF)^ {
-		ui_comp_remove_grid_r(transmute(rawptr)(uintptr(wp) + W_GRID_HANDLE_OFF))
+		ui_comp_remove_grid((^ScreenGrid)(uintptr(wp) + W_GRID_HANDLE_OFF))
 		if ui_has(K_UIMULTIGRID_O) {
 			(^bool)(uintptr(wp) + W_POS_CHANGED_OFF)^ = true
 		} else {
@@ -1844,8 +1844,7 @@ foreign _ {
 	@(link_name = "lastwin")
 	lastwin_g: rawptr
 	// win_float_anchor_laststatus — PORTED (winfloat.odin).
-	@(link_name = "ui_comp_remove_grid")
-	ui_comp_remove_grid_r :: proc "c" (grid: rawptr) ---
+	// ui_comp_remove_grid now defined in ui_compositor.odin — call directly.
  	// ui_call_win_hide now defined in ui.odin — call directly.
  	// msg_clr_eos_force now defined in message.odin — call directly.
  	// changed_line_abv_curs now defined in move.odin — call directly.
@@ -2793,7 +2792,7 @@ tabpage_check_windows_o :: proc "c"(old_curtab: rawptr) {
 				win_remove(wp, old_curtab)
 				win_append(lastwin_nofloating(nil), wp, nil)
 			} else {
-				ui_comp_remove_grid_r(transmute(rawptr)(uintptr(wp) + W_GRID_HANDLE_OFF))
+				ui_comp_remove_grid((^ScreenGrid)(uintptr(wp) + W_GRID_HANDLE_OFF))
 			}
 		}
 		(^bool)(uintptr(wp) + W_POS_CHANGED_OFF)^ = true
@@ -3832,7 +3831,7 @@ win_close :: proc "c"(win: rawptr, free_buf: bool, force: bool) -> C.int {
 		ui_call_win_close(i64((^C.int)(uintptr(win) + W_GRID_HANDLE_OFF)^))
 	}
 	if (^bool)(uintptr(win) + W_FLOATING_OFF)^ {
-		ui_comp_remove_grid_r(transmute(rawptr)(uintptr(win) + W_GRID_HANDLE_OFF))
+		ui_comp_remove_grid((^ScreenGrid)(uintptr(win) + W_GRID_HANDLE_OFF))
 		if (^bool)(uintptr(win) + WCFG_EXTERNAL_OFF)^ {
 			tp := first_tabpage
 			for tp != nil {
@@ -7609,10 +7608,7 @@ foreign _ {
 	@(link_name = "grid_adjust")
 	grid_adjust_r :: proc "c" (grid: rawptr, row_off: ^C.int, col_off: ^C.int) -> rawptr ---
 	// textpos2screenpos now defined in move.odin — call directly.
-	@(link_name = "ui_comp_layers_adjust")
-	ui_comp_layers_adjust_r :: proc "c" (layer_idx: C.size_t, raise: bool) ---
-	@(link_name = "ui_comp_put_grid")
-	ui_comp_put_grid_r :: proc "c" (grid: rawptr, row: C.int, col: C.int, height: C.int, width: C.int, valid: bool, on_top: bool) -> bool ---
+	// ui_comp_layers_adjust/put_grid now defined in ui_compositor.odin — call directly.
 	// ui_call_win_pos/float_pos/external_pos/check_cursor_grid now defined in ui.odin.
 	@(link_name = "default_grid")
 	default_grid_u8: u8 // address-of only
@@ -7685,7 +7681,7 @@ ui_ext_win_position :: proc "c"(wp: rawptr, validate: bool) {
 		raise := resort && (^C.int)(wgrid + GRID_ZINDEX_OFF)^ < (^C.int)(wcfg + WCFG_ZINDEX_OFF2)^
 		(^C.int)(wgrid + GRID_ZINDEX_OFF)^ = (^C.int)(wcfg + WCFG_ZINDEX_OFF2)^
 		if resort {
-			ui_comp_layers_adjust_r((^C.size_t)(wgrid + GRID_COMP_INDEX_OFF)^, raise)
+			ui_comp_layers_adjust((^C.size_t)(wgrid + GRID_COMP_INDEX_OFF)^, raise)
 		}
 		valid := (^C.int)(uintptr(wp) + W_REDR_TYPE_OFF)^ == 0 || ui_has(K_UIMULTIGRID_O)
 		if !valid && !validate {
@@ -7706,7 +7702,7 @@ ui_ext_win_position :: proc "c"(wp: rawptr, validate: bool) {
 		(^C.int)(uintptr(wp) + W_WINROW_OFF)^ = comp_row
 		(^C.int)(uintptr(wp) + W_WINCOL_OFF)^ = comp_col
 		if !(^bool)(wcfg + WCFG_REL_HIDE)^ {
-			ui_comp_put_grid_r(transmute(rawptr)(wgrid), comp_row, comp_col,
+			ui_comp_put_grid((^ScreenGrid)(wgrid), comp_row, comp_col,
 				(^C.int)(uintptr(wp) + W_HEIGHT_OUTER_OFF)^,
 				(^C.int)(uintptr(wp) + W_WIDTH_OUTER_OFF)^, valid, false)
 			if ui_has(K_UIMULTIGRID_O) {
@@ -7735,7 +7731,7 @@ ui_ext_win_position :: proc "c"(wp: rawptr, validate: bool) {
 			if ui_has(K_UIMULTIGRID_O) {
 				ui_call_win_hide(i64((^C.int)(wgrid + GRID_HANDLE_OFF2)^))
 			}
-			ui_comp_remove_grid_r(transmute(rawptr)(wgrid))
+			ui_comp_remove_grid((^ScreenGrid)(wgrid))
 		}
 	} else {
 		ui_call_win_external_pos(

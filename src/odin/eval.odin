@@ -15809,8 +15809,7 @@ f_ctxsize :: proc "c" (argvars: ^Typval_T, rettv: ^Typval_T, fptr: rawptr) {
 // —— Batch 27ar: funcs.c screen cluster ——
 foreign _ {
 	// msg_scroll_flush now defined in message.odin — call directly.
-	@(link_name = "ui_comp_get_grid_at_coord")
-	ui_comp_get_grid_at_coord_e :: proc "c" (row: C.int, col: C.int) -> ^ScreenGrid ---
+	// ui_comp_get_grid_at_coord now defined in ui_compositor.odin — call directly.
 	// ui_current_row/col now defined in ui.odin — call directly.
 }
 
@@ -15818,7 +15817,7 @@ foreign _ {
 screenchar_adjust_o :: proc "c" (grid: ^rawptr, row: ^C.int, col: ^C.int) {
 	context = runtime.default_context()
 	msg_scroll_flush()
-	g := ui_comp_get_grid_at_coord_e(row^, col^)
+	g := ui_comp_get_grid_at_coord(row^, col^)
 	grid^ = rawptr(g)
 	row^ -= g.comp_row
 	col^ -= g.comp_col

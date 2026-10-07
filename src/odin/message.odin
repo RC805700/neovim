@@ -433,13 +433,13 @@ msg_grid_validate :: proc "c" () {
 		}
 		mg.throttled = false
 		msg_grid_set_pos(pos, msg_scrolled != 0)
-		ui_comp_put_grid_r(rawptr(mg), pos, 0, mg.rows, mg.cols, false, true)
+		ui_comp_put_grid(mg, pos, 0, mg.rows, mg.cols, false, true)
 		ui_call_grid_resize(C.longlong(mg.handle), C.longlong(mg.cols), C.longlong(mg.rows))
 		msg_scrolled_at_flush_g = msg_scrolled
 		mg.mouse_enabled = false
 		(^GridView)(&msg_grid_adj_u8).target = mg
 	} else if !should_alloc && mg.chars != nil {
-		ui_comp_remove_grid_r(rawptr(mg))
+		ui_comp_remove_grid(mg)
 		grid_free(mg)
 		xfree(mg.dirty_col)
 		mg.dirty_col = nil

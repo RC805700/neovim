@@ -54,6 +54,7 @@ static schar_T msg_sep_char = schar_from_ascii(' ');
 
 static int dbghl_normal, dbghl_clear, dbghl_composed, dbghl_recompose;
 
+#pragma weak ui_comp_init
 void ui_comp_init(void)
 {
   kv_push(layers, &default_grid);
@@ -69,6 +70,7 @@ void ui_comp_free_all_mem(void)
 }
 #endif
 
+#pragma weak ui_comp_syn_init
 void ui_comp_syn_init(void)
 {
   dbghl_normal = syn_check_group(S_LEN("RedrawDebugNormal"));
@@ -77,12 +79,14 @@ void ui_comp_syn_init(void)
   dbghl_recompose = syn_check_group(S_LEN("RedrawDebugRecompose"));
 }
 
+#pragma weak ui_comp_attach
 void ui_comp_attach(RemoteUI *ui)
 {
   composed_uis++;
   ui->composed = true;
 }
 
+#pragma weak ui_comp_detach
 void ui_comp_detach(RemoteUI *ui)
 {
   composed_uis--;
@@ -94,6 +98,7 @@ void ui_comp_detach(RemoteUI *ui)
   ui->composed = false;
 }
 
+#pragma weak ui_comp_should_draw
 bool ui_comp_should_draw(void)
 {
   return composed_uis != 0 && valid_screen;
@@ -106,6 +111,7 @@ bool ui_comp_should_draw(void)
 ///
 /// @param[in]  layer_idx  Index of the layer to be raised or lowered.
 /// @param[in]  raise      Raise the layer if true, else lower it.
+#pragma weak ui_comp_layers_adjust
 void ui_comp_layers_adjust(size_t layer_idx, bool raise)
 {
   size_t size = layers.size;
@@ -137,6 +143,7 @@ void ui_comp_layers_adjust(size_t layer_idx, bool raise)
 /// TODO(bfredl): later on the compositor should just use win_float_pos events,
 /// though that will require slight event order adjustment: emit the win_pos
 /// events in the beginning of update_screen(), rather than in ui_flush()
+#pragma weak ui_comp_put_grid
 bool ui_comp_put_grid(ScreenGrid *grid, int row, int col, int height, int width, bool valid,
                       bool on_top)
 {
@@ -212,6 +219,7 @@ bool ui_comp_put_grid(ScreenGrid *grid, int row, int col, int height, int width,
   return moved;
 }
 
+#pragma weak ui_comp_remove_grid
 void ui_comp_remove_grid(ScreenGrid *grid)
 {
   assert(grid != &default_grid);
@@ -238,6 +246,7 @@ void ui_comp_remove_grid(ScreenGrid *grid)
   ui_comp_compose_grid(grid);
 }
 
+#pragma weak ui_comp_set_grid
 bool ui_comp_set_grid(handle_T handle)
 {
   if (curgrid->handle == handle) {
@@ -257,6 +266,7 @@ bool ui_comp_set_grid(handle_T handle)
   return false;
 }
 
+#pragma weak ui_comp_raise_grid
 void ui_comp_raise_grid(ScreenGrid *grid, size_t new_index)
 {
   size_t old_index = grid->comp_index;
@@ -279,6 +289,7 @@ void ui_comp_raise_grid(ScreenGrid *grid, size_t new_index)
   }
 }
 
+#pragma weak ui_comp_grid_cursor_goto
 void ui_comp_grid_cursor_goto(Integer grid_handle, Integer r, Integer c)
 {
   if (!ui_comp_set_grid((int)grid_handle)) {
@@ -309,6 +320,7 @@ void ui_comp_grid_cursor_goto(Integer grid_handle, Integer r, Integer c)
   ui_composed_call_grid_cursor_goto(1, cursor_row, cursor_col);
 }
 
+#pragma weak ui_comp_mouse_focus
 ScreenGrid *ui_comp_mouse_focus(int row, int col)
 {
   for (ssize_t i = (ssize_t)kv_size(layers) - 1; i > 0; i--) {
@@ -332,6 +344,7 @@ ScreenGrid *ui_comp_mouse_focus(int row, int col)
 }
 
 /// Compute which grid is on top at supplied screen coordinates
+#pragma weak ui_comp_get_grid_at_coord
 ScreenGrid *ui_comp_get_grid_at_coord(int row, int col)
 {
   for (ssize_t i = (ssize_t)kv_size(layers) - 1; i > 0; i--) {
@@ -547,6 +560,7 @@ static void compose_area(Integer startrow, Integer endrow, Integer startcol, Int
 ///
 /// This is needed when some option affecting composition is changed,
 /// such as 'pumblend' for popupmenu grid.
+#pragma weak ui_comp_compose_grid
 void ui_comp_compose_grid(ScreenGrid *grid)
 {
   if (ui_comp_should_draw()) {
@@ -555,6 +569,7 @@ void ui_comp_compose_grid(ScreenGrid *grid)
   }
 }
 
+#pragma weak ui_comp_raw_line
 void ui_comp_raw_line(Integer grid, Integer row, Integer startcol, Integer endcol, Integer clearcol,
                       Integer clearattr, LineFlags flags, const schar_T *chunk,
                       const sattr_T *attrs)
@@ -612,6 +627,7 @@ void ui_comp_raw_line(Integer grid, Integer row, Integer startcol, Integer endco
 /// The screen is invalid and will soon be cleared
 ///
 /// Don't redraw floats until screen is cleared
+#pragma weak ui_comp_set_screen_valid
 bool ui_comp_set_screen_valid(bool valid)
 {
   bool old_val = valid_screen;
@@ -622,6 +638,7 @@ bool ui_comp_set_screen_valid(bool valid)
   return old_val;
 }
 
+#pragma weak ui_comp_msg_set_pos
 void ui_comp_msg_set_pos(Integer grid, Integer row, Boolean scrolled, String sep_char,
                          Integer zindex, Integer compindex)
 {
@@ -678,6 +695,7 @@ static bool curgrid_covered_above(int top, int bot, int left, int right)
   return false;
 }
 
+#pragma weak ui_comp_grid_scroll
 void ui_comp_grid_scroll(Integer grid, Integer top, Integer bot, Integer left, Integer right,
                          Integer rows, Integer cols)
 {
@@ -713,6 +731,7 @@ void ui_comp_grid_scroll(Integer grid, Integer top, Integer bot, Integer left, I
   }
 }
 
+#pragma weak ui_comp_grid_resize
 void ui_comp_grid_resize(Integer grid, Integer width, Integer height)
 {
   if (grid == 1) {
