@@ -43,14 +43,10 @@ foreign _ {
 	@(link_name = "syntax_present")
 	syntax_present_r :: proc "c" (wp: rawptr) -> bool ---
 	// win_line: Odin export in drawline.odin (Batch 12e; was wrong 6-arg sig).
-	@(link_name = "decor_redraw_reset")
-	decor_redraw_reset_r :: proc "c" (wp: rawptr, ds: rawptr) ---
-	@(link_name = "decor_redraw_line")
-	decor_redraw_line_r :: proc "c" (wp: rawptr, lnum: C.int, ds: rawptr) ---
-	@(link_name = "decor_redraw_col_impl")
-	decor_redraw_col_impl_r :: proc "c" (wp: rawptr, col: C.int, win_col: C.int, hidden: bool, ds: rawptr, max_col: C.int) -> C.int ---
-	@(link_name = "decor_state_free")
-	decor_state_free_r :: proc "c" (ds: rawptr) ---
+	// decor_redraw_reset now defined in decoration.odin — call directly.
+	// decor_redraw_line now defined in decoration.odin — call directly.
+	// decor_redraw_col_impl now defined in decoration.odin — call directly.
+	// decor_state_free now defined in decoration.odin — call directly.
 
 	// ── suggest.c (still C) ──
 	@(link_name = "suggest_trie_walk")
@@ -2321,9 +2317,9 @@ decor_state_buf_p :: proc "c"() -> ^u8 {
 
 decor_spell_nav_col :: proc "c"(wp: rawptr, lnum: C.int, decor_lnum: ^C.int, col: C.int) -> C.int {
 	if decor_lnum^ != lnum {
-		decor_redraw_reset_r(wp, decor_state_buf_p())
+		decor_redraw_reset(wp, decor_state_buf_p())
 		decor_providers_invoke_spell(wp, lnum - 1, col, lnum - 1, -1)
-		decor_redraw_line_r(wp, lnum - 1, decor_state_buf_p())
+		decor_redraw_line(wp, lnum - 1, decor_state_buf_p())
 		decor_lnum^ = lnum
 	}
 	decor_redraw_col_inline(wp, col, false, decor_state_buf_p(), MAXCOL)
@@ -2531,7 +2527,7 @@ spell_move_to :: proc "c"(wp: rawptr, dir: C.int, behaviour: C.int, curline: boo
 		line_breakcheck()
 	}
 
-	decor_state_free_r(decor_state_buf_p())
+	decor_state_free((^DecorState_O)(decor_state_buf_p()))
 	libc.memcpy(decor_state_buf_p(), &saved_decor_start[0], DECOR_STATE_SIZE)
 	xfree(buf)
 	return ret
@@ -3017,11 +3013,11 @@ spell_soundfold_wsal :: proc "c"(slang: ^Slang_T, inword: ^u8, res: ^u8) {
 							}
 							n0 += 1
 						}
-					}
 
-					if p0 >= pri && (sal_at(smp, n0).sm_lead_w^ & 0xff) == (c0 & 0xff) {
-						n += 1
-						continue
+						if p0 >= pri && (sal_at(smp, n0).sm_lead_w^ & 0xff) == (c0 & 0xff) {
+							n += 1
+							continue
+						}
 					}
 
 					// replace string
@@ -3083,7 +3079,10 @@ spell_soundfold_wsal :: proc "c"(slang: ^Slang_T, inword: ^u8, res: ^u8) {
 					}
 					done = true
 				}
-				break
+				if done {
+					break
+				}
+				n += 1
 			}
 			if done {
 				// fall through to z0 handling below
@@ -3763,7 +3762,7 @@ decor_current_off: C.int = 300 // DecorState.current
 
 decor_redraw_col_inline :: proc "c"(wp: rawptr, col: C.int, hidden: bool, ds: rawptr, max_col_last: C.int) {
 	if col > (^C.int)(uintptr(ds) + uintptr(decor_col_last_off))^ {
-		_ = decor_redraw_col_impl_r(wp, col, 0, hidden, ds, max_col_last)
+		_ = decor_redraw_col_impl(wp, col, 0, hidden, ds, max_col_last)
 	}
 }
 

@@ -24,8 +24,7 @@ glyph_cache_f: Set_glyph
 foreign _ {
 	@(link_name = "utf_ptr2cells")
 	utf_ptr2cells_r :: proc "c"(p: cstring) -> C.int ---
-	@(link_name = "decor_check_invalid_glyphs")
-	decor_check_invalid_glyphs_r :: proc "c"() ---
+	// decor_check_invalid_glyphs now defined in decoration.odin — call directly.
 	@(link_name = "utf_char2len")
 	utf_char2len_r :: proc "c"(c: C.int) -> C.int ---
 }
@@ -220,7 +219,7 @@ schar_cache_clear_if_full :: proc "c"() -> bool {
 // Empty the glyph cache (cell widths unchanged: no error possible).
 @(export)
 schar_cache_clear :: proc "c"() {
-	decor_check_invalid_glyphs_r()
+	decor_check_invalid_glyphs()
 	mh_clear(&glyph_cache_f.h)
 
 	// Stored option strings are regenerated with clean-cache schar values.
@@ -400,7 +399,7 @@ grid_draw_bordertext_o :: proc "c"(vt: Kvec_VT, col: C.int, winbl: C.int, hl_att
 	i: C.size_t = 0
 	for i < vt.n {
 		attr: C.int = -1
-		text := next_virt_text_chunk_r(vt, &i, &attr)
+		text := next_virt_text_chunk(vt, &i, &attr)
 		if text == nil {
 			break
 		}

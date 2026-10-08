@@ -430,7 +430,7 @@ win_may_fill :: proc "c" (wp: rawptr) -> bool {
 @(export)
 win_get_fill :: proc "c" (wp: rawptr, lnum: C.int) -> C.int {
 	context = runtime.default_context()
-	return decor_virt_lines_r(wp, lnum - 1, lnum, nil, nil, true) + diff_check_fill_r(wp, lnum)
+	return decor_virt_lines(wp, lnum - 1, lnum, nil, nil, true) + diff_check_fill_r(wp, lnum)
 }
 
 // Window lines for buffer line (with filler).
@@ -444,7 +444,7 @@ plines_win :: proc "c" (wp: rawptr, lnum: C.int, limit_winheight: bool) -> C.int
 @(export)
 plines_win_nofill :: proc "c" (wp: rawptr, lnum: C.int, limit_winheight: bool) -> C.int {
 	context = runtime.default_context()
-	if decor_conceal_line_r(wp, lnum - 1, false) {
+	if decor_conceal_line(wp, lnum - 1, false) {
 		return 0
 	}
 	if (^C.int)(uintptr(wp) + W_P_WRAP_OFF)^ == 0 {
@@ -744,7 +744,7 @@ plines_win_full :: proc "c" (wp: rawptr, lnum_in: C.int, nextp: ^C.int, foldedp:
 	} else {
 		filler_lines = win_get_fill(wp, lnum)
 	}
-	if decor_conceal_line_r(wp, lnum - 1, false) {
+	if decor_conceal_line(wp, lnum - 1, false) {
 		return filler_lines
 	}
 	if folded {
@@ -778,7 +778,7 @@ plines_m_win :: proc "c" (wp: rawptr, first_in: C.int, last: C.int, max: C.int) 
 @(export)
 plines_m_win_fill :: proc "c" (wp: rawptr, first: C.int, last: C.int) -> C.int {
 	context = runtime.default_context()
-	count := last - first + 1 + decor_virt_lines_r(wp, first - 1, last, nil, nil, false)
+	count := last - first + 1 + decor_virt_lines(wp, first - 1, last, nil, nil, false)
 	if diffopt_filler_e() {
 		lnum := first
 		for lnum <= last {

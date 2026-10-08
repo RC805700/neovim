@@ -10,14 +10,8 @@ import "core:c/libc"
 
 foreign _ {
 	// marktree_* now defined in marktree.odin — call directly.
-	@(link_name = "buf_decor_remove")
-	buf_decor_remove_e :: proc "c" (buf: rawptr, row1: C.int, row2: C.int, col1: C.int, decor: DecorInline_O, free_decor: bool) ---
-	@(link_name = "buf_put_decor")
-	buf_put_decor_e :: proc "c" (buf: rawptr, decor: DecorInline_O, row: C.int, row2: C.int) ---
-	@(link_name = "decor_redraw")
-	decor_redraw_e :: proc "c" (buf: rawptr, row1: C.int, row2: C.int, col1: C.int, decor: DecorInline_O) ---
-	@(link_name = "decor_free")
-	decor_free_e :: proc "c" (decor: DecorInline_O) ---
+	// buf_decor_remove/buf_put_decor/decor_redraw now defined in
+	// decoration.odin — call directly.
 	@(link_name = "decor_state_invalidate")
 	decor_state_invalidate_e :: proc "c" (buf: rawptr) ---
 	@(link_name = "decor_type_flags")
@@ -226,7 +220,7 @@ extmark_set :: proc "c" (buf: rawptr, ns_id: u32, idp: ^u32, row: C.int, col: C.
 					if !mt_invalid_o(old_mark) && mt_decor_any_o(old_mark) {
 						rk := mt_itr_rawkey_o(&itr)
 						rk.flags &= ~MT_FLAG_EXTERNAL_MASK_O
-						buf_decor_remove_e(buf, row, row, col, mt_decor_o(old_mark), true)
+						buf_decor_remove(buf, row, row, col, mt_decor_o(old_mark), true)
 					}
 					rk := mt_itr_rawkey_o(&itr)
 					rk.flags |= flags
@@ -236,7 +230,7 @@ extmark_set :: proc "c" (buf: rawptr, ns_id: u32, idp: ^u32, row: C.int, col: C.
 				} else {
 					marktree_del_itr(rawptr(uintptr(buf) + uintptr(B_MARKTREE_OFF)), rawptr(&itr), false)
 					if !mt_invalid_o(old_mark) {
-						buf_decor_remove_e(buf, C.int(old_mark.pos.row), C.int(old_mark.pos.row), C.int(old_mark.pos.col), mt_decor_o(old_mark), true)
+						buf_decor_remove(buf, C.int(old_mark.pos.row), C.int(old_mark.pos.row), C.int(old_mark.pos.col), mt_decor_o(old_mark), true)
 					}
 				}
 			}
@@ -261,8 +255,8 @@ extmark_set :: proc "c" (buf: rawptr, ns_id: u32, idp: ^u32, row: C.int, col: C.
 		if end_row > -1 {
 			erow = end_row
 		}
-		buf_put_decor_e(buf, decor, row, erow)
-		decor_redraw_e(buf, row, erow, col, decor)
+		buf_put_decor(buf, decor, row, erow)
+		decor_redraw(buf, row, erow, col, decor)
 	}
 	if idp != nil {
 		idp^ = id
@@ -278,7 +272,7 @@ extmark_setraw_o :: proc "c" (buf: rawptr, mark_id: u64, row: C.int, col: C.int,
 		return
 	}
 	if !invalid && mt_decor_any_o(key) && C.int(key.pos.row) != row {
-		decor_redraw_e(buf, C.int(key.pos.row), C.int(key.pos.row), C.int(key.pos.col), mt_decor_o(key))
+		decor_redraw(buf, C.int(key.pos.row), C.int(key.pos.row), C.int(key.pos.col), mt_decor_o(key))
 	}
 	row1: C.int = 0
 	row2: C.int = 0
@@ -297,7 +291,7 @@ extmark_setraw_o :: proc "c" (buf: rawptr, mark_id: u64, row: C.int, col: C.int,
 	} else if !mt_invalid_o(key) && (key.flags & MT_FLAG_DECOR_SIGNTEXT_O) != 0 && (^bool)(uintptr(buf) + uintptr(B_SIGNCOLS_AUTOM_OFF))^ {
 		row1 = min(C.int(alt.pos.row), min(C.int(key.pos.row), row))
 		row2 = max(C.int(alt.pos.row), max(C.int(key.pos.row), row))
-		buf_signcols_count_range_r(buf, row1, min((^C.int)(uintptr(curbuf) + uintptr(B_ML_LINE_COUNT_OFF))^ - 1, row2), 0, C.int(TriState.kTrue))
+		buf_signcols_count_range(buf, row1, min((^C.int)(uintptr(curbuf) + uintptr(B_ML_LINE_COUNT_OFF))^ - 1, row2), 0, C.int(TriState.kTrue))
 	}
 	if move {
 		marktree_move(rawptr(uintptr(buf) + uintptr(B_MARKTREE_OFF)), rawptr(&itr), row, col)
@@ -305,9 +299,9 @@ extmark_setraw_o :: proc "c" (buf: rawptr, mark_id: u64, row: C.int, col: C.int,
 	if invalid {
 		lo := min(row, C.int(alt.pos.row))
 		hi := max(row, C.int(alt.pos.row))
-		buf_put_decor_e(buf, mt_decor_o(key), lo, hi)
+		buf_put_decor(buf, mt_decor_o(key), lo, hi)
 	} else if !mt_invalid_o(key) && (key.flags & MT_FLAG_DECOR_SIGNTEXT_O) != 0 && (^bool)(uintptr(buf) + uintptr(B_SIGNCOLS_AUTOM_OFF))^ {
-		buf_signcols_count_range_r(buf, row1, min((^C.int)(uintptr(curbuf) + uintptr(B_ML_LINE_COUNT_OFF))^ - 1, row2), 0, C.int(TriState.kNone))
+		buf_signcols_count_range(buf, row1, min((^C.int)(uintptr(curbuf) + uintptr(B_ML_LINE_COUNT_OFF))^ - 1, row2), 0, C.int(TriState.kNone))
 	}
 }
 
@@ -344,7 +338,7 @@ extmark_del :: proc "c" (buf: rawptr, itr_raw: rawptr, key: MTKey_O, restore: bo
 	}
 	if mt_decor_any_o(key) {
 		if mt_invalid_o(key) {
-			decor_free_e(mt_decor_o(key))
+			decor_free(mt_decor_o(key))
 		} else {
 			k1 := key
 			k2 := key2
@@ -355,7 +349,7 @@ extmark_del :: proc "c" (buf: rawptr, itr_raw: rawptr, key: MTKey_O, restore: bo
 				k2 = key
 				dd = mt_decor_o(key2)
 			}
-			buf_decor_remove_e(buf, C.int(k1.pos.row), C.int(k2.pos.row), C.int(k1.pos.col), dd, true)
+			buf_decor_remove(buf, C.int(k1.pos.row), C.int(k2.pos.row), C.int(k1.pos.col), dd, true)
 		}
 	}
 	decor_state_invalidate_e(buf)
@@ -490,7 +484,7 @@ extmark_free_all :: proc "c" (buf: rawptr) {
 			break
 		}
 		if !(mt_paired_o(mark) && mt_end_o(mark)) {
-			decor_free_e(mt_decor_o(mark))
+			decor_free(mt_decor_o(mark))
 		}
 		marktree_itr_next(rawptr(uintptr(buf) + uintptr(B_MARKTREE_OFF)), rawptr(&itr))
 	}
@@ -544,7 +538,7 @@ extmark_splice_delete :: proc "c" (buf: rawptr, l_row: C.int, l_col: C.int, u_ro
 					erk := mt_itr_rawkey_o(&enditr)
 					erk.flags |= MT_FLAG_INVALID_O
 					marktree_revise_meta(rawptr(uintptr(buf) + uintptr(B_MARKTREE_OFF)), rawptr(&itr), mark)
-					buf_decor_remove_e(buf, C.int(mark.pos.row), C.int(endpos.row), C.int(mark.pos.col), mt_decor_o(mark), false)
+					buf_decor_remove(buf, C.int(mark.pos.row), C.int(endpos.row), C.int(mark.pos.col), mt_decor_o(mark), false)
 				}
 			}
 		}
@@ -659,7 +653,7 @@ extmark_splice_impl :: proc "c" (buf: rawptr, start_row: C.int, start_col: C.int
 		if start_row + old_row < hi {
 			hi = start_row + old_row
 		}
-		buf_signcols_count_range_r(buf, start_row, hi, 0, C.int(TriState.kTrue))
+		buf_signcols_count_range(buf, start_row, hi, 0, C.int(TriState.kTrue))
 		(^C.int)(uintptr(buf) + uintptr(B_PREV_LINE_COUNT_OFF))^ = 0
 	}
 	marktree_splice(rawptr(uintptr(buf) + uintptr(B_MARKTREE_OFF)), C.int32_t(start_row), start_col, old_row, old_col, new_row, new_col)
@@ -668,7 +662,7 @@ extmark_splice_impl :: proc "c" (buf: rawptr, start_row: C.int, start_col: C.int
 		if start_row + new_row < row2 {
 			row2 = start_row + new_row
 		}
-		buf_signcols_count_range_r(buf, start_row, row2, 0, C.int(TriState.kNone))
+		buf_signcols_count_range(buf, start_row, row2, 0, C.int(TriState.kNone))
 	}
 	if undo == kExtmarkUndo {
 		uhp := u_force_get_undo_header(buf)
@@ -731,9 +725,9 @@ extmark_move_region :: proc "c" (buf: rawptr, start_row: C.int, start_col: C.int
 	buf_updates_send_splice(buf, start_row, start_col, start_byte, extent_row, extent_col, extent_byte, 0, 0, 0)
 	row1 := min(start_row, new_row)
 	row2 := max(start_row, new_row) + extent_row
-	buf_signcols_count_range_r(buf, row1, row2, 0, C.int(TriState.kTrue))
+	buf_signcols_count_range(buf, row1, row2, 0, C.int(TriState.kTrue))
 	marktree_move_region(rawptr(uintptr(buf) + uintptr(B_MARKTREE_OFF)), start_row, start_col, extent_row, extent_col, new_row, new_col)
-	buf_signcols_count_range_r(buf, row1, row2, 0, C.int(TriState.kNone))
+	buf_signcols_count_range(buf, row1, row2, 0, C.int(TriState.kNone))
 	buf_updates_send_splice(buf, new_row, new_col, new_byte, extent_row, extent_col, extent_byte, 0, 0, 0)
 	if undo == kExtmarkUndo {
 		uhp := u_force_get_undo_header(buf)

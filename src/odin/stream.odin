@@ -59,13 +59,12 @@ stream_init :: proc "c" (loop: ^Loop, stream: ^Stream, fd: c.int, uvstream: ^uv_
 	stream.close_cb = nil
 	stream.internal_close_cb = nil
 	stream.closed = false
-	// When created with a loop, read events are delivered to the loop's
-	// main event queue. Job/pipe streams are created with loop==NULL and
-	// their `events` is wired later (libuv_proc_spawn -> proc->events).
+	// C-faithful: events stays NULL (callers wire specific queues:
+	// job procs set out/err events to proc->events after init).
+	// A nil queue makes read_event dispatch synchronously (direct call),
+	// which is how TUI/RPC input reaches input_buffer without starving
+	// the state loop (cf. which-key ordering, RPC-redraw starvation).
 	stream.events = nil
-	if loop != nil {
-		stream.events = loop.events
-	}
 }
 
 @(export)

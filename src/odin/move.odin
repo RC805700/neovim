@@ -276,10 +276,10 @@ check_cursor_moved :: proc "c" (wp: rawptr) {
 		(^C.int)(uintptr(wp) + W_VALID_OFF)^ &= ~C.int(VALID_WROW_O | VALID_WCOL_O | VALID_VIRTCOL_O | VALID_CHEIGHT_O | VALID_CROW_O | VALID_TOPLINE_O)
 		conceal_hit := false
 		if wp == curwin && wvc.lnum > 0 && (^C.int)(uintptr(wp) + W_P_COLE_OFF)^ >= 2 && !conceal_cursor_line(wp) {
-			if decor_conceal_line_r(wp, (^C.int)(uintptr(wp) + W_CURSOR_OFF)^ - 1, true) {
+			if decor_conceal_line(wp, (^C.int)(uintptr(wp) + W_CURSOR_OFF)^ - 1, true) {
 				conceal_hit = true
 			}
-			if decor_conceal_line_r(wp, wvc.lnum - 1, true) {
+			if decor_conceal_line(wp, wvc.lnum - 1, true) {
 				conceal_hit = true
 			}
 		}
@@ -449,7 +449,7 @@ curs_rows_o :: proc "c" (wp: rawptr) {
 			folded := false
 			n := plines_correct_topline(wp, lnum, &last, true, &folded)
 			lnum = last + 1
-			if lnum + C.int(decor_conceal_line_r(wp, lnum - 1, false)) > (^C.int)(uintptr(wp) + W_CURSOR_OFF)^ {
+			if lnum + C.int(decor_conceal_line(wp, lnum - 1, false)) > (^C.int)(uintptr(wp) + W_CURSOR_OFF)^ {
 				break
 			}
 			(^C.int)(uintptr(wp) + W_CLINE_ROW_OFF)^ += n
@@ -735,7 +735,7 @@ topline_back_winheight_full_o :: proc "c" (wp: rawptr, lp: ^lineoff_T, winheight
 		if lp.lnum < 1 {
 			lp.height = MAXCOL
 		} else if hasFolding(wp, lp.lnum, &lp.lnum, nil) {
-			if !decor_conceal_line_r(wp, lp.lnum - 1, false) {
+			if !decor_conceal_line(wp, lp.lnum - 1, false) {
 				lp.height = 1
 			} else {
 				lp.height = 0
@@ -764,7 +764,7 @@ botline_forw_o :: proc "c" (wp: rawptr, lp: ^lineoff_T) {
 		if lp.lnum > ml.line_count {
 			lp.height = MAXCOL
 		} else if hasFolding(wp, lp.lnum, nil, &lp.lnum) {
-			if !decor_conceal_line_r(wp, lp.lnum - 1, false) {
+			if !decor_conceal_line(wp, lp.lnum - 1, false) {
 				lp.height = 1
 			} else {
 				lp.height = 0
@@ -778,7 +778,7 @@ botline_forw_o :: proc "c" (wp: rawptr, lp: ^lineoff_T) {
 check_top_offset_o :: proc "c" (wp: rawptr) -> bool {
 	context = runtime.default_context()
 	so := get_scrolloff_value(wp)
-	if (^C.int)(uintptr(wp) + W_CURSOR_OFF)^ < (^C.int)(uintptr(wp) + W_TOPLINE_OFF)^ + C.int(so) || win_lines_concealed_r(wp) {
+	if (^C.int)(uintptr(wp) + W_CURSOR_OFF)^ < (^C.int)(uintptr(wp) + W_TOPLINE_OFF)^ + C.int(so) || win_lines_concealed(wp) {
 		loff := lineoff_T{(^C.int)(uintptr(wp) + W_CURSOR_OFF)^, 0, 0}
 		n := (^C.int)(uintptr(wp) + W_TOPFILL_OFF)^
 		for C.longlong(n) < so {
@@ -863,14 +863,14 @@ update_topline :: proc "c" (wp: rawptr) {
 				halfheight = 2
 			}
 			n: C.longlong
-			if win_lines_concealed_r(wp) {
+			if win_lines_concealed(wp) {
 				n = 0
 				lnum := (^C.int)(uintptr(wp) + W_CURSOR_OFF)^
 				for C.longlong(lnum) < C.longlong((^C.int)(uintptr(wp) + W_TOPLINE_OFF)^) + so_val {
 					if lnum >= ml.line_count {
 						break
 					}
-					if !decor_conceal_line_r(wp, lnum, false) {
+					if !decor_conceal_line(wp, lnum, false) {
 						n += 1
 					}
 					if n >= C.longlong(halfheight) {
@@ -907,7 +907,7 @@ update_topline :: proc "c" (wp: rawptr) {
 		}
 		if (^C.int)(uintptr(wp) + W_BOTLINE_OFF)^ <= ml.line_count || use_scrolloffpad_o(wp) {
 			if (^C.int)(uintptr(wp) + W_CURSOR_OFF)^ < (^C.int)(uintptr(wp) + W_BOTLINE_OFF)^ {
-				if (^C.int)(uintptr(wp) + W_CURSOR_OFF)^ >= (^C.int)(uintptr(wp) + W_BOTLINE_OFF)^ - C.int(so_val) || win_lines_concealed_r(wp) {
+				if (^C.int)(uintptr(wp) + W_CURSOR_OFF)^ >= (^C.int)(uintptr(wp) + W_BOTLINE_OFF)^ - C.int(so_val) || win_lines_concealed(wp) {
 					loff := lineoff_T{(^C.int)(uintptr(wp) + W_CURSOR_OFF)^, 0, 0}
 					hasFolding(wp, loff.lnum, nil, &loff.lnum)
 					loff.fill = 0
@@ -937,13 +937,13 @@ update_topline :: proc "c" (wp: rawptr) {
 			}
 			if check_botline {
 				n: C.longlong = 0
-				if win_lines_concealed_r(wp) {
+				if win_lines_concealed(wp) {
 					lnum := (^C.int)(uintptr(wp) + W_CURSOR_OFF)^
 					for C.longlong(lnum) >= C.longlong((^C.int)(uintptr(wp) + W_BOTLINE_OFF)^) - so_val {
 						if lnum <= 0 {
 							break
 						}
-						if !decor_conceal_line_r(wp, lnum, false) {
+						if !decor_conceal_line(wp, lnum, false) {
 							n += 1
 						}
 						if n > C.longlong((^C.int)(uintptr(wp) + W_VIEW_HEIGHT_OFF)^) + 1 {
@@ -1069,7 +1069,7 @@ scrolldown :: proc "c" (wp: rawptr, line_count: C.int, byfold: C.int) -> bool {
 			(^C.int)(uintptr(wp) + W_TOPFILL_OFF)^ = 0
 			first: C.int = 0
 			if hasFolding(wp, (^C.int)(uintptr(wp) + W_TOPLINE_OFF)^, &first, nil) {
-				if !decor_conceal_line_r(wp, first - 1, false) {
+				if !decor_conceal_line(wp, first - 1, false) {
 					done += 1
 				}
 				if byfold == 0 {
@@ -1077,7 +1077,7 @@ scrolldown :: proc "c" (wp: rawptr, line_count: C.int, byfold: C.int) -> bool {
 				}
 				(^C.int)(uintptr(wp) + W_BOTLINE_OFF)^ -= (^C.int)(uintptr(wp) + W_TOPLINE_OFF)^ - first
 				(^C.int)(uintptr(wp) + W_TOPLINE_OFF)^ = first
-			} else if decor_conceal_line_r(wp, (^C.int)(uintptr(wp) + W_TOPLINE_OFF)^ - 1, false) {
+			} else if decor_conceal_line(wp, (^C.int)(uintptr(wp) + W_TOPLINE_OFF)^ - 1, false) {
 				todo += 1
 			} else {
 				if do_sms {
@@ -1100,7 +1100,7 @@ scrolldown :: proc "c" (wp: rawptr, line_count: C.int, byfold: C.int) -> bool {
 		(^C.int)(uintptr(wp) + W_BOTLINE_OFF)^ -= 1
 		invalidate_botline_win(wp)
 	}
-	for (^C.int)(uintptr(wp) + W_TOPLINE_OFF)^ > 1 && decor_conceal_line_r(wp, (^C.int)(uintptr(wp) + W_TOPLINE_OFF)^ - 2, false) {
+	for (^C.int)(uintptr(wp) + W_TOPLINE_OFF)^ > 1 && decor_conceal_line(wp, (^C.int)(uintptr(wp) + W_TOPLINE_OFF)^ - 2, false) {
 		(^C.int)(uintptr(wp) + W_TOPLINE_OFF)^ -= 1
 		top2 := (^C.int)(uintptr(wp) + W_TOPLINE_OFF)^
 		hasFolding(wp, top2, &top2, nil)
@@ -1122,7 +1122,7 @@ scrolldown :: proc "c" (wp: rawptr, line_count: C.int, byfold: C.int) -> bool {
 	for wrow >= (^C.int)(uintptr(wp) + W_VIEW_HEIGHT_OFF)^ && (^C.int)(uintptr(wp) + W_CURSOR_OFF)^ > 1 {
 		first: C.int = 0
 		if hasFolding(wp, (^C.int)(uintptr(wp) + W_CURSOR_OFF)^, &first, nil) {
-			if !decor_conceal_line_r(wp, (^C.int)(uintptr(wp) + W_CURSOR_OFF)^ - 1, false) {
+			if !decor_conceal_line(wp, (^C.int)(uintptr(wp) + W_CURSOR_OFF)^ - 1, false) {
 				wrow -= 1
 			}
 			ln := (^C.int)(uintptr(wp) + W_CURSOR_OFF)^
@@ -1159,7 +1159,7 @@ scrollup :: proc "c" (wp: rawptr, line_count: C.int, byfold: bool) -> bool {
 	topline := (^C.int)(uintptr(wp) + W_TOPLINE_OFF)^
 	botline := (^C.int)(uintptr(wp) + W_BOTLINE_OFF)^
 	do_sms := (^C.int)(uintptr(wp) + W_P_WRAP_OFF)^ != 0 && (^C.int)(uintptr(wp) + W_P_SMS_OFF_O)^ != 0
-	if do_sms || (byfold && win_lines_concealed_r(wp)) || win_may_fill(wp) {
+	if do_sms || (byfold && win_lines_concealed(wp)) || win_may_fill(wp) {
 		width1 := (^C.int)(uintptr(wp) + W_VIEW_WIDTH_OFF)^ - win_col_off(wp)
 		width2 := width1 + win_col_off2(wp)
 		size: C.int = 0
@@ -1170,7 +1170,7 @@ scrollup :: proc "c" (wp: rawptr, line_count: C.int, byfold: bool) -> bool {
 		todo := line_count
 		for todo > 0 {
 			todo -= 1
-			if decor_conceal_line_r(wp, (^C.int)(uintptr(wp) + W_TOPLINE_OFF)^ - 1, false) {
+			if decor_conceal_line(wp, (^C.int)(uintptr(wp) + W_TOPLINE_OFF)^ - 1, false) {
 				todo += 1
 			}
 			if (^C.int)(uintptr(wp) + W_TOPFILL_OFF)^ > 0 {
@@ -2132,7 +2132,7 @@ cursor_correct :: proc "c" (wp: rawptr) {
 		}
 	}
 	cln := (^C.int)(uintptr(wp) + W_CURSOR_OFF)^
-	if C.longlong(cln) >= C.longlong((^C.int)(uintptr(wp) + W_TOPLINE_OFF)^) + above_wanted && C.longlong(cln) < C.longlong((^C.int)(uintptr(wp) + W_BOTLINE_OFF)^) - below_wanted && !win_lines_concealed_r(wp) {
+	if C.longlong(cln) >= C.longlong((^C.int)(uintptr(wp) + W_TOPLINE_OFF)^) + above_wanted && C.longlong(cln) < C.longlong((^C.int)(uintptr(wp) + W_BOTLINE_OFF)^) - below_wanted && !win_lines_concealed(wp) {
 		return
 	}
 	if (^C.int)(uintptr(wp) + W_P_SMS_OFF_O)^ != 0 && (^C.int)(uintptr(wp) + W_P_WRAP_OFF)^ == 0 {
@@ -2343,7 +2343,7 @@ pagescroll :: proc "c" (dir: C.int, count_in: C.int, half: bool) -> C.int {
 			if (^C.int)(uintptr(curwin) + W_TOPLINE_OFF)^ + (^C.int)(uintptr(curwin) + W_VIEW_HEIGHT_OFF)^ + count > buflen {
 				adj_eob = true
 			}
-			if win_lines_concealed_r(curwin) {
+			if win_lines_concealed(curwin) {
 				adj_eob = true
 			}
 		}

@@ -55,7 +55,7 @@ conceal_check_cursor_line :: proc "c"() {
 	redrawWinline(curwin, (^C.int)(uintptr(curwin) + W_CURSOR_OFF)^)
 
 	// Concealed line visibility toggled.
-	if decor_conceal_line_r(curwin, (^C.int)(uintptr(curwin) + W_CURSOR_OFF)^ - 1, true) {
+	if decor_conceal_line(curwin, (^C.int)(uintptr(curwin) + W_CURSOR_OFF)^ - 1, true) {
 		changed_window_setting(curwin)
 	}
 	// Recompute cursor column (e.g. starting Visual without concealing).
@@ -1792,16 +1792,13 @@ DECOR_PRIORITY_BASE_O :: 0x1000
 foreign _ {
 	@(link_name = "terminal_suspended")
 	terminal_suspended_r :: proc "c"(term: rawptr) -> bool ---
-	@(link_name = "decor_range_add_virt")
-	decor_range_add_virt_r :: proc "c"(state: rawptr, sr: C.int, sc: C.int, er: C.int, ec: C.int, vt: rawptr, owned: bool) ---
+	// decor_range_add_virt now defined in decoration.odin — call directly.
 	@(link_name = "syn_set_timeout")
 	syn_set_timeout_r :: proc "c"(tm: rawptr) ---
-	@(link_name = "win_lines_concealed")
-	win_lines_concealed_r :: proc "c"(wp: rawptr) -> bool ---
+	// win_lines_concealed now defined in decoration.odin — call directly.
 	@(link_name = "search_hl_has_cursor_lnum")
 	search_hl_has_cursor_lnum_g: C.int
-	@(link_name = "buf_signcols_count_range")
-	buf_signcols_count_range_r :: proc "c"(buf: rawptr, row1: C.int, row2: C.int, add: C.int, clear: C.int) ---
+	// buf_signcols_count_range now defined in decoration.odin — call directly.
 	// ui_call_win_extmark now defined in ui.odin — call directly.
 	@(link_name = "syntax_end_parsing")
 	syntax_end_parsing_r :: proc "c"(wp: rawptr, lnum: C.int) ---
@@ -1828,7 +1825,7 @@ win_redraw_signcols_o :: proc "c"(wp: rawptr) -> bool {
 		((^C.int)(uintptr(wp) + W_MAXSCWIDTH_OFF)^ > 1 &&
 			(^C.int)(uintptr(wp) + W_MINSCWIDTH_OFF)^ != (^C.int)(uintptr(wp) + W_MAXSCWIDTH_OFF)^) {
 		(^bool)(uintptr(buf) + B_SIGNCOLS_AUTOM_OFF)^ = true
-		buf_signcols_count_range_r(buf, 0,
+		buf_signcols_count_range(buf, 0,
 			(^C.int)(uintptr(buf) + B_ML_LINE_COUNT_OFF)^ - 1, MAXLNUM, 0)
 	}
 
@@ -1952,7 +1949,7 @@ win_update :: proc "c"(wp: rawptr) {
 
 	win_extmark_arr_g.n = 0
 
-	decor_redraw_reset_r(wp, transmute(rawptr)(&decor_state_g))
+	decor_redraw_reset(wp, transmute(rawptr)(&decor_state_g))
 
 	decor_providers_invoke_win(wp)
 
@@ -1965,7 +1962,7 @@ win_update :: proc "c"(wp: rawptr) {
 		susp_vt_f.data.items = &susp_chunk_f
 		susp_vt_f.data.n = 1
 		line_count := (^C.int)(uintptr(buf) + B_ML_LINE_COUNT_OFF)^
-		decor_range_add_virt_r(transmute(rawptr)(&decor_state_g),
+		decor_range_add_virt(transmute(rawptr)(&decor_state_g),
 			line_count - 1, 0, line_count - 1, 0, transmute(rawptr)(&susp_vt_f), false)
 	}
 
@@ -2068,7 +2065,7 @@ win_update :: proc "c"(wp: rawptr) {
 			}
 		}
 
-		if mod_top != 0 && win_lines_concealed_r(wp) {
+		if mod_top != 0 && win_lines_concealed(wp) {
 			// Change may fold/unfold lines above: find topmost affected.
 			lnumt: C.int = (^C.int)(uintptr(wp) + W_TOPLINE_OFF)^
 			lnumb: C.int = MAXLNUM
@@ -2149,7 +2146,7 @@ win_update :: proc "c"(wp: rawptr) {
 	topline_conceal := (^C.int)(uintptr(wp) + W_TOPLINE_OFF)^
 	line_count := (^C.int)(uintptr(buf) + B_ML_LINE_COUNT_OFF)^
 	for topline_conceal < line_count &&
-		decor_conceal_line_r(wp, topline_conceal - 1, false) {
+		decor_conceal_line(wp, topline_conceal - 1, false) {
 		topline_conceal += 1
 		hasFolding(wp, topline_conceal, nil, &topline_conceal)
 	}
@@ -2171,12 +2168,12 @@ win_update :: proc "c"(wp: rawptr) {
 					(^C.int)(uintptr(wp) + W_TOPFILL)^ > (^C.int)(uintptr(wp) + W_OLD_TOPFILL_OFF)^)) {
 			// New topline above old: may scroll down.
 			j: C.int
-			if win_lines_concealed_r(wp) {
+			if win_lines_concealed(wp) {
 				// Count off-lines (fold runs count once), skip concealed.
 				j = 0
 				ln := (^C.int)(uintptr(wp) + W_TOPLINE_OFF)^
 				for ln < lines0[0].wl_lnum {
-					if !decor_conceal_line_r(wp, ln - 1, false) {
+					if !decor_conceal_line(wp, ln - 1, false) {
 						j += 1
 					}
 					if j >= (^C.int)(uintptr(wp) + W_VIEW_HEIGHT_OFF)^ - 2 {
@@ -2570,7 +2567,7 @@ win_update :: proc "c"(wp: rawptr) {
 			}
 
 			// Concealed line without filler: skip it.
-			concealed := decor_conceal_line_r(wp, lnum - 1, false)
+			concealed := decor_conceal_line(wp, lnum - 1, false)
 			if concealed && win_get_fill(wp, lnum) == 0 {
 				if lnum == mod_top && lnum < mod_bot {
 					if foldinfo.fi_lines != 0 {
@@ -2785,10 +2782,10 @@ win_update :: proc "c"(wp: rawptr) {
 
 				// Extend wl_lastlnum over concealed lines below (unless
 				// below-virt_lines of this line still draw).
-				virt_below := decor_virt_lines_r(wp, lastlnum, lastlnum + 1, nil, nil, true) > 0
+				virt_below := decor_virt_lines(wp, lastlnum, lastlnum + 1, nil, nil, true) > 0
 				for !virt_below &&
 					(^C.int)(uintptr(&lines[uintptr(idx)]) + 12)^ < line_count &&
-					decor_conceal_line_r(wp,
+					decor_conceal_line(wp,
 						(^C.int)(uintptr(&lines[uintptr(idx)]) + 12)^, false) {
 					virt_below = false
 					(^C.int)(uintptr(&lines[uintptr(idx)]) + 12)^ += 1
@@ -2857,7 +2854,7 @@ win_update :: proc "c"(wp: rawptr) {
 			lnum = (^C.int)(uintptr(wp) + W_TOPLINE_OFF)^
 			(^C.int)(uintptr(wp) + W_LINES_VALID_OFF)^ = 0
 			(^C.int)(uintptr(wp) + W_VALID_OFF)^ &= ~C.int(VALID_WCOL_O)
-			decor_redraw_reset_r(wp, transmute(rawptr)(&decor_state_g))
+			decor_redraw_reset(wp, transmute(rawptr)(&decor_state_g))
 			decor_providers_invoke_win(wp)
 			continue
 		}
@@ -2962,7 +2959,7 @@ win_update :: proc "c"(wp: rawptr) {
 					lnum = (^C.int)(uintptr(wp) + W_TOPLINE_OFF)^
 					(^C.int)(uintptr(wp) + W_LINES_VALID_OFF)^ = 0
 					(^C.int)(uintptr(wp) + W_VALID_OFF)^ &= ~C.int(VALID_WCOL_O)
-					decor_redraw_reset_r(wp, transmute(rawptr)(&decor_state_g))
+					decor_redraw_reset(wp, transmute(rawptr)(&decor_state_g))
 					decor_providers_invoke_win(wp)
 					sc_redo = true
 					continue

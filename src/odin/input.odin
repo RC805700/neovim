@@ -681,17 +681,13 @@ inbuf_poll :: proc "c" (ms: c.int, events: ^MultiQueue) -> TriState {
 			}
 		}
 		loop_poll_events(&main_loop, remaining)
-		// Dispatch channel/RPC events (nvim_input keys, job output) into
-		// input_buffer. loop_poll_events drains fast_events only (C-faithful),
-		// but in this tree ALL TUI input arrives via nvim_input RPC whose
-		// read_event sits in loop.events (chan.events is its child) — without
-		// this drain, any input wait outside the state machine (pager,
-		// prompts, getchar) wedges with input queued but undispatched.
-		// (Upstream refactored stream_init to NULL/direct dispatch instead;
-		// this port still queues, so drain here. The which-key ordering fix
-		// stays intact: loop_poll_events itself is untouched, and try_read
-		// consumes already-buffered typeahead before we ever poll.)
-		multiqueue_process_events(main_loop.events)
+		// C-faithful: no loop.events drain here. Read events dispatch
+		// synchronously (stream events are nil by default), so TUI/RPC input
+		// lands in input_buffer directly; draining loop.events here would
+		// complete RPC requests inline inside input_get, starving the state
+		// loop of K_EVENT spins (no update_screen after extmark-set etc.)
+		// and running vim.schedule callbacks ahead of pending typeahead
+		// (which-key ordering). See stream_init.
 		if os_input_ready(events) || input_eof {
 			break
 		}

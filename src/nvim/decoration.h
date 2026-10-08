@@ -107,6 +107,53 @@ EXTERN kvec_t(DecorSignHighlight) decor_items INIT( = KV_INITIAL_VALUE);
 #include "decoration.h.generated.h"
 #include "decoration.h.inline.generated.h"
 
+// Hand-written declarations (Odin owns all definitions; the generated
+// headers vanish with the .c source, so these keep live C includers
+// compiling on clean configures).
+void bufhl_add_hl_pos_offset(buf_T *buf, int src_id, int hl_id, lpos_T pos_start, lpos_T pos_end, colnr_T offset);
+void decor_redraw(buf_T *buf, int row1, int row2, int col1, DecorInline decor);
+void decor_redraw_sh(buf_T *buf, int row1, int row2, DecorSignHighlight sh);
+uint32_t decor_put_sh(DecorSignHighlight item);
+DecorVirtText *decor_put_vt(DecorVirtText vt, DecorVirtText *next);
+DecorSignHighlight decor_sh_from_inline(DecorHighlightInline item);
+void buf_put_decor(buf_T *buf, DecorInline decor, int row, int row2);
+void buf_put_decor_sh(buf_T *buf, DecorSignHighlight *sh, int row1, int row2);
+void buf_decor_remove(buf_T *buf, int row1, int row2, int col1, DecorInline decor, bool free);
+void buf_remove_decor_sh(buf_T *buf, int row1, int row2, DecorSignHighlight *sh);
+void decor_free(DecorInline decor);
+void decor_state_invalidate(buf_T *buf);
+void decor_check_to_be_deleted(void);
+void decor_state_free(DecorState *state);
+void clear_virttext(VirtText *text);
+void clear_virtlines(VirtLines *lines);
+void decor_check_invalid_glyphs(void);
+char *next_virt_text_chunk(VirtText vt, size_t *pos, int *attr);
+DecorVirtText *decor_find_virttext(buf_T *buf, int row, uint64_t ns_id);
+bool decor_redraw_reset(win_T *wp, DecorState *state);
+bool decor_virt_pos(const DecorRange *decor);
+VirtTextPos decor_virt_pos_kind(const DecorRange *decor);
+bool decor_redraw_start(win_T *wp, int top_row, DecorState *state);
+void decor_redraw_line(win_T *wp, int row, DecorState *state);
+bool decor_has_more_decorations(DecorState *state, int row);
+void decor_range_add_virt(DecorState *state, int start_row, int start_col, int end_row, int end_col, DecorVirtText *vt, bool owned);
+void decor_range_add_sh(DecorState *state, int start_row, int start_col, int end_row, int end_col, DecorSignHighlight *sh, bool owned, uint32_t ns, uint32_t mark_id, DecorPriority subpriority);
+void decor_init_draw_col(int win_col, bool hidden, DecorRange *item);
+void decor_recheck_draw_col(int win_col, bool hidden, DecorState *state);
+int decor_redraw_col_impl(win_T *wp, int col, int win_col, bool hidden, DecorState *state, int max_col_last);
+bool decor_conceal_line(win_T *wp, int row, bool check_cursor);
+bool win_lines_concealed(win_T *wp);
+int sign_item_cmp(const void *p1, const void *p2);
+void decor_redraw_signs(win_T *wp, buf_T *buf, int row, SignTextAttrs sattrs[], int *line_id, int *cul_id, int *num_id);
+DecorSignHighlight *decor_find_sign(DecorInline decor);
+void buf_signcols_count_range(buf_T *buf, int row1, int row2, int add, TriState clear);
+void decor_redraw_end(DecorState *state);
+bool decor_redraw_eol(win_T *wp, DecorState *state, int *eol_attr, int eol_col);
+int decor_virt_line_rows(win_T *wp, const struct virt_line *vl, int target_row, int *skip_cells);
+int decor_virt_lines(win_T *wp, int start_row, int end_row, int *num_below, VirtLines *lines, bool apply_folds);
+void decor_to_dict_legacy(Dict *dict, DecorInline decor, bool hl_name, Arena *arena);
+uint16_t decor_type_flags(DecorInline decor);
+Object hl_group_name(int hl_id, bool hl_name);
+
 static inline int decor_redraw_col(win_T *wp, int col, int win_col, bool hidden, DecorState *state,
                                    int max_col_last)
   FUNC_ATTR_ALWAYS_INLINE

@@ -53,6 +53,7 @@ static uint32_t to_free_sh = UINT32_MAX;
 /// @param pos_start Cursor position to start the highlighting at
 /// @param pos_end Cursor position to end the highlighting at
 /// @param offset Move the whole highlighting this many columns to the right
+#pragma weak bufhl_add_hl_pos_offset
 void bufhl_add_hl_pos_offset(buf_T *buf, int src_id, int hl_id, lpos_T pos_start, lpos_T pos_end,
                              colnr_T offset)
 {
@@ -91,6 +92,7 @@ void bufhl_add_hl_pos_offset(buf_T *buf, int src_id, int hl_id, lpos_T pos_start
   }
 }
 
+#pragma weak decor_redraw
 void decor_redraw(buf_T *buf, int row1, int row2, int col1, DecorInline decor)
 {
   if (decor.ext) {
@@ -118,6 +120,7 @@ void decor_redraw(buf_T *buf, int row1, int row2, int col1, DecorInline decor)
   }
 }
 
+#pragma weak decor_redraw_sh
 void decor_redraw_sh(buf_T *buf, int row1, int row2, DecorSignHighlight sh)
 {
   if (sh.hl_id || (sh.url != NULL)
@@ -140,6 +143,7 @@ void decor_redraw_sh(buf_T *buf, int row1, int row2, DecorSignHighlight sh)
   }
 }
 
+#pragma weak decor_put_sh
 uint32_t decor_put_sh(DecorSignHighlight item)
 {
   if (decor_freelist != UINT32_MAX) {
@@ -154,6 +158,7 @@ uint32_t decor_put_sh(DecorSignHighlight item)
   }
 }
 
+#pragma weak decor_put_vt
 DecorVirtText *decor_put_vt(DecorVirtText vt, DecorVirtText *next)
 {
   DecorVirtText *decor_alloc = xmalloc(sizeof *decor_alloc);
@@ -162,6 +167,7 @@ DecorVirtText *decor_put_vt(DecorVirtText vt, DecorVirtText *next)
   return decor_alloc;
 }
 
+#pragma weak decor_sh_from_inline
 DecorSignHighlight decor_sh_from_inline(DecorHighlightInline item)
 {
   // TODO(bfredl): Eventually simple signs will be inlinable as well
@@ -180,6 +186,7 @@ DecorSignHighlight decor_sh_from_inline(DecorHighlightInline item)
   return conv;
 }
 
+#pragma weak buf_put_decor
 void buf_put_decor(buf_T *buf, DecorInline decor, int row, int row2)
 {
   if (decor.ext && row < buf->b_ml.ml_line_count) {
@@ -209,6 +216,7 @@ static void may_force_numberwidth_recompute(buf_T *buf, bool unplace)
 }
 
 static int sign_add_id = 0;
+#pragma weak buf_put_decor_sh
 void buf_put_decor_sh(buf_T *buf, DecorSignHighlight *sh, int row1, int row2)
 {
   if (sh->flags & kSHIsSign) {
@@ -220,6 +228,7 @@ void buf_put_decor_sh(buf_T *buf, DecorSignHighlight *sh, int row1, int row2)
   }
 }
 
+#pragma weak buf_decor_remove
 void buf_decor_remove(buf_T *buf, int row1, int row2, int col1, DecorInline decor, bool free)
 {
   decor_redraw(buf, row1, row2, col1, decor);
@@ -237,6 +246,7 @@ void buf_decor_remove(buf_T *buf, int row1, int row2, int col1, DecorInline deco
   }
 }
 
+#pragma weak buf_remove_decor_sh
 void buf_remove_decor_sh(buf_T *buf, int row1, int row2, DecorSignHighlight *sh)
 {
   if (sh->flags & kSHIsSign) {
@@ -252,6 +262,7 @@ void buf_remove_decor_sh(buf_T *buf, int row1, int row2, DecorSignHighlight *sh)
   }
 }
 
+#pragma weak decor_free
 void decor_free(DecorInline decor)
 {
   if (!decor.ext) {
@@ -320,6 +331,7 @@ static void decor_free_inner(DecorVirtText *vt, uint32_t first_idx)
 ///
 /// This should be called whenever a structural modification has been done to a
 /// marktree in a public API function (i e any change which adds or deletes marks).
+#pragma weak decor_state_invalidate
 void decor_state_invalidate(buf_T *buf)
 {
   if (decor_state.win && decor_state.win->w_buffer == buf) {
@@ -327,6 +339,7 @@ void decor_state_invalidate(buf_T *buf)
   }
 }
 
+#pragma weak decor_check_to_be_deleted
 void decor_check_to_be_deleted(void)
 {
   assert(!decor_state.running_decor_provider);
@@ -336,12 +349,14 @@ void decor_check_to_be_deleted(void)
   decor_state.win = NULL;
 }
 
+#pragma weak decor_state_free
 void decor_state_free(DecorState *state)
 {
   kv_destroy(state->slots);
   kv_destroy(state->ranges_i);
 }
 
+#pragma weak clear_virttext
 void clear_virttext(VirtText *text)
 {
   for (size_t i = 0; i < kv_size(*text); i++) {
@@ -351,6 +366,7 @@ void clear_virttext(VirtText *text)
   *text = (VirtText)KV_INITIAL_VALUE;
 }
 
+#pragma weak clear_virtlines
 void clear_virtlines(VirtLines *lines)
 {
   for (size_t i = 0; i < kv_size(*lines); i++) {
@@ -360,6 +376,7 @@ void clear_virtlines(VirtLines *lines)
   *lines = (VirtLines)KV_INITIAL_VALUE;
 }
 
+#pragma weak decor_check_invalid_glyphs
 void decor_check_invalid_glyphs(void)
 {
   for (size_t i = 0; i < kv_size(decor_items); i++) {
@@ -380,6 +397,7 @@ void decor_check_invalid_glyphs(void)
 /// @param[in,out] attr  Highlight attribute
 ///
 /// @return  The text of the chunk, or NULL if there are no more chunks
+#pragma weak next_virt_text_chunk
 char *next_virt_text_chunk(VirtText vt, size_t *pos, int *attr)
 {
   char *text = NULL;
@@ -396,6 +414,7 @@ char *next_virt_text_chunk(VirtText vt, size_t *pos, int *attr)
   return text;
 }
 
+#pragma weak decor_find_virttext
 DecorVirtText *decor_find_virttext(buf_T *buf, int row, uint64_t ns_id)
 {
   MarkTreeIter itr[1] = { 0 };
@@ -420,6 +439,7 @@ next_mark:
   return NULL;
 }
 
+#pragma weak decor_redraw_reset
 bool decor_redraw_reset(win_T *wp, DecorState *state)
 {
   state->row = -1;
@@ -452,11 +472,13 @@ bool decor_redraw_reset(win_T *wp, DecorState *state)
 }
 
 /// @return true if decor has a virtual position (virtual text or ui_watched)
+#pragma weak decor_virt_pos
 bool decor_virt_pos(const DecorRange *decor)
 {
   return (decor->kind == kDecorKindVirtText || decor->kind == kDecorKindUIWatched);
 }
 
+#pragma weak decor_virt_pos_kind
 VirtTextPos decor_virt_pos_kind(const DecorRange *decor)
 {
   if (decor->kind == kDecorKindVirtText) {
@@ -468,6 +490,7 @@ VirtTextPos decor_virt_pos_kind(const DecorRange *decor)
   return kVPosEndOfLine;  // not used; return whatever
 }
 
+#pragma weak decor_redraw_start
 bool decor_redraw_start(win_T *wp, int top_row, DecorState *state)
 {
   buf_T *buf = wp->w_buffer;
@@ -515,6 +538,7 @@ static void decor_state_pack(DecorState *state)
   state->future_begin = fut_beg;
 }
 
+#pragma weak decor_redraw_line
 void decor_redraw_line(win_T *wp, int row, DecorState *state)
 {
   decor_state_pack(state);
@@ -532,6 +556,7 @@ void decor_redraw_line(win_T *wp, int row, DecorState *state)
 }
 
 // Checks if there are (likely) more decorations on the current line.
+#pragma weak decor_has_more_decorations
 bool decor_has_more_decorations(DecorState *state, int row)
 {
   if (state->current_end != 0 || state->future_begin != (int)kv_size(state->ranges_i)) {
@@ -611,6 +636,7 @@ static void decor_range_insert(DecorState *state, DecorRange *range)
   *item = index;
 }
 
+#pragma weak decor_range_add_virt
 void decor_range_add_virt(DecorState *state, int start_row, int start_col, int end_row, int end_col,
                           DecorVirtText *vt, bool owned)
 {
@@ -627,6 +653,7 @@ void decor_range_add_virt(DecorState *state, int start_row, int start_col, int e
   decor_range_insert(state, &range);
 }
 
+#pragma weak decor_range_add_sh
 void decor_range_add_sh(DecorState *state, int start_row, int start_col, int end_row, int end_col,
                         DecorSignHighlight *sh, bool owned, uint32_t ns, uint32_t mark_id,
                         DecorPriority subpriority)
@@ -663,6 +690,7 @@ void decor_range_add_sh(DecorState *state, int start_row, int start_col, int end
 }
 
 /// Initialize the draw_col of a newly-added virtual text item.
+#pragma weak decor_init_draw_col
 void decor_init_draw_col(int win_col, bool hidden, DecorRange *item)
 {
   DecorVirtText *vt = item->kind == kDecorKindVirtText ? item->data.vt : NULL;
@@ -676,6 +704,7 @@ void decor_init_draw_col(int win_col, bool hidden, DecorRange *item)
   }
 }
 
+#pragma weak decor_recheck_draw_col
 void decor_recheck_draw_col(int win_col, bool hidden, DecorState *state)
 {
   int const end = state->current_end;
@@ -690,6 +719,7 @@ void decor_recheck_draw_col(int win_col, bool hidden, DecorState *state)
   }
 }
 
+#pragma weak decor_redraw_col_impl
 int decor_redraw_col_impl(win_T *wp, int col, int win_col, bool hidden, DecorState *state,
                           int max_col_last)
 {
@@ -870,6 +900,7 @@ static const uint32_t conceal_filter[kMTMetaCount] = {[kMTMetaConcealLines] = kM
 ///                     cursor line would be concealed if it was not the cursorline.
 ///
 /// @return whether "row" is concealed
+#pragma weak decor_conceal_line
 bool decor_conceal_line(win_T *wp, int row, bool check_cursor)
 {
   if (row < 0 || wp->w_p_cole < 2
@@ -910,11 +941,13 @@ bool decor_conceal_line(win_T *wp, int row, bool check_cursor)
 }
 
 /// @return whether a window may have folded or concealed lines
+#pragma weak win_lines_concealed
 bool win_lines_concealed(win_T *wp)
 {
   return hasAnyFolding(wp) || wp->w_p_cole >= 2;
 }
 
+#pragma weak sign_item_cmp
 int sign_item_cmp(const void *p1, const void *p2)
 {
   const SignItem *s1 = (SignItem *)p1;
@@ -944,6 +977,7 @@ static const uint32_t sign_filter[kMTMetaCount] = {[kMTMetaSignText] = kMTFilter
 /// @param[out] line_id Highest priority linehl id
 /// @param[out] cul_id Highest priority culhl id
 /// @param[out] num_id Highest priority numhl id
+#pragma weak decor_redraw_signs
 void decor_redraw_signs(win_T *wp, buf_T *buf, int row, SignTextAttrs sattrs[], int *line_id,
                         int *cul_id, int *num_id)
 {
@@ -1007,6 +1041,7 @@ void decor_redraw_signs(win_T *wp, buf_T *buf, int row, SignTextAttrs sattrs[], 
   }
 }
 
+#pragma weak decor_find_sign
 DecorSignHighlight *decor_find_sign(DecorInline decor)
 {
   if (!decor.ext) {
@@ -1032,6 +1067,7 @@ static const uint32_t signtext_filter[kMTMetaCount] = {[kMTMetaSignText] = kMTFi
 ///
 /// @param add  1, -1 or 0 for an added, deleted or initialized range.
 /// @param clear  kFalse, kTrue or kNone for an, added/deleted, cleared, or initialized range.
+#pragma weak buf_signcols_count_range
 void buf_signcols_count_range(buf_T *buf, int row1, int row2, int add, TriState clear)
 {
   if (!buf->b_signcols.autom || row2 < row1 || !buf_meta_total(buf, kMTMetaSignText)) {
@@ -1096,11 +1132,13 @@ void buf_signcols_count_range(buf_T *buf, int row1, int row2, int add, TriState 
   xfree(count);
 }
 
+#pragma weak decor_redraw_end
 void decor_redraw_end(DecorState *state)
 {
   state->win = NULL;
 }
 
+#pragma weak decor_redraw_eol
 bool decor_redraw_eol(win_T *wp, DecorState *state, int *eol_attr, int eol_col)
 {
   decor_redraw_col(wp, MAXCOL, MAXCOL, false, state, MAXCOL);
@@ -1136,6 +1174,7 @@ static inline bool decor_virt_line_wrap(win_T *wp, VirtLineOverflow overflow)
 /// @param skip_cells Cell offset for the target_row. Pass NULL when only the row count is needed.
 ///
 /// @return Number of rows occupied by the virtual line.
+#pragma weak decor_virt_line_rows
 int decor_virt_line_rows(win_T *wp, const struct virt_line *vl, int target_row, int *skip_cells)
 {
   if (skip_cells != NULL) {
@@ -1184,6 +1223,7 @@ int decor_virt_line_rows(win_T *wp, const struct virt_line *vl, int target_row, 
 
 /// @param apply_folds Only count virtual lines that are not in folds.
 /// @return Number of rows occupied by the virtual lines.
+#pragma weak decor_virt_lines
 int decor_virt_lines(win_T *wp, int start_row, int end_row, int *num_below, VirtLines *lines,
                      bool apply_folds)
 {
@@ -1254,6 +1294,7 @@ int decor_virt_lines(win_T *wp, int start_row, int end_row, int *num_below, Virt
 /// This assumes maximum one entry of each kind, which will not always be the case.
 ///
 /// NB: assumes caller has allocated enough space in dict for all fields!
+#pragma weak decor_to_dict_legacy
 void decor_to_dict_legacy(Dict *dict, DecorInline decor, bool hl_name, Arena *arena)
 {
   DecorSignHighlight sh_hl = DECOR_SIGN_HIGHLIGHT_INIT;
@@ -1398,6 +1439,7 @@ void decor_to_dict_legacy(Dict *dict, DecorInline decor, bool hl_name, Arena *ar
   }
 }
 
+#pragma weak decor_type_flags
 uint16_t decor_type_flags(DecorInline decor)
 {
   if (decor.ext) {
@@ -1419,6 +1461,7 @@ uint16_t decor_type_flags(DecorInline decor)
   }
 }
 
+#pragma weak hl_group_name
 Object hl_group_name(int hl_id, bool hl_name)
 {
   if (hl_name) {

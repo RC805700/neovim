@@ -11,8 +11,7 @@ foreign _ {
 	api_object_to_bool_e :: proc "c" (obj: Api_Object, what: cstring, nil_value: bool, err: ^Api_Error) -> bool ---
 	@(link_name = "hl_check_ns")
 	hl_check_ns_e :: proc "c" () -> bool ---
-	@(link_name = "decor_check_to_be_deleted")
-	decor_check_to_be_deleted_e :: proc "c" () ---
+	// decor_check_to_be_deleted now defined in decoration.odin — call directly.
 	@(link_name = "ns_hl_active")
 	ns_hl_active_g: C.int
 }
@@ -317,7 +316,7 @@ decor_providers_invoke_end :: proc "c" () {
 			decor_provider_invoke_o(C.int(i), cstring("end"), p.redraw_end, args, true, nil)
 		}
 	}
-	decor_check_to_be_deleted_e()
+	decor_check_to_be_deleted()
 }
 
 @(export)

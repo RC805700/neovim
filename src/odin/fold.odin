@@ -174,10 +174,8 @@ foreign _ {
 	api_free_object_r :: proc "c" (value: Api_Object) ---
 	@(link_name = "api_clear_error")
 	api_clear_error_r :: proc "c" (value: ^Api_Error) ---
-	@(link_name = "next_virt_text_chunk")
-	next_virt_text_chunk_r :: proc "c" (vt: Kvec_VT, pos: ^C.size_t, attr: ^C.int) -> ^u8 ---
-	@(link_name = "clear_virttext")
-	clear_virttext_r :: proc "c" (text: ^Kvec_VT) ---
+	// next_virt_text_chunk now defined in decoration.odin — call directly.
+	// clear_virttext now defined in decoration.odin — call directly.
 	// skip_comment now defined in ops.odin — call directly.
 	// linewhite now defined in search.odin — reuse directly.
 	// ml_replace_buf now defined in memline.odin — call directly.
@@ -2786,7 +2784,7 @@ f_foldtextresult :: proc "c" (argvars: ^Typval, rettv: ^Typval, fptr: rawptr) {
 			pos: C.size_t = 0
 			for pos < vt.n {
 				attr: C.int = 0
-				new_text := next_virt_text_chunk_r(vt, &pos, &attr)
+				new_text := next_virt_text_chunk(vt, &pos, &attr)
 				if new_text == nil {
 					break
 				}
@@ -2799,7 +2797,7 @@ f_foldtextresult :: proc "c" (argvars: ^Typval, rettv: ^Typval, fptr: rawptr) {
 				text = cat
 			}
 		}
-		clear_virttext_r(&vt)
+		clear_virttext(&vt)
 		(^rawptr)(uintptr(rettv) + 8)^ = text
 	}
 

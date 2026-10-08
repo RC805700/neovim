@@ -1196,8 +1196,8 @@ win_free :: proc "c"(wp: rawptr, tp: rawptr) {
 	}
 
 	// free the border text
-	clear_virttext_r((^Kvec_VT)(uintptr(wp) + W_CONFIG_OFF + WC_TITLE_CHUNKS_OFF))
-	clear_virttext_r((^Kvec_VT)(uintptr(wp) + W_CONFIG_OFF + WC_FOOTER_CHUNKS_OFF))
+	clear_virttext((^Kvec_VT)(uintptr(wp) + W_CONFIG_OFF + WC_TITLE_CHUNKS_OFF))
+	clear_virttext((^Kvec_VT)(uintptr(wp) + W_CONFIG_OFF + WC_FOOTER_CHUNKS_OFF))
 
 	clear_matches(wp)
 
@@ -5488,8 +5488,7 @@ UPD_SOME_VALID_O :: 35
 
 foreign _ {
 	// plines_win/plines_win_col/plines_win_nofill now defined in plines.odin.
-	@(link_name = "decor_conceal_line")
-	decor_conceal_line_r :: proc "c" (wp: rawptr, row: C.int, check_cursor: bool) -> bool ---
+	// decor_conceal_line now defined in decoration.odin — call directly.
 	// curs_columns now defined in move.odin — call directly.
 	// win_col_off/off2 now defined in move.odin — call directly.
 }
@@ -5548,7 +5547,7 @@ scroll_to_fraction :: proc "c"(wp: rawptr, prev_height: C.int) {
 				hasFolding(wp, lnum, &lnum, nil)
 				if lnum == 1 {
 					// first line in buffer is folded
-					line_size = !decor_conceal_line_r(wp, lnum - 1, false) ? 1 : 0
+					line_size = !decor_conceal_line(wp, lnum - 1, false) ? 1 : 0
 					sline -= 1
 					break
 				}
@@ -6609,11 +6608,11 @@ merge_win_config :: proc "c"(dst: rawptr, src: WinConfig_Opaque) {
 	srcp := uintptr(&s)
 	if (^rawptr)(uintptr(dst) + WCFG_TITLE_CHUNKS_OFF + 16)^ !=
 		(^rawptr)(srcp + WCFG_TITLE_CHUNKS_OFF + 16)^ {
-		clear_virttext_r(transmute(^Kvec_VT)(uintptr(dst) + WCFG_TITLE_CHUNKS_OFF))
+		clear_virttext(transmute(^Kvec_VT)(uintptr(dst) + WCFG_TITLE_CHUNKS_OFF))
 	}
 	if (^rawptr)(uintptr(dst) + WCFG_FOOTER_CHUNKS_OFF + 16)^ !=
 		(^rawptr)(srcp + WCFG_FOOTER_CHUNKS_OFF + 16)^ {
-		clear_virttext_r(transmute(^Kvec_VT)(uintptr(dst) + WCFG_FOOTER_CHUNKS_OFF))
+		clear_virttext(transmute(^Kvec_VT)(uintptr(dst) + WCFG_FOOTER_CHUNKS_OFF))
 	}
 	libc.memcpy(dst, transmute(rawptr)(srcp), WINCONFIG_SIZE_O)
 }

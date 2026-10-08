@@ -3751,9 +3751,8 @@ foreign _ {
 	// profile_zero — PORTED (profile.odin).
 	@(link_name = "p_rdt")
 	p_rdt_g: C.longlong
-	@(link_name = "bufhl_add_hl_pos_offset")
-	bufhl_add_hl_pos_offset_r :: proc "c"(buf: rawptr, ns_id: C.int, hl_id: C.int, pos1: Lpos_T, pos2: Lpos_T, col_offset: C.int) ---
 	// ml_append_buf now defined in memline.odin — call directly.
+	// bufhl_add_hl_pos_offset now defined in decoration.odin — call directly.
 }
 
 // Persistent :substitute flags + preview hl id (C statics, file-private).
@@ -3880,10 +3879,10 @@ show_sub_o :: proc "c"(eap: rawptr, old_cusr: Pos_T, preview_lines: ^PreviewLine
 			}
 			linenr_origbuf = match.end_lnum
 
-			bufhl_add_hl_pos_offset_r(cmdpreview_buf, cmdpreview_ns, hl_id,
+			bufhl_add_hl_pos_offset(cmdpreview_buf, cmdpreview_ns, hl_id,
 				p_start, p_end, col_width)
 		}
-		bufhl_add_hl_pos_offset_r(orig_buf, cmdpreview_ns, hl_id,
+		bufhl_add_hl_pos_offset(orig_buf, cmdpreview_ns, hl_id,
 			Lpos_T{lnum = match.start_lnum, col = match.start_col},
 			Lpos_T{lnum = match.end_lnum, col = match.end_col}, 0)
 	}

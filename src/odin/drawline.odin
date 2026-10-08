@@ -4,17 +4,14 @@ package main
 import C "core:c"
 import "core:c/libc"
 
-foreign _ {
-	@(link_name = "decor_virt_line_rows")
-	decor_virt_line_rows_r :: proc "c"(wp: rawptr, vl: rawptr, target_row: C.int, skip_cells: ^C.int) -> C.int ---
-}
+// decor_virt_line_rows now defined in decoration.odin — call directly.
 
 // decor_redraw_col (decoration.h:110 static inline).
 decor_redraw_col_o :: proc "c"(wp: rawptr, col: C.int, win_col: C.int, hidden: bool, state: ^DecorState_O, max_col_last: C.int) -> C.int {
 	if col <= state.col_last {
 		return state.current
 	}
-	return decor_redraw_col_impl_r(wp, col, win_col, hidden, transmute(rawptr)(state), max_col_last)
+	return decor_redraw_col_impl(wp, col, win_col, hidden, transmute(rawptr)(state), max_col_last)
 }
 
 // virt_line element for decor_virt_line_rows (24+4+4 = 32B).
@@ -556,7 +553,7 @@ win_line :: proc "c"(wp: rawptr, lnum: C.int, startrow: C.int, endrow: C.int, co
 		area_highlighting = true
 	}
 	virt_lines := Kvec_VT{} // KV_INITIAL_VALUE
-	wlv.n_virt_lines = decor_virt_lines_r(wp, lnum - 1, lnum, &wlv.n_virt_below, &virt_lines, true)
+	wlv.n_virt_lines = decor_virt_lines(wp, lnum - 1, lnum, &wlv.n_virt_below, &virt_lines, true)
 	// Preserve virt_lines count for topline visibility.
 	total_virt_rows := wlv.n_virt_lines
 	wlv.filler_lines += wlv.n_virt_lines
@@ -566,6 +563,7 @@ win_line :: proc "c"(wp: rawptr, lnum: C.int, startrow: C.int, endrow: C.int, co
 		wlv.n_virt_below -= wlv.virt_below_skip
 		wlv.filler_lines_skip = wlv.filler_lines - wlv.virt_below_skip -
 			(^C.int)(uintptr(wp) + W_TOPFILL_OFF)^
+		wlv.filler_lines = (^C.int)(uintptr(wp) + W_TOPFILL_OFF)^
 		wlv.n_virt_lines = min(wlv.n_virt_lines, wlv.filler_lines)
 	}
 	wlv.filler_todo = wlv.filler_lines
@@ -588,7 +586,7 @@ win_line :: proc "c"(wp: rawptr, lnum: C.int, startrow: C.int, endrow: C.int, co
 
 	sign_line_attr: C.int = 0
 	// TODO(bfredl, vigoux): line_attr should not take priority over decoration!
-	decor_redraw_signs_r(wp, buf, wlv.lnum - 1, transmute(rawptr)(&wlv.sattrs[0]),
+	decor_redraw_signs(wp, buf, wlv.lnum - 1, transmute(rawptr)(&wlv.sattrs[0]),
 		&sign_line_attr, &wlv.sign_cul_attr, &wlv.sign_num_attr)
 
 	statuscol := Statuscol_O{}
@@ -952,7 +950,7 @@ win_line :: proc "c"(wp: rawptr, lnum: C.int, startrow: C.int, endrow: C.int, co
 		ptr = (^u8)(uintptr(line) + uintptr(col))
 	}
 
-	decor_redraw_line_r(wp, lnum - 1, transmute(rawptr)(&decor_state_g))
+	decor_redraw_line(wp, lnum - 1, transmute(rawptr)(&decor_state_g))
 	if !has_decor && decor_has_more_decorations_r(transmute(rawptr)(&decor_state_g), lnum - 1) {
 		has_decor = true
 		extra_check = true
@@ -1013,6 +1011,7 @@ win_line :: proc "c"(wp: rawptr, lnum: C.int, startrow: C.int, endrow: C.int, co
 	virt_line_skip_cells: C.int = 0
 	// CHUNK-12c1: main while loop — filler/virt-lines, columns, row commit.
 	for {
+		goto_end_check := false // C 'goto end_check' (filler filled width)
 		has_match_conc: C.int = 0 // match wants to conceal
 		decor_conceal: C.int = 0
 
@@ -1052,12 +1051,12 @@ win_line :: proc "c"(wp: rawptr, lnum: C.int, startrow: C.int, endrow: C.int, co
 					// NOTE: items are virt_line (32B), not VirtTextChunk.
 					vls := transmute([^]VirtLine_O)(virt_lines.items)
 					for virt_line_index < C.int(virt_lines.n) {
-						line_rows := decor_virt_line_rows_r(wp,
+						line_rows := decor_virt_line_rows(wp,
 							transmute(rawptr)(&vls[virt_line_index]), 0, nil)
 						if target_row < virt_line_start_row + line_rows {
 							has_virt_line = true
 							virt_line_flags = vls[virt_line_index].flags
-							decor_virt_line_rows_r(wp,
+							decor_virt_line_rows(wp,
 								transmute(rawptr)(&vls[virt_line_index]),
 								target_row - virt_line_start_row,
 								&virt_line_skip_cells)
@@ -1149,9 +1148,11 @@ win_line :: proc "c"(wp: rawptr, lnum: C.int, startrow: C.int, endrow: C.int, co
 			if wlv.col >= view_width {
 				wlv.col = view_width
 				wlv.off = view_width
-				break // -> end_check (CHUNK-12e)
+				goto_end_check = true // C 'goto end_check': skip per-char, draw filler/virt + commit
 			}
 		}
+
+		if !goto_end_check {
 
 		// CHUNK-12c3: cursorline-row, change-display, folded setup, per-char attrs.
 		if cul_screenline && wlv.filler_todo <= 0 &&
@@ -1208,7 +1209,7 @@ win_line :: proc "c"(wp: rawptr, lnum: C.int, startrow: C.int, endrow: C.int, co
 				// inline draws.
 				if decor_need_recheck {
 					if !may_have_inline_virt {
-						decor_recheck_draw_col_r(wlv.off, selected,
+						decor_recheck_draw_col(wlv.off, selected,
 							transmute(rawptr)(&decor_state_g))
 					}
 					decor_need_recheck = false
@@ -2001,7 +2002,6 @@ win_line :: proc "c"(wp: rawptr, lnum: C.int, startrow: C.int, endrow: C.int, co
 				ptr = (^u8)(uintptr(ptr) + 1)
 			}
 			} // REAL closes final else (C:2743)
-
 			// CHUNK-12d1: cursor wcol, extra_attr apply, precedes, EOL hl.
 			// Cursor line with concealing: fix cursor column at its spot.
 			// (Virtualedit may never reach it; fix at end of line.)
@@ -2144,7 +2144,7 @@ win_line :: proc "c"(wp: rawptr, lnum: C.int, startrow: C.int, endrow: C.int, co
 				}
 
 				if has_decor {
-					decor_redraw_eol_r(wp, transmute(rawptr)(&decor_state_g),
+					decor_redraw_eol(wp, transmute(rawptr)(&decor_state_g),
 						&wlv.line_attr, wlv.col + eol_skip)
 				}
 
@@ -2433,12 +2433,13 @@ win_line :: proc "c"(wp: rawptr, lnum: C.int, startrow: C.int, endrow: C.int, co
 				} else if !is_wrapped {
 					// No wrapping: right_align/win_col virt_text for the
 					// whole text line may still need display.
-					decor_recheck_draw_col_r(-1, true, transmute(rawptr)(&decor_state_g))
+					decor_recheck_draw_col(-1, true, transmute(rawptr)(&decor_state_g))
 					decor_redraw_col_o(wp, MAXCOL, -1, true, &decor_state_g,
 						decor_provider_end_col - 1)
 				}
 			}
-			// CHUNK-12d5: end_check + row advance + return.
+			} // end !goto_end_check (C 'goto end_check' skips per-char section)
+		// CHUNK-12d5: end_check + row advance + return.
 			// end_check: end of screen line with more to come: show it.
 			// (No more to display is caught above.)
 			if wlv.col >= view_width &&
@@ -2555,7 +2556,7 @@ win_line :: proc "c"(wp: rawptr, lnum: C.int, startrow: C.int, endrow: C.int, co
 		// (for-loop continues via internal breaks; falls through per row)
 	} // closes for-every-character (C:3286)
 
-	clear_virttext_r(&fold_vt)
+	clear_virttext(&fold_vt)
 	// kv_destroy(virt_lines)
 	xfree(virt_lines.items)
 	virt_lines = Kvec_VT{}
@@ -2601,8 +2602,7 @@ Statuscol_O :: struct {
 foreign _ {
 	@(link_name = "display_tick")
 	display_tick_g: u64
-	@(link_name = "decor_virt_lines")
-	decor_virt_lines_r :: proc "c"(wp: rawptr, start_row: C.int, end_row: C.int, num_below: ^C.int, lines: rawptr, apply_folds: bool) -> C.int ---
+	// decor_virt_lines now defined in decoration.odin — call directly.
 	@(link_name = "diff_check_fill")
 	diff_check_fill_r :: proc "c"(wp: rawptr, lnum: C.int) -> C.int ---
 	@(link_name = "build_statuscol_str")
@@ -2630,7 +2630,7 @@ draw_statuscol_o :: proc "c"(wp: rawptr, wlv: ^WinLineVars, col_rows: C.int, stc
 	reset_virt := lnum == wlv.lnum ? wlv.filler_lines_skip : wlv.virt_below_skip
 	if reset && lnum < (^C.int)(uintptr(wp) + W_TOPLINE_OFF)^ {
 		virt_below_prev: C.int = 0
-		virt_lines_prev := decor_virt_lines_r(wp, lnum - 1, lnum, &virt_below_prev, nil, true)
+		virt_lines_prev := decor_virt_lines(wp, lnum - 1, lnum, &virt_below_prev, nil, true)
 		diff_fill_prev := diff_check_fill_r(wp, lnum - 1)
 		reset_virt += virt_lines_prev + diff_fill_prev - virt_below_prev
 	}
@@ -2730,12 +2730,8 @@ draw_statuscol_o :: proc "c"(wp: rawptr, wlv: ^WinLineVars, col_rows: C.int, stc
 
 // ── Batch 10: inline virtual text + decor iteration ───────────────────────────
 
-foreign _ {
-	@(link_name = "decor_init_draw_col")
-	decor_init_draw_col_r :: proc "c"(win_col: C.int, hidden: bool, item: ^DecorRange_O) ---
-	@(link_name = "decor_recheck_draw_col")
-	decor_recheck_draw_col_r :: proc "c"(win_col: C.int, hidden: bool, state: rawptr) ---
-}
+// decor_init_draw_col now defined in decoration.odin — call directly.
+// decor_recheck_draw_col now defined in decoration.odin — call directly.
 
 // Feed inline virtual text into wlv extra-text slots (plain, C-static).
 handle_inline_virtual_text_o :: proc "c"(wp: rawptr, wlv: ^WinLineVars, v: C.ptrdiff_t, selected: bool) {
@@ -2751,7 +2747,7 @@ handle_inline_virtual_text_o :: proc "c"(wp: rawptr, wlv: ^WinLineVars, v: C.ptr
 				item := &([^]DecorRange_O)(state.slots.items)[state.ranges_i.items[i]]
 				if item.draw_col == -3 {
 					// Position of later non-inline items decidable now.
-					decor_init_draw_col_r(wlv.off, selected, item)
+					decor_init_draw_col(wlv.off, selected, item)
 				}
 				if item.start_row != state.row ||
 					item.kind != K_DECOR_VIRTTEXT_O {
@@ -2775,7 +2771,7 @@ handle_inline_virtual_text_o :: proc "c"(wp: rawptr, wlv: ^WinLineVars, v: C.ptr
 		} else {
 			// Inside multi-chunk inline virtual text.
 			attr: C.int = 0
-			text := next_virt_text_chunk_r(wlv.virt_inline, &wlv.virt_inline_i, &attr)
+			text := next_virt_text_chunk(wlv.virt_inline, &wlv.virt_inline_i, &attr)
 			if text == nil {
 				continue
 			}
@@ -2972,10 +2968,8 @@ foreign _ {
 	decor_state_g: DecorState_O
 	@(link_name = "win_extmark_arr")
 	win_extmark_arr_g: Kvec_WE
-	@(link_name = "decor_virt_pos")
-	decor_virt_pos_r :: proc "c"(decor: ^DecorRange_O) -> bool ---
-	@(link_name = "decor_virt_pos_kind")
-	decor_virt_pos_kind_r :: proc "c"(decor: ^DecorRange_O) -> C.int ---
+	// decor_virt_pos now defined in decoration.odin — call directly.
+	// decor_virt_pos_kind now defined in decoration.odin — call directly.
 }
 
 // Push a WinExtmark (kv_push idiom, Batch-16 growth).
@@ -3004,7 +2998,7 @@ draw_virt_text_o :: proc "c"(wp: rawptr, buf: rawptr, col_off: C.int, end_col: ^
 
 	for i: C.int = 0; i < end; i += 1 {
 		slot := &([^]DecorRange_O)(state.slots.items)[state.ranges_i.items[i]]
-		if !(slot.start_row == state.row && decor_virt_pos_r(slot)) {
+		if !(slot.start_row == state.row && decor_virt_pos(slot)) {
 			continue
 		}
 
@@ -3015,9 +3009,9 @@ draw_virt_text_o :: proc "c"(wp: rawptr, buf: rawptr, col_off: C.int, end_col: ^
 			}
 			vt = (^DecorVirtText_O)(slot.vt)
 		}
-		if decor_virt_pos_r(slot) && slot.draw_col == -1 {
+		if decor_virt_pos(slot) && slot.draw_col == -1 {
 			updated := true
-			pos := decor_virt_pos_kind_r(slot)
+			pos := decor_virt_pos_kind(slot)
 
 			if do_eol && pos == K_VPOS_EOL_RIGHT_O {
 				eol_off: C.int = 0
@@ -3026,7 +3020,7 @@ draw_virt_text_o :: proc "c"(wp: rawptr, buf: rawptr, col_off: C.int, end_col: ^
 					for j := i; j < end; j += 1 {
 						la := &([^]DecorRange_O)(state.slots.items)[state.ranges_i.items[j]]
 						if la.start_row != state.row ||
-							!decor_virt_pos_r(la) || la.draw_col != -1 {
+							!decor_virt_pos(la) || la.draw_col != -1 {
 							continue
 						}
 
@@ -3038,7 +3032,7 @@ draw_virt_text_o :: proc "c"(wp: rawptr, buf: rawptr, col_off: C.int, end_col: ^
 							la_vt = (^DecorVirtText_O)(la.vt)
 						}
 
-						if decor_virt_pos_kind_r(la) == K_VPOS_EOL_RIGHT_O {
+						if decor_virt_pos_kind(la) == K_VPOS_EOL_RIGHT_O {
 							// One extra space for EOL-alignment spacing.
 							total_w += (la_vt.width + 1)
 						}
@@ -3123,7 +3117,7 @@ draw_virt_text_item_o :: proc "c"(buf: rawptr, col: C.int, vt: Kvec_VT, hl_mode:
 				break
 			}
 			virt_attr = 0
-			virt_str = cstring(next_virt_text_chunk_r(vt, &virt_pos, &virt_attr))
+			virt_str = cstring(next_virt_text_chunk(vt, &virt_pos, &virt_attr))
 			if virt_str == nil {
 				break
 			}
@@ -3529,8 +3523,7 @@ VALID_WROW_O :: 0x01
 VALID_VIRTCOL_O :: 0x04
 // VALID_WCOL_O reuses window.odin (=0x02).
 foreign _ {
-	@(link_name = "decor_redraw_eol")
-	decor_redraw_eol_r :: proc "c"(wp: rawptr, state: rawptr, eol_attr: ^C.int, eol_col: C.int) -> bool ---
+	// decor_redraw_eol now defined in decoration.odin — call directly.
 	@(link_name = "normal_bg")
 	normal_bg_g: C.int
 	@(link_name = "cterm_normal_bg_color")
@@ -3583,8 +3576,7 @@ HLF_MC_O :: 57
 foreign _ {
 	@(link_name = "syn_id2attr")
 	syn_id2attr_r :: proc "c"(hl_id: C.int) -> C.int ---
-	@(link_name = "decor_redraw_signs")
-	decor_redraw_signs_r :: proc "c"(wp: rawptr, buf: rawptr, row: C.int, sattrs: rawptr, line_id: ^C.int, cul_id: ^C.int, num_id: ^C.int) ---
+	// decor_redraw_signs now defined in decoration.odin — call directly.
 	// get_cursor_rel_lnum — PORTED (cursor.odin).
 }
 
@@ -3739,7 +3731,7 @@ get_line_number_attr_o :: proc "c"(wp: rawptr, wlv: ^WinLineVars) -> C.int {
 	// Previous sign numhl for virt_lines of the previous line.
 	if (wlv.n_virt_lines - wlv.filler_todo) < wlv.n_virt_below {
 		if wlv.prev_num_attr == -1 {
-			decor_redraw_signs_r(wp, (^rawptr)(uintptr(wp) + W_BUFFER_OFF)^,
+			decor_redraw_signs(wp, (^rawptr)(uintptr(wp) + W_BUFFER_OFF)^,
 				wlv.lnum - 2, nil, nil, nil, &wlv.prev_num_attr)
 			if wlv.prev_num_attr > 0 {
 				wlv.prev_num_attr = syn_id2attr_r(wlv.prev_num_attr)
